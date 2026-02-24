@@ -1,0 +1,704 @@
+import React from "react";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  X,
+  Plus,
+  Trash2,
+  CheckCircle2,
+  ArrowRight,
+  Navigation,
+  MapPin,
+} from "lucide-react";
+import { type CreateProductInput } from "../lib/api";
+import { type Product } from "./ProductCard";
+import LeafletMapPicker from "./LeafletMapPicker";
+
+interface NewProductProps {
+  onClose: () => void;
+  onPublish: (product: CreateProductInput) => Promise<void>;
+  mode?: "create" | "edit";
+  initialProduct?: Product | null;
+}
+
+const DEFAULT_DETAILS: Record<string, string> = {
+  type: "",
+  area: "",
+  rooms: "",
+  bathrooms: "",
+  parking: "",
+  brand: "",
+  model: "",
+  color: "",
+  year: "",
+};
+
+type FormState = {
+  name: string;
+  category: string;
+  price: string;
+  latitude: string;
+  longitude: string;
+  description: string;
+  details: Record<string, string>;
+};
+
+type GeoPoint = {
+  latitude: number;
+  longitude: number;
+};
+
+const MAX_COORDINATE_LATITUDE = 90;
+const MAX_COORDINATE_LONGITUDE = 180;
+const DEFAULT_MAP_CENTER: GeoPoint = {
+  latitude: -23.55052,
+  longitude: -46.633308,
+};
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function toGeoPoint(latitude: number, longitude: number): GeoPoint | null {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  return {
+    latitude: clampNumber(latitude, -MAX_COORDINATE_LATITUDE, MAX_COORDINATE_LATITUDE),
+    longitude: clampNumber(longitude, -MAX_COORDINATE_LONGITUDE, MAX_COORDINATE_LONGITUDE),
+  };
+}
+
+function parseCoordinateStrings(latitude: string, longitude: string): GeoPoint | null {
+  return toGeoPoint(Number(latitude), Number(longitude));
+}
+
+function getInitialLocationPoint(product: Product | null | undefined): GeoPoint | null {
+  if (!product) {
+    return null;
+  }
+
+  return toGeoPoint(Number(product.latitude), Number(product.longitude));
+}
+
+function normalizeInitialImages(product: Product | null | undefined): string[] {
+  if (!product) {
+    return [];
+  }
+
+  if (Array.isArray(product.images) && product.images.length > 0) {
+    return [...product.images];
+  }
+  if (product.image) {
+    return [product.image];
+  }
+  return [];
+}
+
+function buildInitialFormState(product: Product | null | undefined): FormState {
+  if (!product) {
+    return {
+      name: "",
+      category: "Imóveis",
+      price: "",
+      latitude: "",
+      longitude: "",
+      description: "",
+      details: { ...DEFAULT_DETAILS },
+    };
+  }
+
+  return {
+    name: product.name ?? "",
+    category: product.category ?? "Imóveis",
+    price: product.price ?? "",
+    latitude:
+      typeof product.latitude === "number" && Number.isFinite(product.latitude)
+        ? product.latitude.toFixed(6)
+        : "",
+    longitude:
+      typeof product.longitude === "number" && Number.isFinite(product.longitude)
+        ? product.longitude.toFixed(6)
+        : "",
+    description: product.description ?? "",
+    details: {
+      ...DEFAULT_DETAILS,
+      ...(product.details ?? {}),
+    },
+  };
+}
+
+export default function NewProduct({
+  onClose,
+  onPublish,
+  mode = "create",
+  initialProduct = null,
+}: NewProductProps) {
+  const initialLocation = React.useMemo(
+    () => getInitialLocationPoint(initialProduct),
+    [initialProduct],
+  );
+  const isEditing = mode === "edit";
+  const [formData, setFormData] = React.useState<FormState>(() =>
+    buildInitialFormState(initialProduct),
+  );
+  const [images, setImages] = React.useState<string[]>(() =>
+    normalizeInitialImages(initialProduct),
+  );
+  const [isPublishing, setIsPublishing] = React.useState(false);
+  const [isSuccess, setIsSuccess] = React.useState(false);
+  const [errorMessage, setErrorMessage] = React.useState("");
+  const [isMapPickerOpen, setIsMapPickerOpen] = React.useState(false);
+  const [mapCenter, setMapCenter] = React.useState<GeoPoint>(
+    () => initialLocation ?? DEFAULT_MAP_CENTER,
+  );
+  const [selectedMapPoint, setSelectedMapPoint] = React.useState<GeoPoint | null>(
+    () => initialLocation,
+  );
+
+  React.useEffect(() => {
+    setFormData(buildInitialFormState(initialProduct));
+    setImages(normalizeInitialImages(initialProduct));
+    setIsSuccess(false);
+    setErrorMessage("");
+    setIsMapPickerOpen(false);
+
+    const nextLocation = getInitialLocationPoint(initialProduct);
+    setSelectedMapPoint(nextLocation);
+    setMapCenter(nextLocation ?? DEFAULT_MAP_CENTER);
+  }, [initialProduct]);
+
+  const categories = [
+    "Imóveis",
+    "Terreno",
+    "Aluguel",
+    "Veículos",
+    "Eletrônicos e Celulares",
+    "Informática e Games",
+    "Casa, Móveis e Decoração",
+    "Eletrodomésticos",
+    "Moda e Acessórios",
+    "Beleza e Saúde",
+    "Bebês e Crianças",
+    "Esportes e Lazer",
+    "Hobbies e Colecionáveis",
+    "Antiguidades",
+    "Livros, Papelaria e Cursos",
+    "Instrumentos Musicais",
+    "Ferramentas e Construção",
+    "Jardim e Pet",
+    "Serviços",
+    "Empregos",
+    "Outros"
+  ];
+
+  const isRealEstate = ["Imóveis", "Terreno", "Aluguel"].includes(formData.category);
+  const isVehicle = formData.category === "Veículos";
+  const isElectronicsOrFashion = [
+    "Eletrônicos e Celulares", 
+    "Informática e Games", 
+    "Moda e Acessórios", 
+    "Eletrodomésticos",
+    "Outros"
+  ].includes(formData.category);
+  const hasLocationSelected = Boolean(parseCoordinateStrings(formData.latitude, formData.longitude));
+
+  const handleAddImage = () => {
+    const randomId = Math.floor(Math.random() * 1000);
+    setImages([...images, `https://picsum.photos/seed/${randomId}/800/1200`]);
+  };
+
+  const handleRemoveImage = (index: number) => {
+    setImages(images.filter((_, i) => i !== index));
+  };
+
+  const handleDetailChange = (field: string, value: string) => {
+    setFormData((current) => ({
+      ...current,
+      details: {
+        ...current.details,
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage("");
+    const latitude = Number(formData.latitude);
+    const longitude = Number(formData.longitude);
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      setErrorMessage("Informe latitude e longitude válidas.");
+      return;
+    }
+    if (latitude < -90 || latitude > 90) {
+      setErrorMessage("Latitude deve estar entre -90 e 90.");
+      return;
+    }
+    if (longitude < -180 || longitude > 180) {
+      setErrorMessage("Longitude deve estar entre -180 e 180.");
+      return;
+    }
+
+    setIsPublishing(true);
+
+    try {
+      const details = Object.fromEntries(
+        Object.entries(formData.details).filter(
+          (entry): entry is [string, string] =>
+            typeof entry[1] === "string" && entry[1].trim() !== "",
+        ),
+      );
+      const fallbackImage = "https://picsum.photos/seed/placeholder/800/1200";
+      const newProduct: CreateProductInput = {
+        name: formData.name.trim(),
+        category: formData.category,
+        price: formData.price.trim(),
+        latitude,
+        longitude,
+        image: images[0] || fallbackImage,
+        images: images.length > 0 ? images : [fallbackImage],
+        description: formData.description.trim(),
+        details,
+      };
+      await onPublish(newProduct);
+      setIsSuccess(true);
+
+      setTimeout(() => {
+        onClose();
+      }, 2000);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : isEditing
+            ? "Falha ao atualizar o anúncio."
+            : "Falha ao publicar o anúncio.";
+      setErrorMessage(message);
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const requestCurrentLocation = (
+    onSuccess: (point: GeoPoint) => void,
+    onFailure?: (message: string) => void,
+  ) => {
+    if (!("geolocation" in navigator)) {
+      onFailure?.("Geolocalização não suportada neste navegador.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const nextPoint = {
+          latitude: clampNumber(
+            position.coords.latitude,
+            -MAX_COORDINATE_LATITUDE,
+            MAX_COORDINATE_LATITUDE,
+          ),
+          longitude: clampNumber(
+            position.coords.longitude,
+            -MAX_COORDINATE_LONGITUDE,
+            MAX_COORDINATE_LONGITUDE,
+          ),
+        };
+        onSuccess(nextPoint);
+      },
+      () => {
+        onFailure?.("Não foi possível capturar a localização atual.");
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
+  const handleUseCurrentLocation = () => {
+    setErrorMessage("");
+    requestCurrentLocation(
+      (nextPoint) => {
+        setFormData((prev) => ({
+          ...prev,
+          latitude: nextPoint.latitude.toFixed(6),
+          longitude: nextPoint.longitude.toFixed(6),
+        }));
+        setMapCenter(nextPoint);
+        setSelectedMapPoint(nextPoint);
+      },
+      (message) => {
+        setErrorMessage(message);
+      },
+    );
+  };
+
+  const handleOpenMapPicker = () => {
+    const savedLocation = parseCoordinateStrings(formData.latitude, formData.longitude);
+    if (savedLocation) {
+      setMapCenter(savedLocation);
+      setSelectedMapPoint(savedLocation);
+    } else {
+      setMapCenter(DEFAULT_MAP_CENTER);
+      setSelectedMapPoint(null);
+    }
+    setErrorMessage("");
+    setIsMapPickerOpen(true);
+
+    requestCurrentLocation(
+      (nextPoint) => {
+        setMapCenter(nextPoint);
+      },
+      (message) => {
+        setErrorMessage(`${message} Você ainda pode escolher manualmente no mapa.`);
+      },
+    );
+  };
+
+  const handleCloseMapPicker = () => {
+    setIsMapPickerOpen(false);
+  };
+
+  const handleConfirmMapLocation = (point: GeoPoint) => {
+    setSelectedMapPoint(point);
+
+    setFormData((current) => ({
+      ...current,
+      latitude: point.latitude.toFixed(6),
+      longitude: point.longitude.toFixed(6),
+    }));
+    handleCloseMapPicker();
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-120 bg-[#fdfcfb] overflow-y-auto"
+    >
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-[#fdfcfb]/80 backdrop-blur-md border-b border-stone-100 px-6 h-20 flex items-center justify-between">
+        <h2 className="text-xl font-serif tracking-widest uppercase">
+          {isEditing ? "Editar Produto" : "List New Product"}
+        </h2>
+        <button 
+          onClick={onClose}
+          className="p-2 hover:bg-stone-50 rounded-full transition-colors"
+        >
+          <X className="w-6 h-6 text-stone-600" />
+        </button>
+      </div>
+
+      <div className="max-w-3xl mx-auto px-6 py-12 lg:py-20">
+        {isSuccess ? (
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="flex flex-col items-center justify-center py-20 text-center"
+          >
+            <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mb-6">
+              <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+            </div>
+            <h3 className="text-3xl font-serif italic text-stone-800 mb-2">
+              {isEditing ? "Produto Atualizado" : "Product Published"}
+            </h3>
+            <p className="text-stone-500">
+              {isEditing
+                ? "As alterações foram salvas no seu anúncio."
+                : "Your item is now live in the collection."}
+            </p>
+          </motion.div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-12">
+            {/* Image Upload Section */}
+            <div className="space-y-4">
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Product Images</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {images.map((img, index) => (
+                  <div key={index} className="relative aspect-3/4 bg-stone-100 rounded-sm overflow-hidden group">
+                    <img src={img} alt="Preview" className="w-full h-full object-cover" />
+                    <button 
+                      type="button"
+                      onClick={() => handleRemoveImage(index)}
+                      className="absolute top-2 right-2 p-1.5 bg-white/80 backdrop-blur-sm rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 hover:text-red-500"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                <button 
+                  type="button"
+                  onClick={handleAddImage}
+                  className="aspect-3/4 border-2 border-dashed border-stone-200 rounded-sm flex flex-col items-center justify-center gap-2 text-stone-400 hover:border-stone-400 hover:text-stone-600 transition-all group"
+                >
+                  <Plus className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                  <span className="text-[10px] uppercase tracking-widest font-medium">Add Photo</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Details Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Product Name</label>
+                <input 
+                  required
+                  type="text"
+                  placeholder="e.g. Minimalist Vase"
+                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Category</label>
+                <select 
+                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-600 appearance-none cursor-pointer"
+                  value={formData.category}
+                  onChange={(e) => setFormData({...formData, category: e.target.value})}
+                >
+                  {categories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Price</label>
+                <input 
+                  required
+                  type="text"
+                  placeholder="$0.00"
+                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-mono"
+                  value={formData.price}
+                  onChange={(e) => setFormData({...formData, price: e.target.value})}
+                />
+              </div>
+            </div>
+
+            <input type="hidden" value={formData.latitude} readOnly />
+            <input type="hidden" value={formData.longitude} readOnly />
+
+            <div className="space-y-3 border border-stone-200 rounded-sm bg-stone-50/60 p-4">
+              <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-500">
+                Localizacao da publicacao
+              </p>
+              <p className="text-sm text-stone-500">
+                {hasLocationSelected
+                  ? "Localizacao pronta para publicar."
+                  : "Nenhuma localizacao escolhida ainda."}
+              </p>
+
+              <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-8">
+                <button
+                  type="button"
+                  onClick={handleUseCurrentLocation}
+                  className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-600 hover:text-stone-900 transition-colors"
+                >
+                  <Navigation className="w-4 h-4" />
+                  Usar localizacao atual
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenMapPicker}
+                  className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-600 hover:text-stone-900 transition-colors"
+                >
+                  <MapPin className="w-4 h-4" />
+                  Escolher local no mapa
+                </button>
+              </div>
+            </div>
+
+            {/* Dynamic Fields */}
+            <AnimatePresence mode="wait">
+              {isRealEstate && (
+                <motion.div 
+                  key="real-estate"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 p-6 bg-stone-50 rounded-sm"
+                >
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Tipo de imóvel</label>
+                    <input 
+                      type="text" placeholder="Ex: Casa, cobertura, sobrado"
+                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
+                      value={formData.details.type}
+                      onChange={(e) => handleDetailChange('type', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Área (m²)</label>
+                    <input 
+                      type="text" placeholder="Ex: 120"
+                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
+                      value={formData.details.area}
+                      onChange={(e) => handleDetailChange('area', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Quartos</label>
+                    <input 
+                      type="text" placeholder="Ex: 3"
+                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
+                      value={formData.details.rooms}
+                      onChange={(e) => handleDetailChange('rooms', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Banheiros</label>
+                    <input 
+                      type="text" placeholder="Ex: 2"
+                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
+                      value={formData.details.bathrooms}
+                      onChange={(e) => handleDetailChange('bathrooms', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Vagas</label>
+                    <input 
+                      type="text" placeholder="Ex: 1"
+                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
+                      value={formData.details.parking}
+                      onChange={(e) => handleDetailChange('parking', e.target.value)}
+                    />
+                  </div>
+                </motion.div>
+              )}
+
+              {isVehicle && (
+                <motion.div 
+                  key="vehicle"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6 bg-stone-50 rounded-sm"
+                >
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Marca</label>
+                    <input 
+                      type="text" placeholder="Ex: Toyota"
+                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
+                      value={formData.details.brand}
+                      onChange={(e) => handleDetailChange('brand', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Modelo</label>
+                    <input 
+                      type="text" placeholder="Ex: Corolla XEi"
+                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
+                      value={formData.details.model}
+                      onChange={(e) => handleDetailChange('model', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Cor</label>
+                    <input 
+                      type="text" placeholder="Ex: Prata"
+                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
+                      value={formData.details.color}
+                      onChange={(e) => handleDetailChange('color', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Ano</label>
+                    <input 
+                      type="text" placeholder="Ex: 2022"
+                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
+                      value={formData.details.year}
+                      onChange={(e) => handleDetailChange('year', e.target.value)}
+                    />
+                  </div>
+                </motion.div>
+              )}
+
+              {isElectronicsOrFashion && (
+                <motion.div 
+                  key="electronics"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 p-6 bg-stone-50 rounded-sm"
+                >
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Marca</label>
+                    <input 
+                      type="text" placeholder="Ex: Nike, Apple"
+                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
+                      value={formData.details.brand}
+                      onChange={(e) => handleDetailChange('brand', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Modelo / Variação</label>
+                    <input 
+                      type="text" placeholder="Ex: Air Zoom, iPhone 13"
+                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
+                      value={formData.details.model}
+                      onChange={(e) => handleDetailChange('model', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Cor</label>
+                    <input 
+                      type="text" placeholder="Ex: Azul, Preto"
+                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
+                      value={formData.details.color}
+                      onChange={(e) => handleDetailChange('color', e.target.value)}
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Description</label>
+              <textarea 
+                rows={4}
+                placeholder="Describe the craftsmanship and materials..."
+                className="w-full bg-transparent border border-stone-200 p-4 outline-none focus:border-stone-800 transition-colors text-stone-600 resize-none rounded-sm"
+                value={formData.description}
+                onChange={(e) => setFormData({...formData, description: e.target.value})}
+              />
+            </div>
+
+            <button 
+              disabled={isPublishing}
+              type="submit"
+              className="w-full bg-stone-900 text-white py-6 text-xs uppercase tracking-[0.3em] font-bold flex items-center justify-center gap-3 hover:bg-black transition-all disabled:bg-stone-400"
+            >
+              {isPublishing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  {isEditing ? "Salvando..." : "Publishing..."}
+                </>
+              ) : (
+                <>
+                  {isEditing ? "Salvar alterações" : "Publish Product"}
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+
+            {errorMessage && (
+              <p className="text-sm text-red-500">{errorMessage}</p>
+            )}
+          </form>
+        )}
+      </div>
+
+      <AnimatePresence>
+        {isMapPickerOpen && (
+          <LeafletMapPicker
+            center={mapCenter}
+            selectedPoint={selectedMapPoint}
+            onSelectPoint={setSelectedMapPoint}
+            onClose={handleCloseMapPicker}
+            onConfirm={handleConfirmMapLocation}
+          />
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
