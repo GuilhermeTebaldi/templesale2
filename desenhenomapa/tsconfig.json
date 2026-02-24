@@ -21,13 +21,6 @@
       ]
     },
     "allowImportingTsExtensions": true,
-    "noEmit": true,
-    "types": ["vite/client"]
-  },
-  "exclude": [
-    "dist",
-    "node_modules",
-    "mapafuncional",
-    "desenhenomapa"
-  ]
+    "noEmit": true
+  }
 }

@@ -1,0 +1,5 @@
+{
+  "name": "MapDraw Products",
+  "description": "A beautiful minimalist map where you can draw to discover products in specific areas.",
+  "requestFramePermissions": ["geolocation"]
+}

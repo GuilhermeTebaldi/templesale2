@@ -821,7 +821,7 @@ export default function App() {
         {/* Hero Section */}
         <section className="relative h-[80vh] overflow-hidden">
           <img
-            src="https://picsum.photos/seed/temple/1920/1080"
+            src="https://i.pinimg.com/736x/fc/a6/78/fca6780a97728d0f9f5e2f8adb9677c3.jpg"
             alt="Hero"
             className="absolute inset-0 w-full h-full object-cover"
             referrerPolicy="no-referrer"

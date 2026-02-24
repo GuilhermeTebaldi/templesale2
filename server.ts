@@ -77,6 +77,15 @@ const DEFAULT_IMAGE = "https://picsum.photos/seed/placeholder/800/1200";
 const SESSION_COOKIE_NAME = "templesale_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAP_TILE_PROVIDER_TEMPLATES = [
+  "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  "https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
+  "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+] as const;
+const MAP_TILE_MIN_ZOOM = 0;
+const MAP_TILE_MAX_ZOOM = 20;
+const MAP_TILE_FETCH_TIMEOUT_MS = 4500;
+const MAP_TILE_CACHE_CONTROL = "public, max-age=21600, stale-while-revalidate=43200";
 const WHATSAPP_COUNTRIES = {
   IT: {
     iso: "IT",
@@ -728,6 +737,80 @@ function requireAuth(req: Request, res: Response): SessionUser | null {
   return user;
 }
 
+function parseTileCoordinate(value: string): number | null {
+  if (!/^\d+$/.test(value)) {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    return null;
+  }
+  return parsed;
+}
+
+function isValidTileCoordinate(z: number, x: number, y: number): boolean {
+  if (z < MAP_TILE_MIN_ZOOM || z > MAP_TILE_MAX_ZOOM) {
+    return false;
+  }
+  const maxIndex = 2 ** z - 1;
+  if (!Number.isFinite(maxIndex) || maxIndex < 0) {
+    return false;
+  }
+  return x >= 0 && y >= 0 && x <= maxIndex && y <= maxIndex;
+}
+
+function buildTileProviderUrl(template: string, z: number, x: number, y: number): string {
+  return template
+    .replace("{z}", String(z))
+    .replace("{x}", String(x))
+    .replace("{y}", String(y));
+}
+
+async function fetchTileFromProviders(
+  z: number,
+  x: number,
+  y: number,
+): Promise<{ buffer: Buffer; contentType: string } | null> {
+  for (const template of MAP_TILE_PROVIDER_TEMPLATES) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, MAP_TILE_FETCH_TIMEOUT_MS);
+
+    try {
+      const url = buildTileProviderUrl(template, z, x, y);
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "TempleSaleMapProxy/1.0",
+          Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        },
+      });
+
+      if (!response.ok) {
+        continue;
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.startsWith("image/")) {
+        continue;
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      return {
+        buffer: Buffer.from(arrayBuffer),
+        contentType,
+      };
+    } catch {
+      // Try next tile provider.
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  return null;
+}
+
 async function bootstrap() {
   const app = express();
   const isProduction = process.env.NODE_ENV === "production";
@@ -738,6 +821,27 @@ async function bootstrap() {
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, mode: isProduction ? "production" : "development" });
+  });
+
+  app.get("/api/map-tiles/:z/:x/:y.png", async (req, res) => {
+    const z = parseTileCoordinate(req.params.z);
+    const x = parseTileCoordinate(req.params.x);
+    const y = parseTileCoordinate(req.params.y);
+
+    if (z === null || x === null || y === null || !isValidTileCoordinate(z, x, y)) {
+      res.status(400).end();
+      return;
+    }
+
+    const tile = await fetchTileFromProviders(z, x, y);
+    if (!tile) {
+      res.status(502).end();
+      return;
+    }
+
+    res.setHeader("Content-Type", tile.contentType);
+    res.setHeader("Cache-Control", MAP_TILE_CACHE_CONTROL);
+    res.status(200).send(tile.buffer);
   });
 
   app.post("/api/auth/register", (req, res) => {
