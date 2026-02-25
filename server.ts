@@ -2214,7 +2214,7 @@ async function bootstrap() {
     },
   );
 
-  app.post("/api/admin/auth/login", (req, res) => {
+  const handleAdminLogin = (req: Request, res: Response) => {
     try {
       const body = req.body as Record<string, unknown>;
       const email = String(body.email ?? "").trim().toLowerCase();
@@ -2240,20 +2240,30 @@ async function bootstrap() {
       const message = error instanceof Error ? error.message : "Falha ao autenticar administrador.";
       res.status(500).json({ error: message });
     }
-  });
+  };
 
-  app.get("/api/admin/auth/me", (req, res) => {
+  const handleAdminCurrent = (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) {
       return;
     }
 
     res.json({ email: ADMIN_EMAIL });
-  });
+  };
 
-  app.post("/api/admin/auth/logout", (_req, res) => {
+  const handleAdminLogout = (_req: Request, res: Response) => {
     clearAdminSessionCookie(res, isProduction);
     res.json({ success: true });
-  });
+  };
+
+  // Canonical admin auth routes
+  app.post("/api/admin/auth/login", handleAdminLogin);
+  app.get("/api/admin/auth/me", handleAdminCurrent);
+  app.post("/api/admin/auth/logout", handleAdminLogout);
+
+  // Backward-compatible aliases for older frontends
+  app.post("/api/admin/auth", handleAdminLogin);
+  app.get("/api/admin/auth", handleAdminCurrent);
+  app.delete("/api/admin/auth", handleAdminLogout);
 
   app.get("/api/admin/users", async (req, res) => {
     if (!requireAdmin(req, res)) {

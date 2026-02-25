@@ -1056,10 +1056,21 @@ export const api = {
   },
   admin: {
     async login(email: string, password: string) {
-      const payload = await request<unknown>("/api/admin/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
-      });
+      let payload: unknown;
+      try {
+        payload = await request<unknown>("/api/admin/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ email, password }),
+        });
+      } catch (error) {
+        if (!isMissingApiRouteError(error)) {
+          throw error;
+        }
+        payload = await request<unknown>("/api/admin/auth", {
+          method: "POST",
+          body: JSON.stringify({ email, password }),
+        });
+      }
       const session = normalizeAdminSessionItem(payload);
       if (!session) {
         throw new Error("Resposta inválida ao autenticar administrador.");
@@ -1067,17 +1078,34 @@ export const api = {
       return session;
     },
     async getCurrent() {
-      const payload = await request<unknown>("/api/admin/auth/me");
+      let payload: unknown;
+      try {
+        payload = await request<unknown>("/api/admin/auth/me");
+      } catch (error) {
+        if (!isMissingApiRouteError(error)) {
+          throw error;
+        }
+        payload = await request<unknown>("/api/admin/auth");
+      }
       const session = normalizeAdminSessionItem(payload);
       if (!session) {
         throw new Error("Sessão de administrador inválida.");
       }
       return session;
     },
-    logout() {
-      return request<{ success: boolean }>("/api/admin/auth/logout", {
-        method: "POST",
-      });
+    async logout() {
+      try {
+        return await request<{ success: boolean }>("/api/admin/auth/logout", {
+          method: "POST",
+        });
+      } catch (error) {
+        if (!isMissingApiRouteError(error)) {
+          throw error;
+        }
+        return request<{ success: boolean }>("/api/admin/auth", {
+          method: "DELETE",
+        });
+      }
     },
     async getUsers() {
       const payload = await request<unknown>("/api/admin/users");
