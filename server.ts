@@ -1,9 +1,11 @@
 import cors from "cors";
 import crypto from "node:crypto";
 import Database from "better-sqlite3";
+import dotenv from "dotenv";
 import express, { type Request, type Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
+import { Pool } from "pg";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 
