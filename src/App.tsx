@@ -66,6 +66,7 @@ export default function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = React.useState(false);
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null);
+  const [restoreSearchAfterProductClose, setRestoreSearchAfterProductClose] = React.useState(false);
   const [products, setProducts] = React.useState<Product[]>([]);
   const [myProducts, setMyProducts] = React.useState<Product[]>([]);
   const [likedProducts, setLikedProducts] = React.useState<Product[]>([]);
@@ -407,6 +408,27 @@ export default function App() {
       ),
     [notificationsToDisplay, readNotificationIdSet],
   );
+
+  const openProductDetails = React.useCallback(
+    (product: Product, options?: { fromSearch?: boolean }) => {
+      setSelectedProduct(product);
+      if (options?.fromSearch) {
+        setRestoreSearchAfterProductClose(true);
+        setIsSearchOpen(false);
+        return;
+      }
+      setRestoreSearchAfterProductClose(false);
+    },
+    [],
+  );
+
+  const handleProductDetailsClose = React.useCallback(() => {
+    setSelectedProduct(null);
+    if (restoreSearchAfterProductClose) {
+      setIsSearchOpen(true);
+      setRestoreSearchAfterProductClose(false);
+    }
+  }, [restoreSearchAfterProductClose]);
 
   const handleToggleLike = async (product: Product) => {
     if (!currentUser) {
@@ -826,7 +848,7 @@ export default function App() {
           <ProductMap
             products={products}
             onOpenProduct={(product) => {
-              setSelectedProduct(product);
+              openProductDetails(product);
             }}
             onClose={() => setIsMapOpen(false)}
           />
@@ -840,7 +862,7 @@ export default function App() {
             product={selectedProduct} 
             products={products}
             onOpenProduct={(product) => setSelectedProduct(product)}
-            onClose={() => setSelectedProduct(null)}
+            onClose={handleProductDetailsClose}
             isLiked={likedProductIds.has(selectedProduct.id)}
             onToggleLike={() => {
               void handleToggleLike(selectedProduct);
@@ -920,7 +942,7 @@ export default function App() {
             products={likedProducts}
             onClose={() => setIsCurtidasOpen(false)}
             onOpenProduct={(product) => {
-              setSelectedProduct(product);
+              openProductDetails(product);
               setIsCurtidasOpen(false);
             }}
             onRemove={async (id) => {
@@ -1105,7 +1127,11 @@ export default function App() {
                 p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 p.category.toLowerCase().includes(searchQuery.toLowerCase())
               ).slice(0, 6).map(product => (
-                <div key={product.id} className="flex flex-col gap-2 group cursor-pointer" onClick={() => setIsSearchOpen(false)}>
+                <div
+                  key={product.id}
+                  className="flex flex-col gap-2 group cursor-pointer"
+                  onClick={() => openProductDetails(product, { fromSearch: true })}
+                >
                   <div className="aspect-3/4 overflow-hidden bg-stone-100">
                     <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   </div>
@@ -1364,7 +1390,7 @@ export default function App() {
                 <div key={product.id}>
                   <ProductCard 
                     product={product} 
-                    onClick={() => setSelectedProduct(product)}
+                    onClick={() => openProductDetails(product)}
                     isLiked={likedProductIds.has(product.id)}
                     onToggleLike={() => {
                       void handleToggleLike(product);

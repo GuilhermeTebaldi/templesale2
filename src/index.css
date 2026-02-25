@@ -9,8 +9,20 @@
 }
 
 @layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-[#fdfcfb] text-[#1a1a1a] antialiased;
+  }
+
+  @media (max-width: 768px) {
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
   }
 }
 
