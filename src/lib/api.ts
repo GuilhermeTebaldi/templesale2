@@ -1165,13 +1165,14 @@ async function uploadImageFile(
 }
 
 async function uploadProductImageFile(file: File): Promise<UploadImageResponse> {
-  return uploadImageFile(file, "/api/uploads/product-image");
+  return uploadImageFile(file, ["/api/uploads/product-image", "/api/uploads/image"]);
 }
 
 async function uploadProfileImageFile(file: File): Promise<UploadImageResponse> {
   return uploadImageFile(file, [
     "/api/uploads/profile-image",
     "/api/uploads/product-image",
+    "/api/uploads/image",
   ]);
 }
 
@@ -1459,15 +1460,40 @@ export const api = {
       throw new Error("URL da foto de perfil inválida.");
     }
 
-    const raw = await request<unknown>("/api/profile/avatar", {
-      method: "PUT",
-      body: JSON.stringify({ avatarUrl: normalizedAvatarUrl }),
-    });
-    const user = normalizeSessionUserItem(raw);
-    if (!user) {
-      throw new Error("Resposta inválida ao atualizar foto de perfil.");
+    try {
+      const raw = await request<unknown>("/api/profile/avatar", {
+        method: "PUT",
+        body: JSON.stringify({ avatarUrl: normalizedAvatarUrl }),
+      });
+      const user =
+        normalizeSessionUserItem(raw) ??
+        normalizeSessionUserItem(await request<unknown>("/api/auth/me").catch(() => null));
+      if (user) {
+        return user;
+      }
+    } catch (error) {
+      if (!isMissingApiRouteError(error)) {
+        throw error;
+      }
     }
-    return user;
+
+    const fallbackRaw = await request<unknown>("/api/profile", {
+      method: "PUT",
+      body: JSON.stringify({
+        avatarUrl: normalizedAvatarUrl,
+        avatar_url: normalizedAvatarUrl,
+        profileImageUrl: normalizedAvatarUrl,
+        profile_image_url: normalizedAvatarUrl,
+      }),
+    });
+    const fallbackUser =
+      normalizeSessionUserItem(fallbackRaw) ??
+      normalizeSessionUserItem(await request<unknown>("/api/auth/me").catch(() => null));
+    if (fallbackUser) {
+      return fallbackUser;
+    }
+
+    throw new Error("Resposta inválida ao atualizar foto de perfil.");
   },
   async getProducts() {
     const payload = await request<unknown>("/api/products");
