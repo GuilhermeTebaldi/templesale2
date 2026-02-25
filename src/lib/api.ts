@@ -1192,21 +1192,28 @@ export const api = {
   },
   admin: {
     async login(email: string, password: string) {
-      const normalizedEmail = email.trim().toLowerCase();
+      const rawEmail = email.trim();
+      const normalizedEmail = rawEmail.toLowerCase();
       const normalizedPassword = password.trim();
+      const emailCandidates = Array.from(
+        new Set([rawEmail, normalizedEmail].filter((value) => value.length > 0)),
+      );
 
-      const loginPayloadCandidates = [
-        { email: normalizedEmail, password: normalizedPassword },
-        { login: normalizedEmail, password: normalizedPassword },
-        { username: normalizedEmail, password: normalizedPassword },
-        { email: normalizedEmail, senha: normalizedPassword },
-        { login: normalizedEmail, senha: normalizedPassword },
-        { username: normalizedEmail, senha: normalizedPassword },
-      ];
+      const loginPayloadCandidates: Array<Record<string, string>> = [];
+      for (const emailCandidate of emailCandidates) {
+        loginPayloadCandidates.push(
+          { email: emailCandidate, password: normalizedPassword },
+          { login: emailCandidate, password: normalizedPassword },
+          { username: emailCandidate, password: normalizedPassword },
+          { email: emailCandidate, senha: normalizedPassword },
+          { login: emailCandidate, senha: normalizedPassword },
+          { username: emailCandidate, senha: normalizedPassword },
+        );
+      }
       const loginRouteCandidates = [
+        "/api/admin/login",
         "/api/admin/auth/login",
         "/api/admin/auth",
-        "/api/admin/login",
       ];
 
       clearAdminToken();
@@ -1251,11 +1258,22 @@ export const api = {
       throw new Error("Falha ao autenticar administrador.");
     },
     async getCurrent() {
-      const sessionRouteCandidates = [
-        "/api/admin/auth/me",
-        "/api/admin/auth",
-        "/api/admin/me",
-      ];
+      const adminToken = readAdminToken();
+      const persistedEmail = readAdminSessionEmail();
+      if (adminToken) {
+        try {
+          await request<unknown>("/api/admin/users", { useAdminToken: true });
+          if (persistedEmail) {
+            return { email: persistedEmail };
+          }
+        } catch (error) {
+          if (!isUnauthorizedApiError(error) && !isMissingApiRouteError(error)) {
+            throw error;
+          }
+        }
+      }
+
+      const sessionRouteCandidates = ["/api/admin/auth/me", "/api/admin/auth"];
       let lastError: unknown;
 
       for (const route of sessionRouteCandidates) {
@@ -1280,7 +1298,6 @@ export const api = {
         }
       }
 
-      const persistedEmail = readAdminSessionEmail();
       if (readAdminToken() && persistedEmail) {
         return { email: persistedEmail };
       }
