@@ -89,10 +89,56 @@ type SessionUser = {
   whatsappNumber?: string;
 };
 
+type NormalizedProductInput = {
+  name: string;
+  category: string;
+  price: string;
+  image: string;
+  images: string;
+  description: string;
+  details: string;
+  latitude: number;
+  longitude: number;
+};
+
+type UserProfileUpdateInput = {
+  id: number;
+  name: string;
+  country: string;
+  state: string;
+  city: string;
+  neighborhood: string;
+  street: string;
+  whatsapp_country_iso: string;
+  whatsapp_number: string;
+};
+
+type SessionUserRow = Pick<
+  UserRow,
+  | "id"
+  | "name"
+  | "email"
+  | "country"
+  | "state"
+  | "city"
+  | "neighborhood"
+  | "street"
+  | "whatsapp_country_iso"
+  | "whatsapp_number"
+>;
+
+dotenv.config();
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DB_DIR = path.join(__dirname, "data");
 const DB_PATH = path.join(DB_DIR, "local.db");
+const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
+if (!DATABASE_URL) {
+  throw new Error(
+    "DATABASE_URL is required. Configure the Render PostgreSQL URL to start the backend.",
+  );
+}
 const DEFAULT_IMAGE = "https://picsum.photos/seed/placeholder/800/1200";
 const SESSION_COOKIE_NAME = "templesale_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -116,354 +162,890 @@ const WHATSAPP_COUNTRIES = {
 
 type WhatsappCountryIso = keyof typeof WHATSAPP_COUNTRIES;
 
-fs.mkdirSync(DB_DIR, { recursive: true });
+const PRODUCT_SELECT_FIELDS = `
+  p.id,
+  p.name,
+  p.category,
+  p.price,
+  p.image,
+  p.images,
+  p.description,
+  p.details,
+  p.user_id,
+  p.latitude,
+  p.longitude,
+  u.name AS seller_name,
+  u.whatsapp_country_iso AS seller_whatsapp_country_iso,
+  u.whatsapp_number AS seller_whatsapp_number
+`;
 
-const db = new Database(DB_PATH);
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
+const USER_SELECT_FIELDS = `
+  id,
+  name,
+  email,
+  password_hash,
+  password_salt,
+  country,
+  state,
+  city,
+  neighborhood,
+  street,
+  whatsapp_country_iso,
+  whatsapp_number
+`;
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    category TEXT NOT NULL,
-    price TEXT NOT NULL,
-    image TEXT NOT NULL,
-    images TEXT NOT NULL DEFAULT '[]',
-    description TEXT DEFAULT '',
-    details TEXT NOT NULL DEFAULT '{}',
-    user_id INTEGER,
-    latitude REAL,
-    longitude REAL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  );
+const SESSION_USER_SELECT_FIELDS = `
+  u.id,
+  u.name,
+  u.email,
+  u.country,
+  u.state,
+  u.city,
+  u.neighborhood,
+  u.street,
+  u.whatsapp_country_iso,
+  u.whatsapp_number
+`;
 
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    password_salt TEXT NOT NULL,
-    country TEXT NOT NULL DEFAULT '',
-    state TEXT NOT NULL DEFAULT '',
-    city TEXT NOT NULL DEFAULT '',
-    neighborhood TEXT NOT NULL DEFAULT '',
-    street TEXT NOT NULL DEFAULT '',
-    whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT',
-    whatsapp_number TEXT NOT NULL DEFAULT '',
-    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
-  );
+let sqliteDb: Database.Database | null = null;
+let pgPool: Pool | null = null;
 
-  CREATE TABLE IF NOT EXISTS sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    token_hash TEXT NOT NULL UNIQUE,
-    expires_at INTEGER NOT NULL,
-    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
+pgPool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: String(process.env.PGSSL ?? "").toLowerCase() === "false"
+    ? false
+    : { rejectUnauthorized: false },
+});
 
-  CREATE TABLE IF NOT EXISTS product_likes (
-    user_id INTEGER NOT NULL,
-    product_id INTEGER NOT NULL,
-    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    PRIMARY KEY (user_id, product_id),
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
-  CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
-  CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id);
-`);
-
-const productColumns = db.prepare("PRAGMA table_info(products)").all() as Array<{
-  name: string;
-}>;
-
-if (!productColumns.some((column) => column.name === "user_id")) {
-  db.exec("ALTER TABLE products ADD COLUMN user_id INTEGER");
-}
-if (!productColumns.some((column) => column.name === "latitude")) {
-  db.exec("ALTER TABLE products ADD COLUMN latitude REAL");
-}
-if (!productColumns.some((column) => column.name === "longitude")) {
-  db.exec("ALTER TABLE products ADD COLUMN longitude REAL");
+function requireSqliteDb(): Database.Database {
+  if (!sqliteDb) {
+    throw new Error("SQLite database is not initialized.");
+  }
+  return sqliteDb;
 }
 
-const userColumns = db.prepare("PRAGMA table_info(users)").all() as Array<{
-  name: string;
-}>;
-
-if (!userColumns.some((column) => column.name === "country")) {
-  db.exec("ALTER TABLE users ADD COLUMN country TEXT NOT NULL DEFAULT ''");
-}
-if (!userColumns.some((column) => column.name === "state")) {
-  db.exec("ALTER TABLE users ADD COLUMN state TEXT NOT NULL DEFAULT ''");
-}
-if (!userColumns.some((column) => column.name === "city")) {
-  db.exec("ALTER TABLE users ADD COLUMN city TEXT NOT NULL DEFAULT ''");
-}
-if (!userColumns.some((column) => column.name === "neighborhood")) {
-  db.exec("ALTER TABLE users ADD COLUMN neighborhood TEXT NOT NULL DEFAULT ''");
-}
-if (!userColumns.some((column) => column.name === "street")) {
-  db.exec("ALTER TABLE users ADD COLUMN street TEXT NOT NULL DEFAULT ''");
-}
-if (!userColumns.some((column) => column.name === "whatsapp_country_iso")) {
-  db.exec("ALTER TABLE users ADD COLUMN whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT'");
-}
-if (!userColumns.some((column) => column.name === "whatsapp_number")) {
-  db.exec("ALTER TABLE users ADD COLUMN whatsapp_number TEXT NOT NULL DEFAULT ''");
+function toNullableString(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return String(value);
 }
 
-db.exec("CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)");
+function toNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
-const selectAllProducts = db.prepare(`
-  SELECT
-    p.id,
-    p.name,
-    p.category,
-    p.price,
-    p.image,
-    p.images,
-    p.description,
-    p.details,
-    p.user_id,
-    p.latitude,
-    p.longitude,
-    u.name AS seller_name,
-    u.whatsapp_country_iso AS seller_whatsapp_country_iso,
-    u.whatsapp_number AS seller_whatsapp_number
-  FROM products p
-  LEFT JOIN users u ON u.id = p.user_id
-  ORDER BY p.id DESC
-`);
+function toRequiredNumber(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error("Invalid numeric value returned from database.");
+  }
+  return parsed;
+}
 
-const selectProductsByOwner = db.prepare(`
-  SELECT
-    p.id,
-    p.name,
-    p.category,
-    p.price,
-    p.image,
-    p.images,
-    p.description,
-    p.details,
-    p.user_id,
-    p.latitude,
-    p.longitude,
-    u.name AS seller_name,
-    u.whatsapp_country_iso AS seller_whatsapp_country_iso,
-    u.whatsapp_number AS seller_whatsapp_number
-  FROM products p
-  LEFT JOIN users u ON u.id = p.user_id
-  WHERE p.user_id = ?
-  ORDER BY p.id DESC
-`);
+function normalizeProductRow(row: Record<string, unknown>): ProductRow {
+  return {
+    id: toRequiredNumber(row.id),
+    name: String(row.name ?? ""),
+    category: String(row.category ?? ""),
+    price: String(row.price ?? ""),
+    image: String(row.image ?? DEFAULT_IMAGE),
+    images: String(row.images ?? "[]"),
+    description: toNullableString(row.description),
+    details: toNullableString(row.details),
+    user_id: toNullableNumber(row.user_id),
+    latitude: toNullableNumber(row.latitude),
+    longitude: toNullableNumber(row.longitude),
+    seller_name: toNullableString(row.seller_name),
+    seller_whatsapp_country_iso: toNullableString(row.seller_whatsapp_country_iso),
+    seller_whatsapp_number: toNullableString(row.seller_whatsapp_number),
+  };
+}
 
-const selectProductById = db.prepare(`
-  SELECT
-    p.id,
-    p.name,
-    p.category,
-    p.price,
-    p.image,
-    p.images,
-    p.description,
-    p.details,
-    p.user_id,
-    p.latitude,
-    p.longitude,
-    u.name AS seller_name,
-    u.whatsapp_country_iso AS seller_whatsapp_country_iso,
-    u.whatsapp_number AS seller_whatsapp_number
-  FROM products p
-  LEFT JOIN users u ON u.id = p.user_id
-  WHERE p.id = ?
-`);
+function normalizeUserRow(row: Record<string, unknown>): UserRow {
+  return {
+    id: toRequiredNumber(row.id),
+    name: String(row.name ?? ""),
+    email: String(row.email ?? ""),
+    password_hash: String(row.password_hash ?? ""),
+    password_salt: String(row.password_salt ?? ""),
+    country: toNullableString(row.country),
+    state: toNullableString(row.state),
+    city: toNullableString(row.city),
+    neighborhood: toNullableString(row.neighborhood),
+    street: toNullableString(row.street),
+    whatsapp_country_iso: toNullableString(row.whatsapp_country_iso),
+    whatsapp_number: toNullableString(row.whatsapp_number),
+  };
+}
 
-const selectLikedProductsByUser = db.prepare(`
-  SELECT
-    p.id,
-    p.name,
-    p.category,
-    p.price,
-    p.image,
-    p.images,
-    p.description,
-    p.details,
-    p.user_id,
-    p.latitude,
-    p.longitude,
-    u.name AS seller_name,
-    u.whatsapp_country_iso AS seller_whatsapp_country_iso,
-    u.whatsapp_number AS seller_whatsapp_number
-  FROM product_likes l
-  INNER JOIN products p ON p.id = l.product_id
-  LEFT JOIN users u ON u.id = p.user_id
-  WHERE l.user_id = ?
-  ORDER BY l.created_at DESC, p.id DESC
-`);
+function normalizeSessionUserRow(row: Record<string, unknown>): SessionUserRow {
+  return {
+    id: toRequiredNumber(row.id),
+    name: String(row.name ?? ""),
+    email: String(row.email ?? ""),
+    country: toNullableString(row.country),
+    state: toNullableString(row.state),
+    city: toNullableString(row.city),
+    neighborhood: toNullableString(row.neighborhood),
+    street: toNullableString(row.street),
+    whatsapp_country_iso: toNullableString(row.whatsapp_country_iso),
+    whatsapp_number: toNullableString(row.whatsapp_number),
+  };
+}
 
-const selectLikeNotificationsByOwner = db.prepare(`
-  SELECT
-    l.user_id AS actor_user_id,
-    lu.name AS actor_name,
-    p.id AS product_id,
-    p.name AS product_name,
-    l.created_at
-  FROM product_likes l
-  INNER JOIN products p ON p.id = l.product_id
-  INNER JOIN users lu ON lu.id = l.user_id
-  WHERE p.user_id = ? AND l.user_id <> ?
-  ORDER BY l.created_at DESC, p.id DESC
-  LIMIT 100
-`);
+function normalizeLikeNotificationRow(row: Record<string, unknown>): LikeNotificationRow {
+  return {
+    actor_user_id: toRequiredNumber(row.actor_user_id),
+    actor_name: String(row.actor_name ?? ""),
+    product_id: toRequiredNumber(row.product_id),
+    product_name: String(row.product_name ?? ""),
+    created_at: toRequiredNumber(row.created_at),
+  };
+}
 
-const createProductStatement = db.prepare(`
-  INSERT INTO products (
-    name,
-    category,
-    price,
-    image,
-    images,
-    description,
-    details,
-    user_id,
-    latitude,
-    longitude
-  )
-  VALUES (
-    @name,
-    @category,
-    @price,
-    @image,
-    @images,
-    @description,
-    @details,
-    @user_id,
-    @latitude,
-    @longitude
-  )
-`);
+function initializeSqliteDatabase() {
+  if (sqliteDb) {
+    return;
+  }
 
-const updateProductByIdStatement = db.prepare(`
-  UPDATE products
-  SET
-    name = @name,
-    category = @category,
-    price = @price,
-    image = @image,
-    images = @images,
-    description = @description,
-    details = @details,
-    latitude = @latitude,
-    longitude = @longitude
-  WHERE id = @id
-`);
+  fs.mkdirSync(DB_DIR, { recursive: true });
+  const db = new Database(DB_PATH);
+  db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
 
-const deleteProductById = db.prepare(`
-  DELETE FROM products
-  WHERE id = ?
-`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      price TEXT NOT NULL,
+      image TEXT NOT NULL,
+      images TEXT NOT NULL DEFAULT '[]',
+      description TEXT DEFAULT '',
+      details TEXT NOT NULL DEFAULT '{}',
+      user_id INTEGER,
+      latitude REAL,
+      longitude REAL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
 
-const createProductLikeStatement = db.prepare(`
-  INSERT OR IGNORE INTO product_likes (user_id, product_id)
-  VALUES (?, ?)
-`);
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      country TEXT NOT NULL DEFAULT '',
+      state TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      neighborhood TEXT NOT NULL DEFAULT '',
+      street TEXT NOT NULL DEFAULT '',
+      whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT',
+      whatsapp_number TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+    );
 
-const deleteProductLikeStatement = db.prepare(`
-  DELETE FROM product_likes
-  WHERE user_id = ? AND product_id = ?
-`);
+    CREATE TABLE IF NOT EXISTS sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
 
-const selectUserByEmail = db.prepare(`
-  SELECT
-    id,
-    name,
-    email,
-    password_hash,
-    password_salt,
-    country,
-    state,
-    city,
-    neighborhood,
-    street,
-    whatsapp_country_iso,
-    whatsapp_number
-  FROM users
-  WHERE email = ?
-`);
+    CREATE TABLE IF NOT EXISTS product_likes (
+      user_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      PRIMARY KEY (user_id, product_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    );
 
-const selectUserById = db.prepare(`
-  SELECT
-    id,
-    name,
-    email,
-    password_hash,
-    password_salt,
-    country,
-    state,
-    city,
-    neighborhood,
-    street,
-    whatsapp_country_iso,
-    whatsapp_number
-  FROM users
-  WHERE id = ?
-`);
+    CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id);
+  `);
 
-const createUserStatement = db.prepare(`
-  INSERT INTO users (name, email, password_hash, password_salt)
-  VALUES (?, ?, ?, ?)
-`);
+  const productColumns = db.prepare("PRAGMA table_info(products)").all() as Array<{ name: string }>;
+  if (!productColumns.some((column) => column.name === "user_id")) {
+    db.exec("ALTER TABLE products ADD COLUMN user_id INTEGER");
+  }
+  if (!productColumns.some((column) => column.name === "latitude")) {
+    db.exec("ALTER TABLE products ADD COLUMN latitude REAL");
+  }
+  if (!productColumns.some((column) => column.name === "longitude")) {
+    db.exec("ALTER TABLE products ADD COLUMN longitude REAL");
+  }
 
-const updateUserProfileStatement = db.prepare(`
-  UPDATE users
-  SET
-    name = @name,
-    country = @country,
-    state = @state,
-    city = @city,
-    neighborhood = @neighborhood,
-    street = @street,
-    whatsapp_country_iso = @whatsapp_country_iso,
-    whatsapp_number = @whatsapp_number
-  WHERE id = @id
-`);
+  const userColumns = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  if (!userColumns.some((column) => column.name === "country")) {
+    db.exec("ALTER TABLE users ADD COLUMN country TEXT NOT NULL DEFAULT ''");
+  }
+  if (!userColumns.some((column) => column.name === "state")) {
+    db.exec("ALTER TABLE users ADD COLUMN state TEXT NOT NULL DEFAULT ''");
+  }
+  if (!userColumns.some((column) => column.name === "city")) {
+    db.exec("ALTER TABLE users ADD COLUMN city TEXT NOT NULL DEFAULT ''");
+  }
+  if (!userColumns.some((column) => column.name === "neighborhood")) {
+    db.exec("ALTER TABLE users ADD COLUMN neighborhood TEXT NOT NULL DEFAULT ''");
+  }
+  if (!userColumns.some((column) => column.name === "street")) {
+    db.exec("ALTER TABLE users ADD COLUMN street TEXT NOT NULL DEFAULT ''");
+  }
+  if (!userColumns.some((column) => column.name === "whatsapp_country_iso")) {
+    db.exec("ALTER TABLE users ADD COLUMN whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT'");
+  }
+  if (!userColumns.some((column) => column.name === "whatsapp_number")) {
+    db.exec("ALTER TABLE users ADD COLUMN whatsapp_number TEXT NOT NULL DEFAULT ''");
+  }
 
-const createSessionStatement = db.prepare(`
-  INSERT INTO sessions (user_id, token_hash, expires_at)
-  VALUES (?, ?, ?)
-`);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)");
+  sqliteDb = db;
+}
 
-const deleteSessionByTokenHash = db.prepare(`
-  DELETE FROM sessions
-  WHERE token_hash = ?
-`);
+async function initializePostgresDatabase() {
+  if (!pgPool) {
+    return;
+  }
 
-const deleteExpiredSessions = db.prepare(`
-  DELETE FROM sessions
-  WHERE expires_at <= strftime('%s', 'now')
-`);
+  const migrationStatements = [
+    `
+      CREATE TABLE IF NOT EXISTS users (
+        id BIGSERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        password_salt TEXT NOT NULL,
+        country TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL DEFAULT '',
+        city TEXT NOT NULL DEFAULT '',
+        neighborhood TEXT NOT NULL DEFAULT '',
+        street TEXT NOT NULL DEFAULT '',
+        whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT',
+        whatsapp_number TEXT NOT NULL DEFAULT '',
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
+      )
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS products (
+        id BIGSERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        price TEXT NOT NULL,
+        image TEXT NOT NULL,
+        images TEXT NOT NULL DEFAULT '[]',
+        description TEXT DEFAULT '',
+        details TEXT NOT NULL DEFAULT '{}',
+        user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+        latitude DOUBLE PRECISION,
+        longitude DOUBLE PRECISION,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS sessions (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL UNIQUE,
+        expires_at BIGINT NOT NULL,
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
+      )
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS product_likes (
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+        PRIMARY KEY (user_id, product_id)
+      )
+    `,
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id BIGINT",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS neighborhood TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS street TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT'",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number TEXT NOT NULL DEFAULT ''",
+    "CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)",
+    "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id)",
+    "CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)",
+  ];
 
-const selectSessionUserByTokenHash = db.prepare(`
-  SELECT
-    u.id,
-    u.name,
-    u.email,
-    u.country,
-    u.state,
-    u.city,
-    u.neighborhood,
-    u.street,
-    u.whatsapp_country_iso,
-    u.whatsapp_number
-  FROM sessions s
-  INNER JOIN users u ON u.id = s.user_id
-  WHERE s.token_hash = ? AND s.expires_at > strftime('%s', 'now')
-`);
+  for (const statement of migrationStatements) {
+    await pgPool.query(statement);
+  }
+}
+
+async function initializeDatabase() {
+  await initializePostgresDatabase();
+}
+
+async function selectAllProductsRows(): Promise<ProductRow[]> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT ${PRODUCT_SELECT_FIELDS}
+        FROM products p
+        LEFT JOIN users u ON u.id = p.user_id
+        ORDER BY p.id DESC
+      `,
+    );
+    return result.rows.map(normalizeProductRow);
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT ${PRODUCT_SELECT_FIELDS}
+        FROM products p
+        LEFT JOIN users u ON u.id = p.user_id
+        ORDER BY p.id DESC
+      `,
+    )
+    .all() as Array<Record<string, unknown>>;
+  return rows.map(normalizeProductRow);
+}
+
+async function selectProductsByOwnerRows(ownerId: number): Promise<ProductRow[]> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT ${PRODUCT_SELECT_FIELDS}
+        FROM products p
+        LEFT JOIN users u ON u.id = p.user_id
+        WHERE p.user_id = $1
+        ORDER BY p.id DESC
+      `,
+      [ownerId],
+    );
+    return result.rows.map(normalizeProductRow);
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT ${PRODUCT_SELECT_FIELDS}
+        FROM products p
+        LEFT JOIN users u ON u.id = p.user_id
+        WHERE p.user_id = ?
+        ORDER BY p.id DESC
+      `,
+    )
+    .all(ownerId) as Array<Record<string, unknown>>;
+  return rows.map(normalizeProductRow);
+}
+
+async function selectProductByIdRow(productId: number): Promise<ProductRow | undefined> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT ${PRODUCT_SELECT_FIELDS}
+        FROM products p
+        LEFT JOIN users u ON u.id = p.user_id
+        WHERE p.id = $1
+      `,
+      [productId],
+    );
+    const row = result.rows[0];
+    return row ? normalizeProductRow(row) : undefined;
+  }
+
+  const row = requireSqliteDb()
+    .prepare(
+      `
+        SELECT ${PRODUCT_SELECT_FIELDS}
+        FROM products p
+        LEFT JOIN users u ON u.id = p.user_id
+        WHERE p.id = ?
+      `,
+    )
+    .get(productId) as Record<string, unknown> | undefined;
+  return row ? normalizeProductRow(row) : undefined;
+}
+
+async function selectLikedProductsByUserRows(userId: number): Promise<ProductRow[]> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT ${PRODUCT_SELECT_FIELDS}
+        FROM product_likes l
+        INNER JOIN products p ON p.id = l.product_id
+        LEFT JOIN users u ON u.id = p.user_id
+        WHERE l.user_id = $1
+        ORDER BY l.created_at DESC, p.id DESC
+      `,
+      [userId],
+    );
+    return result.rows.map(normalizeProductRow);
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT ${PRODUCT_SELECT_FIELDS}
+        FROM product_likes l
+        INNER JOIN products p ON p.id = l.product_id
+        LEFT JOIN users u ON u.id = p.user_id
+        WHERE l.user_id = ?
+        ORDER BY l.created_at DESC, p.id DESC
+      `,
+    )
+    .all(userId) as Array<Record<string, unknown>>;
+  return rows.map(normalizeProductRow);
+}
+
+async function selectLikeNotificationsByOwnerRows(ownerId: number): Promise<LikeNotificationRow[]> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          l.user_id AS actor_user_id,
+          lu.name AS actor_name,
+          p.id AS product_id,
+          p.name AS product_name,
+          l.created_at
+        FROM product_likes l
+        INNER JOIN products p ON p.id = l.product_id
+        INNER JOIN users lu ON lu.id = l.user_id
+        WHERE p.user_id = $1 AND l.user_id <> $2
+        ORDER BY l.created_at DESC, p.id DESC
+        LIMIT 100
+      `,
+      [ownerId, ownerId],
+    );
+    return result.rows.map(normalizeLikeNotificationRow);
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          l.user_id AS actor_user_id,
+          lu.name AS actor_name,
+          p.id AS product_id,
+          p.name AS product_name,
+          l.created_at
+        FROM product_likes l
+        INNER JOIN products p ON p.id = l.product_id
+        INNER JOIN users lu ON lu.id = l.user_id
+        WHERE p.user_id = ? AND l.user_id <> ?
+        ORDER BY l.created_at DESC, p.id DESC
+        LIMIT 100
+      `,
+    )
+    .all(ownerId, ownerId) as Array<Record<string, unknown>>;
+  return rows.map(normalizeLikeNotificationRow);
+}
+
+async function createProductRecord(
+  normalized: NormalizedProductInput,
+  userId: number,
+): Promise<number> {
+  if (pgPool) {
+    const result = await pgPool.query<{ id: number | string }>(
+      `
+        INSERT INTO products (
+          name,
+          category,
+          price,
+          image,
+          images,
+          description,
+          details,
+          user_id,
+          latitude,
+          longitude
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING id
+      `,
+      [
+        normalized.name,
+        normalized.category,
+        normalized.price,
+        normalized.image,
+        normalized.images,
+        normalized.description,
+        normalized.details,
+        userId,
+        normalized.latitude,
+        normalized.longitude,
+      ],
+    );
+    return toRequiredNumber(result.rows[0]?.id);
+  }
+
+  const result = requireSqliteDb()
+    .prepare(
+      `
+        INSERT INTO products (
+          name,
+          category,
+          price,
+          image,
+          images,
+          description,
+          details,
+          user_id,
+          latitude,
+          longitude
+        )
+        VALUES (
+          @name,
+          @category,
+          @price,
+          @image,
+          @images,
+          @description,
+          @details,
+          @user_id,
+          @latitude,
+          @longitude
+        )
+      `,
+    )
+    .run({
+      ...normalized,
+      user_id: userId,
+    });
+  return Number(result.lastInsertRowid);
+}
+
+async function updateProductRecord(id: number, normalized: NormalizedProductInput): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(
+      `
+        UPDATE products
+        SET
+          name = $1,
+          category = $2,
+          price = $3,
+          image = $4,
+          images = $5,
+          description = $6,
+          details = $7,
+          latitude = $8,
+          longitude = $9
+        WHERE id = $10
+      `,
+      [
+        normalized.name,
+        normalized.category,
+        normalized.price,
+        normalized.image,
+        normalized.images,
+        normalized.description,
+        normalized.details,
+        normalized.latitude,
+        normalized.longitude,
+        id,
+      ],
+    );
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        UPDATE products
+        SET
+          name = @name,
+          category = @category,
+          price = @price,
+          image = @image,
+          images = @images,
+          description = @description,
+          details = @details,
+          latitude = @latitude,
+          longitude = @longitude
+        WHERE id = @id
+      `,
+    )
+    .run({
+      id,
+      ...normalized,
+    });
+}
+
+async function deleteProductRecord(id: number): Promise<void> {
+  if (pgPool) {
+    await pgPool.query("DELETE FROM products WHERE id = $1", [id]);
+    return;
+  }
+
+  requireSqliteDb().prepare("DELETE FROM products WHERE id = ?").run(id);
+}
+
+async function createProductLikeRecord(userId: number, productId: number): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(
+      `
+        INSERT INTO product_likes (user_id, product_id)
+        VALUES ($1, $2)
+        ON CONFLICT (user_id, product_id) DO NOTHING
+      `,
+      [userId, productId],
+    );
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        INSERT OR IGNORE INTO product_likes (user_id, product_id)
+        VALUES (?, ?)
+      `,
+    )
+    .run(userId, productId);
+}
+
+async function deleteProductLikeRecord(userId: number, productId: number): Promise<void> {
+  if (pgPool) {
+    await pgPool.query("DELETE FROM product_likes WHERE user_id = $1 AND product_id = $2", [
+      userId,
+      productId,
+    ]);
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        DELETE FROM product_likes
+        WHERE user_id = ? AND product_id = ?
+      `,
+    )
+    .run(userId, productId);
+}
+
+async function selectUserByEmailRow(email: string): Promise<UserRow | undefined> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT ${USER_SELECT_FIELDS}
+        FROM users
+        WHERE email = $1
+      `,
+      [email],
+    );
+    const row = result.rows[0];
+    return row ? normalizeUserRow(row) : undefined;
+  }
+
+  const row = requireSqliteDb()
+    .prepare(
+      `
+        SELECT ${USER_SELECT_FIELDS}
+        FROM users
+        WHERE email = ?
+      `,
+    )
+    .get(email) as Record<string, unknown> | undefined;
+  return row ? normalizeUserRow(row) : undefined;
+}
+
+async function selectUserByIdRow(id: number): Promise<UserRow | undefined> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT ${USER_SELECT_FIELDS}
+        FROM users
+        WHERE id = $1
+      `,
+      [id],
+    );
+    const row = result.rows[0];
+    return row ? normalizeUserRow(row) : undefined;
+  }
+
+  const row = requireSqliteDb()
+    .prepare(
+      `
+        SELECT ${USER_SELECT_FIELDS}
+        FROM users
+        WHERE id = ?
+      `,
+    )
+    .get(id) as Record<string, unknown> | undefined;
+  return row ? normalizeUserRow(row) : undefined;
+}
+
+async function createUserRecord(
+  name: string,
+  email: string,
+  passwordHash: string,
+  passwordSalt: string,
+): Promise<number> {
+  if (pgPool) {
+    const result = await pgPool.query<{ id: number | string }>(
+      `
+        INSERT INTO users (name, email, password_hash, password_salt)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+      `,
+      [name, email, passwordHash, passwordSalt],
+    );
+    return toRequiredNumber(result.rows[0]?.id);
+  }
+
+  const result = requireSqliteDb()
+    .prepare(
+      `
+        INSERT INTO users (name, email, password_hash, password_salt)
+        VALUES (?, ?, ?, ?)
+      `,
+    )
+    .run(name, email, passwordHash, passwordSalt);
+  return Number(result.lastInsertRowid);
+}
+
+async function updateUserProfileRecord(input: UserProfileUpdateInput): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(
+      `
+        UPDATE users
+        SET
+          name = $1,
+          country = $2,
+          state = $3,
+          city = $4,
+          neighborhood = $5,
+          street = $6,
+          whatsapp_country_iso = $7,
+          whatsapp_number = $8
+        WHERE id = $9
+      `,
+      [
+        input.name,
+        input.country,
+        input.state,
+        input.city,
+        input.neighborhood,
+        input.street,
+        input.whatsapp_country_iso,
+        input.whatsapp_number,
+        input.id,
+      ],
+    );
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        UPDATE users
+        SET
+          name = @name,
+          country = @country,
+          state = @state,
+          city = @city,
+          neighborhood = @neighborhood,
+          street = @street,
+          whatsapp_country_iso = @whatsapp_country_iso,
+          whatsapp_number = @whatsapp_number
+        WHERE id = @id
+      `,
+    )
+    .run(input);
+}
+
+async function createSessionRecord(userId: number, tokenHash: string, expiresAt: number): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(
+      `
+        INSERT INTO sessions (user_id, token_hash, expires_at)
+        VALUES ($1, $2, $3)
+      `,
+      [userId, tokenHash, expiresAt],
+    );
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        INSERT INTO sessions (user_id, token_hash, expires_at)
+        VALUES (?, ?, ?)
+      `,
+    )
+    .run(userId, tokenHash, expiresAt);
+}
+
+async function deleteSessionByTokenHashRecord(tokenHash: string): Promise<void> {
+  if (pgPool) {
+    await pgPool.query("DELETE FROM sessions WHERE token_hash = $1", [tokenHash]);
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        DELETE FROM sessions
+        WHERE token_hash = ?
+      `,
+    )
+    .run(tokenHash);
+}
+
+async function deleteExpiredSessionsRecords(): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(
+      "DELETE FROM sessions WHERE expires_at <= EXTRACT(EPOCH FROM NOW())::BIGINT",
+    );
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        DELETE FROM sessions
+        WHERE expires_at <= strftime('%s', 'now')
+      `,
+    )
+    .run();
+}
+
+async function selectSessionUserByTokenHashRow(
+  tokenHash: string,
+): Promise<SessionUserRow | undefined> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT ${SESSION_USER_SELECT_FIELDS}
+        FROM sessions s
+        INNER JOIN users u ON u.id = s.user_id
+        WHERE s.token_hash = $1 AND s.expires_at > EXTRACT(EPOCH FROM NOW())::BIGINT
+      `,
+      [tokenHash],
+    );
+    const row = result.rows[0];
+    return row ? normalizeSessionUserRow(row) : undefined;
+  }
+
+  const row = requireSqliteDb()
+    .prepare(
+      `
+        SELECT ${SESSION_USER_SELECT_FIELDS}
+        FROM sessions s
+        INNER JOIN users u ON u.id = s.user_id
+        WHERE s.token_hash = ? AND s.expires_at > strftime('%s', 'now')
+      `,
+    )
+    .get(tokenHash) as Record<string, unknown> | undefined;
+  return row ? normalizeSessionUserRow(row) : undefined;
+}
 
 function safeJsonParse<T>(value: string | null, fallback: T): T {
   if (!value) {
@@ -548,7 +1130,7 @@ function rowToNotification(row: LikeNotificationRow): NotificationRecord {
   };
 }
 
-function normalizeIncomingProduct(payload: unknown) {
+function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
   if (!payload || typeof payload !== "object") {
     throw new Error("Payload inválido.");
   }
@@ -749,20 +1331,20 @@ function hasRequiredProfileForPublishing(user: SessionUser): boolean {
   return normalizedName.length >= 2 && normalizedWhatsapp.length >= 6;
 }
 
-function createSession(userId: number): string {
-  deleteExpiredSessions.run();
+async function createSession(userId: number): Promise<string> {
+  await deleteExpiredSessionsRecords();
 
   const token = crypto.randomBytes(48).toString("hex");
   const tokenHash = hashToken(token);
   const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
 
-  createSessionStatement.run(userId, tokenHash, expiresAt);
+  await createSessionRecord(userId, tokenHash, expiresAt);
 
   return token;
 }
 
-function getSessionUser(req: Request): SessionUser | null {
-  deleteExpiredSessions.run();
+async function getSessionUser(req: Request): Promise<SessionUser | null> {
+  await deleteExpiredSessionsRecords();
 
   const token = getSessionTokenFromRequest(req);
   if (!token) {
@@ -770,29 +1352,15 @@ function getSessionUser(req: Request): SessionUser | null {
   }
 
   const tokenHash = hashToken(token);
-  const user = selectSessionUserByTokenHash.get(tokenHash) as
-    | Pick<
-        UserRow,
-        | "id"
-        | "name"
-        | "email"
-        | "country"
-        | "state"
-        | "city"
-        | "neighborhood"
-        | "street"
-        | "whatsapp_country_iso"
-        | "whatsapp_number"
-      >
-    | undefined;
+  const user = await selectSessionUserByTokenHashRow(tokenHash);
   if (!user) {
     return null;
   }
   return sanitizeUser(user);
 }
 
-function requireAuth(req: Request, res: Response): SessionUser | null {
-  const user = getSessionUser(req);
+async function requireAuth(req: Request, res: Response): Promise<SessionUser | null> {
+  const user = await getSessionUser(req);
   if (!user) {
     res.status(401).json({ error: "Faça login para continuar." });
     return null;
@@ -875,6 +1443,8 @@ async function fetchTileFromProviders(
 }
 
 async function bootstrap() {
+  await initializeDatabase();
+
   const app = express();
   const isProduction = process.env.NODE_ENV === "production";
   const port = Number(process.env.PORT || 5173);
@@ -883,7 +1453,11 @@ async function bootstrap() {
   app.use(express.json({ limit: "2mb" }));
 
   app.get("/api/health", (_req, res) => {
-    res.json({ ok: true, mode: isProduction ? "production" : "development" });
+    res.json({
+      ok: true,
+      mode: isProduction ? "production" : "development",
+      database: "postgres",
+    });
   });
 
   app.get("/api/map-tiles/:z/:x/:y.png", async (req, res) => {
@@ -907,7 +1481,7 @@ async function bootstrap() {
     res.status(200).send(tile.buffer);
   });
 
-  app.post("/api/auth/register", (req, res) => {
+  app.post("/api/auth/register", async (req, res) => {
     try {
       const body = req.body as Record<string, unknown>;
       const name = String(body.name ?? "").trim();
@@ -927,30 +1501,27 @@ async function bootstrap() {
         return;
       }
 
-      const existingUser = selectUserByEmail.get(email) as UserRow | undefined;
+      const existingUser = await selectUserByEmailRow(email);
       if (existingUser) {
         res.status(409).json({ error: "Este email já está cadastrado." });
         return;
       }
 
       const passwordCredentials = createPasswordCredentials(password);
-      const insertResult = createUserStatement.run(
+      const userId = await createUserRecord(
         name,
         email,
         passwordCredentials.hash,
         passwordCredentials.salt,
       );
 
-      const createdUser = selectUserById.get(Number(insertResult.lastInsertRowid)) as
-        | UserRow
-        | undefined;
-
+      const createdUser = await selectUserByIdRow(userId);
       if (!createdUser) {
         res.status(500).json({ error: "Falha ao criar usuário." });
         return;
       }
 
-      const token = createSession(createdUser.id);
+      const token = await createSession(createdUser.id);
       setSessionCookie(res, token, isProduction);
       res.status(201).json(sanitizeUser(createdUser));
     } catch (error) {
@@ -959,7 +1530,7 @@ async function bootstrap() {
     }
   });
 
-  app.post("/api/auth/login", (req, res) => {
+  app.post("/api/auth/login", async (req, res) => {
     try {
       const body = req.body as Record<string, unknown>;
       const email = normalizeEmail(String(body.email ?? ""));
@@ -970,13 +1541,13 @@ async function bootstrap() {
         return;
       }
 
-      const user = selectUserByEmail.get(email) as UserRow | undefined;
+      const user = await selectUserByEmailRow(email);
       if (!user || !verifyPassword(password, user.password_salt, user.password_hash)) {
         res.status(401).json({ error: "Email ou senha inválidos." });
         return;
       }
 
-      const token = createSession(user.id);
+      const token = await createSession(user.id);
       setSessionCookie(res, token, isProduction);
       res.json(sanitizeUser(user));
     } catch (error) {
@@ -985,29 +1556,34 @@ async function bootstrap() {
     }
   });
 
-  app.get("/api/auth/me", (req, res) => {
-    const user = getSessionUser(req);
-    if (!user) {
-      res.status(401).json({ error: "Sessão não encontrada." });
-      return;
-    }
+  app.get("/api/auth/me", async (req, res) => {
+    try {
+      const user = await getSessionUser(req);
+      if (!user) {
+        res.status(401).json({ error: "Sessão não encontrada." });
+        return;
+      }
 
-    res.json(user);
+      res.json(user);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao carregar sessão.";
+      res.status(500).json({ error: message });
+    }
   });
 
-  app.put("/api/profile", (req, res) => {
-    const sessionUser = requireAuth(req, res);
+  app.put("/api/profile", async (req, res) => {
+    const sessionUser = await requireAuth(req, res);
     if (!sessionUser) {
       return;
     }
 
-    const currentUser = selectUserById.get(sessionUser.id) as UserRow | undefined;
-    if (!currentUser) {
-      res.status(404).json({ error: "Usuário não encontrado." });
-      return;
-    }
-
     try {
+      const currentUser = await selectUserByIdRow(sessionUser.id);
+      if (!currentUser) {
+        res.status(404).json({ error: "Usuário não encontrado." });
+        return;
+      }
+
       const body = req.body as Record<string, unknown>;
       const name = normalizeTextField(body.name ?? currentUser.name, "Nome", 120);
       const country = normalizeTextField(body.country ?? currentUser.country ?? "", "Pais", 120);
@@ -1036,7 +1612,7 @@ async function bootstrap() {
         return;
       }
 
-      updateUserProfileStatement.run({
+      await updateUserProfileRecord({
         id: currentUser.id,
         name,
         country,
@@ -1048,7 +1624,7 @@ async function bootstrap() {
         whatsapp_number: whatsappNumber,
       });
 
-      const updatedUser = selectUserById.get(currentUser.id) as UserRow | undefined;
+      const updatedUser = await selectUserByIdRow(currentUser.id);
       if (!updatedUser) {
         res.status(500).json({ error: "Falha ao atualizar perfil." });
         return;
@@ -1061,53 +1637,78 @@ async function bootstrap() {
     }
   });
 
-  app.post("/api/auth/logout", (req, res) => {
-    const token = getSessionTokenFromRequest(req);
-    if (token) {
-      deleteSessionByTokenHash.run(hashToken(token));
+  app.post("/api/auth/logout", async (req, res) => {
+    try {
+      const token = getSessionTokenFromRequest(req);
+      if (token) {
+        await deleteSessionByTokenHashRecord(hashToken(token));
+      }
+
+      clearSessionCookie(res, isProduction);
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao encerrar sessão.";
+      res.status(500).json({ error: message });
     }
-
-    clearSessionCookie(res, isProduction);
-    res.json({ success: true });
   });
 
-  app.get("/api/products", (_req, res) => {
-    const rows = selectAllProducts.all() as ProductRow[];
-    res.json(rows.map(rowToProduct));
+  app.get("/api/products", async (_req, res) => {
+    try {
+      const rows = await selectAllProductsRows();
+      res.json(rows.map(rowToProduct));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar produtos.";
+      res.status(500).json({ error: message });
+    }
   });
 
-  app.get("/api/my-products", (req, res) => {
-    const user = requireAuth(req, res);
+  app.get("/api/my-products", async (req, res) => {
+    const user = await requireAuth(req, res);
     if (!user) {
       return;
     }
 
-    const rows = selectProductsByOwner.all(user.id) as ProductRow[];
-    res.json(rows.map(rowToProduct));
+    try {
+      const rows = await selectProductsByOwnerRows(user.id);
+      res.json(rows.map(rowToProduct));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar seus produtos.";
+      res.status(500).json({ error: message });
+    }
   });
 
-  app.get("/api/likes", (req, res) => {
-    const user = requireAuth(req, res);
+  app.get("/api/likes", async (req, res) => {
+    const user = await requireAuth(req, res);
     if (!user) {
       return;
     }
 
-    const rows = selectLikedProductsByUser.all(user.id) as ProductRow[];
-    res.json(rows.map(rowToProduct));
+    try {
+      const rows = await selectLikedProductsByUserRows(user.id);
+      res.json(rows.map(rowToProduct));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar curtidas.";
+      res.status(500).json({ error: message });
+    }
   });
 
-  app.get("/api/notifications", (req, res) => {
-    const user = requireAuth(req, res);
+  app.get("/api/notifications", async (req, res) => {
+    const user = await requireAuth(req, res);
     if (!user) {
       return;
     }
 
-    const rows = selectLikeNotificationsByOwner.all(user.id, user.id) as LikeNotificationRow[];
-    res.json(rows.map(rowToNotification));
+    try {
+      const rows = await selectLikeNotificationsByOwnerRows(user.id);
+      res.json(rows.map(rowToNotification));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar notificações.";
+      res.status(500).json({ error: message });
+    }
   });
 
-  app.post("/api/products", (req, res) => {
-    const user = requireAuth(req, res);
+  app.post("/api/products", async (req, res) => {
+    const user = await requireAuth(req, res);
     if (!user) {
       return;
     }
@@ -1120,14 +1721,8 @@ async function bootstrap() {
 
     try {
       const normalized = normalizeIncomingProduct(req.body);
-      const result = createProductStatement.run({
-        ...normalized,
-        user_id: user.id,
-      });
-
-      const created = selectProductById.get(Number(result.lastInsertRowid)) as
-        | ProductRow
-        | undefined;
+      const productId = await createProductRecord(normalized, user.id);
+      const created = await selectProductByIdRow(productId);
 
       if (!created) {
         res.status(500).json({ error: "Falha ao salvar o produto." });
@@ -1141,8 +1736,8 @@ async function bootstrap() {
     }
   });
 
-  app.put("/api/products/:id", (req, res) => {
-    const user = requireAuth(req, res);
+  app.put("/api/products/:id", async (req, res) => {
+    const user = await requireAuth(req, res);
     if (!user) {
       return;
     }
@@ -1153,24 +1748,21 @@ async function bootstrap() {
       return;
     }
 
-    const existing = selectProductById.get(id) as ProductRow | undefined;
-    if (!existing) {
-      res.status(404).json({ error: "Produto não encontrado." });
-      return;
-    }
-    if (existing.user_id !== user.id) {
-      res.status(403).json({ error: "Você não tem permissão para editar este produto." });
-      return;
-    }
-
     try {
-      const normalized = normalizeIncomingProduct(req.body);
-      updateProductByIdStatement.run({
-        id,
-        ...normalized,
-      });
+      const existing = await selectProductByIdRow(id);
+      if (!existing) {
+        res.status(404).json({ error: "Produto não encontrado." });
+        return;
+      }
+      if (existing.user_id !== user.id) {
+        res.status(403).json({ error: "Você não tem permissão para editar este produto." });
+        return;
+      }
 
-      const updated = selectProductById.get(id) as ProductRow | undefined;
+      const normalized = normalizeIncomingProduct(req.body);
+      await updateProductRecord(id, normalized);
+
+      const updated = await selectProductByIdRow(id);
       if (!updated) {
         res.status(500).json({ error: "Falha ao atualizar o produto." });
         return;
@@ -1183,8 +1775,8 @@ async function bootstrap() {
     }
   });
 
-  app.post("/api/products/:id/like", (req, res) => {
-    const user = requireAuth(req, res);
+  app.post("/api/products/:id/like", async (req, res) => {
+    const user = await requireAuth(req, res);
     if (!user) {
       return;
     }
@@ -1195,18 +1787,23 @@ async function bootstrap() {
       return;
     }
 
-    const existing = selectProductById.get(id) as ProductRow | undefined;
-    if (!existing) {
-      res.status(404).json({ error: "Produto não encontrado." });
-      return;
-    }
+    try {
+      const existing = await selectProductByIdRow(id);
+      if (!existing) {
+        res.status(404).json({ error: "Produto não encontrado." });
+        return;
+      }
 
-    createProductLikeStatement.run(user.id, id);
-    res.status(201).json({ success: true });
+      await createProductLikeRecord(user.id, id);
+      res.status(201).json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao curtir produto.";
+      res.status(500).json({ error: message });
+    }
   });
 
-  app.delete("/api/products/:id/like", (req, res) => {
-    const user = requireAuth(req, res);
+  app.delete("/api/products/:id/like", async (req, res) => {
+    const user = await requireAuth(req, res);
     if (!user) {
       return;
     }
@@ -1217,12 +1814,17 @@ async function bootstrap() {
       return;
     }
 
-    deleteProductLikeStatement.run(user.id, id);
-    res.json({ success: true });
+    try {
+      await deleteProductLikeRecord(user.id, id);
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao remover curtida.";
+      res.status(500).json({ error: message });
+    }
   });
 
-  app.delete("/api/products/:id", (req, res) => {
-    const user = requireAuth(req, res);
+  app.delete("/api/products/:id", async (req, res) => {
+    const user = await requireAuth(req, res);
     if (!user) {
       return;
     }
@@ -1233,19 +1835,24 @@ async function bootstrap() {
       return;
     }
 
-    const existing = selectProductById.get(id) as ProductRow | undefined;
-    if (!existing) {
-      res.status(404).json({ error: "Produto não encontrado." });
-      return;
-    }
+    try {
+      const existing = await selectProductByIdRow(id);
+      if (!existing) {
+        res.status(404).json({ error: "Produto não encontrado." });
+        return;
+      }
 
-    if (existing.user_id !== user.id) {
-      res.status(403).json({ error: "Você não tem permissão para excluir este produto." });
-      return;
-    }
+      if (existing.user_id !== user.id) {
+        res.status(403).json({ error: "Você não tem permissão para excluir este produto." });
+        return;
+      }
 
-    deleteProductById.run(id);
-    res.json({ success: true });
+      await deleteProductRecord(id);
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao excluir produto.";
+      res.status(500).json({ error: message });
+    }
   });
 
   app.use("/api", (_req, res) => {
@@ -1269,7 +1876,7 @@ async function bootstrap() {
   app.listen(port, () => {
     const mode = isProduction ? "production" : "development";
     console.log(`Server running at http://localhost:${port} (${mode})`);
-    console.log(`SQLite DB: ${DB_PATH}`);
+    console.log("Database: PostgreSQL via DATABASE_URL");
   });
 }
 
