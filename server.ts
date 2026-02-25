@@ -485,14 +485,19 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id BIGINT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS name TEXT",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS title TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS category TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS price TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image TEXT",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS images TEXT DEFAULT '[]'",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_urls TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS details TEXT DEFAULT '{}'",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
     "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_id BIGINT",
     "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS token_hash TEXT",
@@ -508,6 +513,13 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS street TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT'",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number TEXT NOT NULL DEFAULT ''",
+    "UPDATE products SET title = COALESCE(NULLIF(BTRIM(title), ''), NULLIF(BTRIM(name), ''), 'Produto sem título') WHERE title IS NULL OR BTRIM(title) = ''",
+    "UPDATE products SET image_url = COALESCE(NULLIF(BTRIM(image_url), ''), NULLIF(BTRIM(image), ''), '') WHERE image_url IS NULL OR BTRIM(image_url) = ''",
+    "UPDATE products SET image_urls = COALESCE(NULLIF(BTRIM(image_urls), ''), images, '[]') WHERE image_urls IS NULL OR BTRIM(image_urls) = ''",
+    "UPDATE products SET lat = COALESCE(lat, latitude) WHERE lat IS NULL",
+    "UPDATE products SET lng = COALESCE(lng, longitude) WHERE lng IS NULL",
+    "ALTER TABLE products ALTER COLUMN title SET DEFAULT ''",
+    "ALTER TABLE products ALTER COLUMN title SET NOT NULL",
     "UPDATE users SET password = COALESCE(NULLIF(BTRIM(password), ''), password_hash, '') WHERE password IS NULL OR BTRIM(password) = ''",
     "ALTER TABLE users ALTER COLUMN password SET DEFAULT ''",
     "ALTER TABLE users ALTER COLUMN password SET NOT NULL",
@@ -712,29 +724,39 @@ async function createProductRecord(
     const result = await pgPool.query<{ id: number | string }>(
       `
         INSERT INTO products (
+          title,
           name,
           category,
           price,
           image,
           images,
+          image_url,
+          image_urls,
           description,
           details,
           user_id,
           latitude,
-          longitude
+          longitude,
+          lat,
+          lng
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         RETURNING id
       `,
       [
+        normalized.name,
         normalized.name,
         normalized.category,
         normalized.price,
         normalized.image,
         normalized.images,
+        normalized.image,
+        normalized.images,
         normalized.description,
         normalized.details,
         userId,
+        normalized.latitude,
+        normalized.longitude,
         normalized.latitude,
         normalized.longitude,
       ],
@@ -784,15 +806,20 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
       `
         UPDATE products
         SET
+          title = $1,
           name = $1,
           category = $2,
           price = $3,
           image = $4,
           images = $5,
+          image_url = $4,
+          image_urls = $5,
           description = $6,
           details = $7,
           latitude = $8,
-          longitude = $9
+          longitude = $9,
+          lat = $8,
+          lng = $9
         WHERE id = $10
       `,
       [
@@ -1187,6 +1214,73 @@ function rowToNotification(row: LikeNotificationRow): NotificationRecord {
   };
 }
 
+function parseIncomingPriceToNumber(rawValue: unknown): number | null {
+  const value = String(rawValue ?? "").trim();
+  if (!value) {
+    return null;
+  }
+
+  const cleaned = value.replace(/[^\d,.-]/g, "");
+  if (!cleaned) {
+    return null;
+  }
+
+  const commaCount = (cleaned.match(/,/g) ?? []).length;
+  const dotCount = (cleaned.match(/\./g) ?? []).length;
+
+  let normalized = cleaned;
+
+  if (commaCount > 0 && dotCount > 0) {
+    const lastComma = cleaned.lastIndexOf(",");
+    const lastDot = cleaned.lastIndexOf(".");
+    const decimalSeparator = lastComma > lastDot ? "," : ".";
+
+    if (decimalSeparator === ",") {
+      normalized = cleaned.replace(/\./g, "").replace(",", ".");
+    } else {
+      normalized = cleaned.replace(/,/g, "");
+    }
+  } else if (commaCount > 0) {
+    const lastComma = cleaned.lastIndexOf(",");
+    const fractionLength = cleaned.length - lastComma - 1;
+    normalized =
+      fractionLength > 0 && fractionLength <= 2
+        ? cleaned.replace(/\./g, "").replace(",", ".")
+        : cleaned.replace(/,/g, "");
+  } else if (dotCount > 0) {
+    const lastDot = cleaned.lastIndexOf(".");
+    const fractionLength = cleaned.length - lastDot - 1;
+    normalized =
+      fractionLength > 0 && fractionLength <= 2
+        ? cleaned.replace(/,/g, "")
+        : cleaned.replace(/\./g, "");
+  }
+
+  const parsed = Number(normalized);
+  if (Number.isFinite(parsed)) {
+    return parsed;
+  }
+
+  const digits = value.replace(/\D/g, "");
+  if (!digits) {
+    return null;
+  }
+
+  const fallback = Number(digits) / 100;
+  return Number.isFinite(fallback) ? fallback : null;
+}
+
+function normalizeIncomingPrice(rawValue: unknown): string {
+  const parsed = parseIncomingPriceToNumber(rawValue);
+  if (parsed === null) {
+    throw new Error("Preço é obrigatório.");
+  }
+  if (parsed <= 0) {
+    throw new Error("Preço deve ser maior que zero.");
+  }
+  return parsed.toFixed(2);
+}
+
 function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
   if (!payload || typeof payload !== "object") {
     throw new Error("Payload inválido.");
@@ -1195,7 +1289,7 @@ function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
   const body = payload as Record<string, unknown>;
   const name = String(body.name ?? "").trim();
   const category = String(body.category ?? "").trim();
-  const price = String(body.price ?? "").trim();
+  const price = normalizeIncomingPrice(body.price);
   const rawImage = String(body.image ?? "").trim();
   const images = normalizeImages(body.images, rawImage || DEFAULT_IMAGE);
   const image = rawImage || images[0] || DEFAULT_IMAGE;
@@ -1212,9 +1306,6 @@ function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
   }
   if (!category) {
     throw new Error("Categoria é obrigatória.");
-  }
-  if (!price) {
-    throw new Error("Preço é obrigatório.");
   }
   if (!description) {
     throw new Error("Descrição é obrigatória.");
@@ -1571,9 +1662,14 @@ async function bootstrap() {
           return;
         }
 
-        const result = await pgPool.query<{ column_name: string }>(
+        const result = await pgPool.query<{
+          column_name: string;
+          is_nullable: string;
+          data_type: string;
+          column_default: string | null;
+        }>(
           `
-            SELECT column_name
+            SELECT column_name, is_nullable, data_type, column_default
             FROM information_schema.columns
             WHERE table_schema = 'public' AND table_name = $1
             ORDER BY ordinal_position
@@ -1583,7 +1679,12 @@ async function bootstrap() {
 
         res.json({
           table: tableName,
-          columns: result.rows.map((row) => row.column_name),
+          columns: result.rows.map((row) => ({
+            name: row.column_name,
+            nullable: row.is_nullable === "YES",
+            dataType: row.data_type,
+            default: row.column_default,
+          })),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Falha ao consultar schema.";

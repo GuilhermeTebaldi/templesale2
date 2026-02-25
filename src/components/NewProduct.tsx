@@ -14,7 +14,7 @@ import { type Product } from "./ProductCard";
 import LeafletMapPicker from "./LeafletMapPicker";
 import { useI18n } from "../i18n/provider";
 import { CATEGORY_VALUES, getCategoryLabel } from "../i18n/categories";
-import { formatEuro, normalizeEuroInput, parsePriceToNumber } from "../lib/currency";
+import { parsePriceToNumber } from "../lib/currency";
 
 interface NewProductProps {
   onClose: () => void;
@@ -57,6 +57,10 @@ const DEFAULT_MAP_CENTER: GeoPoint = {
   longitude: -46.633308,
 };
 const MAX_PRODUCT_IMAGES = 10;
+const EURO_AMOUNT_FORMATTER = new Intl.NumberFormat("it-IT", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -104,7 +108,19 @@ function normalizePriceValue(price: string): string {
   if (parsed === null || parsed <= 0) {
     return "";
   }
-  return formatEuro(parsed, "it-IT");
+  return EURO_AMOUNT_FORMATTER.format(parsed);
+}
+
+function sanitizePriceDraft(rawValue: string): string {
+  return String(rawValue ?? "").replace(/[^\d.,]/g, "");
+}
+
+function toEditablePriceValue(rawValue: string): string {
+  const parsed = parsePriceToNumber(rawValue);
+  if (parsed === null || parsed <= 0) {
+    return "";
+  }
+  return parsed.toFixed(2).replace(".", ",");
 }
 
 function buildInitialFormState(product: Product | null | undefined): FormState {
@@ -316,7 +332,7 @@ export default function NewProduct({
       const newProduct: CreateProductInput = {
         name: normalizedName,
         category: normalizedCategory,
-        price: formatEuro(parsedPrice, "it-IT"),
+        price: parsedPrice.toFixed(2),
         latitude,
         longitude,
         image: images[0],
@@ -562,15 +578,32 @@ export default function NewProduct({
                 <input 
                   required
                   type="text"
-                  placeholder={formatEuro(0, "it-IT")}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="0,00"
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-mono"
                   value={formData.price}
-                  onChange={(e) =>
+                  onFocus={(e) => {
                     setFormData((current) => ({
                       ...current,
-                      price: normalizeEuroInput(e.target.value, "it-IT"),
-                    }))
-                  }
+                      price: toEditablePriceValue(current.price),
+                    }));
+                    e.currentTarget.select();
+                  }}
+                  onBlur={(e) => {
+                    const normalized = normalizePriceValue(e.target.value);
+                    setFormData((current) => ({
+                      ...current,
+                      price: normalized,
+                    }));
+                  }}
+                  onChange={(e) => {
+                    const nextValue = sanitizePriceDraft(e.target.value);
+                    setFormData((current) => ({
+                      ...current,
+                      price: nextValue,
+                    }));
+                  }}
                 />
               </div>
             </div>
