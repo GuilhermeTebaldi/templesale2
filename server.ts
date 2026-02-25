@@ -1926,7 +1926,7 @@ async function uploadImageToCloudinary(
   const formData = new FormData();
   formData.append(
     "file",
-    new Blob([options.payload], { type: options.contentType }),
+    new Blob([new Uint8Array(options.payload)], { type: options.contentType }),
     options.safeFilename,
   );
   formData.append("api_key", CLOUDINARY_API_KEY);
