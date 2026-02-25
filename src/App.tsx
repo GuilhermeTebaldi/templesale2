@@ -127,6 +127,12 @@ export default function App() {
   const [heroDate, setHeroDate] = React.useState<Date>(() => new Date());
   const [isLoadingProducts, setIsLoadingProducts] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [cartToast, setCartToast] = React.useState<{
+    id: number;
+    message: string;
+    variant: "success" | "warning";
+  } | null>(null);
+  const cartToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasMemberAccess = Boolean(currentUser);
   const hasRequiredProfileForPublishing = React.useMemo(() => {
     if (!currentUser) {
@@ -406,6 +412,14 @@ export default function App() {
   }, [hasMemberAccess]);
 
   React.useEffect(() => {
+    return () => {
+      if (cartToastTimerRef.current) {
+        clearTimeout(cartToastTimerRef.current);
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -453,7 +467,7 @@ export default function App() {
     [likedProducts],
   );
   const productsById = React.useMemo(() => {
-    const map = new Map<number, Product>();
+    const map = new globalThis.Map<number, Product>();
     [...products, ...myProducts, ...likedProducts].forEach((product) => {
       map.set(product.id, product);
     });
@@ -556,6 +570,23 @@ export default function App() {
     [notificationsToDisplay, readNotificationIdSet],
   );
 
+  const showCartToast = React.useCallback(
+    (message: string, variant: "success" | "warning" = "success") => {
+      if (cartToastTimerRef.current) {
+        clearTimeout(cartToastTimerRef.current);
+      }
+      setCartToast({
+        id: Date.now(),
+        message,
+        variant,
+      });
+      cartToastTimerRef.current = setTimeout(() => {
+        setCartToast(null);
+      }, 2000);
+    },
+    [],
+  );
+
   const openProductDetails = React.useCallback(
     (product: Product, options?: { fromSearch?: boolean }) => {
       setSelectedProduct(product);
@@ -630,26 +661,41 @@ export default function App() {
     }
   };
 
-  const handleAddToCart = React.useCallback((product: Product, quantityToAdd = 1) => {
-    const stockQuantity = getProductStockQuantity(product);
-    if (stockQuantity <= 0) {
-      return;
-    }
-
-    const normalizedAddition = Math.max(1, Math.floor(quantityToAdd));
-    setCartQuantitiesByProductId((current) => {
-      const currentQuantity = toSafeCartQuantity(current[product.id]);
-      const nextQuantity = Math.min(stockQuantity, currentQuantity + normalizedAddition);
-      if (nextQuantity <= 0 || nextQuantity === currentQuantity) {
-        return current;
+  const handleAddToCart = React.useCallback(
+    (product: Product, quantityToAdd = 1) => {
+      const stockQuantity = getProductStockQuantity(product);
+      if (stockQuantity <= 0) {
+        showCartToast(t("Produto esgotado."), "warning");
+        return;
       }
 
-      return {
+      const currentQuantity = toSafeCartQuantity(cartQuantitiesByProductId[product.id]);
+      if (currentQuantity >= stockQuantity) {
+        showCartToast(t("Você já atingiu o limite disponível deste produto."), "warning");
+        return;
+      }
+
+      const normalizedAddition = Math.max(1, Math.floor(quantityToAdd));
+      const nextQuantity = Math.min(stockQuantity, currentQuantity + normalizedAddition);
+      const addedCount = Math.max(0, nextQuantity - currentQuantity);
+      if (addedCount <= 0) {
+        showCartToast(t("Não foi possível adicionar mais unidades."), "warning");
+        return;
+      }
+
+      setCartQuantitiesByProductId((current) => ({
         ...current,
         [product.id]: nextQuantity,
-      };
-    });
-  }, []);
+      }));
+      showCartToast(
+        t("{count} item(s) adicionado(s) ao carrinho.", {
+          count: String(addedCount),
+        }),
+        "success",
+      );
+    },
+    [cartQuantitiesByProductId, showCartToast, t],
+  );
 
   const handleRemoveFromCart = React.useCallback((productId: number) => {
     setCartQuantitiesByProductId((current) => {
@@ -847,6 +893,30 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {cartToast && (
+          <motion.div
+            key={cartToast.id}
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 14, scale: 0.96 }}
+            transition={{ type: "spring", damping: 22, stiffness: 320 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-170 px-4"
+          >
+            <div
+              className={`min-w-[260px] max-w-[90vw] border px-4 py-3 shadow-xl backdrop-blur-sm flex items-center gap-3 ${
+                cartToast.variant === "warning"
+                  ? "bg-amber-50/95 border-amber-200 text-amber-800"
+                  : "bg-stone-900/95 border-stone-800 text-white"
+              }`}
+            >
+              <ShoppingBag className="w-4 h-4 shrink-0" />
+              <span className="text-xs tracking-[0.06em]">{cartToast.message}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Side Menu Overlay */}
       <motion.div
         initial={false}
@@ -933,25 +1003,6 @@ export default function App() {
                 </span>
               </div>
               <ChevronRight className="w-3 h-3 text-stone-300 group-hover:text-stone-500 transition-colors" />
-            </button>
-
-            <button
-              onClick={() => {
-                setIsUserOpen(false);
-                setIsCartOpen(true);
-              }}
-              className="w-full flex items-center justify-between p-4 hover:bg-stone-50 transition-colors group"
-            >
-              <div className="flex items-center gap-4">
-                <ShoppingBag className="w-4 h-4 text-stone-400 group-hover:text-stone-800 transition-colors" />
-                <span className="text-xs uppercase tracking-widest font-medium text-stone-600 group-hover:text-stone-800 transition-colors">
-                  {t("Carrinho")}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono text-stone-400">{cartItemsCount}</span>
-                <ChevronRight className="w-3 h-3 text-stone-300 group-hover:text-stone-500 transition-colors" />
-              </div>
             </button>
 
             <button
@@ -1342,6 +1393,21 @@ export default function App() {
             </button>
 
             <button
+              className="flex items-center justify-between gap-4 text-xl font-serif italic text-stone-800 hover:translate-x-2 transition-transform duration-300 group"
+              onClick={() => {
+                setIsFilterMenuOpen(false);
+                setIsMenuOpen(false);
+                setIsCartOpen(true);
+              }}
+            >
+              <span className="flex items-center gap-4">
+                <ShoppingBag className="w-5 h-5 text-stone-300 group-hover:text-stone-800 transition-colors" />
+                {t("Carrinho")}
+              </span>
+              <span className="text-[10px] font-mono text-stone-400">{cartItemsCount}</span>
+            </button>
+
+            <button
               className="flex items-center gap-4 text-xl font-serif italic text-stone-800 hover:translate-x-2 transition-transform duration-300 group"
               onClick={() => {
                 setIsFilterMenuOpen(false);
@@ -1456,18 +1522,6 @@ export default function App() {
               className="p-2 hover:bg-stone-50 rounded-full transition-colors"
             >
               <Search className="w-5 h-5 text-stone-600" />
-            </button>
-            <button
-              onClick={() => setIsCartOpen(true)}
-              className="p-2 hover:bg-stone-50 rounded-full transition-colors relative"
-              aria-label={t("Abrir carrinho")}
-            >
-              <ShoppingBag className="w-5 h-5 text-stone-600" />
-              {cartItemsCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-stone-900 text-white text-[9px] font-mono rounded-full flex items-center justify-center">
-                  {cartItemsCount > 99 ? "99+" : cartItemsCount}
-                </span>
-              )}
             </button>
             {hasMemberAccess ? (
               <>
