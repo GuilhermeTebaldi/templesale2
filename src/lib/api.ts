@@ -284,6 +284,48 @@ function isAdminLoginPayloadFormatError(error: unknown): boolean {
   );
 }
 
+function isRegisterPolicyPayloadError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const normalized = error.message.toLowerCase();
+  const hasPolicyTermsHint =
+    normalized.includes("política") ||
+    normalized.includes("politica") ||
+    normalized.includes("privacy") ||
+    normalized.includes("termos") ||
+    normalized.includes("terms") ||
+    normalized.includes("guidelines") ||
+    normalized.includes("comunidade") ||
+    normalized.includes("community") ||
+    normalized.includes("instru") ||
+    normalized.includes("garrafa") ||
+    normalized.includes("bottle");
+  const hasConflictHint =
+    normalized.includes("já está cadastrado") ||
+    normalized.includes("ja esta cadastrado") ||
+    normalized.includes("already") ||
+    normalized.includes("invalid");
+  if (hasConflictHint) {
+    return false;
+  }
+  return hasPolicyTermsHint;
+}
+
+function shouldRetryRegisterRequest(error: unknown): boolean {
+  if (isMissingApiRouteError(error)) {
+    return true;
+  }
+  if (isRegisterPolicyPayloadError(error)) {
+    return true;
+  }
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const normalized = error.message.toLowerCase();
+  return normalized.includes("cannot post /api/auth") || normalized.includes("404");
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -1039,11 +1081,15 @@ export const api = {
       `user${Date.now()}`
     ).replace(/[^a-zA-Z0-9_.-]/g, "_");
 
-    const registerPayload = {
+    const registerPayloadBase = {
       name: name || derivedUsername,
       username: derivedUsername,
       email,
       password: payload.password,
+    };
+
+    const registerPayload = {
+      ...registerPayloadBase,
       acceptedPrivacy: true,
       acceptedPrivacyPolicy: true,
       privacyAccepted: true,
@@ -1063,19 +1109,82 @@ export const api = {
       acceptGuidelines: true,
     };
 
-    const raw = await request<unknown>("/api/auth/register", {
-      method: "POST",
-      body: JSON.stringify(registerPayload),
-    });
-    const authToken = extractTokenFromAuthPayload(raw);
-    if (authToken) {
-      persistAuthToken(authToken);
+    const registerPayloadSnakeCase = {
+      ...registerPayload,
+      accepted_privacy: true,
+      accepted_privacy_policy: true,
+      accepted_terms: true,
+      accepted_community: true,
+      accepted_guidelines: true,
+      privacy_policy_accepted: true,
+      terms_accepted: true,
+      community_accepted: true,
+      community_guidelines_accepted: true,
+      guidelines_accepted: true,
+      policy_accepted: true,
+      legal_accepted: true,
+    };
+
+    const registerPayloadExtended = {
+      ...registerPayloadSnakeCase,
+      acceptedInstructions: true,
+      instructionsAccepted: true,
+      acceptedBottleInfo: true,
+      bottleInfoAccepted: true,
+      thermalBottleInfoAccepted: true,
+      acceptedThermalBottleInfo: true,
+    };
+
+    const payloadCandidates = [
+      registerPayload,
+      registerPayloadSnakeCase,
+      registerPayloadExtended,
+    ];
+    const routeCandidates = [
+      "/api/auth/register",
+      "/api/auth/signup",
+      "/api/auth",
+      "/api/register",
+    ];
+
+    let lastError: unknown;
+
+    for (const route of routeCandidates) {
+      for (const payloadCandidate of payloadCandidates) {
+        try {
+          const raw = await request<unknown>(route, {
+            method: "POST",
+            body: JSON.stringify(payloadCandidate),
+          });
+
+          const authToken = extractTokenFromAuthPayload(raw);
+          if (authToken) {
+            persistAuthToken(authToken);
+          }
+
+          const user =
+            normalizeSessionUserItem(raw) ??
+            normalizeSessionUserItem(
+              await request<unknown>("/api/auth/me").catch(() => null),
+            );
+          if (!user) {
+            throw new Error("Resposta inválida ao criar conta.");
+          }
+
+          return user;
+        } catch (error) {
+          lastError = error;
+          if (!shouldRetryRegisterRequest(error)) {
+            throw error;
+          }
+        }
+      }
     }
-    const user = normalizeSessionUserItem(raw);
-    if (!user) {
-      throw new Error("Resposta inválida ao criar conta.");
+
+    if (lastError instanceof Error) {
+      throw lastError;
     }
-    return user;
+    throw new Error("Falha ao criar conta.");
   },
   async login(payload: AuthInput) {
     const raw = await request<unknown>("/api/auth/login", {
