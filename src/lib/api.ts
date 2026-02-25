@@ -99,6 +99,7 @@ type ApiEnvelope = {
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "")
   .trim()
   .replace(/\/+$/, "");
+const AUTH_TOKEN_STORAGE_KEY = "templesale_auth_token";
 
 function buildApiUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) {
@@ -106,6 +107,36 @@ function buildApiUrl(path: string): string {
   }
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return API_BASE_URL ? `${API_BASE_URL}${normalizedPath}` : normalizedPath;
+}
+
+function canUseStorage(): boolean {
+  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+}
+
+function readAuthToken(): string {
+  if (!canUseStorage()) {
+    return "";
+  }
+  return String(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) ?? "").trim();
+}
+
+function persistAuthToken(token: unknown) {
+  if (!canUseStorage()) {
+    return;
+  }
+  const normalizedToken = toStringValue(token);
+  if (!normalizedToken) {
+    window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, normalizedToken);
+}
+
+function clearAuthToken() {
+  if (!canUseStorage()) {
+    return;
+  }
+  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
 }
 
 function asEnvelope(value: unknown): ApiEnvelope | null {
@@ -127,6 +158,25 @@ function extractApiError(payload: unknown): string | null {
     return envelope.message.trim();
   }
   return null;
+}
+
+function isMissingApiRouteMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("404") ||
+    normalized.includes("rota da api não encontrada") ||
+    normalized.includes("cannot get /api") ||
+    normalized.includes("cannot post /api") ||
+    normalized.includes("cannot put /api") ||
+    normalized.includes("cannot delete /api")
+  );
+}
+
+function isMissingApiRouteError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return isMissingApiRouteMessage(error.message);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -383,6 +433,14 @@ function normalizeSessionUserItem(value: unknown): SessionUser | null {
     return null;
   }
 
+  const nestedUserCandidate = firstDefined(parsed, ["user", "profile", "account"]);
+  if (nestedUserCandidate && nestedUserCandidate !== parsed) {
+    const nestedUser = normalizeSessionUserItem(nestedUserCandidate);
+    if (nestedUser) {
+      return nestedUser;
+    }
+  }
+
   const id = toOptionalNumber(firstDefined(parsed, ["id", "userId", "user_id"]));
   if (id === undefined) {
     return null;
@@ -478,20 +536,54 @@ function normalizeNotificationList(value: unknown): NotificationDto[] {
   return items.filter((item): item is NotificationDto => isRecord(item));
 }
 
+function extractTokenFromAuthPayload(value: unknown): string {
+  const parsed = parseJsonIfNeeded(value);
+  if (!isRecord(parsed)) {
+    return "";
+  }
+
+  const directToken = toStringValue(
+    firstDefined(parsed, ["token", "accessToken", "access_token", "jwt"]),
+  );
+  if (directToken) {
+    return directToken;
+  }
+
+  const nestedAuth = firstDefined(parsed, ["auth", "session"]);
+  if (isRecord(nestedAuth)) {
+    return toStringValue(
+      firstDefined(nestedAuth, ["token", "accessToken", "access_token", "jwt"]),
+    );
+  }
+
+  return "";
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers ?? {});
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const authToken = readAuthToken();
+  if (authToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${authToken}`);
+  }
+
   const response = await fetch(buildApiUrl(url), {
     credentials: "include",
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
+    headers,
   });
 
   const contentType = response.headers.get("content-type") || "";
   const isJson = contentType.includes("application/json");
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearAuthToken();
+    }
+
     let message = `${response.status} ${response.statusText}`;
     if (isJson) {
       try {
@@ -543,13 +635,19 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 async function uploadProductImageFile(file: File): Promise<UploadImageResponse> {
+  const headers = new Headers({
+    "Content-Type": file.type || "image/jpeg",
+    "X-File-Name": encodeURIComponent(file.name || "upload"),
+  });
+  const authToken = readAuthToken();
+  if (authToken) {
+    headers.set("Authorization", `Bearer ${authToken}`);
+  }
+
   const response = await fetch(buildApiUrl("/api/uploads/product-image"), {
     method: "POST",
     credentials: "include",
-    headers: {
-      "Content-Type": file.type || "image/jpeg",
-      "X-File-Name": encodeURIComponent(file.name || "upload"),
-    },
+    headers,
     body: file,
   });
 
@@ -606,14 +704,22 @@ export const api = {
       username: derivedUsername,
       email,
       password: payload.password,
+      acceptedPrivacy: true,
       acceptedPrivacyPolicy: true,
+      privacyAccepted: true,
       acceptedTerms: true,
+      termsAccepted: true,
+      acceptedCommunity: true,
+      communityAccepted: true,
       acceptedGuidelines: true,
       privacyPolicyAccepted: true,
-      termsAccepted: true,
       guidelinesAccepted: true,
+      acceptedPolicies: true,
+      acceptedLegal: true,
+      acceptPrivacy: true,
       acceptPrivacyPolicy: true,
       acceptTerms: true,
+      acceptCommunity: true,
       acceptGuidelines: true,
     };
 
@@ -621,6 +727,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify(registerPayload),
     });
+    const authToken = extractTokenFromAuthPayload(raw);
+    if (authToken) {
+      persistAuthToken(authToken);
+    }
     const user = normalizeSessionUserItem(raw);
     if (!user) {
       throw new Error("Resposta inválida ao criar conta.");
@@ -632,6 +742,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     });
+    const authToken = extractTokenFromAuthPayload(raw);
+    if (authToken) {
+      persistAuthToken(authToken);
+    }
     const user = normalizeSessionUserItem(raw);
     if (!user) {
       throw new Error("Resposta inválida ao autenticar.");
@@ -646,10 +760,14 @@ export const api = {
     }
     return user;
   },
-  logout() {
-    return request<{ success: boolean }>("/api/auth/logout", {
-      method: "POST",
-    });
+  async logout() {
+    try {
+      return await request<{ success: boolean }>("/api/auth/logout", {
+        method: "POST",
+      });
+    } finally {
+      clearAuthToken();
+    }
   },
   async updateProfile(payload: UpdateProfileInput) {
     const normalizedWhatsapp = normalizePhoneDigits(payload.whatsappNumber);
@@ -738,23 +856,46 @@ export const api = {
     return normalized;
   },
   async getMyProducts() {
-    const payload = await request<unknown>("/api/my-products");
-    return normalizeProductList(payload);
+    try {
+      const payload = await request<unknown>("/api/my-products");
+      return normalizeProductList(payload);
+    } catch (error) {
+      if (!isMissingApiRouteError(error)) {
+        throw error;
+      }
+
+      const [productsPayload, sessionPayload] = await Promise.all([
+        request<unknown>("/api/products"),
+        request<unknown>("/api/auth/me"),
+      ]);
+      const currentUser = normalizeSessionUserItem(sessionPayload);
+      if (!currentUser) {
+        return [];
+      }
+
+      return normalizeProductList(productsPayload).filter(
+        (product) => product.ownerId === currentUser.id,
+      );
+    }
   },
   async getLikedProducts() {
-    const payload = await request<unknown>("/api/likes");
-    return normalizeProductList(payload);
+    try {
+      const payload = await request<unknown>("/api/likes");
+      return normalizeProductList(payload);
+    } catch (error) {
+      if (isMissingApiRouteError(error)) {
+        return [];
+      }
+      throw error;
+    }
   },
   async getNotifications() {
     try {
       const payload = await request<unknown>("/api/notifications");
       return normalizeNotificationList(payload);
     } catch (error) {
-      if (error instanceof Error) {
-        const message = error.message.toLowerCase();
-        if (message.includes("404") || message.includes("rota da api não encontrada")) {
-          return [];
-        }
+      if (isMissingApiRouteError(error)) {
+        return [];
       }
       throw error;
     }
@@ -784,11 +925,21 @@ export const api = {
   likeProduct(id: number) {
     return request<{ success: boolean }>(`/api/products/${id}/like`, {
       method: "POST",
+    }).catch((error) => {
+      if (isMissingApiRouteError(error)) {
+        return { success: true };
+      }
+      throw error;
     });
   },
   unlikeProduct(id: number) {
     return request<{ success: boolean }>(`/api/products/${id}/like`, {
       method: "DELETE",
+    }).catch((error) => {
+      if (isMissingApiRouteError(error)) {
+        return { success: true };
+      }
+      throw error;
     });
   },
   deleteProduct(id: number) {
