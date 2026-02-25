@@ -40,6 +40,7 @@ const CATEGORIES = [
   "Outros"
 ];
 const BRAND_NAME = "TempleSale";
+const AUTH_TOKEN_STORAGE_KEY = "templesale_auth_token";
 
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
@@ -119,6 +120,23 @@ export default function App() {
     };
 
     const restoreSession = async () => {
+      if (typeof window !== "undefined") {
+        const hostname = window.location.hostname.toLowerCase();
+        const isTemplesaleHost =
+          hostname === "templesale.com" || hostname === "www.templesale.com";
+        if (isTemplesaleHost) {
+          const storedToken = String(
+            window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) ?? "",
+          ).trim();
+          if (!storedToken) {
+            if (!cancelled) {
+              setCurrentUser(null);
+            }
+            return;
+          }
+        }
+      }
+
       try {
         const user = await api.getCurrentUser();
         if (!cancelled) {
