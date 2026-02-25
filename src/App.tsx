@@ -484,8 +484,17 @@ export default function App() {
 
   const handleProfileSave = async (profileData: UpdateProfileInput) => {
     const updatedUser = await api.updateProfile(profileData);
-    setCurrentUser(updatedUser);
-    syncSellerProfileAcrossProducts(updatedUser);
+    const mergedUser: SessionUser = {
+      ...(currentUser ?? updatedUser),
+      ...updatedUser,
+      name: updatedUser.name || profileData.name,
+      whatsappCountryIso:
+        updatedUser.whatsappCountryIso || profileData.whatsappCountryIso,
+      whatsappNumber: updatedUser.whatsappNumber || profileData.whatsappNumber,
+    };
+
+    setCurrentUser(mergedUser);
+    syncSellerProfileAcrossProducts(mergedUser);
     setProfileCompletionMessage("");
   };
 
@@ -575,8 +584,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {hasMemberAccess && (
-        <>
       {/* Side Menu Overlay */}
       <motion.div
         initial={false}
@@ -591,7 +598,9 @@ export default function App() {
           setIsUserOpen(false);
         }}
       />
-      
+
+      {hasMemberAccess && (
+        <>
       {/* User Dashboard Overlay */}
       <motion.div
         initial={{ x: "100%" }}
@@ -813,7 +822,7 @@ export default function App() {
       )}
 
       <AnimatePresence>
-        {(hasMemberAccess && isMapOpen) && (
+        {isMapOpen && (
           <ProductMap
             products={products}
             onOpenProduct={(product) => {
@@ -846,7 +855,14 @@ export default function App() {
           <NewProduct 
             onClose={() => setIsNewProductOpen(false)} 
             onPublish={async (newProd) => {
-              const published = await api.createProduct(newProd);
+              const sellerPhone = String(currentUser?.whatsappNumber ?? "").replace(/\D/g, "");
+              const published = await api.createProduct({
+                ...newProd,
+                phone: sellerPhone || undefined,
+                seller_phone: sellerPhone || undefined,
+                whatsappNumber: sellerPhone || undefined,
+                whatsappCountryIso: currentUser?.whatsappCountryIso || "IT",
+              });
               setProducts((current) => [published, ...current]);
               setMyProducts((current) => [published, ...current]);
             }}
@@ -861,7 +877,14 @@ export default function App() {
             initialProduct={editingProduct}
             onClose={() => setEditingProduct(null)}
             onPublish={async (updatedInput) => {
-              const updated = await api.updateProduct(editingProduct.id, updatedInput);
+              const sellerPhone = String(currentUser?.whatsappNumber ?? "").replace(/\D/g, "");
+              const updated = await api.updateProduct(editingProduct.id, {
+                ...updatedInput,
+                phone: sellerPhone || undefined,
+                seller_phone: sellerPhone || undefined,
+                whatsappNumber: sellerPhone || undefined,
+                whatsappCountryIso: currentUser?.whatsappCountryIso || "IT",
+              });
               syncUpdatedProduct(updated);
               setEditingProduct(null);
             }}
@@ -924,7 +947,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {hasMemberAccess && (
       <motion.div
         initial={{ x: "-100%" }}
         animate={{ x: isMenuOpen ? 0 : "-100%" }}
@@ -1040,7 +1062,6 @@ export default function App() {
           </div>
         </div>
       </motion.div>
-      )}
 
       {/* Search Overlay */}
       <motion.div
@@ -1100,14 +1121,12 @@ export default function App() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-[#fdfcfb]/80 backdrop-blur-md border-b border-stone-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-8 w-1/3">
-            {hasMemberAccess && (
-              <button 
-                onClick={() => setIsMenuOpen(true)}
-                className="p-2 -ml-2 hover:bg-stone-50 rounded-full transition-colors"
-              >
-                <Menu className="w-5 h-5 text-stone-600" />
-              </button>
-            )}
+            <button 
+              onClick={() => setIsMenuOpen(true)}
+              className="p-2 -ml-2 hover:bg-stone-50 rounded-full transition-colors"
+            >
+              <Menu className="w-5 h-5 text-stone-600" />
+            </button>
          
           </div>
 

@@ -45,6 +45,10 @@ export interface CreateProductInput {
   details?: Record<string, string>;
   latitude: number;
   longitude: number;
+  phone?: string;
+  seller_phone?: string;
+  whatsappNumber?: string;
+  whatsappCountryIso?: string;
 }
 
 export interface SessionUser {
@@ -75,6 +79,7 @@ export interface AuthInput {
   email: string;
   password: string;
   name?: string;
+  username?: string;
 }
 
 export interface UploadImageResponse {
@@ -188,6 +193,24 @@ function toStringArray(value: unknown): string[] {
   return single ? [single] : [];
 }
 
+function normalizeCountryIso(value: unknown): string | undefined {
+  const raw = toStringValue(value).toUpperCase();
+  if (!raw) {
+    return undefined;
+  }
+  if (raw === "ITALIA" || raw === "ITALY" || raw === "ITA" || raw === "IT") {
+    return "IT";
+  }
+  if (/^[A-Z]{2}$/.test(raw)) {
+    return raw;
+  }
+  return undefined;
+}
+
+function normalizePhoneDigits(value: unknown): string {
+  return toStringValue(value).replace(/\D/g, "");
+}
+
 function normalizeProductImages(rawImages: unknown, rawImage: unknown): string[] {
   const images = toStringArray(rawImages);
   const fallbackImage = toStringValue(rawImage);
@@ -261,21 +284,109 @@ function normalizeProductItem(value: unknown): ProductDto | null {
     product.sellerName = sellerName;
   }
 
-  const sellerWhatsappCountryIso = toStringValue(
-    firstDefined(parsed, ["sellerWhatsappCountryIso", "seller_whatsapp_country_iso"]),
+  const sellerWhatsappCountryIso = (
+    normalizeCountryIso(
+      firstDefined(parsed, [
+        "sellerWhatsappCountryIso",
+        "seller_whatsapp_country_iso",
+        "whatsappCountryIso",
+        "whatsapp_country_iso",
+        "sellerCountryIso",
+        "seller_country_iso",
+      ]),
+    ) ??
+    normalizeCountryIso(firstDefined(parsed, ["seller_country", "country"]))
   );
   if (sellerWhatsappCountryIso) {
     product.sellerWhatsappCountryIso = sellerWhatsappCountryIso;
   }
 
-  const sellerWhatsappNumber = toStringValue(
-    firstDefined(parsed, ["sellerWhatsappNumber", "seller_whatsapp_number"]),
-  );
-  if (sellerWhatsappNumber) {
+  const sellerWhatsappNumberRaw = firstDefined(parsed, [
+    "sellerWhatsappNumber",
+    "seller_whatsapp_number",
+    "seller_phone",
+    "sellerPhone",
+    "whatsappNumber",
+    "whatsapp_number",
+    "phone",
+  ]);
+  const sellerWhatsappNumber =
+    normalizePhoneDigits(sellerWhatsappNumberRaw) || toStringValue(sellerWhatsappNumberRaw);
+  if (sellerWhatsappNumberRaw) {
     product.sellerWhatsappNumber = sellerWhatsappNumber;
   }
 
   return product;
+}
+
+function normalizeSessionUserItem(value: unknown): SessionUser | null {
+  const parsed = parseJsonIfNeeded(value);
+  if (!isRecord(parsed)) {
+    return null;
+  }
+
+  const id = toOptionalNumber(firstDefined(parsed, ["id", "userId", "user_id"]));
+  if (id === undefined) {
+    return null;
+  }
+
+  const user: SessionUser = {
+    id,
+    name: toStringValue(firstDefined(parsed, ["name", "username", "nome"])),
+    email: toStringValue(firstDefined(parsed, ["email", "mail"])),
+  };
+
+  const country = toStringValue(firstDefined(parsed, ["country", "seller_country"]));
+  if (country) {
+    user.country = country;
+  }
+
+  const state = toStringValue(firstDefined(parsed, ["state", "seller_state"]));
+  if (state) {
+    user.state = state;
+  }
+
+  const city = toStringValue(firstDefined(parsed, ["city", "seller_city"]));
+  if (city) {
+    user.city = city;
+  }
+
+  const neighborhood = toStringValue(firstDefined(parsed, ["neighborhood", "district"]));
+  if (neighborhood) {
+    user.neighborhood = neighborhood;
+  }
+
+  const street = toStringValue(firstDefined(parsed, ["street"]));
+  if (street) {
+    user.street = street;
+  }
+
+  const whatsappCountryIso = (
+    normalizeCountryIso(
+      firstDefined(parsed, [
+        "whatsappCountryIso",
+        "whatsapp_country_iso",
+        "countryIso",
+        "country_iso",
+      ]),
+    ) ?? normalizeCountryIso(firstDefined(parsed, ["country"]))
+  );
+  if (whatsappCountryIso) {
+    user.whatsappCountryIso = whatsappCountryIso;
+  }
+
+  const whatsappNumberRaw = firstDefined(parsed, [
+    "whatsappNumber",
+    "whatsapp_number",
+    "phone",
+    "seller_phone",
+  ]);
+  const whatsappNumber = normalizePhoneDigits(whatsappNumberRaw);
+  if (whatsappNumber) {
+    user.whatsappNumber = whatsappNumber;
+  }
+
+  return user;
 }
 
 function extractArrayPayload(value: unknown, keys: string[]): unknown[] {
@@ -423,31 +534,130 @@ async function uploadProductImageFile(file: File): Promise<UploadImageResponse> 
 }
 
 export const api = {
-  register(payload: AuthInput) {
-    return request<SessionUser>("/api/auth/register", {
+  async register(payload: AuthInput) {
+    const email = payload.email.trim();
+    const name = payload.name?.trim() || "";
+    const derivedUsername = (
+      payload.username?.trim() ||
+      email.split("@")[0] ||
+      `user${Date.now()}`
+    ).replace(/[^a-zA-Z0-9_.-]/g, "_");
+
+    const registerPayload = {
+      name: name || derivedUsername,
+      username: derivedUsername,
+      email,
+      password: payload.password,
+      acceptedPrivacyPolicy: true,
+      acceptedTerms: true,
+      acceptedGuidelines: true,
+      privacyPolicyAccepted: true,
+      termsAccepted: true,
+      guidelinesAccepted: true,
+      acceptPrivacyPolicy: true,
+      acceptTerms: true,
+      acceptGuidelines: true,
+    };
+
+    const raw = await request<unknown>("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify(registerPayload),
+    });
+    const user = normalizeSessionUserItem(raw);
+    if (!user) {
+      throw new Error("Resposta inválida ao criar conta.");
+    }
+    return user;
+  },
+  async login(payload: AuthInput) {
+    const raw = await request<unknown>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify(payload),
     });
+    const user = normalizeSessionUserItem(raw);
+    if (!user) {
+      throw new Error("Resposta inválida ao autenticar.");
+    }
+    return user;
   },
-  login(payload: AuthInput) {
-    return request<SessionUser>("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
-  getCurrentUser() {
-    return request<SessionUser>("/api/auth/me");
+  async getCurrentUser() {
+    const raw = await request<unknown>("/api/auth/me");
+    const user = normalizeSessionUserItem(raw);
+    if (!user) {
+      throw new Error("Resposta inválida ao recuperar sessão.");
+    }
+    return user;
   },
   logout() {
     return request<{ success: boolean }>("/api/auth/logout", {
       method: "POST",
     });
   },
-  updateProfile(payload: UpdateProfileInput) {
-    return request<SessionUser>("/api/profile", {
+  async updateProfile(payload: UpdateProfileInput) {
+    const normalizedWhatsapp = normalizePhoneDigits(payload.whatsappNumber);
+    const normalizedPayload: UpdateProfileInput = {
+      ...payload,
+      whatsappCountryIso: normalizeCountryIso(payload.whatsappCountryIso) ?? "IT",
+      whatsappNumber: normalizedWhatsapp,
+    };
+
+    try {
+      const raw = await request<unknown>("/api/profile", {
+        method: "PUT",
+        body: JSON.stringify(normalizedPayload),
+      });
+      const user = normalizeSessionUserItem(raw);
+      if (user) {
+        return user;
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        const message = error.message.toLowerCase();
+        const shouldTryLegacyRoute =
+          message.includes("404") ||
+          message.includes("rota da api não encontrada") ||
+          message.includes("cannot put /api/profile");
+
+        if (!shouldTryLegacyRoute) {
+          throw error;
+        }
+      } else {
+        throw error;
+      }
+    }
+
+    const legacyPayload = {
+      name: normalizedPayload.name,
+      country: normalizedPayload.country,
+      state: normalizedPayload.state,
+      city: normalizedPayload.city,
+      neighborhood: normalizedPayload.neighborhood,
+      street: normalizedPayload.street,
+      whatsappCountryIso: normalizedPayload.whatsappCountryIso,
+      whatsappNumber: normalizedPayload.whatsappNumber,
+      whatsapp_country_iso: normalizedPayload.whatsappCountryIso,
+      whatsapp_number: normalizedPayload.whatsappNumber,
+      phone: normalizedPayload.whatsappNumber,
+      seller_phone: normalizedPayload.whatsappNumber,
+      contact_phone: normalizedPayload.whatsappNumber,
+    };
+
+    const legacyRaw = await request<unknown>("/api/users/me", {
       method: "PUT",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(legacyPayload),
     });
+    const legacyUser = normalizeSessionUserItem(legacyRaw);
+    if (legacyUser) {
+      return legacyUser;
+    }
+
+    const sessionRaw = await request<unknown>("/api/auth/me");
+    const sessionUser = normalizeSessionUserItem(sessionRaw);
+    if (sessionUser) {
+      return sessionUser;
+    }
+
+    throw new Error("Resposta inválida ao atualizar perfil.");
   },
   async getProducts() {
     const payload = await request<unknown>("/api/products");
