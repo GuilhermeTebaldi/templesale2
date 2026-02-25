@@ -39,6 +39,7 @@ const CATEGORIES = [
   "Empregos",
   "Outros"
 ];
+const BRAND_NAME = "TempleSale";
 
 export default function App() {
   const { locale, setLocale, t } = useI18n();
@@ -373,6 +374,9 @@ export default function App() {
     () => new Set(readNotificationIds),
     [readNotificationIds],
   );
+  const containsBrandName = React.useCallback((value: string) => {
+    return value.toLowerCase().includes("templesale");
+  }, []);
   const notificationsToDisplay = React.useMemo<NotificationDto[]>(() => {
     if (!currentUser) {
       return [];
@@ -1103,8 +1107,11 @@ export default function App() {
          
           </div>
 
-          <h1 className="text-base sm:text-2xl font-serif tracking-widest sm:tracking-[0.15em] uppercase text-center grow px-2 truncate">
-            Templesale
+          <h1
+            className="text-base sm:text-2xl font-serif tracking-widest sm:tracking-[0.15em] uppercase text-center grow px-2 truncate notranslate"
+            translate="no"
+          >
+            {BRAND_NAME}
           </h1>
 
           <div className="flex items-center justify-end gap-1 sm:gap-4 w-1/3">
@@ -1183,14 +1190,24 @@ export default function App() {
                                       <div className="absolute left-0 top-0 bottom-0 w-1 bg-stone-900" />
                                     )}
                                     <div className="flex justify-between items-start mb-1">
-                                      <h4 className="text-xs font-bold text-stone-800">
+                                      <h4
+                                        className={`text-xs font-bold text-stone-800 ${
+                                          containsBrandName(notification.title) ? "notranslate" : ""
+                                        }`}
+                                        translate={containsBrandName(notification.title) ? "no" : "yes"}
+                                      >
                                         {notification.title}
                                       </h4>
                                       <span className="text-[9px] text-stone-400">
                                         {formatRelativeTime(notification.createdAt, locale)}
                                       </span>
                                     </div>
-                                    <p className="text-xs text-stone-500 leading-relaxed">
+                                    <p
+                                      className={`text-xs text-stone-500 leading-relaxed ${
+                                        containsBrandName(notification.message) ? "notranslate" : ""
+                                      }`}
+                                      translate={containsBrandName(notification.message) ? "no" : "yes"}
+                                    >
                                       {notification.message}
                                     </p>
                                   </div>
@@ -1339,7 +1356,9 @@ export default function App() {
         {/* Newsletter / CTA */}
         <section className="bg-stone-100 py-32 px-6">
           <div className="max-w-3xl mx-auto text-center">
-            <h3 className="text-3xl md:text-5xl font-serif italic mb-6">{t("Junte-se ao TempleSale")}</h3>
+            <h3 className="text-3xl md:text-5xl font-serif italic mb-6 notranslate" translate="no">
+              {t("Junte-se ao TempleSale")}
+            </h3>
             <p className="text-stone-500 mb-10 text-sm tracking-wide leading-relaxed">
               {t("Inscreva-se para receber acesso antecipado às novas coleções, lançamentos exclusivos do arquivo e histórias dos nossos artesãos.")}
             </p>
@@ -1361,7 +1380,9 @@ export default function App() {
       <footer className="bg-white border-t border-stone-100 py-20 px-6">
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12">
           <div className="col-span-1 md:col-span-2">
-            <h2 className="text-xl font-serif tracking-[0.15em] uppercase mb-6">Templesale</h2>
+            <h2 className="text-xl font-serif tracking-[0.15em] uppercase mb-6 notranslate" translate="no">
+              {BRAND_NAME}
+            </h2>
             <p className="text-stone-400 text-sm max-w-sm leading-relaxed">
               {t("Uma vitrine curada de objetos que definem o santuário moderno. Acreditamos na beleza duradoura dos materiais naturais e na alma do feito à mão.")}
             </p>
@@ -1392,7 +1413,8 @@ export default function App() {
         </div>
         <div className="max-w-7xl mx-auto mt-20 pt-8 border-t border-stone-50 flex flex-col md:flex-row justify-between items-center gap-4">
           <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400">
-            © 2026 Templesale. {t("Todos os direitos reservados.")}
+            © 2026 <span className="notranslate" translate="no">{BRAND_NAME}</span>.{" "}
+            {t("Todos os direitos reservados.")}
           </span>
           <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400">
             {t("Design com intenção")}
