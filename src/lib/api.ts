@@ -524,14 +524,39 @@ function normalizeProductItem(value: unknown): ProductDto | null {
     product.description = description;
   }
 
+  const parsedDetails: Record<string, string> = {};
   const detailsValue = parseJsonIfNeeded(firstDefined(parsed, ["details"]));
   if (isRecord(detailsValue)) {
-    const detailsEntries = Object.entries(detailsValue)
-      .map(([key, detailValue]) => [key, toStringValue(detailValue)] as const)
-      .filter(([, detailValue]) => detailValue.length > 0);
-    if (detailsEntries.length > 0) {
-      product.details = Object.fromEntries(detailsEntries);
+    Object.entries(detailsValue).forEach(([key, detailValue]) => {
+      const normalizedValue = toStringValue(detailValue);
+      if (normalizedValue.length > 0) {
+        parsedDetails[key] = normalizedValue;
+      }
+    });
+  }
+
+  const detailFallbackMap: Record<string, string[]> = {
+    type: ["property_type", "propertyType", "type"],
+    area: ["surface_area", "surfaceArea", "area"],
+    rooms: ["bedrooms", "rooms", "room"],
+    bathrooms: ["bathrooms", "bathroom"],
+    parking: ["parking", "garage"],
+    brand: ["brand"],
+    model: ["model"],
+    color: ["color"],
+    year: ["year"],
+  };
+  Object.entries(detailFallbackMap).forEach(([detailKey, sourceKeys]) => {
+    if (parsedDetails[detailKey]) {
+      return;
     }
+    const normalizedValue = toStringValue(firstDefined(parsed, sourceKeys));
+    if (normalizedValue) {
+      parsedDetails[detailKey] = normalizedValue;
+    }
+  });
+  if (Object.keys(parsedDetails).length > 0) {
+    product.details = parsedDetails;
   }
 
   const ownerId = toOptionalNumber(firstDefined(parsed, ["ownerId", "owner_id", "userId", "user_id"]));
