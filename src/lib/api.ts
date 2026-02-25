@@ -128,6 +128,8 @@ const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "")
 const AUTH_TOKEN_STORAGE_KEY = "templesale_auth_token";
 const ADMIN_AUTH_TOKEN_STORAGE_KEY = "templesale_admin_token";
 const ADMIN_SESSION_EMAIL_STORAGE_KEY = "templesale_admin_email";
+let supportsVendorsApi: boolean | null = null;
+let supportsPublicUserApi: boolean | null = null;
 
 function buildApiUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) {
@@ -700,6 +702,44 @@ function normalizeVendorList(value: unknown): VendorDto[] {
     .filter((item): item is VendorDto => item !== null);
 }
 
+function buildVendorsFromProducts(products: ProductDto[]): VendorDto[] {
+  const grouped = new globalThis.Map<number, VendorDto>();
+
+  products.forEach((product) => {
+    const ownerId = toOptionalNumber(product.ownerId);
+    if (!ownerId || !Number.isInteger(ownerId) || ownerId <= 0) {
+      return;
+    }
+
+    const sellerName = toStringValue(product.sellerName) || `Vendedor ${ownerId}`;
+    const current = grouped.get(ownerId);
+    if (!current) {
+      grouped.set(ownerId, {
+        id: ownerId,
+        name: sellerName,
+        avatarUrl: "",
+        productCount: 1,
+      });
+      return;
+    }
+
+    current.productCount += 1;
+    if (
+      current.name.trim().length === 0 ||
+      current.name.toLowerCase().startsWith("vendedor ")
+    ) {
+      current.name = sellerName;
+    }
+  });
+
+  return Array.from(grouped.values()).sort((a, b) => {
+    if (b.productCount !== a.productCount) {
+      return b.productCount - a.productCount;
+    }
+    return b.id - a.id;
+  });
+}
+
 function extractArrayPayload(value: unknown, keys: string[]): unknown[] {
   const parsed = parseJsonIfNeeded(value);
   if (Array.isArray(parsed)) {
@@ -1156,35 +1196,109 @@ export const api = {
     return normalizeProductList(payload);
   },
   async getVendors(search = "", limit = 60) {
-    const query = new URLSearchParams();
     const normalizedSearch = search.trim();
-    if (normalizedSearch) {
-      query.set("search", normalizedSearch);
-    }
     const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 100);
-    query.set("limit", String(safeLimit));
-    const payload = await request<unknown>(`/api/vendors?${query.toString()}`);
-    return normalizeVendorList(payload);
+
+    if (supportsVendorsApi !== false) {
+      const query = new URLSearchParams();
+      if (normalizedSearch) {
+        query.set("search", normalizedSearch);
+      }
+      query.set("limit", String(safeLimit));
+
+      try {
+        const payload = await request<unknown>(`/api/vendors?${query.toString()}`);
+        supportsVendorsApi = true;
+        return normalizeVendorList(payload);
+      } catch (error) {
+        if (!isMissingApiRouteError(error)) {
+          throw error;
+        }
+        supportsVendorsApi = false;
+      }
+    }
+
+    const productsPayload = await request<unknown>("/api/products");
+    const fallbackVendors = buildVendorsFromProducts(normalizeProductList(productsPayload));
+    const filteredFallback = normalizedSearch
+      ? fallbackVendors.filter((vendor) =>
+          vendor.name.toLowerCase().includes(normalizedSearch.toLowerCase()),
+        )
+      : fallbackVendors;
+
+    return filteredFallback.slice(0, safeLimit);
   },
   async getVendorProducts(vendorId: number): Promise<{ vendor: VendorDto; products: ProductDto[] }> {
-    const payload = await request<unknown>(`/api/vendors/${vendorId}/products`);
-    const parsed = parseJsonIfNeeded(payload);
-    if (!isRecord(parsed)) {
-      throw new Error("Resposta inválida ao carregar vendedor.");
+    if (!Number.isInteger(vendorId) || vendorId <= 0) {
+      throw new Error("ID de vendedor inválido.");
     }
 
-    const vendor =
-      normalizeVendorItem(firstDefined(parsed, ["vendor", "seller", "user"])) ||
-      normalizeVendorItem(parsed);
-    if (!vendor) {
-      throw new Error("Resposta inválida ao carregar vendedor.");
+    if (supportsVendorsApi !== false) {
+      try {
+        const payload = await request<unknown>(`/api/vendors/${vendorId}/products`);
+        const parsed = parseJsonIfNeeded(payload);
+        if (!isRecord(parsed)) {
+          throw new Error("Resposta inválida ao carregar vendedor.");
+        }
+
+        const vendor =
+          normalizeVendorItem(firstDefined(parsed, ["vendor", "seller", "user"])) ||
+          normalizeVendorItem(parsed);
+        if (!vendor) {
+          throw new Error("Resposta inválida ao carregar vendedor.");
+        }
+
+        const productsPayload = firstDefined(parsed, ["products", "items", "rows", "results"]);
+        const products = normalizeProductList(productsPayload ?? []);
+        supportsVendorsApi = true;
+
+        return {
+          vendor,
+          products,
+        };
+      } catch (error) {
+        if (!isMissingApiRouteError(error)) {
+          throw error;
+        }
+        supportsVendorsApi = false;
+      }
     }
 
-    const productsPayload = firstDefined(parsed, ["products", "items", "rows", "results"]);
-    const products = normalizeProductList(productsPayload ?? []);
+    const [productsPayload, vendorPayload] = await Promise.all([
+      request<unknown>("/api/products"),
+      supportsPublicUserApi === false
+        ? Promise.resolve(null)
+        : request<unknown>(`/api/users/${vendorId}`)
+            .then((payload) => {
+              supportsPublicUserApi = true;
+              return payload;
+            })
+            .catch((error) => {
+              if (isMissingApiRouteError(error) || isUnauthorizedApiError(error)) {
+                supportsPublicUserApi = false;
+                return null;
+              }
+              throw error;
+            }),
+    ]);
+
+    const products = normalizeProductList(productsPayload).filter(
+      (product) => product.ownerId === vendorId,
+    );
+    const vendorUser = vendorPayload === null ? null : normalizeSessionUserItem(vendorPayload);
+    const fallbackVendorName =
+      toStringValue(vendorUser?.name) ||
+      toStringValue(products[0]?.sellerName) ||
+      `Vendedor ${vendorId}`;
+    const fallbackVendor: VendorDto = {
+      id: vendorId,
+      name: fallbackVendorName,
+      avatarUrl: toStringValue(vendorUser?.avatarUrl),
+      productCount: products.length,
+    };
 
     return {
-      vendor,
+      vendor: fallbackVendor,
       products,
     };
   },
