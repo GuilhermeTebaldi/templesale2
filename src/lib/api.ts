@@ -118,6 +118,8 @@ const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "")
   .trim()
   .replace(/\/+$/, "");
 const AUTH_TOKEN_STORAGE_KEY = "templesale_auth_token";
+const ADMIN_AUTH_TOKEN_STORAGE_KEY = "templesale_admin_token";
+const ADMIN_SESSION_EMAIL_STORAGE_KEY = "templesale_admin_email";
 
 function buildApiUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) {
@@ -155,6 +157,60 @@ function clearAuthToken() {
     return;
   }
   window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
+function readAdminToken(): string {
+  if (!canUseStorage()) {
+    return "";
+  }
+  return String(window.localStorage.getItem(ADMIN_AUTH_TOKEN_STORAGE_KEY) ?? "").trim();
+}
+
+function persistAdminToken(token: unknown) {
+  if (!canUseStorage()) {
+    return;
+  }
+  const normalizedToken = toStringValue(token);
+  if (!normalizedToken) {
+    window.localStorage.removeItem(ADMIN_AUTH_TOKEN_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(ADMIN_AUTH_TOKEN_STORAGE_KEY, normalizedToken);
+}
+
+function clearAdminToken() {
+  if (!canUseStorage()) {
+    return;
+  }
+  window.localStorage.removeItem(ADMIN_AUTH_TOKEN_STORAGE_KEY);
+}
+
+function readAdminSessionEmail(): string {
+  if (!canUseStorage()) {
+    return "";
+  }
+  return String(window.localStorage.getItem(ADMIN_SESSION_EMAIL_STORAGE_KEY) ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function persistAdminSessionEmail(email: string) {
+  if (!canUseStorage()) {
+    return;
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) {
+    window.localStorage.removeItem(ADMIN_SESSION_EMAIL_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(ADMIN_SESSION_EMAIL_STORAGE_KEY, normalizedEmail);
+}
+
+function clearAdminSessionEmail() {
+  if (!canUseStorage()) {
+    return;
+  }
+  window.localStorage.removeItem(ADMIN_SESSION_EMAIL_STORAGE_KEY);
 }
 
 function asEnvelope(value: unknown): ApiEnvelope | null {
@@ -197,6 +253,27 @@ function isMissingApiRouteError(error: unknown): boolean {
   return isMissingApiRouteMessage(error.message);
 }
 
+function isUnauthorizedApiError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const normalized = error.message.toLowerCase();
+  return normalized.includes("401") || normalized.includes("não autorizado") || normalized.includes("unauthorized");
+}
+
+function isAdminLoginPayloadFormatError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const normalized = error.message.toLowerCase();
+  return (
+    normalized.includes("obrigat") ||
+    normalized.includes("required") ||
+    normalized.includes("email e senha") ||
+    normalized.includes("email and password")
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -226,6 +303,44 @@ function firstDefined(record: Record<string, unknown>, keys: string[]): unknown 
     }
   }
   return undefined;
+}
+
+function findStringInNestedRecords(
+  value: unknown,
+  searchKeys: string[],
+  nestedKeys: string[],
+  depth = 3,
+): string {
+  if (depth < 0) {
+    return "";
+  }
+
+  const parsed = parseJsonIfNeeded(value);
+  if (!isRecord(parsed)) {
+    return "";
+  }
+
+  const directValue = toStringValue(firstDefined(parsed, searchKeys));
+  if (directValue) {
+    return directValue;
+  }
+
+  for (const nestedKey of nestedKeys) {
+    if (!Object.prototype.hasOwnProperty.call(parsed, nestedKey)) {
+      continue;
+    }
+    const nestedValue = findStringInNestedRecords(
+      parsed[nestedKey],
+      searchKeys,
+      nestedKeys,
+      depth - 1,
+    );
+    if (nestedValue) {
+      return nestedValue;
+    }
+  }
+
+  return "";
 }
 
 function toStringValue(value: unknown): string {
@@ -567,18 +682,30 @@ function normalizeNotificationList(value: unknown): NotificationDto[] {
   return items.filter((item): item is NotificationDto => isRecord(item));
 }
 
-function normalizeAdminSessionItem(value: unknown): AdminSessionDto | null {
-  const parsed = parseJsonIfNeeded(value);
-  if (!isRecord(parsed)) {
-    return null;
+function normalizeAdminSessionItem(value: unknown, fallbackEmail = ""): AdminSessionDto | null {
+  const email = findStringInNestedRecords(
+    value,
+    ["email", "mail", "username", "login", "name"],
+    ["data", "admin", "user", "profile", "auth", "session", "me", "current"],
+  )
+    .trim()
+    .toLowerCase();
+
+  if (email) {
+    return { email };
   }
 
-  const email = toStringValue(firstDefined(parsed, ["email"])).toLowerCase();
-  if (!email) {
-    return null;
+  const persistedEmail = readAdminSessionEmail();
+  if (persistedEmail) {
+    return { email: persistedEmail };
   }
 
-  return { email };
+  const normalizedFallbackEmail = fallbackEmail.trim().toLowerCase();
+  if (normalizedFallbackEmail) {
+    return { email: normalizedFallbackEmail };
+  }
+
+  return null;
 }
 
 function normalizeAdminUserItem(value: unknown): AdminUserDto | null {
@@ -641,42 +768,46 @@ function normalizeAdminUserList(value: unknown): AdminUserDto[] {
 }
 
 function extractTokenFromAuthPayload(value: unknown): string {
-  const parsed = parseJsonIfNeeded(value);
-  if (!isRecord(parsed)) {
-    return "";
-  }
-
-  const directToken = toStringValue(
-    firstDefined(parsed, ["token", "accessToken", "access_token", "jwt"]),
+  return findStringInNestedRecords(
+    value,
+    [
+      "token",
+      "accessToken",
+      "access_token",
+      "jwt",
+      "adminToken",
+      "admin_token",
+      "adminJwt",
+      "admin_jwt",
+    ],
+    ["data", "auth", "session", "admin", "user", "profile", "result"],
   );
-  if (directToken) {
-    return directToken;
-  }
-
-  const nestedAuth = firstDefined(parsed, ["auth", "session"]);
-  if (isRecord(nestedAuth)) {
-    return toStringValue(
-      firstDefined(nestedAuth, ["token", "accessToken", "access_token", "jwt"]),
-    );
-  }
-
-  return "";
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers ?? {});
+type ApiRequestInit = RequestInit & {
+  useAdminToken?: boolean;
+};
+
+async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
+  const { useAdminToken = false, ...fetchInit } = init ?? {};
+  const headers = new Headers(fetchInit.headers ?? {});
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
-  const authToken = readAuthToken();
-  if (authToken && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${authToken}`);
+  const token = useAdminToken ? readAdminToken() : readAuthToken();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  if (useAdminToken && token) {
+    headers.set("X-Admin-Token", token);
+    headers.set("X-Admin-Auth", token);
   }
 
   const response = await fetch(buildApiUrl(url), {
     credentials: "include",
-    ...init,
+    ...fetchInit,
     headers,
   });
 
@@ -685,7 +816,12 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearAuthToken();
+      if (useAdminToken) {
+        clearAdminToken();
+        clearAdminSessionEmail();
+      } else {
+        clearAuthToken();
+      }
     }
 
     let message = `${response.status} ${response.statusText}`;
@@ -1056,73 +1192,152 @@ export const api = {
   },
   admin: {
     async login(email: string, password: string) {
-      let payload: unknown;
-      try {
-        payload = await request<unknown>("/api/admin/auth/login", {
-          method: "POST",
-          body: JSON.stringify({ email, password }),
-        });
-      } catch (error) {
-        if (!isMissingApiRouteError(error)) {
-          throw error;
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedPassword = password.trim();
+
+      const loginPayloadCandidates = [
+        { email: normalizedEmail, password: normalizedPassword },
+        { login: normalizedEmail, password: normalizedPassword },
+        { username: normalizedEmail, password: normalizedPassword },
+        { email: normalizedEmail, senha: normalizedPassword },
+        { login: normalizedEmail, senha: normalizedPassword },
+        { username: normalizedEmail, senha: normalizedPassword },
+      ];
+      const loginRouteCandidates = [
+        "/api/admin/auth/login",
+        "/api/admin/auth",
+        "/api/admin/login",
+      ];
+
+      clearAdminToken();
+      let lastError: unknown;
+
+      for (const route of loginRouteCandidates) {
+        for (const payloadCandidate of loginPayloadCandidates) {
+          try {
+            const payload = await request<unknown>(route, {
+              method: "POST",
+              body: JSON.stringify(payloadCandidate),
+              useAdminToken: true,
+            });
+            const adminToken = extractTokenFromAuthPayload(payload);
+            if (adminToken) {
+              persistAdminToken(adminToken);
+            }
+            const session = normalizeAdminSessionItem(payload, normalizedEmail);
+            if (!session) {
+              throw new Error("Resposta inválida ao autenticar administrador.");
+            }
+            persistAdminSessionEmail(session.email);
+            return session;
+          } catch (error) {
+            lastError = error;
+            if (isMissingApiRouteError(error)) {
+              break;
+            }
+            if (isAdminLoginPayloadFormatError(error) || isUnauthorizedApiError(error)) {
+              continue;
+            }
+            throw error;
+          }
         }
-        payload = await request<unknown>("/api/admin/auth", {
-          method: "POST",
-          body: JSON.stringify({ email, password }),
-        });
       }
-      const session = normalizeAdminSessionItem(payload);
-      if (!session) {
-        throw new Error("Resposta inválida ao autenticar administrador.");
+
+      clearAdminToken();
+      clearAdminSessionEmail();
+      if (lastError instanceof Error) {
+        throw lastError;
       }
-      return session;
+      throw new Error("Falha ao autenticar administrador.");
     },
     async getCurrent() {
-      let payload: unknown;
-      try {
-        payload = await request<unknown>("/api/admin/auth/me");
-      } catch (error) {
-        if (!isMissingApiRouteError(error)) {
+      const sessionRouteCandidates = [
+        "/api/admin/auth/me",
+        "/api/admin/auth",
+        "/api/admin/me",
+      ];
+      let lastError: unknown;
+
+      for (const route of sessionRouteCandidates) {
+        try {
+          const payload = await request<unknown>(route, { useAdminToken: true });
+          const adminToken = extractTokenFromAuthPayload(payload);
+          if (adminToken) {
+            persistAdminToken(adminToken);
+          }
+          const session = normalizeAdminSessionItem(payload);
+          if (!session) {
+            throw new Error("Sessão de administrador inválida.");
+          }
+          persistAdminSessionEmail(session.email);
+          return session;
+        } catch (error) {
+          lastError = error;
+          if (isMissingApiRouteError(error)) {
+            continue;
+          }
           throw error;
         }
-        payload = await request<unknown>("/api/admin/auth");
       }
-      const session = normalizeAdminSessionItem(payload);
-      if (!session) {
-        throw new Error("Sessão de administrador inválida.");
+
+      const persistedEmail = readAdminSessionEmail();
+      if (readAdminToken() && persistedEmail) {
+        return { email: persistedEmail };
       }
-      return session;
+
+      if (lastError instanceof Error) {
+        throw lastError;
+      }
+      throw new Error("Sessão de administrador inválida.");
     },
     async logout() {
       try {
-        return await request<{ success: boolean }>("/api/admin/auth/logout", {
-          method: "POST",
-        });
-      } catch (error) {
-        if (!isMissingApiRouteError(error)) {
-          throw error;
+        const logoutRouteCandidates: Array<{ route: string; method: "POST" | "DELETE" }> = [
+          { route: "/api/admin/auth/logout", method: "POST" },
+          { route: "/api/admin/auth", method: "DELETE" },
+          { route: "/api/admin/logout", method: "POST" },
+          { route: "/api/admin/logout", method: "DELETE" },
+        ];
+
+        for (const candidate of logoutRouteCandidates) {
+          try {
+            return await request<{ success: boolean }>(candidate.route, {
+              method: candidate.method,
+              useAdminToken: true,
+            });
+          } catch (error) {
+            if (isMissingApiRouteError(error)) {
+              continue;
+            }
+            throw error;
+          }
         }
-        return request<{ success: boolean }>("/api/admin/auth", {
-          method: "DELETE",
-        });
+        return { success: true };
+      } finally {
+        clearAdminToken();
+        clearAdminSessionEmail();
       }
     },
     async getUsers() {
-      const payload = await request<unknown>("/api/admin/users");
+      const payload = await request<unknown>("/api/admin/users", { useAdminToken: true });
       return normalizeAdminUserList(payload);
     },
     async getUserProducts(userId: number) {
-      const payload = await request<unknown>(`/api/admin/users/${userId}/products`);
+      const payload = await request<unknown>(`/api/admin/users/${userId}/products`, {
+        useAdminToken: true,
+      });
       return normalizeProductList(payload);
     },
     deleteProduct(productId: number) {
       return request<{ success: boolean }>(`/api/admin/products/${productId}`, {
         method: "DELETE",
+        useAdminToken: true,
       });
     },
     deleteUser(userId: number) {
       return request<{ success: boolean }>(`/api/admin/users/${userId}`, {
         method: "DELETE",
+        useAdminToken: true,
       });
     },
   },
