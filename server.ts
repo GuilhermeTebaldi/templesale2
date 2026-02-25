@@ -480,6 +480,7 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id BIGINT",
@@ -507,6 +508,9 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS street TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT'",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number TEXT NOT NULL DEFAULT ''",
+    "UPDATE users SET password = COALESCE(NULLIF(BTRIM(password), ''), password_hash, '') WHERE password IS NULL OR BTRIM(password) = ''",
+    "ALTER TABLE users ALTER COLUMN password SET DEFAULT ''",
+    "ALTER TABLE users ALTER COLUMN password SET NOT NULL",
     "UPDATE users SET username = COALESCE(NULLIF(BTRIM(username), ''), NULLIF(BTRIM(email), ''), CONCAT('user_', id::text)) WHERE username IS NULL OR BTRIM(username) = ''",
     "ALTER TABLE users ALTER COLUMN username SET DEFAULT ''",
     "ALTER TABLE users ALTER COLUMN username SET NOT NULL",
@@ -941,13 +945,14 @@ async function createUserRecord(
 ): Promise<number> {
   if (pgPool) {
     const username = email;
+    const legacyPassword = passwordHash;
     const result = await pgPool.query<{ id: number | string }>(
       `
-        INSERT INTO users (name, username, email, password_hash, password_salt)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO users (name, username, email, password, password_hash, password_salt)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
       `,
-      [name, username, email, passwordHash, passwordSalt],
+      [name, username, email, legacyPassword, passwordHash, passwordSalt],
     );
     return toRequiredNumber(result.rows[0]?.id);
   }
