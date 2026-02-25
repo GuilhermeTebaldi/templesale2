@@ -19,6 +19,7 @@ import { buildWhatsappUrl, formatWhatsappDisplay } from "../lib/whatsapp";
 import { useI18n } from "../i18n/provider";
 import { formatEuroFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
+import { resolveProductImages } from "../lib/product-images";
 
 interface ProductDetailsProps {
   product: Product | null;
@@ -61,7 +62,7 @@ export default function ProductDetails({
 
   if (!product) return null;
 
-  const images = product.images || [product.image];
+  const images = resolveProductImages(product);
   const description = product.description?.trim() || t("Descrição não informada pelo vendedor.");
   const detailsEntries = Object.entries(product.details ?? {}).filter(
     (entry): entry is [string, string] =>

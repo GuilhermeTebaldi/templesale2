@@ -41,6 +41,10 @@ const CATEGORIES = [
 ];
 const BRAND_NAME = "TempleSale";
 
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
 export default function App() {
   const { locale, setLocale, t } = useI18n();
   const [activeCategory, setActiveCategory] = React.useState("All");
@@ -99,7 +103,7 @@ export default function App() {
       try {
         const data = await api.getProducts();
         if (!cancelled) {
-          setProducts(data);
+          setProducts(asArray<Product>(data));
         }
       } catch (err) {
         console.error("Error fetching products:", err);
@@ -170,7 +174,7 @@ export default function App() {
       try {
         const data = await api.getMyProducts();
         if (!cancelled) {
-          setMyProducts(data);
+          setMyProducts(asArray<Product>(data));
         }
       } catch (err) {
         console.error("Error fetching my products:", err);
@@ -199,7 +203,7 @@ export default function App() {
       try {
         const data = await api.getNotifications();
         if (!cancelled) {
-          setNotifications(data);
+          setNotifications(asArray<NotificationDto>(data));
         }
       } catch (err) {
         console.error("Error fetching notifications:", err);
@@ -227,7 +231,7 @@ export default function App() {
       try {
         const data = await api.getNotifications();
         if (!cancelled) {
-          setNotifications(data);
+          setNotifications(asArray<NotificationDto>(data));
         }
       } catch (err) {
         console.error("Error refreshing notifications:", err);
@@ -295,7 +299,7 @@ export default function App() {
       try {
         const data = await api.getLikedProducts();
         if (!cancelled) {
-          setLikedProducts(data);
+          setLikedProducts(asArray<Product>(data));
         }
       } catch (err) {
         console.error("Error fetching liked products:", err);

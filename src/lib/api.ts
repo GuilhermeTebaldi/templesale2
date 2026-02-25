@@ -124,6 +124,191 @@ function extractApiError(payload: unknown): string | null {
   return null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parseJsonIfNeeded(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+  const trimmed = value.trim();
+  if (!trimmed || !(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+    return value;
+  }
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function firstDefined(record: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      const value = record[key];
+      if (value !== undefined && value !== null) {
+        return value;
+      }
+    }
+  }
+  return undefined;
+}
+
+function toStringValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return "";
+}
+
+function toOptionalNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function toStringArray(value: unknown): string[] {
+  const parsed = parseJsonIfNeeded(value);
+  if (Array.isArray(parsed)) {
+    return parsed.map((item) => toStringValue(item)).filter((item) => item.length > 0);
+  }
+
+  const single = toStringValue(parsed);
+  return single ? [single] : [];
+}
+
+function normalizeProductImages(rawImages: unknown, rawImage: unknown): string[] {
+  const images = toStringArray(rawImages);
+  const fallbackImage = toStringValue(rawImage);
+  if (fallbackImage && !images.includes(fallbackImage)) {
+    images.unshift(fallbackImage);
+  }
+  if (images.length > 0) {
+    return images;
+  }
+  return fallbackImage ? [fallbackImage] : [];
+}
+
+function normalizeProductItem(value: unknown): ProductDto | null {
+  const parsed = parseJsonIfNeeded(value);
+  if (!isRecord(parsed)) {
+    return null;
+  }
+
+  const id = toOptionalNumber(firstDefined(parsed, ["id"]));
+  if (id === undefined) {
+    return null;
+  }
+
+  const images = normalizeProductImages(
+    firstDefined(parsed, ["images", "image_urls"]),
+    firstDefined(parsed, ["image", "image_url"]),
+  );
+  const image = images[0] ?? "";
+
+  const product: ProductDto = {
+    id,
+    name: toStringValue(firstDefined(parsed, ["name", "title"])),
+    category: toStringValue(firstDefined(parsed, ["category"])),
+    price: toStringValue(firstDefined(parsed, ["price"])),
+    image,
+    images,
+  };
+
+  const description = toStringValue(firstDefined(parsed, ["description"]));
+  if (description) {
+    product.description = description;
+  }
+
+  const detailsValue = parseJsonIfNeeded(firstDefined(parsed, ["details"]));
+  if (isRecord(detailsValue)) {
+    const detailsEntries = Object.entries(detailsValue)
+      .map(([key, detailValue]) => [key, toStringValue(detailValue)] as const)
+      .filter(([, detailValue]) => detailValue.length > 0);
+    if (detailsEntries.length > 0) {
+      product.details = Object.fromEntries(detailsEntries);
+    }
+  }
+
+  const ownerId = toOptionalNumber(firstDefined(parsed, ["ownerId", "owner_id", "userId", "user_id"]));
+  if (ownerId !== undefined) {
+    product.ownerId = ownerId;
+  }
+
+  const latitude = toOptionalNumber(firstDefined(parsed, ["latitude", "lat"]));
+  if (latitude !== undefined) {
+    product.latitude = latitude;
+  }
+
+  const longitude = toOptionalNumber(firstDefined(parsed, ["longitude", "lng", "lon"]));
+  if (longitude !== undefined) {
+    product.longitude = longitude;
+  }
+
+  const sellerName = toStringValue(firstDefined(parsed, ["sellerName", "seller_name"]));
+  if (sellerName) {
+    product.sellerName = sellerName;
+  }
+
+  const sellerWhatsappCountryIso = toStringValue(
+    firstDefined(parsed, ["sellerWhatsappCountryIso", "seller_whatsapp_country_iso"]),
+  );
+  if (sellerWhatsappCountryIso) {
+    product.sellerWhatsappCountryIso = sellerWhatsappCountryIso;
+  }
+
+  const sellerWhatsappNumber = toStringValue(
+    firstDefined(parsed, ["sellerWhatsappNumber", "seller_whatsapp_number"]),
+  );
+  if (sellerWhatsappNumber) {
+    product.sellerWhatsappNumber = sellerWhatsappNumber;
+  }
+
+  return product;
+}
+
+function extractArrayPayload(value: unknown, keys: string[]): unknown[] {
+  const parsed = parseJsonIfNeeded(value);
+  if (Array.isArray(parsed)) {
+    return parsed;
+  }
+  if (!isRecord(parsed)) {
+    return [];
+  }
+
+  for (const key of keys) {
+    const nested = parseJsonIfNeeded(parsed[key]);
+    if (Array.isArray(nested)) {
+      return nested;
+    }
+  }
+
+  return [];
+}
+
+function normalizeProductList(value: unknown): ProductDto[] {
+  const items = extractArrayPayload(value, ["data", "products", "items", "rows", "results"]);
+  return items
+    .map((item) => normalizeProductItem(item))
+    .filter((item): item is ProductDto => item !== null);
+}
+
+function normalizeNotificationList(value: unknown): NotificationDto[] {
+  const items = extractArrayPayload(value, ["data", "notifications", "items", "rows", "results"]);
+  return items.filter((item): item is NotificationDto => isRecord(item));
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(buildApiUrl(url), {
     credentials: "include",
@@ -264,18 +449,22 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
-  getProducts() {
-    return request<ProductDto[]>("/api/products");
+  async getProducts() {
+    const payload = await request<unknown>("/api/products");
+    return normalizeProductList(payload);
   },
-  getMyProducts() {
-    return request<ProductDto[]>("/api/my-products");
+  async getMyProducts() {
+    const payload = await request<unknown>("/api/my-products");
+    return normalizeProductList(payload);
   },
-  getLikedProducts() {
-    return request<ProductDto[]>("/api/likes");
+  async getLikedProducts() {
+    const payload = await request<unknown>("/api/likes");
+    return normalizeProductList(payload);
   },
   async getNotifications() {
     try {
-      return await request<NotificationDto[]>("/api/notifications");
+      const payload = await request<unknown>("/api/notifications");
+      return normalizeNotificationList(payload);
     } catch (error) {
       if (error instanceof Error) {
         const message = error.message.toLowerCase();
@@ -286,17 +475,27 @@ export const api = {
       throw error;
     }
   },
-  createProduct(product: CreateProductInput) {
-    return request<ProductDto>("/api/products", {
+  async createProduct(product: CreateProductInput) {
+    const payload = await request<unknown>("/api/products", {
       method: "POST",
       body: JSON.stringify(product),
     });
+    const normalized = normalizeProductItem(payload);
+    if (!normalized) {
+      throw new Error("Resposta inválida ao criar produto.");
+    }
+    return normalized;
   },
-  updateProduct(id: number, product: CreateProductInput) {
-    return request<ProductDto>(`/api/products/${id}`, {
+  async updateProduct(id: number, product: CreateProductInput) {
+    const payload = await request<unknown>(`/api/products/${id}`, {
       method: "PUT",
       body: JSON.stringify(product),
     });
+    const normalized = normalizeProductItem(payload);
+    if (!normalized) {
+      throw new Error("Resposta inválida ao atualizar produto.");
+    }
+    return normalized;
   },
   likeProduct(id: number) {
     return request<{ success: boolean }>(`/api/products/${id}/like`, {

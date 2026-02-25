@@ -4,6 +4,7 @@ import { ShoppingBag, Heart, ChevronLeft, ChevronRight } from "lucide-react";
 import { useI18n } from "../i18n/provider";
 import { formatEuroFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
+import { resolveProductImages } from "../lib/product-images";
 
 export interface Product {
   id: number;
@@ -37,7 +38,7 @@ export default function ProductCard({
 }: ProductCardProps) {
   const { t, locale } = useI18n();
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
-  const images = product.images || [product.image];
+  const images = React.useMemo(() => resolveProductImages(product), [product]);
 
   const nextImage = (e: React.MouseEvent) => {
     e.stopPropagation();
