@@ -69,6 +69,7 @@ type UserRow = {
   email: string;
   password_hash: string;
   password_salt: string;
+  avatar_url: string | null;
   country: string | null;
   state: string | null;
   city: string | null;
@@ -82,6 +83,7 @@ type SessionUser = {
   id: number;
   name: string;
   email: string;
+  avatarUrl?: string;
   country?: string;
   state?: string;
   city?: string;
@@ -89,6 +91,13 @@ type SessionUser = {
   street?: string;
   whatsappCountryIso?: string;
   whatsappNumber?: string;
+};
+
+type PublicVendorRecord = {
+  id: number;
+  name: string;
+  avatarUrl?: string;
+  productCount: number;
 };
 
 type AdminSessionUser = {
@@ -132,11 +141,19 @@ type UserProfileUpdateInput = {
   whatsapp_number: string;
 };
 
+type VendorRow = {
+  id: number;
+  name: string;
+  avatar_url: string | null;
+  product_count: number;
+};
+
 type SessionUserRow = Pick<
   UserRow,
   | "id"
   | "name"
   | "email"
+  | "avatar_url"
   | "country"
   | "state"
   | "city"
@@ -162,9 +179,11 @@ const DEFAULT_IMAGE = "https://picsum.photos/seed/placeholder/800/1200";
 const CLOUDINARY_CLOUD_NAME = String(process.env.CLOUDINARY_CLOUD_NAME ?? "").trim();
 const CLOUDINARY_API_KEY = String(process.env.CLOUDINARY_API_KEY ?? "").trim();
 const CLOUDINARY_API_SECRET = String(process.env.CLOUDINARY_API_SECRET ?? "").trim();
-const CLOUDINARY_UPLOAD_FOLDER = String(
-  process.env.CLOUDINARY_UPLOAD_FOLDER ?? "templesale/products",
-).trim();
+const CLOUDINARY_UPLOAD_FOLDER =
+  String(process.env.CLOUDINARY_UPLOAD_FOLDER ?? "").trim() || "templesale/products";
+const CLOUDINARY_PROFILE_UPLOAD_FOLDER =
+  String(process.env.CLOUDINARY_PROFILE_UPLOAD_FOLDER ?? "").trim() ||
+  `${CLOUDINARY_UPLOAD_FOLDER.replace(/\/+$/, "")}/profiles`;
 const CLEAN_LOCAL_PRODUCTS_ON_BOOT =
   String(process.env.CLEAN_LOCAL_PRODUCTS_ON_BOOT ?? "true").toLowerCase() === "true";
 const SESSION_COOKIE_NAME = "templesale_session";
@@ -223,6 +242,7 @@ const USER_SELECT_FIELDS = `
   email,
   password_hash,
   password_salt,
+  avatar_url,
   country,
   state,
   city,
@@ -236,6 +256,7 @@ const SESSION_USER_SELECT_FIELDS = `
   u.id,
   u.name,
   u.email,
+  u.avatar_url,
   u.country,
   u.state,
   u.city,
@@ -324,6 +345,7 @@ function normalizeUserRow(row: Record<string, unknown>): UserRow {
     email: String(row.email ?? ""),
     password_hash: String(row.password_hash ?? ""),
     password_salt: String(row.password_salt ?? ""),
+    avatar_url: toNullableString(row.avatar_url),
     country: toNullableString(row.country),
     state: toNullableString(row.state),
     city: toNullableString(row.city),
@@ -339,6 +361,7 @@ function normalizeSessionUserRow(row: Record<string, unknown>): SessionUserRow {
     id: toRequiredNumber(row.id),
     name: String(row.name ?? ""),
     email: String(row.email ?? ""),
+    avatar_url: toNullableString(row.avatar_url),
     country: toNullableString(row.country),
     state: toNullableString(row.state),
     city: toNullableString(row.city),
@@ -356,6 +379,15 @@ function normalizeLikeNotificationRow(row: Record<string, unknown>): LikeNotific
     product_id: toRequiredNumber(row.product_id),
     product_name: String(row.product_name ?? ""),
     created_at: toRequiredNumber(row.created_at),
+  };
+}
+
+function normalizeVendorRow(row: Record<string, unknown>): VendorRow {
+  return {
+    id: toRequiredNumber(row.id),
+    name: String(row.name ?? "").trim(),
+    avatar_url: toNullableString(row.avatar_url),
+    product_count: toRequiredNonNegativeInteger(row.product_count, 0),
   };
 }
 
@@ -436,6 +468,7 @@ function initializeSqliteDatabase() {
       email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
       password_salt TEXT NOT NULL,
+      avatar_url TEXT NOT NULL DEFAULT '',
       country TEXT NOT NULL DEFAULT '',
       state TEXT NOT NULL DEFAULT '',
       city TEXT NOT NULL DEFAULT '',
@@ -485,6 +518,9 @@ function initializeSqliteDatabase() {
   db.exec("UPDATE products SET quantity = 1 WHERE quantity IS NULL OR quantity < 0");
 
   const userColumns = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  if (!userColumns.some((column) => column.name === "avatar_url")) {
+    db.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''");
+  }
   if (!userColumns.some((column) => column.name === "country")) {
     db.exec("ALTER TABLE users ADD COLUMN country TEXT NOT NULL DEFAULT ''");
   }
@@ -525,6 +561,7 @@ async function initializePostgresDatabase() {
         email TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
         password_salt TEXT NOT NULL,
+        avatar_url TEXT NOT NULL DEFAULT '',
         country TEXT NOT NULL DEFAULT '',
         state TEXT NOT NULL DEFAULT '',
         city TEXT NOT NULL DEFAULT '',
@@ -575,6 +612,7 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id BIGINT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS name TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS title TEXT",
@@ -1291,6 +1329,92 @@ async function updateUserProfileRecord(input: UserProfileUpdateInput): Promise<v
     .run(input);
 }
 
+async function updateUserAvatarRecord(userId: number, avatarUrl: string): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(
+      `
+        UPDATE users
+        SET avatar_url = $1
+        WHERE id = $2
+      `,
+      [avatarUrl, userId],
+    );
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        UPDATE users
+        SET avatar_url = @avatar_url
+        WHERE id = @id
+      `,
+    )
+    .run({
+      id: userId,
+      avatar_url: avatarUrl,
+    });
+}
+
+async function selectVendorsRows(searchTerm: string, limit: number): Promise<VendorRow[]> {
+  if (pgPool) {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const likeQuery = `%${normalizedSearch}%`;
+    const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 100);
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          u.id,
+          COALESCE(
+            NULLIF(BTRIM(u.name), ''),
+            NULLIF(BTRIM(u.username), ''),
+            NULLIF(BTRIM(u.email), ''),
+            CONCAT('Vendedor ', u.id::text)
+          ) AS name,
+          NULLIF(BTRIM(u.avatar_url), '') AS avatar_url,
+          COUNT(p.id)::INT AS product_count
+        FROM users u
+        INNER JOIN products p ON p.user_id = u.id
+        WHERE
+          $1 = ''
+          OR LOWER(COALESCE(NULLIF(BTRIM(u.name), ''), '')) LIKE $2
+          OR LOWER(COALESCE(NULLIF(BTRIM(u.username), ''), '')) LIKE $2
+          OR LOWER(COALESCE(NULLIF(BTRIM(u.email), ''), '')) LIKE $2
+        GROUP BY u.id, u.name, u.username, u.email, u.avatar_url
+        ORDER BY product_count DESC, u.id DESC
+        LIMIT $3
+      `,
+      [normalizedSearch, likeQuery, safeLimit],
+    );
+    return result.rows.map(normalizeVendorRow);
+  }
+
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const likeQuery = `%${normalizedSearch}%`;
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 100);
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          u.id,
+          COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), 'Vendedor') AS name,
+          NULLIF(TRIM(u.avatar_url), '') AS avatar_url,
+          COUNT(p.id) AS product_count
+        FROM users u
+        INNER JOIN products p ON p.user_id = u.id
+        WHERE
+          ? = ''
+          OR LOWER(COALESCE(NULLIF(TRIM(u.name), ''), '')) LIKE ?
+          OR LOWER(COALESCE(NULLIF(TRIM(u.email), ''), '')) LIKE ?
+        GROUP BY u.id, u.name, u.email, u.avatar_url
+        ORDER BY product_count DESC, u.id DESC
+        LIMIT ?
+      `,
+    )
+    .all(normalizedSearch, likeQuery, likeQuery, safeLimit) as Array<Record<string, unknown>>;
+  return rows.map(normalizeVendorRow);
+}
+
 async function createSessionRecord(userId: number, tokenHash: string, expiresAt: number): Promise<void> {
   if (pgPool) {
     await pgPool.query(
@@ -1441,6 +1565,15 @@ function rowToProduct(row: ProductRow): ProductRecord {
   }
 
   return product;
+}
+
+function rowToPublicVendor(row: VendorRow): PublicVendorRecord {
+  return {
+    id: row.id,
+    name: row.name || `Vendedor ${row.id}`,
+    avatarUrl: row.avatar_url ?? "",
+    productCount: row.product_count,
+  };
 }
 
 function rowToNotification(row: LikeNotificationRow): NotificationRecord {
@@ -1613,6 +1746,29 @@ function normalizeTextField(value: unknown, fieldName: string, maxLength: number
   return normalized;
 }
 
+function normalizeAvatarUrl(value: unknown): string {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.length > 1200) {
+    throw new Error("URL da foto de perfil muito longa.");
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(normalized);
+  } catch {
+    throw new Error("URL da foto de perfil inválida.");
+  }
+
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    throw new Error("URL da foto de perfil inválida.");
+  }
+
+  return parsedUrl.toString();
+}
+
 function normalizeWhatsappCountryIso(value: unknown): WhatsappCountryIso {
   const normalized = String(value ?? "IT").trim().toUpperCase();
   if (normalized in WHATSAPP_COUNTRIES) {
@@ -1704,6 +1860,116 @@ function assertCloudinaryConfig() {
       "Cloudinary não configurado. Defina CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET.",
     );
   }
+}
+
+type CloudinaryUploadedImage = {
+  url: string;
+  publicId: string;
+  width?: number;
+  height?: number;
+};
+
+function parseIncomingImageUpload(req: Request): {
+  contentType: string;
+  payload: Buffer;
+  safeFilename: string;
+} {
+  const rawContentType = String(req.headers["content-type"] ?? "");
+  const contentType = rawContentType.split(";")[0]?.trim().toLowerCase();
+  if (!contentType.startsWith("image/")) {
+    throw new Error("Arquivo inválido. Envie uma imagem.");
+  }
+
+  const payload = req.body;
+  if (!Buffer.isBuffer(payload) || payload.length === 0) {
+    throw new Error("Arquivo de imagem não encontrado.");
+  }
+
+  const rawFilename = decodeHeaderFilename(req.header("x-file-name"));
+  const safeFilename =
+    rawFilename && rawFilename.length < 200
+      ? rawFilename
+      : `upload-${Date.now()}.${contentType.slice("image/".length) || "jpg"}`;
+
+  return {
+    contentType,
+    payload,
+    safeFilename,
+  };
+}
+
+async function uploadImageToCloudinary(
+  options: {
+    payload: Buffer;
+    contentType: string;
+    safeFilename: string;
+    folder: string;
+    publicIdPrefix: string;
+  },
+): Promise<CloudinaryUploadedImage> {
+  assertCloudinaryConfig();
+
+  const timestamp = Math.floor(Date.now() / 1000);
+  const uniqueSuffix = crypto.randomBytes(6).toString("hex");
+  const publicId = `${options.publicIdPrefix}_${Date.now()}_${uniqueSuffix}`;
+  const folder = options.folder;
+
+  const signature = buildCloudinarySignature(
+    {
+      folder,
+      public_id: publicId,
+      timestamp,
+    },
+    CLOUDINARY_API_SECRET,
+  );
+
+  const formData = new FormData();
+  formData.append(
+    "file",
+    new Blob([options.payload], { type: options.contentType }),
+    options.safeFilename,
+  );
+  formData.append("api_key", CLOUDINARY_API_KEY);
+  formData.append("timestamp", String(timestamp));
+  formData.append("signature", signature);
+  formData.append("folder", folder);
+  formData.append("public_id", publicId);
+
+  const uploadResponse = await fetch(
+    `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+
+  const uploadText = await uploadResponse.text();
+  let uploadJson: Record<string, unknown> = {};
+  try {
+    uploadJson = JSON.parse(uploadText) as Record<string, unknown>;
+  } catch {
+    uploadJson = {};
+  }
+
+  if (!uploadResponse.ok) {
+    const cloudinaryError =
+      typeof uploadJson.error === "object" && uploadJson.error
+        ? String((uploadJson.error as Record<string, unknown>).message ?? "").trim()
+        : "";
+    throw new Error(cloudinaryError || "Falha ao enviar imagem para o Cloudinary.");
+  }
+
+  const secureUrl = String(uploadJson.secure_url ?? "").trim();
+  if (!secureUrl) {
+    throw new Error("Cloudinary não retornou a URL da imagem.");
+  }
+
+  return {
+    url: secureUrl,
+    publicId: String(uploadJson.public_id ?? publicId),
+    width: Number(uploadJson.width ?? 0) || undefined,
+    height: Number(uploadJson.height ?? 0) || undefined,
+  };
 }
 
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
@@ -1844,6 +2110,7 @@ function sanitizeUser(
     | "id"
     | "name"
     | "email"
+    | "avatar_url"
     | "country"
     | "state"
     | "city"
@@ -1857,6 +2124,36 @@ function sanitizeUser(
     id: user.id,
     name: user.name,
     email: user.email,
+    avatarUrl: user.avatar_url ?? "",
+    country: user.country ?? "",
+    state: user.state ?? "",
+    city: user.city ?? "",
+    neighborhood: user.neighborhood ?? "",
+    street: user.street ?? "",
+    whatsappCountryIso: user.whatsapp_country_iso ?? "IT",
+    whatsappNumber: user.whatsapp_number ?? "",
+  };
+}
+
+function sanitizePublicUser(
+  user: Pick<
+    UserRow,
+    | "id"
+    | "name"
+    | "avatar_url"
+    | "country"
+    | "state"
+    | "city"
+    | "neighborhood"
+    | "street"
+    | "whatsapp_country_iso"
+    | "whatsapp_number"
+  >,
+) {
+  return {
+    id: user.id,
+    name: user.name,
+    avatarUrl: user.avatar_url ?? "",
     country: user.country ?? "",
     state: user.state ?? "",
     city: user.city ?? "",
@@ -2126,90 +2423,62 @@ async function bootstrap() {
       }
 
       try {
-        assertCloudinaryConfig();
-
-        const rawContentType = String(req.headers["content-type"] ?? "");
-        const contentType = rawContentType.split(";")[0]?.trim().toLowerCase();
-        if (!contentType.startsWith("image/")) {
-          res.status(415).json({ error: "Arquivo inválido. Envie uma imagem." });
-          return;
-        }
-
-        const payload = req.body;
-        if (!Buffer.isBuffer(payload) || payload.length === 0) {
-          res.status(400).json({ error: "Arquivo de imagem não encontrado." });
-          return;
-        }
-
-        const timestamp = Math.floor(Date.now() / 1000);
-        const uniqueSuffix = crypto.randomBytes(6).toString("hex");
-        const publicId = `user_${user.id}_${Date.now()}_${uniqueSuffix}`;
-        const folder = CLOUDINARY_UPLOAD_FOLDER;
-        const signature = buildCloudinarySignature(
-          {
-            folder,
-            public_id: publicId,
-            timestamp,
-          },
-          CLOUDINARY_API_SECRET,
-        );
-
-        const rawFilename = decodeHeaderFilename(req.header("x-file-name"));
-        const safeFilename =
-          rawFilename && rawFilename.length < 200
-            ? rawFilename
-            : `upload-${Date.now()}.${contentType.slice("image/".length) || "jpg"}`;
-
-        const formData = new FormData();
-        formData.append("file", new Blob([payload], { type: contentType }), safeFilename);
-        formData.append("api_key", CLOUDINARY_API_KEY);
-        formData.append("timestamp", String(timestamp));
-        formData.append("signature", signature);
-        formData.append("folder", folder);
-        formData.append("public_id", publicId);
-
-        const uploadResponse = await fetch(
-          `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-          {
-            method: "POST",
-            body: formData,
-          },
-        );
-
-        const uploadText = await uploadResponse.text();
-        let uploadJson: Record<string, unknown> = {};
-        try {
-          uploadJson = JSON.parse(uploadText) as Record<string, unknown>;
-        } catch {
-          uploadJson = {};
-        }
-
-        if (!uploadResponse.ok) {
-          const cloudinaryError =
-            typeof uploadJson.error === "object" && uploadJson.error
-              ? String((uploadJson.error as Record<string, unknown>).message ?? "").trim()
-              : "";
-          res.status(502).json({
-            error: cloudinaryError || "Falha ao enviar imagem para o Cloudinary.",
-          });
-          return;
-        }
-
-        const secureUrl = String(uploadJson.secure_url ?? "").trim();
-        if (!secureUrl) {
-          res.status(502).json({ error: "Cloudinary não retornou a URL da imagem." });
-          return;
-        }
-
-        res.status(201).json({
-          url: secureUrl,
-          publicId: String(uploadJson.public_id ?? publicId),
-          width: Number(uploadJson.width ?? 0) || undefined,
-          height: Number(uploadJson.height ?? 0) || undefined,
+        const { contentType, payload, safeFilename } = parseIncomingImageUpload(req);
+        const uploaded = await uploadImageToCloudinary({
+          payload,
+          contentType,
+          safeFilename,
+          folder: CLOUDINARY_UPLOAD_FOLDER,
+          publicIdPrefix: `product_user_${user.id}`,
         });
+
+        res.status(201).json(uploaded);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Falha ao fazer upload da imagem.";
-        res.status(500).json({ error: message });
+        const statusCode =
+          message.includes("Arquivo inválido") || message.includes("não encontrado")
+            ? 400
+            : message.includes("Cloudinary")
+              ? 502
+              : 500;
+        res.status(statusCode).json({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    "/api/uploads/profile-image",
+    express.raw({
+      type: "image/*",
+      limit: `${UPLOAD_MAX_BYTES}b`,
+    }),
+    async (req, res) => {
+      const user = await requireAuth(req, res);
+      if (!user) {
+        return;
+      }
+
+      try {
+        const { contentType, payload, safeFilename } = parseIncomingImageUpload(req);
+        const uploaded = await uploadImageToCloudinary({
+          payload,
+          contentType,
+          safeFilename,
+          folder: CLOUDINARY_PROFILE_UPLOAD_FOLDER,
+          publicIdPrefix: `avatar_user_${user.id}`,
+        });
+
+        res.status(201).json(uploaded);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Falha ao enviar foto de perfil.";
+        const statusCode =
+          message.includes("Arquivo inválido") || message.includes("não encontrado")
+            ? 400
+            : message.includes("Cloudinary")
+              ? 502
+              : 500;
+        res.status(statusCode).json({ error: message });
       }
     },
   );
@@ -2523,6 +2792,30 @@ async function bootstrap() {
     }
   });
 
+  app.put("/api/profile/avatar", async (req, res) => {
+    const sessionUser = await requireAuth(req, res);
+    if (!sessionUser) {
+      return;
+    }
+
+    try {
+      const body = req.body as Record<string, unknown>;
+      const avatarUrl = normalizeAvatarUrl(body.avatarUrl);
+      await updateUserAvatarRecord(sessionUser.id, avatarUrl);
+
+      const updatedUser = await selectUserByIdRow(sessionUser.id);
+      if (!updatedUser) {
+        res.status(404).json({ error: "Usuário não encontrado." });
+        return;
+      }
+
+      res.json(sanitizeUser(updatedUser));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao atualizar foto de perfil.";
+      res.status(400).json({ error: message });
+    }
+  });
+
   app.post("/api/auth/logout", async (req, res) => {
     try {
       const token = getSessionTokenFromRequest(req);
@@ -2544,6 +2837,74 @@ async function bootstrap() {
       res.json(rows.map(rowToProduct));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao listar produtos.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/users/:id", async (req, res) => {
+    const userId = Number(req.params.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      res.status(400).json({ error: "ID de usuário inválido." });
+      return;
+    }
+
+    try {
+      const user = await selectUserByIdRow(userId);
+      if (!user) {
+        res.status(404).json({ error: "Usuário não encontrado." });
+        return;
+      }
+      res.json(sanitizePublicUser(user));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao carregar vendedor.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/vendors", async (req, res) => {
+    try {
+      const rawSearch = String(req.query.search ?? "");
+      const rawLimit = Number(req.query.limit ?? 60);
+      const search = normalizeTextField(rawSearch, "Busca", 120).toLowerCase();
+      const limit = Number.isFinite(rawLimit) ? rawLimit : 60;
+      const rows = await selectVendorsRows(search, limit);
+      res.json(rows.map(rowToPublicVendor));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar vendedores.";
+      const statusCode = message.includes("Busca") ? 400 : 500;
+      res.status(statusCode).json({ error: message });
+    }
+  });
+
+  app.get("/api/vendors/:id/products", async (req, res) => {
+    const vendorId = Number(req.params.id);
+    if (!Number.isInteger(vendorId) || vendorId <= 0) {
+      res.status(400).json({ error: "ID de vendedor inválido." });
+      return;
+    }
+
+    try {
+      const vendor = await selectUserByIdRow(vendorId);
+      if (!vendor) {
+        res.status(404).json({ error: "Vendedor não encontrado." });
+        return;
+      }
+
+      const vendorProducts = await selectProductsByOwnerRows(vendorId);
+      const vendorRecord: PublicVendorRecord = {
+        id: vendor.id,
+        name: vendor.name || `Vendedor ${vendor.id}`,
+        avatarUrl: vendor.avatar_url ?? "",
+        productCount: vendorProducts.length,
+      };
+
+      res.json({
+        vendor: vendorRecord,
+        products: vendorProducts.map(rowToProduct),
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao listar produtos do vendedor.";
       res.status(500).json({ error: message });
     }
   });

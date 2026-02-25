@@ -57,6 +57,7 @@ export interface SessionUser {
   id: number;
   name: string;
   email: string;
+  avatarUrl?: string;
   country?: string;
   state?: string;
   city?: string;
@@ -64,6 +65,13 @@ export interface SessionUser {
   street?: string;
   whatsappCountryIso?: string;
   whatsappNumber?: string;
+}
+
+export interface VendorDto {
+  id: number;
+  name: string;
+  avatarUrl?: string;
+  productCount: number;
 }
 
 export interface UpdateProfileInput {
@@ -598,6 +606,13 @@ function normalizeSessionUserItem(value: unknown): SessionUser | null {
     email: toStringValue(firstDefined(parsed, ["email", "mail"])),
   };
 
+  const avatarUrl = toStringValue(
+    firstDefined(parsed, ["avatarUrl", "avatar_url", "profileImageUrl", "profile_image_url"]),
+  );
+  if (avatarUrl) {
+    user.avatarUrl = avatarUrl;
+  }
+
   const country = toStringValue(firstDefined(parsed, ["country", "seller_country"]));
   if (country) {
     user.country = country;
@@ -649,6 +664,40 @@ function normalizeSessionUserItem(value: unknown): SessionUser | null {
   }
 
   return user;
+}
+
+function normalizeVendorItem(value: unknown): VendorDto | null {
+  const parsed = parseJsonIfNeeded(value);
+  if (!isRecord(parsed)) {
+    return null;
+  }
+
+  const id = toOptionalNumber(firstDefined(parsed, ["id", "vendorId", "vendor_id"]));
+  if (id === undefined) {
+    return null;
+  }
+
+  const name =
+    toStringValue(firstDefined(parsed, ["name", "vendorName", "vendor_name"])) || `Vendedor ${id}`;
+  const avatarUrl = toStringValue(
+    firstDefined(parsed, ["avatarUrl", "avatar_url", "profileImageUrl", "profile_image_url"]),
+  );
+  const productCount =
+    toNonNegativeInteger(firstDefined(parsed, ["productCount", "product_count", "count"])) ?? 0;
+
+  return {
+    id,
+    name,
+    avatarUrl,
+    productCount,
+  };
+}
+
+function normalizeVendorList(value: unknown): VendorDto[] {
+  const items = extractArrayPayload(value, ["data", "vendors", "items", "rows", "results"]);
+  return items
+    .map((item) => normalizeVendorItem(item))
+    .filter((item): item is VendorDto => item !== null);
 }
 
 function extractArrayPayload(value: unknown, keys: string[]): unknown[] {
@@ -874,7 +923,10 @@ async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
   return payload as T;
 }
 
-async function uploadProductImageFile(file: File): Promise<UploadImageResponse> {
+async function uploadImageFile(
+  file: File,
+  endpoint: string,
+): Promise<UploadImageResponse> {
   const headers = new Headers({
     "Content-Type": file.type || "image/jpeg",
     "X-File-Name": encodeURIComponent(file.name || "upload"),
@@ -884,7 +936,7 @@ async function uploadProductImageFile(file: File): Promise<UploadImageResponse> 
     headers.set("Authorization", `Bearer ${authToken}`);
   }
 
-  const response = await fetch(buildApiUrl("/api/uploads/product-image"), {
+  const response = await fetch(buildApiUrl(endpoint), {
     method: "POST",
     credentials: "include",
     headers,
@@ -927,6 +979,14 @@ async function uploadProductImageFile(file: File): Promise<UploadImageResponse> 
   }
 
   return payload as UploadImageResponse;
+}
+
+async function uploadProductImageFile(file: File): Promise<UploadImageResponse> {
+  return uploadImageFile(file, "/api/uploads/product-image");
+}
+
+async function uploadProfileImageFile(file: File): Promise<UploadImageResponse> {
+  return uploadImageFile(file, "/api/uploads/profile-image");
 }
 
 export const api = {
@@ -1075,9 +1135,58 @@ export const api = {
 
     throw new Error("Resposta inválida ao atualizar perfil.");
   },
+  async updateProfileAvatar(avatarUrl: string) {
+    const normalizedAvatarUrl = toStringValue(avatarUrl);
+    if (!normalizedAvatarUrl) {
+      throw new Error("URL da foto de perfil inválida.");
+    }
+
+    const raw = await request<unknown>("/api/profile/avatar", {
+      method: "PUT",
+      body: JSON.stringify({ avatarUrl: normalizedAvatarUrl }),
+    });
+    const user = normalizeSessionUserItem(raw);
+    if (!user) {
+      throw new Error("Resposta inválida ao atualizar foto de perfil.");
+    }
+    return user;
+  },
   async getProducts() {
     const payload = await request<unknown>("/api/products");
     return normalizeProductList(payload);
+  },
+  async getVendors(search = "", limit = 60) {
+    const query = new URLSearchParams();
+    const normalizedSearch = search.trim();
+    if (normalizedSearch) {
+      query.set("search", normalizedSearch);
+    }
+    const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 100);
+    query.set("limit", String(safeLimit));
+    const payload = await request<unknown>(`/api/vendors?${query.toString()}`);
+    return normalizeVendorList(payload);
+  },
+  async getVendorProducts(vendorId: number): Promise<{ vendor: VendorDto; products: ProductDto[] }> {
+    const payload = await request<unknown>(`/api/vendors/${vendorId}/products`);
+    const parsed = parseJsonIfNeeded(payload);
+    if (!isRecord(parsed)) {
+      throw new Error("Resposta inválida ao carregar vendedor.");
+    }
+
+    const vendor =
+      normalizeVendorItem(firstDefined(parsed, ["vendor", "seller", "user"])) ||
+      normalizeVendorItem(parsed);
+    if (!vendor) {
+      throw new Error("Resposta inválida ao carregar vendedor.");
+    }
+
+    const productsPayload = firstDefined(parsed, ["products", "items", "rows", "results"]);
+    const products = normalizeProductList(productsPayload ?? []);
+
+    return {
+      vendor,
+      products,
+    };
   },
   async getProductById(id: number) {
     const payload = await request<unknown>(`/api/products/${id}`);
@@ -1189,6 +1298,9 @@ export const api = {
   },
   uploadProductImage(file: File) {
     return uploadProductImageFile(file);
+  },
+  uploadProfileImage(file: File) {
+    return uploadProfileImageFile(file);
   },
   admin: {
     async login(email: string, password: string) {

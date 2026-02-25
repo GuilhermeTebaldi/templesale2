@@ -1,6 +1,6 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, ShoppingBag, Menu, ArrowRight, Instagram, Twitter, Facebook, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, Heart, Plus, Minus, Share2, Bell, Filter, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown } from "lucide-react";
+import { Search, ShoppingBag, Menu, ArrowRight, Instagram, Twitter, Facebook, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, Heart, Plus, Minus, Share2, Bell, Filter, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown, ImagePlus, LoaderCircle } from "lucide-react";
 import ProductCard, { type Product } from "./components/ProductCard";
 import ProductDetails from "./components/ProductDetails";
 import NewProduct from "./components/NewProduct";
@@ -10,6 +10,7 @@ import EditePerfil from "./components/EditePerfil";
 import ProductMap from "./components/ProductMap";
 import Curtidas from "./components/Curtidas";
 import Carrinho, { type CartItem } from "./components/Carrinho";
+import Vendedores from "./components/Vendedores";
 import { api, type NotificationDto, type SessionUser, type UpdateProfileInput } from "./lib/api";
 import { useI18n } from "./i18n/provider";
 import { localeOptions, type AppLocale } from "./i18n";
@@ -116,6 +117,7 @@ export default function App() {
   const [isCurtidasOpen, setIsCurtidasOpen] = React.useState(false);
   const [isCartOpen, setIsCartOpen] = React.useState(false);
   const [isEditePerfilOpen, setIsEditePerfilOpen] = React.useState(false);
+  const [isVendedoresOpen, setIsVendedoresOpen] = React.useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = React.useState(false);
   const [authModalMode, setAuthModalMode] = React.useState<AuthMode>("register");
   const [currentUser, setCurrentUser] = React.useState<SessionUser | null>(null);
@@ -143,6 +145,9 @@ export default function App() {
     message: string;
     variant: "success" | "warning";
   } | null>(null);
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = React.useState(false);
+  const [isAvatarUploading, setIsAvatarUploading] = React.useState(false);
+  const [avatarUploadError, setAvatarUploadError] = React.useState("");
   const cartToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasMemberAccess = Boolean(currentUser);
   const hasRequiredProfileForPublishing = React.useMemo(() => {
@@ -158,7 +163,12 @@ export default function App() {
     return normalizedName.length >= 2 && normalizedWhatsapp.length >= 6;
   }, [currentUser]);
   const memberName = currentUser?.name || t("Membro cadastrado");
-  const memberAvatar = "https://picsum.photos/seed/avatar/200/200";
+  const memberAvatar =
+    String(currentUser?.avatarUrl ?? "").trim() ||
+    "https://picsum.photos/seed/avatar/200/200";
+  const avatarInputRef = React.useRef<HTMLInputElement | null>(null);
+  const avatarButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const avatarPickerPanelRef = React.useRef<HTMLDivElement | null>(null);
   const notificationsButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const notificationsPanelRef = React.useRef<HTMLDivElement | null>(null);
   const heroCollectionLabel = React.useMemo(
@@ -375,6 +385,50 @@ export default function App() {
   }, [isNotificationsOpen]);
 
   React.useEffect(() => {
+    if (!isAvatarPickerOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+
+      if (avatarPickerPanelRef.current?.contains(target)) {
+        return;
+      }
+      if (avatarButtonRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsAvatarPickerOpen(false);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsAvatarPickerOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isAvatarPickerOpen]);
+
+  React.useEffect(() => {
+    if (!isUserOpen && isAvatarPickerOpen) {
+      setIsAvatarPickerOpen(false);
+    }
+  }, [isUserOpen, isAvatarPickerOpen]);
+
+  React.useEffect(() => {
     let cancelled = false;
 
     const fetchLikedProducts = async () => {
@@ -418,6 +472,9 @@ export default function App() {
       setIsEditePerfilOpen(false);
       setIsNotificationsOpen(false);
       setIsAccountSettingsOpen(false);
+      setIsAvatarPickerOpen(false);
+      setIsAvatarUploading(false);
+      setAvatarUploadError("");
       setProfileCompletionMessage("");
     }
   }, [hasMemberAccess]);
@@ -464,6 +521,9 @@ export default function App() {
     setIsMapOpen(false);
     setIsCurtidasOpen(false);
     setProfileCompletionMessage("");
+    setIsAvatarPickerOpen(false);
+    setIsAvatarUploading(false);
+    setAvatarUploadError("");
   };
 
   const handleAuthSubmit = async (payload: AuthSubmitPayload) => {
@@ -842,6 +902,50 @@ export default function App() {
     setProfileCompletionMessage("");
   };
 
+  const handleProfileAvatarUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    if (!currentUser) {
+      return;
+    }
+
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setAvatarUploadError(t("Arquivo inválido. Envie uma imagem."));
+      return;
+    }
+
+    if (file.size <= 0 || file.size > 12 * 1024 * 1024) {
+      setAvatarUploadError(t("Imagem muito grande. Limite de 12 MB."));
+      return;
+    }
+
+    setIsAvatarUploading(true);
+    setAvatarUploadError("");
+    try {
+      const uploadResult = await api.uploadProfileImage(file);
+      const updatedUser = await api.updateProfileAvatar(uploadResult.url);
+      const mergedUser: SessionUser = {
+        ...(currentUser ?? updatedUser),
+        ...updatedUser,
+        avatarUrl: updatedUser.avatarUrl || uploadResult.url,
+      };
+      setCurrentUser(mergedUser);
+      setIsAvatarPickerOpen(false);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t("Falha ao enviar foto de perfil.");
+      setAvatarUploadError(message);
+    } finally {
+      setIsAvatarUploading(false);
+    }
+  };
+
   const handleOpenNewProduct = () => {
     setIsUserOpen(false);
 
@@ -964,6 +1068,7 @@ export default function App() {
           setIsFilterMenuOpen(false);
           setIsLanguageMenuOpen(false);
           setIsUserOpen(false);
+          setIsAvatarPickerOpen(false);
         }}
       />
 
@@ -983,6 +1088,7 @@ export default function App() {
               setIsUserOpen(false);
               setIsLanguageMenuOpen(false);
               setIsAccountSettingsOpen(false);
+              setIsAvatarPickerOpen(false);
             }}
             className="p-2 hover:bg-stone-50 rounded-full transition-colors"
           >
@@ -993,20 +1099,63 @@ export default function App() {
         <div className="grow overflow-y-auto p-8 flex flex-col gap-10">
           {/* User Profile Summary */}
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full overflow-hidden bg-stone-100 border border-stone-200">
-              <img 
-                src={memberAvatar} 
-                alt={t("Avatar do usuário")}
-                className="w-full h-full object-cover"
-              />
+            <div className="relative">
+              <button
+                ref={avatarButtonRef}
+                onClick={() => setIsAvatarPickerOpen((current) => !current)}
+                className="w-16 h-16 rounded-full overflow-hidden bg-stone-100 border border-stone-200 p-0.5"
+              >
+                <img
+                  src={memberAvatar}
+                  alt={t("Avatar do usuário")}
+                  className="w-full h-full object-cover rounded-full"
+                />
+                {isAvatarUploading && (
+                  <span className="absolute inset-0 bg-black/35 text-white flex items-center justify-center rounded-full">
+                    <LoaderCircle className="w-4 h-4 animate-spin" />
+                  </span>
+                )}
+              </button>
+              <AnimatePresence>
+                {isAvatarPickerOpen && (
+                  <motion.div
+                    ref={avatarPickerPanelRef}
+                    initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.96 }}
+                    className="absolute top-[calc(100%+0.5rem)] left-0 z-90 min-w-[180px] bg-white border border-stone-200 shadow-lg rounded-sm p-2"
+                  >
+                    <button
+                      disabled={isAvatarUploading}
+                      onClick={() => avatarInputRef.current?.click()}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-700 hover:bg-stone-100 disabled:text-stone-300 disabled:hover:bg-transparent transition-colors"
+                    >
+                      <ImagePlus className="w-3.5 h-3.5" />
+                      {isAvatarUploading ? t("Enviando foto...") : t("Escolher foto")}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
             <div>
               <h3 className="font-serif italic text-xl text-stone-800">{memberName}</h3>
               <p className="text-[10px] uppercase tracking-widest text-stone-400">
                 {t("Membro cadastrado")}
               </p>
+              {avatarUploadError && (
+                <p className="text-[11px] text-red-500 mt-1">{avatarUploadError}</p>
+              )}
             </div>
           </div>
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              void handleProfileAvatarUpload(event);
+            }}
+          />
 
           {/* Dashboard Links */}
           <nav className="flex flex-col gap-2">
@@ -1197,6 +1346,18 @@ export default function App() {
               openProductDetails(product);
             }}
             onClose={() => setIsMapOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isVendedoresOpen && (
+          <Vendedores
+            onClose={() => setIsVendedoresOpen(false)}
+            onOpenProduct={(product) => {
+              setIsVendedoresOpen(false);
+              openProductDetails(product);
+            }}
           />
         )}
       </AnimatePresence>
@@ -1456,6 +1617,7 @@ export default function App() {
               onClick={() => {
                 setIsFilterMenuOpen(false);
                 setIsMenuOpen(false);
+                setIsVendedoresOpen(true);
               }}
             >
               <Store className="w-5 h-5 text-stone-300 group-hover:text-stone-800 transition-colors" />
