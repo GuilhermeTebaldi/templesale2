@@ -369,6 +369,9 @@ function firstDefined(record: Record<string, unknown>, keys: string[]): unknown 
     if (Object.prototype.hasOwnProperty.call(record, key)) {
       const value = record[key];
       if (value !== undefined && value !== null) {
+        if (typeof value === "string" && value.trim() === "") {
+          continue;
+        }
         return value;
       }
     }

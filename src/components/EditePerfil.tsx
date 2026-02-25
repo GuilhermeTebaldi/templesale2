@@ -23,6 +23,7 @@ export default function EditePerfil({
 }: EditePerfilProps) {
   const { t } = useI18n();
   const [isSaving, setIsSaving] = React.useState(false);
+  const [isResolvingLocation, setIsResolvingLocation] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState("");
   const [formData, setFormData] = React.useState({
     name: initialData?.name || "",
@@ -51,25 +52,85 @@ export default function EditePerfil({
 
   const handleUseLocation = () => {
     setErrorMessage("");
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        () => {
-          setFormData((prev) => ({
-            ...prev,
-            country: prev.country || "Italia",
-            state: prev.state || "Lazio",
-            city: prev.city || "Roma",
-          }));
-        },
-        () => {
-          setErrorMessage(t("Nao foi possivel capturar sua localizacao neste momento."));
-        },
-        { enableHighAccuracy: true, timeout: 10000 },
-      );
+    if (!("geolocation" in navigator)) {
+      setErrorMessage(t("Geolocalizacao nao suportada neste navegador."));
       return;
     }
 
-    setErrorMessage(t("Geolocalizacao nao suportada neste navegador."));
+    setIsResolvingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        void (async () => {
+          const latitude = position.coords.latitude;
+          const longitude = position.coords.longitude;
+          const controller = new AbortController();
+          const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+
+          try {
+            const params = new URLSearchParams({
+              lat: String(latitude),
+              lng: String(longitude),
+            });
+            const response = await fetch(`/api/geo/reverse?${params.toString()}`, {
+              credentials: "include",
+              headers: { Accept: "application/json" },
+              signal: controller.signal,
+            });
+
+            const payload = (await response.json().catch(() => null)) as
+              | { success?: boolean; message?: string; data?: Record<string, unknown> }
+              | null;
+            if (!response.ok || payload?.success === false) {
+              const message = payload?.message?.trim();
+              throw new Error(
+                message || t("Nao foi possivel capturar sua localizacao neste momento."),
+              );
+            }
+
+            const locationData =
+              payload && payload.data && typeof payload.data === "object" ? payload.data : {};
+
+            const rawCountry = String(locationData.country ?? "").trim();
+            const normalizedCountry = (() => {
+              const upper = rawCountry.toUpperCase();
+              if (upper === "IT") return "Italia";
+              if (upper === "BR") return "Brasil";
+              return rawCountry;
+            })();
+
+            const normalizedState = String(locationData.state ?? "").trim();
+            const normalizedCity = String(locationData.city ?? "").trim();
+            const normalizedNeighborhood = String(locationData.neighborhood ?? "").trim();
+            const normalizedStreet = String(locationData.street ?? "").trim();
+
+            setFormData((prev) => ({
+              ...prev,
+              country: normalizedCountry || prev.country || "Italia",
+              state: normalizedState || prev.state || "Lazio",
+              city: normalizedCity || prev.city || "Roma",
+              neighborhood: normalizedNeighborhood || prev.neighborhood,
+              street: normalizedStreet || prev.street,
+            }));
+          } catch {
+            setFormData((prev) => ({
+              ...prev,
+              country: prev.country || "Italia",
+              state: prev.state || "Lazio",
+              city: prev.city || "Roma",
+            }));
+            setErrorMessage(t("Nao foi possivel capturar sua localizacao neste momento."));
+          } finally {
+            window.clearTimeout(timeoutId);
+            setIsResolvingLocation(false);
+          }
+        })();
+      },
+      () => {
+        setIsResolvingLocation(false);
+        setErrorMessage(t("Nao foi possivel capturar sua localizacao neste momento."));
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -178,11 +239,12 @@ export default function EditePerfil({
             <div className="pt-4">
               <button 
                 type="button"
+                disabled={isResolvingLocation}
                 onClick={handleUseLocation}
-                className="flex items-center gap-3 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-800 hover:text-stone-500 transition-colors"
+                className="flex items-center gap-3 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-800 hover:text-stone-500 transition-colors disabled:text-stone-300 disabled:hover:text-stone-300"
               >
                 <Navigation className="w-4 h-4" />
-                {t("Usar minha localização atual")}
+                {isResolvingLocation ? t("Processando...") : t("Usar minha localização atual")}
               </button>
             </div>
 
