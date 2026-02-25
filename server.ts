@@ -140,6 +140,14 @@ if (!DATABASE_URL) {
   );
 }
 const DEFAULT_IMAGE = "https://picsum.photos/seed/placeholder/800/1200";
+const CLOUDINARY_CLOUD_NAME = String(process.env.CLOUDINARY_CLOUD_NAME ?? "").trim();
+const CLOUDINARY_API_KEY = String(process.env.CLOUDINARY_API_KEY ?? "").trim();
+const CLOUDINARY_API_SECRET = String(process.env.CLOUDINARY_API_SECRET ?? "").trim();
+const CLOUDINARY_UPLOAD_FOLDER = String(
+  process.env.CLOUDINARY_UPLOAD_FOLDER ?? "templesale/products",
+).trim();
+const CLEAN_LOCAL_PRODUCTS_ON_BOOT =
+  String(process.env.CLEAN_LOCAL_PRODUCTS_ON_BOOT ?? "true").toLowerCase() === "true";
 const SESSION_COOKIE_NAME = "templesale_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -152,6 +160,7 @@ const MAP_TILE_MIN_ZOOM = 0;
 const MAP_TILE_MAX_ZOOM = 20;
 const MAP_TILE_FETCH_TIMEOUT_MS = 4500;
 const MAP_TILE_CACHE_CONTROL = "public, max-age=21600, stale-while-revalidate=43200";
+const UPLOAD_MAX_BYTES = 12 * 1024 * 1024;
 const WHATSAPP_COUNTRIES = {
   IT: {
     iso: "IT",
@@ -421,6 +430,7 @@ async function initializePostgresDatabase() {
       CREATE TABLE IF NOT EXISTS users (
         id BIGSERIAL PRIMARY KEY,
         name TEXT NOT NULL,
+        username TEXT NOT NULL DEFAULT '',
         email TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
         password_salt TEXT NOT NULL,
@@ -467,9 +477,29 @@ async function initializePostgresDatabase() {
         PRIMARY KEY (user_id, product_id)
       )
     `,
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id BIGINT",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS name TEXT",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS category TEXT",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS price TEXT",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS image TEXT",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS images TEXT DEFAULT '[]'",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS details TEXT DEFAULT '{}'",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+    "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_id BIGINT",
+    "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS token_hash TEXT",
+    "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS expires_at BIGINT",
+    "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
+    "ALTER TABLE product_likes ADD COLUMN IF NOT EXISTS user_id BIGINT",
+    "ALTER TABLE product_likes ADD COLUMN IF NOT EXISTS product_id BIGINT",
+    "ALTER TABLE product_likes ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT ''",
@@ -477,14 +507,35 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS street TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT'",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number TEXT NOT NULL DEFAULT ''",
+    "UPDATE users SET username = COALESCE(NULLIF(BTRIM(username), ''), NULLIF(BTRIM(email), ''), CONCAT('user_', id::text)) WHERE username IS NULL OR BTRIM(username) = ''",
+    "ALTER TABLE users ALTER COLUMN username SET DEFAULT ''",
+    "ALTER TABLE users ALTER COLUMN username SET NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)",
     "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_product_likes_user_product_unique ON product_likes(user_id, product_id)",
     "CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)",
   ];
 
   for (const statement of migrationStatements) {
     await pgPool.query(statement);
+  }
+
+  if (CLEAN_LOCAL_PRODUCTS_ON_BOOT) {
+    const cleanupResult = await pgPool.query(
+      `
+        DELETE FROM products
+        WHERE
+          COALESCE(NULLIF(BTRIM(name), ''), '') = ''
+          OR image LIKE 'https://picsum.photos/%'
+          OR images LIKE '%picsum.photos/%'
+      `,
+    );
+    const deleted = cleanupResult.rowCount ?? 0;
+    if (deleted > 0) {
+      console.log(`Cleanup: removed ${deleted} local/placeholder products from PostgreSQL.`);
+    }
   }
 }
 
@@ -889,13 +940,14 @@ async function createUserRecord(
   passwordSalt: string,
 ): Promise<number> {
   if (pgPool) {
+    const username = email;
     const result = await pgPool.query<{ id: number | string }>(
       `
-        INSERT INTO users (name, email, password_hash, password_salt)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO users (name, username, email, password_hash, password_salt)
+        VALUES ($1, $2, $3, $4, $5)
         RETURNING id
       `,
-      [name, email, passwordHash, passwordSalt],
+      [name, username, email, passwordHash, passwordSalt],
     );
     return toRequiredNumber(result.rows[0]?.id);
   }
@@ -1254,6 +1306,42 @@ function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+function decodeHeaderFilename(value: string | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function buildCloudinarySignature(
+  params: Record<string, string | number>,
+  apiSecret: string,
+): string {
+  const toSign = Object.entries(params)
+    .filter(([, value]) => value !== "")
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+
+  return crypto
+    .createHash("sha1")
+    .update(`${toSign}${apiSecret}`)
+    .digest("hex");
+}
+
+function assertCloudinaryConfig() {
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
+    throw new Error(
+      "Cloudinary não configurado. Defina CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET.",
+    );
+  }
+}
+
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   if (!cookieHeader) {
     return {};
@@ -1457,8 +1545,76 @@ async function bootstrap() {
       ok: true,
       mode: isProduction ? "production" : "development",
       database: "postgres",
+      cloudinary:
+        CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET
+          ? "configured"
+          : "missing_env",
     });
   });
+
+  if (!isProduction) {
+    app.get("/api/debug/db-columns/:table", async (req, res) => {
+      try {
+        const tableName = String(req.params.table ?? "").trim().toLowerCase();
+        if (!tableName || !/^[a-z_]+$/.test(tableName)) {
+          res.status(400).json({ error: "Nome de tabela inválido." });
+          return;
+        }
+
+        if (!pgPool) {
+          res.status(500).json({ error: "Pool do Postgres indisponível." });
+          return;
+        }
+
+        const result = await pgPool.query<{ column_name: string }>(
+          `
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = $1
+            ORDER BY ordinal_position
+          `,
+          [tableName],
+        );
+
+        res.json({
+          table: tableName,
+          columns: result.rows.map((row) => row.column_name),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Falha ao consultar schema.";
+        res.status(500).json({ error: message });
+      }
+    });
+
+    app.post("/api/debug/cleanup-local-products", async (_req, res) => {
+      try {
+        if (!pgPool) {
+          res.status(500).json({ error: "Pool do Postgres indisponível." });
+          return;
+        }
+
+        const result = await pgPool.query<{
+          id: number | string;
+        }>(
+          `
+            DELETE FROM products
+            WHERE
+              COALESCE(NULLIF(BTRIM(name), ''), '') = ''
+              OR image LIKE 'https://picsum.photos/%'
+              OR images LIKE '%picsum.photos/%'
+            RETURNING id
+          `,
+        );
+
+        res.json({
+          deletedCount: result.rowCount ?? result.rows.length,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Falha ao limpar produtos locais.";
+        res.status(500).json({ error: message });
+      }
+    });
+  }
 
   app.get("/api/map-tiles/:z/:x/:y.png", async (req, res) => {
     const z = parseTileCoordinate(req.params.z);
@@ -1480,6 +1636,107 @@ async function bootstrap() {
     res.setHeader("Cache-Control", MAP_TILE_CACHE_CONTROL);
     res.status(200).send(tile.buffer);
   });
+
+  app.post(
+    "/api/uploads/product-image",
+    express.raw({
+      type: "image/*",
+      limit: `${UPLOAD_MAX_BYTES}b`,
+    }),
+    async (req, res) => {
+      const user = await requireAuth(req, res);
+      if (!user) {
+        return;
+      }
+
+      try {
+        assertCloudinaryConfig();
+
+        const rawContentType = String(req.headers["content-type"] ?? "");
+        const contentType = rawContentType.split(";")[0]?.trim().toLowerCase();
+        if (!contentType.startsWith("image/")) {
+          res.status(415).json({ error: "Arquivo inválido. Envie uma imagem." });
+          return;
+        }
+
+        const payload = req.body;
+        if (!Buffer.isBuffer(payload) || payload.length === 0) {
+          res.status(400).json({ error: "Arquivo de imagem não encontrado." });
+          return;
+        }
+
+        const timestamp = Math.floor(Date.now() / 1000);
+        const uniqueSuffix = crypto.randomBytes(6).toString("hex");
+        const publicId = `user_${user.id}_${Date.now()}_${uniqueSuffix}`;
+        const folder = CLOUDINARY_UPLOAD_FOLDER;
+        const signature = buildCloudinarySignature(
+          {
+            folder,
+            public_id: publicId,
+            timestamp,
+          },
+          CLOUDINARY_API_SECRET,
+        );
+
+        const rawFilename = decodeHeaderFilename(req.header("x-file-name"));
+        const safeFilename =
+          rawFilename && rawFilename.length < 200
+            ? rawFilename
+            : `upload-${Date.now()}.${contentType.slice("image/".length) || "jpg"}`;
+
+        const formData = new FormData();
+        formData.append("file", new Blob([payload], { type: contentType }), safeFilename);
+        formData.append("api_key", CLOUDINARY_API_KEY);
+        formData.append("timestamp", String(timestamp));
+        formData.append("signature", signature);
+        formData.append("folder", folder);
+        formData.append("public_id", publicId);
+
+        const uploadResponse = await fetch(
+          `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+          {
+            method: "POST",
+            body: formData,
+          },
+        );
+
+        const uploadText = await uploadResponse.text();
+        let uploadJson: Record<string, unknown> = {};
+        try {
+          uploadJson = JSON.parse(uploadText) as Record<string, unknown>;
+        } catch {
+          uploadJson = {};
+        }
+
+        if (!uploadResponse.ok) {
+          const cloudinaryError =
+            typeof uploadJson.error === "object" && uploadJson.error
+              ? String((uploadJson.error as Record<string, unknown>).message ?? "").trim()
+              : "";
+          res.status(502).json({
+            error: cloudinaryError || "Falha ao enviar imagem para o Cloudinary.",
+          });
+          return;
+        }
+
+        const secureUrl = String(uploadJson.secure_url ?? "").trim();
+        if (!secureUrl) {
+          res.status(502).json({ error: "Cloudinary não retornou a URL da imagem." });
+          return;
+        }
+
+        res.status(201).json({
+          url: secureUrl,
+          publicId: String(uploadJson.public_id ?? publicId),
+          width: Number(uploadJson.width ?? 0) || undefined,
+          height: Number(uploadJson.height ?? 0) || undefined,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Falha ao fazer upload da imagem.";
+        res.status(500).json({ error: message });
+      }
+    },
+  );
 
   app.post("/api/auth/register", async (req, res) => {
     try {

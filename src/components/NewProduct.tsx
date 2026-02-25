@@ -9,7 +9,7 @@ import {
   Navigation,
   MapPin,
 } from "lucide-react";
-import { type CreateProductInput } from "../lib/api";
+import { api, type CreateProductInput } from "../lib/api";
 import { type Product } from "./ProductCard";
 import LeafletMapPicker from "./LeafletMapPicker";
 import { useI18n } from "../i18n/provider";
@@ -56,6 +56,7 @@ const DEFAULT_MAP_CENTER: GeoPoint = {
   latitude: -23.55052,
   longitude: -46.633308,
 };
+const MAX_PRODUCT_IMAGES = 10;
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -157,6 +158,8 @@ export default function NewProduct({
   const [images, setImages] = React.useState<string[]>(() =>
     normalizeInitialImages(initialProduct),
   );
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [isUploadingImages, setIsUploadingImages] = React.useState(false);
   const [isPublishing, setIsPublishing] = React.useState(false);
   const [isSuccess, setIsSuccess] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState("");
@@ -191,13 +194,61 @@ export default function NewProduct({
   ].includes(formData.category);
   const hasLocationSelected = Boolean(parseCoordinateStrings(formData.latitude, formData.longitude));
 
-  const handleAddImage = () => {
-    const randomId = Math.floor(Math.random() * 1000);
-    setImages([...images, `https://picsum.photos/seed/${randomId}/800/1200`]);
+  const handleRemoveImage = (index: number) => {
+    setImages((current) => current.filter((_, i) => i !== index));
   };
 
-  const handleRemoveImage = (index: number) => {
-    setImages(images.filter((_, i) => i !== index));
+  const handleTriggerImagePicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleSelectImages = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles: File[] = event.target.files ? Array.from(event.target.files) : [];
+    event.currentTarget.value = "";
+
+    if (selectedFiles.length === 0) {
+      return;
+    }
+
+    const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length !== selectedFiles.length) {
+      setErrorMessage(t("Selecione apenas arquivos de imagem."));
+      return;
+    }
+
+    if (images.length + imageFiles.length > MAX_PRODUCT_IMAGES) {
+      setErrorMessage(
+        t("Você pode enviar no máximo {count} imagens.", {
+          count: String(MAX_PRODUCT_IMAGES),
+        }),
+      );
+      return;
+    }
+
+    setErrorMessage("");
+    setIsUploadingImages(true);
+
+    try {
+      const uploaded: string[] = [];
+      for (const file of imageFiles) {
+        const response = await api.uploadProductImage(file);
+        const imageUrl = String(response.url ?? "").trim();
+        if (!imageUrl) {
+          throw new Error(t("Upload concluído sem URL de imagem."));
+        }
+        uploaded.push(imageUrl);
+      }
+
+      if (uploaded.length > 0) {
+        setImages((current) => [...current, ...uploaded]);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t("Falha ao enviar imagens para o Cloudinary.");
+      setErrorMessage(message);
+    } finally {
+      setIsUploadingImages(false);
+    }
   };
 
   const handleDetailChange = (field: string, value: string) => {
@@ -248,6 +299,10 @@ export default function NewProduct({
       setErrorMessage(t("Descrição é obrigatória."));
       return;
     }
+    if (images.length === 0) {
+      setErrorMessage(t("Adicione pelo menos uma imagem do produto."));
+      return;
+    }
 
     setIsPublishing(true);
 
@@ -258,15 +313,14 @@ export default function NewProduct({
             typeof entry[1] === "string" && entry[1].trim() !== "",
         ),
       );
-      const fallbackImage = "https://picsum.photos/seed/placeholder/800/1200";
       const newProduct: CreateProductInput = {
         name: normalizedName,
         category: normalizedCategory,
         price: formatEuro(parsedPrice, "it-IT"),
         latitude,
         longitude,
-        image: images[0] || fallbackImage,
-        images: images.length > 0 ? images : [fallbackImage],
+        image: images[0],
+        images: [...images],
         description: normalizedDescription,
         details,
       };
@@ -425,6 +479,14 @@ export default function NewProduct({
             {/* Image Upload Section */}
             <div className="space-y-4">
               <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Imagens do produto")}</label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleSelectImages}
+              />
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {images.map((img, index) => (
                   <div key={index} className="relative aspect-3/4 bg-stone-100 rounded-sm overflow-hidden group">
@@ -441,13 +503,30 @@ export default function NewProduct({
                 ))}
                 <button 
                   type="button"
-                  onClick={handleAddImage}
-                  className="aspect-3/4 border-2 border-dashed border-stone-200 rounded-sm flex flex-col items-center justify-center gap-2 text-stone-400 hover:border-stone-400 hover:text-stone-600 transition-all group"
+                  onClick={handleTriggerImagePicker}
+                  disabled={isUploadingImages || images.length >= MAX_PRODUCT_IMAGES}
+                  className="aspect-3/4 border-2 border-dashed border-stone-200 rounded-sm flex flex-col items-center justify-center gap-2 text-stone-400 hover:border-stone-400 hover:text-stone-600 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Plus className="w-6 h-6 group-hover:scale-110 transition-transform" />
-                  <span className="text-[10px] uppercase tracking-widest font-medium">{t("Adicionar foto")}</span>
+                  {isUploadingImages ? (
+                    <div className="w-5 h-5 border-2 border-stone-300 border-t-stone-700 rounded-full animate-spin" />
+                  ) : (
+                    <Plus className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                  )}
+                  <span className="text-[10px] uppercase tracking-widest font-medium text-center px-2">
+                    {isUploadingImages
+                      ? t("Enviando...")
+                      : images.length >= MAX_PRODUCT_IMAGES
+                        ? t("Limite atingido")
+                        : t("Adicionar foto")}
+                  </span>
                 </button>
               </div>
+              <p className="text-xs text-stone-500">
+                {t("Fotos enviadas: {count}/{max}", {
+                  count: String(images.length),
+                  max: String(MAX_PRODUCT_IMAGES),
+                })}
+              </p>
             </div>
 
             {/* Details Section */}
@@ -687,7 +766,7 @@ export default function NewProduct({
             </div>
 
             <button 
-              disabled={isPublishing}
+              disabled={isPublishing || isUploadingImages}
               type="submit"
               className="w-full bg-stone-900 text-white py-6 text-xs uppercase tracking-[0.3em] font-bold flex items-center justify-center gap-3 hover:bg-black transition-all disabled:bg-stone-400"
             >

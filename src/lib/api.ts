@@ -77,6 +77,13 @@ export interface AuthInput {
   name?: string;
 }
 
+export interface UploadImageResponse {
+  url: string;
+  publicId?: string;
+  width?: number;
+  height?: number;
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     credentials: "include",
@@ -126,6 +133,42 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+async function uploadProductImageFile(file: File): Promise<UploadImageResponse> {
+  const response = await fetch("/api/uploads/product-image", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": file.type || "image/jpeg",
+      "X-File-Name": encodeURIComponent(file.name || "upload"),
+    },
+    body: file,
+  });
+
+  const contentType = response.headers.get("content-type") || "";
+  const isJson = contentType.includes("application/json");
+
+  if (!response.ok) {
+    let message = `${response.status} ${response.statusText}`;
+    if (isJson) {
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (payload.error) {
+          message = payload.error;
+        }
+      } catch {
+        // Keep default HTTP message when JSON parsing fails.
+      }
+    }
+    throw new Error(message);
+  }
+
+  if (!isJson) {
+    throw new Error("Resposta inválida do upload de imagem.");
+  }
+
+  return (await response.json()) as UploadImageResponse;
 }
 
 export const api = {
@@ -203,5 +246,8 @@ export const api = {
     return request<{ success: boolean }>(`/api/products/${id}`, {
       method: "DELETE",
     });
+  },
+  uploadProductImage(file: File) {
+    return uploadProductImageFile(file);
   },
 };
