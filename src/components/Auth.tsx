@@ -1,6 +1,7 @@
 import React from "react";
 import { motion } from "motion/react";
 import { X, ArrowRight, Mail, Lock, User } from "lucide-react";
+import { useI18n } from "../i18n/provider";
 
 export type AuthMode = "login" | "register";
 
@@ -18,6 +19,7 @@ interface AuthProps {
 }
 
 export default function Auth({ onSubmit, onClose, defaultMode = "register" }: AuthProps) {
+  const { t } = useI18n();
   const [mode, setMode] = React.useState<AuthMode>(defaultMode);
   const [errorMessage, setErrorMessage] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -36,12 +38,12 @@ export default function Auth({ onSubmit, onClose, defaultMode = "register" }: Au
     const name = formData.name.trim();
 
     if (!email || !password) {
-      setErrorMessage("Preencha email e senha.");
+      setErrorMessage(t("Preencha email e senha."));
       return;
     }
 
     if (!isLogin && !name) {
-      setErrorMessage("Preencha seu nome para criar a conta.");
+      setErrorMessage(t("Preencha seu nome para criar a conta."));
       return;
     }
 
@@ -56,7 +58,7 @@ export default function Auth({ onSubmit, onClose, defaultMode = "register" }: Au
       });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Falha ao autenticar.";
+        error instanceof Error ? error.message : t("Falha ao autenticar.");
       setErrorMessage(message);
     } finally {
       setIsSubmitting(false);
@@ -74,7 +76,7 @@ export default function Auth({ onSubmit, onClose, defaultMode = "register" }: Au
           <button
             onClick={onClose}
             className="p-2 hover:bg-stone-50 rounded-full transition-colors"
-            aria-label="Fechar cadastro"
+            aria-label={t("Fechar cadastro")}
           >
             <X className="w-5 h-5 text-stone-600" />
           </button>
@@ -83,20 +85,20 @@ export default function Auth({ onSubmit, onClose, defaultMode = "register" }: Au
         <div className="text-center mb-12">
           <h1 className="text-4xl font-serif tracking-[0.2em] uppercase mb-4">Templesale</h1>
           <p className="text-xs uppercase tracking-[0.3em] text-stone-400 font-medium">
-            {isLogin ? "Entrar na Conta" : "Criar Conta"}
+            {isLogin ? t("Entrar na Conta") : t("Criar Conta")}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {!isLogin && (
             <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Full Name</label>
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Nome completo")}</label>
               <div className="relative">
                 <User className="absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-300" />
                 <input 
                   required
                   type="text"
-                  placeholder="Seu nome"
+                  placeholder={t("Seu nome")}
                   className="w-full bg-transparent border-b border-stone-200 py-3 pl-8 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
@@ -106,13 +108,13 @@ export default function Auth({ onSubmit, onClose, defaultMode = "register" }: Au
           )}
 
           <div className="space-y-2">
-            <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Email Address</label>
+            <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Endereço de email")}</label>
             <div className="relative">
               <Mail className="absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-300" />
               <input 
                 required
                 type="email"
-                placeholder="voce@email.com"
+                placeholder={t("voce@email.com")}
                 className="w-full bg-transparent border-b border-stone-200 py-3 pl-8 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
                 value={formData.email}
                 onChange={(e) => setFormData({...formData, email: e.target.value})}
@@ -121,7 +123,7 @@ export default function Auth({ onSubmit, onClose, defaultMode = "register" }: Au
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Password</label>
+            <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Senha")}</label>
             <div className="relative">
               <Lock className="absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-300" />
                 <input 
@@ -145,10 +147,10 @@ export default function Auth({ onSubmit, onClose, defaultMode = "register" }: Au
             className="w-full bg-stone-900 text-white py-6 text-xs uppercase tracking-[0.3em] font-bold flex items-center justify-center gap-3 hover:bg-black transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isSubmitting
-              ? "Processando..."
+              ? t("Processando...")
               : isLogin
-                ? "Entrar"
-                : "Criar Conta"}
+                ? t("Entrar")
+                : t("Criar conta")}
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
@@ -158,7 +160,7 @@ export default function Auth({ onSubmit, onClose, defaultMode = "register" }: Au
             onClick={() => setMode(isLogin ? "register" : "login")}
             className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400 hover:text-stone-800 transition-colors"
           >
-            {isLogin ? "Ainda não tem conta? Cadastre-se" : "Já tem conta? Entrar"}
+            {isLogin ? t("Ainda não tem conta? Cadastre-se") : t("Já tem conta? Entrar")}
           </button>
         </div>
       </motion.div>

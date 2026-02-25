@@ -16,20 +16,43 @@ import {
 import { type Product } from "./ProductCard";
 import ProductMap from "./ProductMap";
 import { buildWhatsappUrl, formatWhatsappDisplay } from "../lib/whatsapp";
+import { useI18n } from "../i18n/provider";
+import { formatEuroFromUnknown } from "../lib/currency";
+import { getCategoryLabel } from "../i18n/categories";
 
 interface ProductDetailsProps {
   product: Product | null;
+  products?: Product[];
   onClose: () => void;
+  onOpenProduct?: (product: Product) => void;
   isLiked?: boolean;
   onToggleLike?: () => void;
 }
 
+const detailLabelByKey: Record<string, string> = {
+  type: "Tipo",
+  area: "Área",
+  room: "Quartos",
+  rooms: "Quartos",
+  bathroom: "Banheiros",
+  bathrooms: "Banheiros",
+  garage: "Vagas",
+  parking: "Vagas",
+  brand: "Marca",
+  model: "Modelo",
+  color: "Cor",
+  year: "Ano",
+};
+
 export default function ProductDetails({
   product,
+  products = [],
   onClose,
+  onOpenProduct,
   isLiked = false,
   onToggleLike,
 }: ProductDetailsProps) {
+  const { t, locale } = useI18n();
   const [quantity, setQuantity] = React.useState(1);
   const [isLightboxOpen, setIsLightboxOpen] = React.useState(false);
   const [activeImageIndex, setActiveImageIndex] = React.useState(0);
@@ -39,7 +62,7 @@ export default function ProductDetails({
   if (!product) return null;
 
   const images = product.images || [product.image];
-  const description = product.description?.trim() || "Descrição não informada pelo vendedor.";
+  const description = product.description?.trim() || t("Descrição não informada pelo vendedor.");
   const detailsEntries = Object.entries(product.details ?? {}).filter(
     (entry): entry is [string, string] =>
       typeof entry[1] === "string" && entry[1].trim() !== "",
@@ -59,13 +82,32 @@ export default function ProductDetails({
     product.sellerWhatsappNumber,
   );
   const hasSellerWhatsapp = Boolean(whatsappUrl);
+  const productsForMap = React.useMemo(() => {
+    if (products.length === 0) {
+      return [product];
+    }
 
-  const formatDetailLabel = (key: string) =>
-    key
+    const hasCurrentProduct = products.some((item) => item.id === product.id);
+    if (hasCurrentProduct) {
+      return products;
+    }
+
+    return [product, ...products];
+  }, [product, products]);
+
+  const formatDetailLabel = (key: string) => {
+    const normalizedKey = key.trim().toLowerCase();
+    const mappedLabel = detailLabelByKey[normalizedKey];
+    if (mappedLabel) {
+      return t(mappedLabel);
+    }
+
+    return key
       .replace(/[_-]+/g, " ")
       .replace(/\s+/g, " ")
       .trim()
       .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  };
 
   React.useEffect(() => {
     setActiveImageIndex(0);
@@ -91,7 +133,7 @@ export default function ProductDetails({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-100 bg-[#fdfcfb] overflow-y-auto"
+        className="fixed inset-0 z-180 bg-[#fdfcfb] overflow-y-auto"
       >
         {/* Lightbox Overlay */}
         <AnimatePresence>
@@ -105,6 +147,7 @@ export default function ProductDetails({
               <button 
                 onClick={() => setIsLightboxOpen(false)}
                 className="absolute top-8 right-8 p-3 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-20"
+                aria-label={t("Fechar")}
               >
                 <X className="w-6 h-6 text-white" />
               </button>
@@ -114,7 +157,7 @@ export default function ProductDetails({
                   <motion.img
                     key={activeImageIndex}
                     src={images[activeImageIndex]}
-                    alt={`${product.name} zoom`}
+                    alt={t("Imagem ampliada de {name}", { name: product.name })}
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 1.1 }}
@@ -153,15 +196,16 @@ export default function ProductDetails({
         {/* Header */}
         <div className="sticky top-0 z-10 bg-[#fdfcfb]/80 backdrop-blur-md border-b border-stone-100 px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-stone-400">
-            <span>Shop</span>
+            <span>{t("Produtos")}</span>
             <ChevronRight className="w-3 h-3" />
-            <span>{product.category}</span>
+            <span>{getCategoryLabel(product.category, locale)}</span>
             <ChevronRight className="w-3 h-3" />
             <span className="text-stone-800">{product.name}</span>
           </div>
           <button 
             onClick={onClose}
             className="p-2 hover:bg-stone-50 rounded-full transition-colors"
+            aria-label={t("Fechar")}
           >
             <X className="w-6 h-6 text-stone-600" />
           </button>
@@ -199,7 +243,10 @@ export default function ProductDetails({
                   >
                     <img 
                       src={img} 
-                      alt={`${product.name} view ${i}`} 
+                      alt={t("Imagem {index} de {name}", {
+                        index: i + 1,
+                        name: product.name,
+                      })}
                       className="w-full h-full object-cover"
                     />
                   </div>
@@ -215,12 +262,14 @@ export default function ProductDetails({
             >
               <div className="mb-8">
                 <span className="text-xs uppercase tracking-[0.3em] text-stone-400 font-medium mb-4 block">
-                  {product.category}
+                  {getCategoryLabel(product.category, locale)}
                 </span>
                 <h1 className="text-4xl lg:text-6xl font-serif italic text-stone-800 mb-4 leading-tight">
                   {product.name}
                 </h1>
-                <p className="text-2xl font-mono text-stone-600">{product.price}</p>
+                <p className="text-2xl font-mono text-stone-600">
+                  {formatEuroFromUnknown(product.price, locale)}
+                </p>
               </div>
 
               <div className="prose prose-stone mb-12">
@@ -245,11 +294,11 @@ export default function ProductDetails({
                   <div className="flex items-center gap-3">
                     <MapPin className="w-4 h-4 text-stone-600" />
                     <span className="text-sm uppercase tracking-[0.15em] text-stone-600">
-                      Localizacao
+                      {t("Localização")}
                     </span>
                   </div>
                   <span className="text-xs text-stone-400">
-                    {hasCoordinates ? "Abrir no mapa" : "Nao informado"}
+                    {hasCoordinates ? t("Abrir no mapa") : t("Não informado")}
                   </span>
                 </button>
               </div>
@@ -257,7 +306,7 @@ export default function ProductDetails({
               <div className="space-y-8">
                 {/* Quantity Selector */}
                 <div className="flex flex-col gap-3">
-                  <span className="text-[10px] uppercase tracking-widest text-stone-400 font-bold">Quantity</span>
+                  <span className="text-[10px] uppercase tracking-widest text-stone-400 font-bold">{t("Quantidade")}</span>
                   <div className="flex items-center w-32 border border-stone-200 rounded-sm">
                     <button 
                       onClick={() => setQuantity(Math.max(1, quantity - 1))}
@@ -286,7 +335,7 @@ export default function ProductDetails({
                     >
                       <MessageCircle className="w-4 h-4" />
                       <span className="flex flex-col">
-                        <span>Falar com vendedor</span>
+                        <span>{t("Falar com vendedor")}</span>
                         <span className="text-[10px] tracking-[0.12em] text-white/80 normal-case">
                           {whatsappDisplay}
                         </span>
@@ -299,9 +348,9 @@ export default function ProductDetails({
                     >
                       <MessageCircle className="w-4 h-4" />
                       <span className="flex flex-col">
-                        <span>Falar com vendedor</span>
+                        <span>{t("Falar com vendedor")}</span>
                         <span className="text-[10px] tracking-[0.12em] text-white/80 normal-case">
-                          WhatsApp nao informado
+                          {t("WhatsApp não informado")}
                         </span>
                       </span>
                     </button>
@@ -324,7 +373,7 @@ export default function ProductDetails({
 
               {/* Additional Details Accordion-style */}
               <div className="mt-16 border-t border-stone-100">
-                {['Shipping & Returns', 'Care Instructions', 'Sustainability'].map((item) => (
+                {[t("Frete e devoluções"), t("Instruções de cuidado"), t("Sustentabilidade")].map((item) => (
                   <div key={item} className="border-b border-stone-100 py-6 flex justify-between items-center cursor-pointer group">
                     <span className="text-xs uppercase tracking-widest font-medium text-stone-600 group-hover:text-stone-900 transition-colors">
                       {item}
@@ -353,17 +402,17 @@ export default function ProductDetails({
               >
                 <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto mb-4" />
                 <h3 className="text-2xl font-serif italic text-stone-800 mb-3">
-                  Localizacao indisponivel
+                  {t("Localização indisponível")}
                 </h3>
                 <p className="text-sm text-stone-500 leading-relaxed mb-8">
-                  O usuario nao informou a localizacao deste produto.
+                  {t("O usuário não informou a localização deste produto.")}
                 </p>
                 <button
                   type="button"
                   onClick={() => setIsLocationAlertOpen(false)}
                   className="px-8 py-3 bg-stone-900 text-white text-[10px] uppercase tracking-[0.2em] font-bold hover:bg-black transition-colors"
                 >
-                  Entendi
+                  {t("Entendi")}
                 </button>
               </motion.div>
             </motion.div>
@@ -373,7 +422,12 @@ export default function ProductDetails({
         <AnimatePresence>
           {isLocationMapOpen && hasCoordinates && (
             <ProductMap
-              products={[product]}
+              products={productsForMap}
+              initialFocusProductId={product.id}
+              onOpenProduct={(nextProduct) => {
+                setIsLocationMapOpen(false);
+                onOpenProduct?.(nextProduct);
+              }}
               onClose={() => setIsLocationMapOpen(false)}
             />
           )}

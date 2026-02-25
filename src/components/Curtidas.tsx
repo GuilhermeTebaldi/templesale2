@@ -2,6 +2,9 @@ import React from "react";
 import { motion } from "motion/react";
 import { X, Heart, ExternalLink, Trash2 } from "lucide-react";
 import { type Product } from "./ProductCard";
+import { useI18n } from "../i18n/provider";
+import { formatEuroFromUnknown } from "../lib/currency";
+import { getCategoryLabel } from "../i18n/categories";
 
 interface CurtidasProps {
   products: Product[];
@@ -16,6 +19,7 @@ export default function Curtidas({
   onOpenProduct,
   onRemove,
 }: CurtidasProps) {
+  const { t, locale } = useI18n();
   const [removingProductId, setRemovingProductId] = React.useState<number | null>(null);
 
   const handleRemove = async (id: number) => {
@@ -41,7 +45,7 @@ export default function Curtidas({
       <div className="p-8 flex justify-between items-center border-b border-stone-100">
         <div className="flex items-center gap-4">
           <Heart className="w-6 h-6 text-stone-800" />
-          <h2 className="text-2xl font-serif tracking-widest uppercase">Curtidas</h2>
+          <h2 className="text-2xl font-serif tracking-widest uppercase">{t("Curtidas")}</h2>
         </div>
         <button onClick={onClose} className="p-2 hover:bg-stone-50 rounded-full transition-colors">
           <X className="w-6 h-6 text-stone-600" />
@@ -54,7 +58,7 @@ export default function Curtidas({
             <div className="text-center py-20">
               <Heart className="w-12 h-12 text-stone-200 mx-auto mb-4" />
               <p className="text-stone-400 uppercase tracking-widest text-xs">
-                Você ainda não curtiu nenhum produto.
+                {t("Você ainda não curtiu nenhum produto.")}
               </p>
             </div>
           ) : (
@@ -76,10 +80,12 @@ export default function Curtidas({
                       <div>
                         <div className="flex justify-between items-start">
                           <h3 className="font-serif italic text-lg text-stone-800">{product.name}</h3>
-                          <span className="text-sm font-mono text-stone-900">{product.price}</span>
+                          <span className="text-sm font-mono text-stone-900">
+                            {formatEuroFromUnknown(product.price, locale)}
+                          </span>
                         </div>
                         <p className="text-[10px] uppercase tracking-widest text-stone-400 mt-1">
-                          {product.category}
+                          {getCategoryLabel(product.category, locale)}
                         </p>
                       </div>
 
@@ -89,7 +95,7 @@ export default function Curtidas({
                           className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-stone-400 hover:text-stone-800 transition-colors"
                         >
                           <ExternalLink className="w-3 h-3" />
-                          Ver produto
+                          {t("Ver produto")}
                         </button>
                         <button
                           disabled={isRemoving}
@@ -99,7 +105,7 @@ export default function Curtidas({
                           className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-stone-400 hover:text-red-500 disabled:text-stone-300 transition-colors"
                         >
                           <Trash2 className="w-3 h-3" />
-                          {isRemoving ? "Removendo..." : "Remover curtida"}
+                          {isRemoving ? t("Removendo...") : t("Remover curtida")}
                         </button>
                       </div>
                     </div>

@@ -1,6 +1,7 @@
 import React from "react";
 import { motion } from "motion/react";
 import { X, MapPin } from "lucide-react";
+import { useI18n } from "../i18n/provider";
 
 type GeoPoint = {
   latitude: number;
@@ -123,6 +124,7 @@ export default function LeafletMapPicker({
   onClose,
   onConfirm,
 }: LeafletMapPickerProps) {
+  const { t } = useI18n();
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<LeafletMapInstance | null>(null);
   const markerRef = React.useRef<LeafletMarkerInstance | null>(null);
@@ -163,7 +165,7 @@ export default function LeafletMapPicker({
         mapRef.current = map;
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Falha ao carregar o mapa.";
+          error instanceof Error ? t(error.message) : t("Falha ao carregar o mapa.");
         setLeafletError(message);
       }
     };
@@ -181,7 +183,7 @@ export default function LeafletMapPicker({
         mapRef.current = null;
       }
     };
-  }, [center.latitude, center.longitude, onSelectPoint]);
+  }, [center.latitude, center.longitude, onSelectPoint, t]);
 
   React.useEffect(() => {
     if (!mapRef.current) {
@@ -227,16 +229,17 @@ export default function LeafletMapPicker({
         <div className="px-6 py-5 border-b border-stone-100 flex items-center justify-between">
           <div>
             <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
-              Localizacao manual
+              {t("Localização manual")}
             </p>
             <h3 className="text-2xl font-serif italic text-stone-800">
-              Escolher local no mapa
+              {t("Escolher local no mapa")}
             </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="p-2 hover:bg-stone-50 rounded-full transition-colors"
+            aria-label={t("Fechar")}
           >
             <X className="w-5 h-5 text-stone-600" />
           </button>
@@ -244,7 +247,7 @@ export default function LeafletMapPicker({
 
         <div className="p-6 flex-1 min-h-0 flex flex-col gap-5">
           <p className="text-sm text-stone-500">
-            Arraste para mover o mapa e clique uma vez para marcar o ponto real.
+            {t("Arraste para mover o mapa e clique uma vez para marcar o ponto real.")}
           </p>
 
           {leafletError ? (
@@ -262,7 +265,7 @@ export default function LeafletMapPicker({
             <div className="text-sm text-stone-500">
               {selectedPoint
                 ? `${selectedPoint.latitude.toFixed(6)}, ${selectedPoint.longitude.toFixed(6)}`
-                : "Nenhum ponto selecionado no mapa."}
+                : t("Nenhum ponto selecionado no mapa.")}
             </div>
 
             <div className="flex items-center gap-3">
@@ -271,7 +274,7 @@ export default function LeafletMapPicker({
                 onClick={onClose}
                 className="px-5 py-3 border border-stone-200 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-500 hover:border-stone-400 hover:text-stone-800 transition-colors"
               >
-                Cancelar
+                {t("Cancelar")}
               </button>
               <button
                 type="button"
@@ -285,7 +288,7 @@ export default function LeafletMapPicker({
                 className="px-5 py-3 bg-stone-900 text-white text-[10px] uppercase tracking-[0.2em] font-bold hover:bg-black transition-colors disabled:bg-stone-400 disabled:cursor-not-allowed inline-flex items-center gap-2"
               >
                 <MapPin className="w-4 h-4" />
-                Confirmar localizacao
+                {t("Confirmar localização")}
               </button>
             </div>
           </div>

@@ -41,6 +41,24 @@ type ProductRow = {
   seller_whatsapp_number: string | null;
 };
 
+type LikeNotificationRow = {
+  actor_user_id: number;
+  actor_name: string;
+  product_id: number;
+  product_name: string;
+  created_at: number;
+};
+
+type NotificationRecord = {
+  id: string;
+  type: "product_like";
+  title: string;
+  message: string;
+  createdAt: number;
+  actorUserId: number;
+  productId: number;
+};
+
 type UserRow = {
   id: number;
   name: string;
@@ -286,6 +304,21 @@ const selectLikedProductsByUser = db.prepare(`
   ORDER BY l.created_at DESC, p.id DESC
 `);
 
+const selectLikeNotificationsByOwner = db.prepare(`
+  SELECT
+    l.user_id AS actor_user_id,
+    lu.name AS actor_name,
+    p.id AS product_id,
+    p.name AS product_name,
+    l.created_at
+  FROM product_likes l
+  INNER JOIN products p ON p.id = l.product_id
+  INNER JOIN users lu ON lu.id = l.user_id
+  WHERE p.user_id = ? AND l.user_id <> ?
+  ORDER BY l.created_at DESC, p.id DESC
+  LIMIT 100
+`);
+
 const createProductStatement = db.prepare(`
   INSERT INTO products (
     name,
@@ -495,6 +528,24 @@ function rowToProduct(row: ProductRow): ProductRecord {
   return product;
 }
 
+function rowToNotification(row: LikeNotificationRow): NotificationRecord {
+  const actorName = row.actor_name.trim() || "Alguém";
+  const productName = row.product_name.trim() || "sua publicação";
+  const createdAt = Number.isFinite(row.created_at)
+    ? row.created_at
+    : Math.floor(Date.now() / 1000);
+
+  return {
+    id: `like:${row.product_id}:${row.actor_user_id}:${createdAt}`,
+    type: "product_like",
+    title: "Nova curtida",
+    message: `${actorName} curtiu sua publicação "${productName}".`,
+    createdAt,
+    actorUserId: row.actor_user_id,
+    productId: row.product_id,
+  };
+}
+
 function normalizeIncomingProduct(payload: unknown) {
   if (!payload || typeof payload !== "object") {
     throw new Error("Payload inválido.");
@@ -523,6 +574,9 @@ function normalizeIncomingProduct(payload: unknown) {
   }
   if (!price) {
     throw new Error("Preço é obrigatório.");
+  }
+  if (!description) {
+    throw new Error("Descrição é obrigatória.");
   }
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
     throw new Error("Latitude e longitude são obrigatórias.");
@@ -684,6 +738,13 @@ function sanitizeUser(
     whatsappCountryIso: user.whatsapp_country_iso ?? "IT",
     whatsappNumber: user.whatsapp_number ?? "",
   };
+}
+
+function hasRequiredProfileForPublishing(user: SessionUser): boolean {
+  const normalizedName = String(user.name ?? "").trim();
+  const normalizedWhatsapp = String(user.whatsappNumber ?? "").replace(/\D/g, "").trim();
+
+  return normalizedName.length >= 2 && normalizedWhatsapp.length >= 6;
 }
 
 function createSession(userId: number): string {
@@ -968,6 +1029,10 @@ async function bootstrap() {
         res.status(400).json({ error: "Nome deve ter pelo menos 2 caracteres." });
         return;
       }
+      if (!whatsappNumber) {
+        res.status(400).json({ error: "Numero de WhatsApp e obrigatorio." });
+        return;
+      }
 
       updateUserProfileStatement.run({
         id: currentUser.id,
@@ -1029,9 +1094,25 @@ async function bootstrap() {
     res.json(rows.map(rowToProduct));
   });
 
+  app.get("/api/notifications", (req, res) => {
+    const user = requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+
+    const rows = selectLikeNotificationsByOwner.all(user.id, user.id) as LikeNotificationRow[];
+    res.json(rows.map(rowToNotification));
+  });
+
   app.post("/api/products", (req, res) => {
     const user = requireAuth(req, res);
     if (!user) {
+      return;
+    }
+    if (!hasRequiredProfileForPublishing(user)) {
+      res.status(400).json({
+        error: "Para publicar, complete seu perfil com nome e numero de telefone.",
+      });
       return;
     }
 

@@ -15,13 +15,33 @@ export interface ProductDto {
   sellerWhatsappNumber?: string;
 }
 
+export type NotificationDto =
+  | {
+      id: string;
+      type: "product_like";
+      title: string;
+      message: string;
+      createdAt: number;
+      actorUserId: number;
+      productId: number;
+    }
+  | {
+      id: string;
+      type: "system_welcome";
+      title: string;
+      message: string;
+      createdAt: number;
+      actorUserId?: number;
+      productId?: number;
+    };
+
 export interface CreateProductInput {
   name: string;
   category: string;
   price: string;
   image?: string;
   images?: string[];
-  description?: string;
+  description: string;
   details?: Record<string, string>;
   latitude: number;
   longitude: number;
@@ -143,6 +163,19 @@ export const api = {
   },
   getLikedProducts() {
     return request<ProductDto[]>("/api/likes");
+  },
+  async getNotifications() {
+    try {
+      return await request<NotificationDto[]>("/api/notifications");
+    } catch (error) {
+      if (error instanceof Error) {
+        const message = error.message.toLowerCase();
+        if (message.includes("404") || message.includes("rota da api não encontrada")) {
+          return [];
+        }
+      }
+      throw error;
+    }
   },
   createProduct(product: CreateProductInput) {
     return request<ProductDto>("/api/products", {

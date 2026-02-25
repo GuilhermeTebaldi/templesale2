@@ -2,10 +2,15 @@ import React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Search, Pencil, Trash2, Package, X } from "lucide-react";
 import { type Product } from "./ProductCard";
+import { useI18n } from "../i18n/provider";
+import { formatEuroFromUnknown } from "../lib/currency";
+import { getCategoryLabel } from "../i18n/categories";
 
 interface ProductMapProps {
   products: Product[];
   onClose: () => void;
+  initialFocusProductId?: number;
+  onOpenProduct?: (product: Product) => void;
 }
 
 type LocatedProduct = Product & {
@@ -90,7 +95,32 @@ type LeafletMapInstance = {
   on: (eventName: string, handler: (event: LeafletPointerEvent) => void) => void;
   remove: () => void;
   invalidateSize?: (animate?: boolean) => void;
+  containerPointToLatLng: (point: [number, number]) => LeafletLatLng;
   dragging: {
+    disable: () => void;
+    enable: () => void;
+  };
+  touchZoom?: {
+    disable: () => void;
+    enable: () => void;
+  };
+  doubleClickZoom?: {
+    disable: () => void;
+    enable: () => void;
+  };
+  scrollWheelZoom?: {
+    disable: () => void;
+    enable: () => void;
+  };
+  boxZoom?: {
+    disable: () => void;
+    enable: () => void;
+  };
+  keyboard?: {
+    disable: () => void;
+    enable: () => void;
+  };
+  tap?: {
     disable: () => void;
     enable: () => void;
   };
@@ -152,16 +182,17 @@ const DEFAULT_MAP_CENTER: LeafletLatLng = {
   lat: -23.55052,
   lng: -46.633308,
 };
-const PRIMARY_TILE_URL = "/api/map-tiles/{z}/{x}/{y}.png";
-const SECONDARY_TILE_URL =
+const PRIMARY_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const SECONDARY_TILE_URL = "/api/map-tiles/{z}/{x}/{y}.png";
+const TERTIARY_TILE_URL =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
-const TERTIARY_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const QUATERNARY_TILE_URL = "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png";
 const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 const MIN_DRAW_POINT_DELTA = 0.00003;
 const DRAW_STATE_SYNC_INTERVAL_MS = 80;
-const TILE_FALLBACK_TIMEOUT_MS = 1400;
+const TILE_FALLBACK_TIMEOUT_MS = 20000;
+const TILE_ERROR_THRESHOLD = 8;
 
 let leafletAssetsPromise: Promise<LeafletGlobal> | null = null;
 
@@ -236,7 +267,34 @@ function ensureLeafletAssets(): Promise<LeafletGlobal> {
   return leafletAssetsPromise;
 }
 
-export default function ProductMap({ products, onClose }: ProductMapProps) {
+function setMapInteractionForDrawing(map: LeafletMapInstance, isDrawing: boolean) {
+  if (isDrawing) {
+    map.dragging.disable();
+    map.touchZoom?.disable();
+    map.doubleClickZoom?.disable();
+    map.scrollWheelZoom?.disable();
+    map.boxZoom?.disable();
+    map.keyboard?.disable();
+    map.tap?.disable();
+    return;
+  }
+
+  map.dragging.enable();
+  map.touchZoom?.enable();
+  map.doubleClickZoom?.enable();
+  map.scrollWheelZoom?.enable();
+  map.boxZoom?.enable();
+  map.keyboard?.enable();
+  map.tap?.enable();
+}
+
+export default function ProductMap({
+  products,
+  onClose,
+  initialFocusProductId,
+  onOpenProduct,
+}: ProductMapProps) {
+  const { t, locale } = useI18n();
   const productsWithLocation = React.useMemo(
     () =>
       products
@@ -253,6 +311,7 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
   const [showResults, setShowResults] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [panelSearchQuery, setPanelSearchQuery] = React.useState("");
+  const [mapReadyVersion, setMapReadyVersion] = React.useState(0);
 
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<LeafletMapInstance | null>(null);
@@ -267,11 +326,13 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
   const lastStateSyncRef = React.useRef(0);
   const tileLayerRef = React.useRef<LeafletTileLayerInstance | null>(null);
   const tileFallbackTimerRef = React.useRef<number | null>(null);
+  const activeTileLoadRef = React.useRef(0);
+  const hasLoadedAnyTileRef = React.useRef(false);
 
   React.useEffect(() => {
     isDrawingRef.current = isDrawing;
-    if (!isDrawing && mapRef.current) {
-      mapRef.current.dragging.enable();
+    if (mapRef.current) {
+      setMapInteractionForDrawing(mapRef.current, isDrawing);
     }
   }, [isDrawing]);
 
@@ -341,6 +402,12 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
     if (!hasProductsWithLocation) {
       return;
     }
+    isPointerDownRef.current = false;
+    drawPointsRef.current = [];
+    clearDrawingPolygon();
+    if (mapRef.current) {
+      setMapInteractionForDrawing(mapRef.current, true);
+    }
     setIsDrawing(true);
     setShowResults(false);
     setPanelSearchQuery("");
@@ -352,12 +419,21 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
     isPointerDownRef.current = false;
     clearDrawingPolygon();
     if (mapRef.current) {
-      mapRef.current.dragging.enable();
+      setMapInteractionForDrawing(mapRef.current, false);
     }
   };
 
   React.useEffect(() => {
     let cancelled = false;
+    let finalizeDrawingOnWindow: (() => void) | null = null;
+    let removeNativeTouchListeners: (() => void) | null = null;
+
+    const clearTileFallbackTimer = () => {
+      if (tileFallbackTimerRef.current !== null) {
+        window.clearTimeout(tileFallbackTimerRef.current);
+        tileFallbackTimerRef.current = null;
+      }
+    };
 
     const initializeMap = async () => {
       if (!mapContainerRef.current || mapRef.current) {
@@ -373,62 +449,87 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
         leafletRef.current = L;
 
         const firstProduct = productsWithLocationRef.current[0];
-        const mapCenter: [number, number] = firstProduct
-          ? [firstProduct.latitude, firstProduct.longitude]
+        const focusedProduct = initialFocusProductId
+          ? productsWithLocationRef.current.find(
+              (product) => product.id === initialFocusProductId,
+            )
+          : null;
+        const mapCenter: [number, number] = focusedProduct
+          ? [focusedProduct.latitude, focusedProduct.longitude]
+          : firstProduct
+            ? [firstProduct.latitude, firstProduct.longitude]
           : [DEFAULT_MAP_CENTER.lat, DEFAULT_MAP_CENTER.lng];
 
         const map = L.map(mapContainerRef.current, {
           zoomControl: false,
           attributionControl: true,
         });
-        map.setView(mapCenter, firstProduct ? 13 : 12);
+        map.setView(mapCenter, focusedProduct ? 15 : firstProduct ? 13 : 12);
+        setMapInteractionForDrawing(map, isDrawingRef.current);
 
-        let hasLoadedTile = false;
-        let providerIndex = 0;
-        const tileProviders = [
-          PRIMARY_TILE_URL,
-          SECONDARY_TILE_URL,
-          TERTIARY_TILE_URL,
-          QUATERNARY_TILE_URL,
-        ];
+        const tileProviders = [PRIMARY_TILE_URL];
 
         const loadTileProvider = (nextIndex: number) => {
+          if (nextIndex > 0 && hasLoadedAnyTileRef.current) {
+            return;
+          }
+
           if (nextIndex >= tileProviders.length) {
             setLeafletError(
-              "Nao foi possivel carregar os tiles do mapa nesta rede. Tente novamente em instantes.",
+              t("Não foi possível carregar os tiles do mapa nesta rede. Tente novamente em instantes."),
             );
             return;
           }
 
-          providerIndex = nextIndex;
+          const loadToken = activeTileLoadRef.current + 1;
+          activeTileLoadRef.current = loadToken;
+          let hasLoadedTileForProvider = false;
+          let tileErrors = 0;
+          setLeafletError("");
+
           if (tileLayerRef.current) {
             tileLayerRef.current.remove();
             tileLayerRef.current = null;
           }
-          if (tileFallbackTimerRef.current !== null) {
-            window.clearTimeout(tileFallbackTimerRef.current);
-            tileFallbackTimerRef.current = null;
-          }
+          clearTileFallbackTimer();
 
           const layer = L.tileLayer(tileProviders[nextIndex], {
             attribution: TILE_ATTRIBUTION,
           });
 
-          let tileErrors = 0;
-          layer.on("load", () => {
-            hasLoadedTile = true;
-            if (tileFallbackTimerRef.current !== null) {
-              window.clearTimeout(tileFallbackTimerRef.current);
-              tileFallbackTimerRef.current = null;
+          const moveToNextProvider = () => {
+            if (hasLoadedAnyTileRef.current) {
+              return;
             }
+            if (loadToken !== activeTileLoadRef.current) {
+              return;
+            }
+            loadTileProvider(nextIndex + 1);
+          };
+
+          const markProviderAsLoaded = () => {
+            if (loadToken !== activeTileLoadRef.current) {
+              return;
+            }
+            hasLoadedTileForProvider = true;
+            hasLoadedAnyTileRef.current = true;
+            clearTileFallbackTimer();
+          };
+
+          layer.on("tileload", markProviderAsLoaded);
+          layer.on("load", () => {
+            markProviderAsLoaded();
           });
           layer.on("tileerror", () => {
-            if (hasLoadedTile) {
+            if (
+              loadToken !== activeTileLoadRef.current ||
+              hasLoadedTileForProvider
+            ) {
               return;
             }
             tileErrors += 1;
-            if (tileErrors >= 1) {
-              loadTileProvider(providerIndex + 1);
+            if (tileErrors >= TILE_ERROR_THRESHOLD) {
+              moveToNextProvider();
             }
           });
 
@@ -436,9 +537,10 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
           tileLayerRef.current = layer;
 
           tileFallbackTimerRef.current = window.setTimeout(() => {
-            if (!hasLoadedTile) {
-              loadTileProvider(providerIndex + 1);
+            if (hasLoadedTileForProvider) {
+              return;
             }
+            moveToNextProvider();
           }, TILE_FALLBACK_TIMEOUT_MS);
         };
 
@@ -460,12 +562,12 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
 
           isPointerDownRef.current = true;
           drawPointsRef.current = [[event.latlng.lat, event.latlng.lng]];
-          map.dragging.disable();
+          setMapInteractionForDrawing(map, true);
 
           const polygon = L.polygon(drawPointsRef.current, {
             color: "#5d4037",
-            fillColor: "#f8fafc",
-            fillOpacity: 0.08,
+            fillColor: "#fbc02d",
+            fillOpacity: 0.12,
             weight: 3,
             dashArray: "5, 10",
           });
@@ -475,7 +577,15 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
         };
 
         const moveDrawing = (event: LeafletPointerEvent) => {
-          if (!isDrawingRef.current || !isPointerDownRef.current || !event.latlng) {
+          if (!isDrawingRef.current || !event.latlng) {
+            return;
+          }
+
+          if (!isPointerDownRef.current) {
+            startDrawingAt(event);
+          }
+
+          if (!isPointerDownRef.current) {
             return;
           }
 
@@ -508,7 +618,7 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
           }
 
           isPointerDownRef.current = false;
-          map.dragging.enable();
+          setMapInteractionForDrawing(map, false);
 
           const completedPolygon = [...drawPointsRef.current];
           drawPointsRef.current = [];
@@ -521,8 +631,8 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
 
           const polygon = L.polygon(completedPolygon, {
             color: "#5d4037",
-            fillColor: "#f8fafc",
-            fillOpacity: 0.12,
+            fillColor: "#fbc02d",
+            fillOpacity: 0.18,
             weight: 3,
           });
           polygon.addTo(map);
@@ -543,14 +653,105 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
         map.on("touchstart", startDrawingAt);
         map.on("touchmove", moveDrawing);
         map.on("touchend", finalizeDrawing);
+        map.on("touchcancel", finalizeDrawing);
+
+        const mapContainer = mapContainerRef.current;
+        const toLeafletTouchEvent = (touch: Touch): LeafletPointerEvent | null => {
+          if (!mapContainer) {
+            return null;
+          }
+
+          const rect = mapContainer.getBoundingClientRect();
+          const x = touch.clientX - rect.left;
+          const y = touch.clientY - rect.top;
+          if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            return null;
+          }
+
+          const latlng = map.containerPointToLatLng([x, y]);
+          if (!Number.isFinite(latlng.lat) || !Number.isFinite(latlng.lng)) {
+            return null;
+          }
+
+          return {
+            latlng: {
+              lat: latlng.lat,
+              lng: latlng.lng,
+            },
+          };
+        };
+
+        const handleNativeTouchStart = (event: TouchEvent) => {
+          if (!isDrawingRef.current || event.touches.length === 0) {
+            return;
+          }
+
+          event.preventDefault();
+          const touchEvent = toLeafletTouchEvent(event.touches[0]);
+          if (!touchEvent) {
+            return;
+          }
+          startDrawingAt(touchEvent);
+        };
+
+        const handleNativeTouchMove = (event: TouchEvent) => {
+          if (!isDrawingRef.current || event.touches.length === 0) {
+            return;
+          }
+
+          event.preventDefault();
+          const touchEvent = toLeafletTouchEvent(event.touches[0]);
+          if (!touchEvent) {
+            return;
+          }
+          moveDrawing(touchEvent);
+        };
+
+        const handleNativeTouchEnd = (event: TouchEvent) => {
+          if (!isDrawingRef.current) {
+            return;
+          }
+          event.preventDefault();
+          finalizeDrawing();
+        };
+
+        if (mapContainer) {
+          mapContainer.addEventListener("touchstart", handleNativeTouchStart, {
+            passive: false,
+          });
+          mapContainer.addEventListener("touchmove", handleNativeTouchMove, {
+            passive: false,
+          });
+          mapContainer.addEventListener("touchend", handleNativeTouchEnd, {
+            passive: false,
+          });
+          mapContainer.addEventListener("touchcancel", handleNativeTouchEnd, {
+            passive: false,
+          });
+
+          removeNativeTouchListeners = () => {
+            mapContainer.removeEventListener("touchstart", handleNativeTouchStart);
+            mapContainer.removeEventListener("touchmove", handleNativeTouchMove);
+            mapContainer.removeEventListener("touchend", handleNativeTouchEnd);
+            mapContainer.removeEventListener("touchcancel", handleNativeTouchEnd);
+          };
+        }
+
+        finalizeDrawingOnWindow = () => {
+          finalizeDrawing();
+        };
+        window.addEventListener("mouseup", finalizeDrawingOnWindow);
+        window.addEventListener("touchend", finalizeDrawingOnWindow);
+        window.addEventListener("touchcancel", finalizeDrawingOnWindow);
 
         mapRef.current = map;
+        setMapReadyVersion((current) => current + 1);
         setTimeout(() => {
           map.invalidateSize?.(true);
         }, 0);
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Falha ao carregar o mapa.";
+          error instanceof Error ? t(error.message) : t("Falha ao carregar o mapa.");
         setLeafletError(message);
       }
     };
@@ -562,14 +763,21 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
       clearMarkers();
       clearDrawingPolygon();
       clearSelectionPolygon();
+      if (finalizeDrawingOnWindow) {
+        window.removeEventListener("mouseup", finalizeDrawingOnWindow);
+        window.removeEventListener("touchend", finalizeDrawingOnWindow);
+        window.removeEventListener("touchcancel", finalizeDrawingOnWindow);
+      }
+      if (removeNativeTouchListeners) {
+        removeNativeTouchListeners();
+      }
+      activeTileLoadRef.current += 1;
+      hasLoadedAnyTileRef.current = false;
       if (tileLayerRef.current) {
         tileLayerRef.current.remove();
         tileLayerRef.current = null;
       }
-      if (tileFallbackTimerRef.current !== null) {
-        window.clearTimeout(tileFallbackTimerRef.current);
-        tileFallbackTimerRef.current = null;
-      }
+      clearTileFallbackTimer();
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -580,6 +788,8 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
     clearDrawingPolygon,
     clearMarkers,
     clearSelectionPolygon,
+    initialFocusProductId,
+    t,
   ]);
 
   React.useEffect(() => {
@@ -603,7 +813,7 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
       marker.addTo(map);
       return marker;
     });
-  }, [clearMarkers, filteredProducts]);
+  }, [clearMarkers, filteredProducts, mapReadyVersion]);
 
   React.useEffect(() => {
     if (!showResults || currentPolygon.length < 3) {
@@ -671,10 +881,10 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
               </div>
               <div className="hidden md:block">
                 <h1 className="text-sm font-semibold tracking-tight text-stone-800">
-                  Mapa de Produtos
+                  {t("Mapa de produtos")}
                 </h1>
                 <p className="text-[10px] text-stone-500 uppercase tracking-widest font-medium">
-                  Discovery
+                  {t("Descoberta")}
                 </p>
               </div>
             </div>
@@ -688,7 +898,7 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
               />
               <input
                 type="text"
-                placeholder="Buscar produtos ou categorias..."
+                placeholder={t("Buscar produtos ou categorias...")}
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 className="w-full pl-10 pr-4 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"
@@ -711,7 +921,7 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
                   ? "bg-stone-900 text-white shadow-lg"
                   : "text-stone-500 hover:bg-stone-100"
               }`}
-              title="Desenhar área"
+              title={t("Desenhar área")}
               disabled={!hasProductsWithLocation}
             >
               <Pencil size={18} />
@@ -721,7 +931,7 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
               type="button"
               onClick={clearSelection}
               className="p-3 rounded-xl text-stone-500 hover:bg-red-50 hover:text-red-500 transition-all duration-200"
-              title="Limpar seleção"
+              title={t("Limpar seleção")}
             >
               <Trash2 size={18} />
             </button>
@@ -730,7 +940,7 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
               type="button"
               onClick={onClose}
               className="p-3 rounded-xl text-stone-500 hover:bg-stone-100 transition-all duration-200"
-              title="Fechar mapa"
+              title={t("Fechar mapa")}
             >
               <X size={18} />
             </button>
@@ -740,24 +950,26 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
         {leafletError ? (
           <div className="absolute inset-0 flex items-center justify-center px-6">
             <div className="w-full max-w-2xl bg-red-50 border border-red-100 rounded-xl p-8 text-center">
-              <h3 className="text-lg font-semibold text-red-600 mb-2">Falha no mapa</h3>
+              <h3 className="text-lg font-semibold text-red-600 mb-2">{t("Falha no mapa")}</h3>
               <p className="text-sm text-red-500">{leafletError}</p>
             </div>
           </div>
         ) : (
           <div
             ref={mapContainerRef}
-            className={`w-full h-full ${isDrawing ? "cursor-crosshair" : ""}`}
+            className="w-full h-full"
             style={{
               background:
                 "radial-gradient(circle at 20% 20%, #f7f2e8 0%, #ece7db 45%, #e7e1d4 100%)",
+              cursor: isDrawing ? "crosshair" : undefined,
+              touchAction: isDrawing ? "none" : "auto",
             }}
           />
         )}
 
         {!leafletError && !hasProductsWithLocation && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-stone-900 text-white px-6 py-3 rounded-full shadow-2xl text-sm">
-            Nenhum produto com localização disponível no momento.
+            {t("Nenhum produto com localização disponível no momento.")}
           </div>
         )}
 
@@ -774,17 +986,19 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
                 <div className="flex items-center justify-between mb-4 gap-3">
                   <div>
                     <h2 className="text-lg font-semibold text-stone-800">
-                      Produtos Encontrados
+                      {t("Produtos encontrados")}
                     </h2>
                     <p className="text-xs text-stone-500">
-                      {selectedProducts.length} itens na área selecionada
+                      {t("{count} itens na área selecionada", {
+                        count: selectedProducts.length,
+                      })}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setShowResults(false)}
                     className="p-2 hover:bg-white/50 rounded-full transition-colors text-stone-400 hover:text-stone-600"
-                    title="Fechar resultados"
+                    title={t("Fechar resultados")}
                   >
                     <X size={20} />
                   </button>
@@ -797,7 +1011,7 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
                   />
                   <input
                     type="text"
-                    placeholder="Filtrar resultados..."
+                    placeholder={t("Filtrar resultados...")}
                     value={panelSearchQuery}
                     onChange={(event) => setPanelSearchQuery(event.target.value)}
                     className="w-full pl-9 pr-4 py-2 bg-white/80 border border-stone-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"
@@ -813,21 +1027,49 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
                     </div>
                     <div>
                       <p className="font-medium text-stone-600">
-                        Nenhum produto encontrado
+                        {t("Nenhum produto encontrado")}
                       </p>
                       <p className="text-sm text-stone-400">
-                        Tente mudar o filtro ou desenhar outra área.
+                        {t("Tente mudar o filtro ou desenhar outra área.")}
                       </p>
                     </div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-1 gap-4 sm:gap-6">
                     {filteredPanelProducts.map((product) => (
-                      <motion.div
+                      <motion.button
                         key={product.id}
+                        type="button"
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="group bg-white border border-stone-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300"
+                        className={`group text-left bg-white border border-stone-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 ${
+                          onOpenProduct ? "cursor-pointer" : ""
+                        }`}
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (!onOpenProduct) {
+                            return;
+                          }
+                          onOpenProduct(product);
+                        }}
+                        onKeyDown={(event) => {
+                          if (!onOpenProduct) {
+                            return;
+                          }
+                          if (event.key !== "Enter" && event.key !== " ") {
+                            return;
+                          }
+                          event.preventDefault();
+                          onOpenProduct(product);
+                        }}
+                        aria-label={
+                          onOpenProduct
+                            ? t("Abrir detalhes de {name}", { name: product.name })
+                            : undefined
+                        }
                       >
                         <div className="aspect-[4/3] relative overflow-hidden">
                           <img
@@ -838,7 +1080,7 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
                           />
                           <div className="absolute top-2 left-2 sm:top-3 sm:left-3">
                             <span className="px-1.5 py-0.5 sm:px-2 sm:py-1 bg-stone-900/90 backdrop-blur-sm text-[8px] sm:text-[10px] font-bold uppercase tracking-wider rounded-md border border-stone-700/20 text-stone-100">
-                              {product.category}
+                              {getCategoryLabel(product.category, locale)}
                             </span>
                           </div>
                         </div>
@@ -848,14 +1090,14 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
                           </h3>
                           <div className="mt-1 sm:mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                             <span className="text-sm sm:text-lg font-semibold text-stone-700">
-                              {product.price}
+                              {formatEuroFromUnknown(product.price, locale)}
                             </span>
                             <span className="text-[10px] sm:text-xs font-semibold text-stone-400 text-left sm:text-right">
                               {product.latitude.toFixed(5)}, {product.longitude.toFixed(5)}
                             </span>
                           </div>
                         </div>
-                      </motion.div>
+                      </motion.button>
                     ))}
                   </div>
                 )}
@@ -867,7 +1109,7 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
                   onClick={clearSelection}
                   className="w-full py-3 bg-stone-900 text-white rounded-xl font-medium shadow-lg shadow-stone-900/20 hover:bg-black transition-all active:scale-[0.98]"
                 >
-                  Nova Pesquisa
+                  {t("Nova pesquisa")}
                 </button>
               </div>
             </motion.div>
@@ -882,7 +1124,7 @@ export default function ProductMap({ products, onClose }: ProductMapProps) {
           >
             <Pencil size={16} className="animate-pulse" />
             <span className="text-sm font-medium">
-              Clique e arraste para desenhar no mapa
+              {t("Clique e arraste para desenhar no mapa")}
             </span>
           </motion.div>
         )}

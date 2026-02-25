@@ -12,6 +12,9 @@ import {
 import { type CreateProductInput } from "../lib/api";
 import { type Product } from "./ProductCard";
 import LeafletMapPicker from "./LeafletMapPicker";
+import { useI18n } from "../i18n/provider";
+import { CATEGORY_VALUES, getCategoryLabel } from "../i18n/categories";
+import { formatEuro, normalizeEuroInput, parsePriceToNumber } from "../lib/currency";
 
 interface NewProductProps {
   onClose: () => void;
@@ -95,6 +98,14 @@ function normalizeInitialImages(product: Product | null | undefined): string[] {
   return [];
 }
 
+function normalizePriceValue(price: string): string {
+  const parsed = parsePriceToNumber(price);
+  if (parsed === null || parsed <= 0) {
+    return "";
+  }
+  return formatEuro(parsed, "it-IT");
+}
+
 function buildInitialFormState(product: Product | null | undefined): FormState {
   if (!product) {
     return {
@@ -111,7 +122,7 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
   return {
     name: product.name ?? "",
     category: product.category ?? "Imóveis",
-    price: product.price ?? "",
+    price: normalizePriceValue(product.price ?? ""),
     latitude:
       typeof product.latitude === "number" && Number.isFinite(product.latitude)
         ? product.latitude.toFixed(6)
@@ -134,6 +145,7 @@ export default function NewProduct({
   mode = "create",
   initialProduct = null,
 }: NewProductProps) {
+  const { t, locale } = useI18n();
   const initialLocation = React.useMemo(
     () => getInitialLocationPoint(initialProduct),
     [initialProduct],
@@ -168,30 +180,6 @@ export default function NewProduct({
     setMapCenter(nextLocation ?? DEFAULT_MAP_CENTER);
   }, [initialProduct]);
 
-  const categories = [
-    "Imóveis",
-    "Terreno",
-    "Aluguel",
-    "Veículos",
-    "Eletrônicos e Celulares",
-    "Informática e Games",
-    "Casa, Móveis e Decoração",
-    "Eletrodomésticos",
-    "Moda e Acessórios",
-    "Beleza e Saúde",
-    "Bebês e Crianças",
-    "Esportes e Lazer",
-    "Hobbies e Colecionáveis",
-    "Antiguidades",
-    "Livros, Papelaria e Cursos",
-    "Instrumentos Musicais",
-    "Ferramentas e Construção",
-    "Jardim e Pet",
-    "Serviços",
-    "Empregos",
-    "Outros"
-  ];
-
   const isRealEstate = ["Imóveis", "Terreno", "Aluguel"].includes(formData.category);
   const isVehicle = formData.category === "Veículos";
   const isElectronicsOrFashion = [
@@ -225,19 +213,39 @@ export default function NewProduct({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
+    const normalizedName = formData.name.trim();
+    const normalizedCategory = formData.category.trim();
+    const normalizedDescription = formData.description.trim();
     const latitude = Number(formData.latitude);
     const longitude = Number(formData.longitude);
+    const parsedPrice = parsePriceToNumber(formData.price);
 
+    if (!normalizedName) {
+      setErrorMessage(t("Nome do produto é obrigatório."));
+      return;
+    }
+    if (!normalizedCategory) {
+      setErrorMessage(t("Categoria é obrigatória."));
+      return;
+    }
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      setErrorMessage("Informe latitude e longitude válidas.");
+      setErrorMessage(t("Informe latitude e longitude válidas."));
       return;
     }
     if (latitude < -90 || latitude > 90) {
-      setErrorMessage("Latitude deve estar entre -90 e 90.");
+      setErrorMessage(t("Latitude deve estar entre -90 e 90."));
       return;
     }
     if (longitude < -180 || longitude > 180) {
-      setErrorMessage("Longitude deve estar entre -180 e 180.");
+      setErrorMessage(t("Longitude deve estar entre -180 e 180."));
+      return;
+    }
+    if (parsedPrice === null || parsedPrice <= 0) {
+      setErrorMessage(t("Informe um preço válido em euro."));
+      return;
+    }
+    if (!normalizedDescription) {
+      setErrorMessage(t("Descrição é obrigatória."));
       return;
     }
 
@@ -252,14 +260,14 @@ export default function NewProduct({
       );
       const fallbackImage = "https://picsum.photos/seed/placeholder/800/1200";
       const newProduct: CreateProductInput = {
-        name: formData.name.trim(),
-        category: formData.category,
-        price: formData.price.trim(),
+        name: normalizedName,
+        category: normalizedCategory,
+        price: formatEuro(parsedPrice, "it-IT"),
         latitude,
         longitude,
         image: images[0] || fallbackImage,
         images: images.length > 0 ? images : [fallbackImage],
-        description: formData.description.trim(),
+        description: normalizedDescription,
         details,
       };
       await onPublish(newProduct);
@@ -273,8 +281,8 @@ export default function NewProduct({
         error instanceof Error
           ? error.message
           : isEditing
-            ? "Falha ao atualizar o anúncio."
-            : "Falha ao publicar o anúncio.";
+            ? t("Falha ao atualizar o anúncio.")
+            : t("Falha ao publicar o anúncio.");
       setErrorMessage(message);
     } finally {
       setIsPublishing(false);
@@ -286,7 +294,7 @@ export default function NewProduct({
     onFailure?: (message: string) => void,
   ) => {
     if (!("geolocation" in navigator)) {
-      onFailure?.("Geolocalização não suportada neste navegador.");
+      onFailure?.(t("Geolocalização não suportada neste navegador."));
       return;
     }
 
@@ -307,7 +315,7 @@ export default function NewProduct({
         onSuccess(nextPoint);
       },
       () => {
-        onFailure?.("Não foi possível capturar a localização atual.");
+        onFailure?.(t("Não foi possível capturar a localização atual."));
       },
       { enableHighAccuracy: true, timeout: 10000 },
     );
@@ -348,7 +356,11 @@ export default function NewProduct({
         setMapCenter(nextPoint);
       },
       (message) => {
-        setErrorMessage(`${message} Você ainda pode escolher manualmente no mapa.`);
+        setErrorMessage(
+          t("{message} Você ainda pode escolher manualmente no mapa.", {
+            message,
+          }),
+        );
       },
     );
   };
@@ -378,11 +390,12 @@ export default function NewProduct({
       {/* Header */}
       <div className="sticky top-0 z-10 bg-[#fdfcfb]/80 backdrop-blur-md border-b border-stone-100 px-6 h-20 flex items-center justify-between">
         <h2 className="text-xl font-serif tracking-widest uppercase">
-          {isEditing ? "Editar Produto" : "List New Product"}
+          {isEditing ? t("Editar produto") : t("Novo produto")}
         </h2>
         <button 
           onClick={onClose}
           className="p-2 hover:bg-stone-50 rounded-full transition-colors"
+          aria-label={t("Fechar")}
         >
           <X className="w-6 h-6 text-stone-600" />
         </button>
@@ -399,27 +412,28 @@ export default function NewProduct({
               <CheckCircle2 className="w-10 h-10 text-emerald-500" />
             </div>
             <h3 className="text-3xl font-serif italic text-stone-800 mb-2">
-              {isEditing ? "Produto Atualizado" : "Product Published"}
+              {isEditing ? t("Produto atualizado") : t("Produto publicado")}
             </h3>
             <p className="text-stone-500">
               {isEditing
-                ? "As alterações foram salvas no seu anúncio."
-                : "Your item is now live in the collection."}
+                ? t("As alterações foram salvas no seu anúncio.")
+                : t("Seu item já está publicado na coleção.")}
             </p>
           </motion.div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-12">
             {/* Image Upload Section */}
             <div className="space-y-4">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Product Images</label>
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Imagens do produto")}</label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {images.map((img, index) => (
                   <div key={index} className="relative aspect-3/4 bg-stone-100 rounded-sm overflow-hidden group">
-                    <img src={img} alt="Preview" className="w-full h-full object-cover" />
+                    <img src={img} alt={t("Pré-visualização")} className="w-full h-full object-cover" />
                     <button 
                       type="button"
                       onClick={() => handleRemoveImage(index)}
                       className="absolute top-2 right-2 p-1.5 bg-white/80 backdrop-blur-sm rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 hover:text-red-500"
+                      aria-label={t("Remover foto")}
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
@@ -431,7 +445,7 @@ export default function NewProduct({
                   className="aspect-3/4 border-2 border-dashed border-stone-200 rounded-sm flex flex-col items-center justify-center gap-2 text-stone-400 hover:border-stone-400 hover:text-stone-600 transition-all group"
                 >
                   <Plus className="w-6 h-6 group-hover:scale-110 transition-transform" />
-                  <span className="text-[10px] uppercase tracking-widest font-medium">Add Photo</span>
+                  <span className="text-[10px] uppercase tracking-widest font-medium">{t("Adicionar foto")}</span>
                 </button>
               </div>
             </div>
@@ -439,37 +453,45 @@ export default function NewProduct({
             {/* Details Section */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Product Name</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Nome do produto")}</label>
                 <input 
                   required
                   type="text"
-                  placeholder="e.g. Minimalist Vase"
+                  placeholder={t("Ex: Vaso minimalista")}
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Category</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Categoria")}</label>
                 <select 
+                  required
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-600 appearance-none cursor-pointer"
                   value={formData.category}
                   onChange={(e) => setFormData({...formData, category: e.target.value})}
                 >
-                  {categories.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
+                  {CATEGORY_VALUES.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {getCategoryLabel(cat, locale)}
+                    </option>
                   ))}
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Price</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Preço")}</label>
                 <input 
                   required
                   type="text"
-                  placeholder="$0.00"
+                  placeholder={formatEuro(0, "it-IT")}
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-mono"
                   value={formData.price}
-                  onChange={(e) => setFormData({...formData, price: e.target.value})}
+                  onChange={(e) =>
+                    setFormData((current) => ({
+                      ...current,
+                      price: normalizeEuroInput(e.target.value, "it-IT"),
+                    }))
+                  }
                 />
               </div>
             </div>
@@ -479,12 +501,12 @@ export default function NewProduct({
 
             <div className="space-y-3 border border-stone-200 rounded-sm bg-stone-50/60 p-4">
               <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-500">
-                Localizacao da publicacao
+                {t("Localização do anúncio")}
               </p>
               <p className="text-sm text-stone-500">
                 {hasLocationSelected
-                  ? "Localizacao pronta para publicar."
-                  : "Nenhuma localizacao escolhida ainda."}
+                  ? t("Localização pronta para publicar.")
+                  : t("Nenhuma localização escolhida ainda.")}
               </p>
 
               <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-8">
@@ -494,7 +516,7 @@ export default function NewProduct({
                   className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-600 hover:text-stone-900 transition-colors"
                 >
                   <Navigation className="w-4 h-4" />
-                  Usar localizacao atual
+                  {t("Usar localização atual")}
                 </button>
 
                 <button
@@ -503,7 +525,7 @@ export default function NewProduct({
                   className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-600 hover:text-stone-900 transition-colors"
                 >
                   <MapPin className="w-4 h-4" />
-                  Escolher local no mapa
+                  {t("Escolher local no mapa")}
                 </button>
               </div>
             </div>
@@ -519,45 +541,45 @@ export default function NewProduct({
                   className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 p-6 bg-stone-50 rounded-sm"
                 >
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Tipo de imóvel</label>
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Tipo de imóvel")}</label>
                     <input 
-                      type="text" placeholder="Ex: Casa, cobertura, sobrado"
+                      type="text" placeholder={t("Ex: Casa, cobertura, sobrado")}
                       className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
                       value={formData.details.type}
                       onChange={(e) => handleDetailChange('type', e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Área (m²)</label>
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Área (m²)")}</label>
                     <input 
-                      type="text" placeholder="Ex: 120"
+                      type="text" placeholder={t("Ex: 120")}
                       className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
                       value={formData.details.area}
                       onChange={(e) => handleDetailChange('area', e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Quartos</label>
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Quartos")}</label>
                     <input 
-                      type="text" placeholder="Ex: 3"
+                      type="text" placeholder={t("Ex: 3")}
                       className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
                       value={formData.details.rooms}
                       onChange={(e) => handleDetailChange('rooms', e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Banheiros</label>
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Banheiros")}</label>
                     <input 
-                      type="text" placeholder="Ex: 2"
+                      type="text" placeholder={t("Ex: 2")}
                       className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
                       value={formData.details.bathrooms}
                       onChange={(e) => handleDetailChange('bathrooms', e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Vagas</label>
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Vagas")}</label>
                     <input 
-                      type="text" placeholder="Ex: 1"
+                      type="text" placeholder={t("Ex: 1")}
                       className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
                       value={formData.details.parking}
                       onChange={(e) => handleDetailChange('parking', e.target.value)}
@@ -575,36 +597,36 @@ export default function NewProduct({
                   className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6 bg-stone-50 rounded-sm"
                 >
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Marca</label>
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Marca")}</label>
                     <input 
-                      type="text" placeholder="Ex: Toyota"
+                      type="text" placeholder={t("Ex: Toyota")}
                       className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
                       value={formData.details.brand}
                       onChange={(e) => handleDetailChange('brand', e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Modelo</label>
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Modelo")}</label>
                     <input 
-                      type="text" placeholder="Ex: Corolla XEi"
+                      type="text" placeholder={t("Ex: Corolla XEi")}
                       className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
                       value={formData.details.model}
                       onChange={(e) => handleDetailChange('model', e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Cor</label>
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Cor")}</label>
                     <input 
-                      type="text" placeholder="Ex: Prata"
+                      type="text" placeholder={t("Ex: Prata")}
                       className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
                       value={formData.details.color}
                       onChange={(e) => handleDetailChange('color', e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Ano</label>
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Ano")}</label>
                     <input 
-                      type="text" placeholder="Ex: 2022"
+                      type="text" placeholder={t("Ex: 2022")}
                       className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
                       value={formData.details.year}
                       onChange={(e) => handleDetailChange('year', e.target.value)}
@@ -622,27 +644,27 @@ export default function NewProduct({
                   className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 p-6 bg-stone-50 rounded-sm"
                 >
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Marca</label>
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Marca")}</label>
                     <input 
-                      type="text" placeholder="Ex: Nike, Apple"
+                      type="text" placeholder={t("Ex: Nike, Apple")}
                       className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
                       value={formData.details.brand}
                       onChange={(e) => handleDetailChange('brand', e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Modelo / Variação</label>
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Modelo / Variação")}</label>
                     <input 
-                      type="text" placeholder="Ex: Air Zoom, iPhone 13"
+                      type="text" placeholder={t("Ex: Air Zoom, iPhone 13")}
                       className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
                       value={formData.details.model}
                       onChange={(e) => handleDetailChange('model', e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Cor</label>
+                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Cor")}</label>
                     <input 
-                      type="text" placeholder="Ex: Azul, Preto"
+                      type="text" placeholder={t("Ex: Azul, Preto")}
                       className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
                       value={formData.details.color}
                       onChange={(e) => handleDetailChange('color', e.target.value)}
@@ -653,10 +675,11 @@ export default function NewProduct({
             </AnimatePresence>
 
             <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Description</label>
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Descrição")}</label>
               <textarea 
+                required
                 rows={4}
-                placeholder="Describe the craftsmanship and materials..."
+                placeholder={t("Descreva o acabamento, materiais e diferenciais do produto...")}
                 className="w-full bg-transparent border border-stone-200 p-4 outline-none focus:border-stone-800 transition-colors text-stone-600 resize-none rounded-sm"
                 value={formData.description}
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
@@ -671,11 +694,11 @@ export default function NewProduct({
               {isPublishing ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  {isEditing ? "Salvando..." : "Publishing..."}
+                  {isEditing ? t("Salvando...") : t("Publicando...")}
                 </>
               ) : (
                 <>
-                  {isEditing ? "Salvar alterações" : "Publish Product"}
+                  {isEditing ? t("Salvar alterações") : t("Publicar produto")}
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

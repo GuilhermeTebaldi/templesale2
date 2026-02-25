@@ -1,6 +1,9 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ShoppingBag, Heart, ChevronLeft, ChevronRight } from "lucide-react";
+import { useI18n } from "../i18n/provider";
+import { formatEuroFromUnknown } from "../lib/currency";
+import { getCategoryLabel } from "../i18n/categories";
 
 export interface Product {
   id: number;
@@ -32,6 +35,7 @@ export default function ProductCard({
   isLiked = false,
   onToggleLike,
 }: ProductCardProps) {
+  const { t, locale } = useI18n();
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
   const images = product.images || [product.image];
 
@@ -121,21 +125,21 @@ export default function ProductCard({
             className="w-full py-2 bg-white text-black text-xs font-medium uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-stone-100 transition-colors"
           >
             <ShoppingBag className="w-3 h-3" />
-            Add to Cart
+            {t("Adicionar ao carrinho")}
           </button>
         </div>
       </div>
       
       <div className="mt-4 flex flex-col gap-1">
         <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400 font-medium">
-          {product.category}
+          {getCategoryLabel(product.category, locale)}
         </span>
         <div className="flex justify-between items-start">
           <h3 className="font-serif italic text-lg text-stone-800 leading-tight">
             {product.name}
           </h3>
           <span className="font-mono text-sm text-stone-600">
-            {product.price}
+            {formatEuroFromUnknown(product.price, locale)}
           </span>
         </div>
       </div>

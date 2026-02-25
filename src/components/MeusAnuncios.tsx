@@ -2,6 +2,9 @@ import React from "react";
 import { motion } from "motion/react";
 import { X, Package, Edit2, Trash2, ExternalLink } from "lucide-react";
 import { type Product } from "./ProductCard";
+import { useI18n } from "../i18n/provider";
+import { formatEuroFromUnknown } from "../lib/currency";
+import { getCategoryLabel } from "../i18n/categories";
 
 interface MeusAnunciosProps {
   products: Product[];
@@ -11,6 +14,7 @@ interface MeusAnunciosProps {
 }
 
 export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: MeusAnunciosProps) {
+  const { t, locale } = useI18n();
   const [deletingId, setDeletingId] = React.useState<number | null>(null);
   const [errorMessage, setErrorMessage] = React.useState("");
 
@@ -19,7 +23,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
       return;
     }
 
-    const confirmed = window.confirm("Tem certeza que deseja excluir este anúncio?");
+    const confirmed = window.confirm(t("Tem certeza que deseja excluir este anúncio?"));
     if (!confirmed) {
       return;
     }
@@ -30,7 +34,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
       await onDelete(id);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Falha ao excluir o anúncio.";
+        error instanceof Error ? error.message : t("Falha ao excluir o anúncio.");
       setErrorMessage(message);
     } finally {
       setDeletingId(null);
@@ -48,7 +52,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
       <div className="p-8 flex justify-between items-center border-b border-stone-100">
         <div className="flex items-center gap-4">
           <Package className="w-6 h-6 text-stone-800" />
-          <h2 className="text-2xl font-serif tracking-widest uppercase">Meus Anúncios</h2>
+          <h2 className="text-2xl font-serif tracking-widest uppercase">{t("Meus Anúncios")}</h2>
         </div>
         <button onClick={onClose} className="p-2 hover:bg-stone-50 rounded-full transition-colors">
           <X className="w-6 h-6 text-stone-600" />
@@ -64,7 +68,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
           {products.length === 0 ? (
             <div className="text-center py-20">
               <Package className="w-12 h-12 text-stone-200 mx-auto mb-4" />
-              <p className="text-stone-400 uppercase tracking-widest text-xs">Você ainda não possui anúncios.</p>
+              <p className="text-stone-400 uppercase tracking-widest text-xs">{t("Você ainda não possui anúncios.")}</p>
             </div>
           ) : (
             <div className="grid gap-6">
@@ -82,9 +86,13 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
                     <div>
                       <div className="flex justify-between items-start">
                         <h3 className="font-serif italic text-lg text-stone-800">{product.name}</h3>
-                        <span className="text-sm font-mono text-stone-900">{product.price}</span>
+                        <span className="text-sm font-mono text-stone-900">
+                          {formatEuroFromUnknown(product.price, locale)}
+                        </span>
                       </div>
-                      <p className="text-[10px] uppercase tracking-widest text-stone-400 mt-1">{product.category}</p>
+                      <p className="text-[10px] uppercase tracking-widest text-stone-400 mt-1">
+                        {getCategoryLabel(product.category, locale)}
+                      </p>
                     </div>
 
                     <div className="flex gap-4 mt-4">
@@ -93,7 +101,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
                         className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-stone-400 hover:text-stone-800 transition-colors"
                       >
                         <Edit2 className="w-3 h-3" />
-                        Editar
+                        {t("Editar")}
                       </button>
                       <button 
                         disabled={deletingId === product.id}
@@ -103,7 +111,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
                         className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-stone-400 hover:text-red-500 disabled:text-stone-300 transition-colors"
                       >
                         <Trash2 className="w-3 h-3" />
-                        {deletingId === product.id ? "Excluindo..." : "Excluir"}
+                        {deletingId === product.id ? t("Excluindo...") : t("Excluir")}
                       </button>
                       <button className="ml-auto text-stone-300 hover:text-stone-800 transition-colors">
                         <ExternalLink className="w-4 h-4" />

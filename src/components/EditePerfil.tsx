@@ -6,14 +6,22 @@ import {
   getWhatsappCountryLabel,
   normalizeWhatsappLocalNumber,
 } from "../lib/whatsapp";
+import { useI18n } from "../i18n/provider";
 
 interface EditePerfilProps {
   onClose: () => void;
   onSave: (data: UpdateProfileInput) => Promise<void>;
   initialData?: SessionUser | null;
+  initialErrorMessage?: string;
 }
 
-export default function EditePerfil({ onClose, onSave, initialData }: EditePerfilProps) {
+export default function EditePerfil({
+  onClose,
+  onSave,
+  initialData,
+  initialErrorMessage = "",
+}: EditePerfilProps) {
+  const { t } = useI18n();
   const [isSaving, setIsSaving] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState("");
   const [formData, setFormData] = React.useState({
@@ -38,8 +46,8 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
       neighborhood: initialData?.neighborhood || "",
       street: initialData?.street || "",
     });
-    setErrorMessage("");
-  }, [initialData]);
+    setErrorMessage(initialErrorMessage);
+  }, [initialData, initialErrorMessage]);
 
   const handleUseLocation = () => {
     setErrorMessage("");
@@ -54,14 +62,14 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
           }));
         },
         () => {
-          setErrorMessage("Nao foi possivel capturar sua localizacao neste momento.");
+          setErrorMessage(t("Nao foi possivel capturar sua localizacao neste momento."));
         },
         { enableHighAccuracy: true, timeout: 10000 },
       );
       return;
     }
 
-    setErrorMessage("Geolocalizacao nao suportada neste navegador.");
+    setErrorMessage(t("Geolocalizacao nao suportada neste navegador."));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -70,7 +78,7 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
 
     const normalizedName = formData.name.trim();
     if (normalizedName.length < 2) {
-      setErrorMessage("Nome deve ter pelo menos 2 caracteres.");
+      setErrorMessage(t("Nome deve ter pelo menos 2 caracteres."));
       return;
     }
 
@@ -78,8 +86,12 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
       formData.whatsappNumber,
       formData.whatsappCountryIso,
     );
-    if (normalizedWhatsapp.length > 0 && (normalizedWhatsapp.length < 6 || normalizedWhatsapp.length > 15)) {
-      setErrorMessage("Numero de WhatsApp invalido.");
+    if (!normalizedWhatsapp) {
+      setErrorMessage(t("Numero de WhatsApp e obrigatorio."));
+      return;
+    }
+    if (normalizedWhatsapp.length < 6 || normalizedWhatsapp.length > 15) {
+      setErrorMessage(t("Numero de WhatsApp invalido."));
       return;
     }
 
@@ -98,7 +110,7 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
       onClose();
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Falha ao salvar o perfil.";
+        error instanceof Error ? error.message : t("Falha ao salvar o perfil.");
       setErrorMessage(message);
     } finally {
       setIsSaving(false);
@@ -116,7 +128,7 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
       <div className="p-8 flex justify-between items-center border-b border-stone-100">
         <div className="flex items-center gap-4">
           <User className="w-6 h-6 text-stone-800" />
-          <h2 className="text-2xl font-serif tracking-widest uppercase">Editar Perfil</h2>
+          <h2 className="text-2xl font-serif tracking-widest uppercase">{t("Editar Perfil")}</h2>
         </div>
         <button onClick={onClose} className="p-2 hover:bg-stone-50 rounded-full transition-colors">
           <X className="w-6 h-6 text-stone-600" />
@@ -127,8 +139,10 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
         <form onSubmit={handleSubmit} className="max-w-xl mx-auto space-y-8">
           <div className="space-y-6">
             <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Nome Completo</label>
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Nome completo")}</label>
               <input 
+                required
+                minLength={2}
                 type="text"
                 className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
                 value={formData.name}
@@ -137,7 +151,7 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">WhatsApp</label>
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("WhatsApp")}</label>
               <div className="grid grid-cols-[1fr_2fr] gap-4">
                 <select
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
@@ -149,6 +163,7 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
                   <option value="IT">{getWhatsappCountryLabel("IT")}</option>
                 </select>
                 <input
+                  required
                   type="tel"
                   placeholder="3331234567"
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
@@ -167,13 +182,13 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
                 className="flex items-center gap-3 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-800 hover:text-stone-500 transition-colors"
               >
                 <Navigation className="w-4 h-4" />
-                Usar minha localização atual
+                {t("Usar minha localização atual")}
               </button>
             </div>
 
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">País</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("País")}</label>
                 <input 
                   type="text"
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
@@ -182,7 +197,7 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Estado</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Estado")}</label>
                 <input 
                   type="text"
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
@@ -194,7 +209,7 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
 
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Cidade</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Cidade")}</label>
                 <input 
                   type="text"
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
@@ -203,7 +218,7 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Bairro</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Bairro")}</label>
                 <input 
                   type="text"
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
@@ -214,7 +229,7 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">Rua</label>
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Rua")}</label>
               <input 
                 type="text"
                 className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
@@ -234,7 +249,7 @@ export default function EditePerfil({ onClose, onSave, initialData }: EditePerfi
             className="w-full bg-stone-900 text-white py-6 text-xs uppercase tracking-[0.3em] font-bold flex items-center justify-center gap-3 hover:bg-black transition-all mt-12 disabled:bg-stone-400"
           >
             <Save className="w-4 h-4" />
-            {isSaving ? "Salvando..." : "Salvar Alteracoes"}
+            {isSaving ? t("Salvando...") : t("Salvar alterações")}
           </button>
         </form>
       </div>
