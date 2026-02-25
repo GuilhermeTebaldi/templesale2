@@ -279,7 +279,18 @@ function normalizeProductItem(value: unknown): ProductDto | null {
     product.longitude = longitude;
   }
 
-  const sellerName = toStringValue(firstDefined(parsed, ["sellerName", "seller_name"]));
+  const sellerRecord = (() => {
+    const candidate = firstDefined(parsed, ["seller", "owner", "user"]);
+    return isRecord(candidate) ? candidate : null;
+  })();
+  const sellerContactRecord = sellerRecord && isRecord(sellerRecord.contact)
+    ? sellerRecord.contact
+    : null;
+
+  const sellerName = (
+    toStringValue(firstDefined(parsed, ["sellerName", "seller_name"])) ||
+    (sellerRecord ? toStringValue(firstDefined(sellerRecord, ["name", "seller_name", "username"])) : "")
+  );
   if (sellerName) {
     product.sellerName = sellerName;
   }
@@ -294,22 +305,69 @@ function normalizeProductItem(value: unknown): ProductDto | null {
         "sellerCountryIso",
         "seller_country_iso",
       ]),
-    ) ??
-    normalizeCountryIso(firstDefined(parsed, ["seller_country", "country"]))
+    ) ||
+    (sellerRecord
+      ? normalizeCountryIso(
+          firstDefined(sellerRecord, [
+            "whatsappCountryIso",
+            "whatsapp_country_iso",
+            "countryIso",
+            "country_iso",
+          ]),
+        )
+      : undefined) ||
+    (sellerContactRecord
+      ? normalizeCountryIso(
+          firstDefined(sellerContactRecord, [
+            "whatsappCountryIso",
+            "whatsapp_country_iso",
+            "countryIso",
+            "country_iso",
+          ]),
+        )
+      : undefined) ||
+    normalizeCountryIso(firstDefined(parsed, ["seller_country", "country"])) ||
+    (sellerRecord
+      ? normalizeCountryIso(firstDefined(sellerRecord, ["country", "seller_country"]))
+      : undefined)
   );
   if (sellerWhatsappCountryIso) {
     product.sellerWhatsappCountryIso = sellerWhatsappCountryIso;
   }
 
-  const sellerWhatsappNumberRaw = firstDefined(parsed, [
-    "sellerWhatsappNumber",
-    "seller_whatsapp_number",
-    "seller_phone",
-    "sellerPhone",
-    "whatsappNumber",
-    "whatsapp_number",
-    "phone",
-  ]);
+  const sellerWhatsappNumberRaw =
+    firstDefined(parsed, [
+      "sellerWhatsappNumber",
+      "seller_whatsapp_number",
+      "seller_phone",
+      "sellerPhone",
+      "whatsappNumber",
+      "whatsapp_number",
+      "phone",
+    ]) ??
+    (sellerRecord
+      ? firstDefined(sellerRecord, [
+          "sellerWhatsappNumber",
+          "seller_whatsapp_number",
+          "seller_phone",
+          "sellerPhone",
+          "whatsappNumber",
+          "whatsapp_number",
+          "phone",
+        ])
+      : undefined) ??
+    (sellerContactRecord
+      ? firstDefined(sellerContactRecord, [
+          "sellerWhatsappNumber",
+          "seller_whatsapp_number",
+          "seller_phone",
+          "sellerPhone",
+          "whatsappNumber",
+          "whatsapp_number",
+          "phone",
+          "mobile",
+        ])
+      : undefined);
   const sellerWhatsappNumber =
     normalizePhoneDigits(sellerWhatsappNumberRaw) || toStringValue(sellerWhatsappNumberRaw);
   if (sellerWhatsappNumberRaw) {
@@ -662,6 +720,14 @@ export const api = {
   async getProducts() {
     const payload = await request<unknown>("/api/products");
     return normalizeProductList(payload);
+  },
+  async getProductById(id: number) {
+    const payload = await request<unknown>(`/api/products/${id}`);
+    const normalized = normalizeProductItem(payload);
+    if (!normalized) {
+      throw new Error("Resposta inválida ao carregar produto.");
+    }
+    return normalized;
   },
   async getMyProducts() {
     const payload = await request<unknown>("/api/my-products");

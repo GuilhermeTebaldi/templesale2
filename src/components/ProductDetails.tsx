@@ -16,6 +16,7 @@ import {
 import { type Product } from "./ProductCard";
 import ProductMap from "./ProductMap";
 import { buildWhatsappUrl, formatWhatsappDisplay } from "../lib/whatsapp";
+import { api } from "../lib/api";
 import { useI18n } from "../i18n/provider";
 import { formatEuroFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
@@ -59,6 +60,10 @@ export default function ProductDetails({
   const [activeImageIndex, setActiveImageIndex] = React.useState(0);
   const [isLocationMapOpen, setIsLocationMapOpen] = React.useState(false);
   const [isLocationAlertOpen, setIsLocationAlertOpen] = React.useState(false);
+  const [resolvedSellerContact, setResolvedSellerContact] = React.useState<{
+    sellerWhatsappCountryIso?: string;
+    sellerWhatsappNumber?: string;
+  } | null>(null);
 
   if (!product) return null;
 
@@ -73,14 +78,18 @@ export default function ProductDetails({
     Number.isFinite(product.latitude) &&
     typeof product.longitude === "number" &&
     Number.isFinite(product.longitude);
+  const sellerWhatsappCountryIso =
+    resolvedSellerContact?.sellerWhatsappCountryIso || product.sellerWhatsappCountryIso;
+  const sellerWhatsappNumber =
+    resolvedSellerContact?.sellerWhatsappNumber || product.sellerWhatsappNumber;
   const whatsappUrl = buildWhatsappUrl(
-    product.sellerWhatsappCountryIso,
-    product.sellerWhatsappNumber,
+    sellerWhatsappCountryIso,
+    sellerWhatsappNumber,
     product.name,
   );
   const whatsappDisplay = formatWhatsappDisplay(
-    product.sellerWhatsappCountryIso,
-    product.sellerWhatsappNumber,
+    sellerWhatsappCountryIso,
+    sellerWhatsappNumber,
   );
   const hasSellerWhatsapp = Boolean(whatsappUrl);
   const productsForMap = React.useMemo(() => {
@@ -116,6 +125,40 @@ export default function ProductDetails({
     setIsLocationMapOpen(false);
     setIsLocationAlertOpen(false);
   }, [product.id]);
+
+  React.useEffect(() => {
+    const localDigits = String(product.sellerWhatsappNumber ?? "").replace(/\D/g, "");
+    const hasLocalWhatsapp = localDigits.length >= 6;
+    if (hasLocalWhatsapp) {
+      setResolvedSellerContact(null);
+      return;
+    }
+
+    let cancelled = false;
+    const resolveSellerContact = async () => {
+      try {
+        const detailedProduct = await api.getProductById(product.id);
+        if (cancelled) {
+          return;
+        }
+        const detailedDigits = String(detailedProduct.sellerWhatsappNumber ?? "").replace(/\D/g, "");
+        if (detailedDigits.length >= 6 || detailedProduct.sellerWhatsappCountryIso) {
+          setResolvedSellerContact({
+            sellerWhatsappCountryIso: detailedProduct.sellerWhatsappCountryIso,
+            sellerWhatsappNumber: detailedProduct.sellerWhatsappNumber,
+          });
+        }
+      } catch {
+        // Keep fallback UI when the endpoint doesn't expose seller contact.
+      }
+    };
+
+    void resolveSellerContact();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [product.id, product.sellerWhatsappNumber]);
 
   const nextImage = () => setActiveImageIndex((prev) => (prev + 1) % images.length);
   const prevImage = () => setActiveImageIndex((prev) => (prev - 1 + images.length) % images.length);
