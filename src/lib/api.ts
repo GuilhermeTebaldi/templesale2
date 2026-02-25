@@ -84,8 +84,48 @@ export interface UploadImageResponse {
   height?: number;
 }
 
+type ApiEnvelope = {
+  success?: boolean;
+  data?: unknown;
+  error?: string;
+  message?: string;
+};
+
+const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "")
+  .trim()
+  .replace(/\/+$/, "");
+
+function buildApiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return API_BASE_URL ? `${API_BASE_URL}${normalizedPath}` : normalizedPath;
+}
+
+function asEnvelope(value: unknown): ApiEnvelope | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  return value as ApiEnvelope;
+}
+
+function extractApiError(payload: unknown): string | null {
+  const envelope = asEnvelope(payload);
+  if (!envelope) {
+    return null;
+  }
+  if (typeof envelope.error === "string" && envelope.error.trim()) {
+    return envelope.error.trim();
+  }
+  if (typeof envelope.message === "string" && envelope.message.trim()) {
+    return envelope.message.trim();
+  }
+  return null;
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
+  const response = await fetch(buildApiUrl(url), {
     credentials: "include",
     ...init,
     headers: {
@@ -101,9 +141,10 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     let message = `${response.status} ${response.statusText}`;
     if (isJson) {
       try {
-        const payload = (await response.json()) as { error?: string };
-        if (payload.error) {
-          message = payload.error;
+        const payload = (await response.json()) as unknown;
+        const apiError = extractApiError(payload);
+        if (apiError) {
+          message = apiError;
         }
       } catch {
         // Keep default HTTP message when JSON parsing fails.
@@ -132,11 +173,23 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error("Resposta inválida da API.");
   }
 
-  return (await response.json()) as T;
+  const payload = (await response.json()) as unknown;
+  const envelope = asEnvelope(payload);
+  if (envelope) {
+    if (envelope.success === false) {
+      const message = extractApiError(payload) ?? "Falha na API.";
+      throw new Error(message);
+    }
+    if ("data" in envelope && envelope.data !== undefined) {
+      return envelope.data as T;
+    }
+  }
+
+  return payload as T;
 }
 
 async function uploadProductImageFile(file: File): Promise<UploadImageResponse> {
-  const response = await fetch("/api/uploads/product-image", {
+  const response = await fetch(buildApiUrl("/api/uploads/product-image"), {
     method: "POST",
     credentials: "include",
     headers: {
@@ -153,9 +206,10 @@ async function uploadProductImageFile(file: File): Promise<UploadImageResponse> 
     let message = `${response.status} ${response.statusText}`;
     if (isJson) {
       try {
-        const payload = (await response.json()) as { error?: string };
-        if (payload.error) {
-          message = payload.error;
+        const payload = (await response.json()) as unknown;
+        const apiError = extractApiError(payload);
+        if (apiError) {
+          message = apiError;
         }
       } catch {
         // Keep default HTTP message when JSON parsing fails.
@@ -168,7 +222,19 @@ async function uploadProductImageFile(file: File): Promise<UploadImageResponse> 
     throw new Error("Resposta inválida do upload de imagem.");
   }
 
-  return (await response.json()) as UploadImageResponse;
+  const payload = (await response.json()) as unknown;
+  const envelope = asEnvelope(payload);
+  if (envelope) {
+    if (envelope.success === false) {
+      const message = extractApiError(payload) ?? "Falha no upload.";
+      throw new Error(message);
+    }
+    if (envelope.data && typeof envelope.data === "object") {
+      return envelope.data as UploadImageResponse;
+    }
+  }
+
+  return payload as UploadImageResponse;
 }
 
 export const api = {
