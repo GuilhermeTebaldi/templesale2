@@ -43,6 +43,7 @@ const CATEGORIES = [
 const BRAND_NAME = "TempleSale";
 const AUTH_TOKEN_STORAGE_KEY = "templesale_auth_token";
 const CART_STORAGE_KEY = "templesale_cart_items";
+const CART_UNSEEN_STORAGE_KEY = "templesale_cart_unseen_alert";
 
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
@@ -93,6 +94,13 @@ function readCartStorage(): Record<number, number> {
   }
 }
 
+function readCartUnseenAlertStorage(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.localStorage.getItem(CART_UNSEEN_STORAGE_KEY) === "1";
+}
+
 export default function App() {
   const { locale, setLocale, t } = useI18n();
   const [activeCategory, setActiveCategory] = React.useState("All");
@@ -121,6 +129,9 @@ export default function App() {
   const [likedProducts, setLikedProducts] = React.useState<Product[]>([]);
   const [cartQuantitiesByProductId, setCartQuantitiesByProductId] = React.useState<Record<number, number>>(
     () => readCartStorage(),
+  );
+  const [hasUnseenCartAlert, setHasUnseenCartAlert] = React.useState<boolean>(
+    () => readCartUnseenAlertStorage(),
   );
   const [notifications, setNotifications] = React.useState<NotificationDto[]>([]);
   const [readNotificationIds, setReadNotificationIds] = React.useState<string[]>([]);
@@ -426,6 +437,13 @@ export default function App() {
     window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartQuantitiesByProductId));
   }, [cartQuantitiesByProductId]);
 
+  React.useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(CART_UNSEEN_STORAGE_KEY, hasUnseenCartAlert ? "1" : "0");
+  }, [hasUnseenCartAlert]);
+
   const handleLogout = async () => {
     try {
       await api.logout();
@@ -502,6 +520,22 @@ export default function App() {
     () => cartItems.reduce((sum, item) => sum + item.quantity, 0),
     [cartItems],
   );
+  const markCartAlertAsSeen = React.useCallback(() => {
+    setHasUnseenCartAlert(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (cartItemsCount === 0 && hasUnseenCartAlert) {
+      setHasUnseenCartAlert(false);
+    }
+  }, [cartItemsCount, hasUnseenCartAlert]);
+
+  React.useEffect(() => {
+    if (isCartOpen) {
+      markCartAlertAsSeen();
+    }
+  }, [isCartOpen, markCartAlertAsSeen]);
+
   React.useEffect(() => {
     setCartQuantitiesByProductId((current) => {
       const nextEntries = Object.entries(current)
@@ -687,6 +721,7 @@ export default function App() {
         ...current,
         [product.id]: nextQuantity,
       }));
+      setHasUnseenCartAlert(true);
       showCartToast(
         t("{count} item(s) adicionado(s) ao carrinho.", {
           count: String(addedCount),
@@ -1400,11 +1435,20 @@ export default function App() {
                 setIsCartOpen(true);
               }}
             >
-              <span className="flex items-center gap-4">
+              <span className="flex items-center gap-3">
                 <ShoppingBag className="w-5 h-5 text-stone-300 group-hover:text-stone-800 transition-colors" />
                 {t("Carrinho")}
+                {cartItemsCount > 0 && (
+                  <span
+                    className={`w-2 h-2 rounded-full bg-red-500 ${
+                      hasUnseenCartAlert ? "animate-pulse" : ""
+                    }`}
+                  />
+                )}
               </span>
-              <span className="text-[10px] font-mono text-stone-400">{cartItemsCount}</span>
+              <span className="text-[10px] font-mono text-stone-400">
+                {cartItemsCount > 0 ? cartItemsCount : 0}
+              </span>
             </button>
 
             <button
@@ -1499,24 +1543,27 @@ export default function App() {
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-[#fdfcfb]/80 backdrop-blur-md border-b border-stone-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-2 sm:gap-8 w-1/3">
+          <div className="flex items-center gap-2 sm:gap-8 w-auto sm:w-1/3 shrink-0">
             <button 
               onClick={() => setIsMenuOpen(true)}
-              className="p-2 -ml-2 hover:bg-stone-50 rounded-full transition-colors"
+              className="relative p-2 -ml-2 hover:bg-stone-50 rounded-full transition-colors"
             >
               <Menu className="w-5 h-5 text-stone-600" />
+              {hasUnseenCartAlert && cartItemsCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              )}
             </button>
          
           </div>
 
           <h1
-            className="text-base sm:text-2xl font-serif tracking-widest sm:tracking-[0.15em] uppercase text-center grow px-2 truncate notranslate"
+            className="text-sm sm:text-2xl font-serif tracking-[0.08em] sm:tracking-[0.15em] uppercase text-center grow px-2 whitespace-nowrap notranslate"
             translate="no"
           >
             {BRAND_NAME}
           </h1>
 
-          <div className="flex items-center justify-end gap-1 sm:gap-4 w-1/3">
+          <div className="flex items-center justify-end gap-1 sm:gap-4 w-auto sm:w-1/3 shrink-0">
             <button 
               onClick={() => setIsSearchOpen(true)}
               className="p-2 hover:bg-stone-50 rounded-full transition-colors"
