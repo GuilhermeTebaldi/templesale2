@@ -1868,7 +1868,7 @@ export default function App() {
         {/* Hero Section */}
         <section className="relative h-[80vh] overflow-hidden">
           <img
-            src="https://i.pinimg.com/1200x/59/7c/65/597c65e6c30895c8ff5254c0ef9f9876.jpg?v=20260225"
+            src="https://i.pinimg.com/736x/b3/15/52/b315527f272a1a00df44206a286308b7.jpg?v=20260225"
             alt={t("Imagem de destaque")}
             className="absolute inset-0 w-full h-full object-cover"
             referrerPolicy="no-referrer"

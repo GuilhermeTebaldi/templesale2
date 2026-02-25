@@ -128,8 +128,18 @@ const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "")
 const AUTH_TOKEN_STORAGE_KEY = "templesale_auth_token";
 const ADMIN_AUTH_TOKEN_STORAGE_KEY = "templesale_admin_token";
 const ADMIN_SESSION_EMAIL_STORAGE_KEY = "templesale_admin_email";
-let supportsVendorsApi: boolean | null = null;
+const SHOULD_SKIP_OPTIONAL_VENDORS_API =
+  typeof window !== "undefined" &&
+  /(^|\.)templesale\.com$/i.test(window.location.hostname);
+let supportsVendorsApi: boolean | null = SHOULD_SKIP_OPTIONAL_VENDORS_API ? false : null;
 let supportsPublicUserApi: boolean | null = null;
+const vendorProfileCache = new globalThis.Map<
+  number,
+  {
+    name: string;
+    avatarUrl: string;
+  }
+>();
 
 function buildApiUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) {
@@ -312,18 +322,27 @@ function isRegisterPolicyPayloadError(error: unknown): boolean {
   return hasPolicyTermsHint;
 }
 
-function shouldRetryRegisterRequest(error: unknown): boolean {
-  if (isMissingApiRouteError(error)) {
-    return true;
-  }
-  if (isRegisterPolicyPayloadError(error)) {
-    return true;
-  }
+function shouldRetryRegisterPayloadOnSameRoute(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
   }
+
   const normalized = error.message.toLowerCase();
-  return normalized.includes("cannot post /api/auth") || normalized.includes("404");
+  const hasConflictHint =
+    normalized.includes("já está cadastrado") ||
+    normalized.includes("ja esta cadastrado") ||
+    normalized.includes("already exists") ||
+    normalized.includes("already registered") ||
+    normalized.includes("conflict");
+  if (hasConflictHint) {
+    return false;
+  }
+
+  return (
+    isRegisterPolicyPayloadError(error) ||
+    normalized.includes("obrigat") ||
+    normalized.includes("required")
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -782,6 +801,62 @@ function buildVendorsFromProducts(products: ProductDto[]): VendorDto[] {
   });
 }
 
+async function enrichVendorsWithPublicProfiles(vendors: VendorDto[]): Promise<VendorDto[]> {
+  if (vendors.length === 0) {
+    return vendors;
+  }
+
+  const normalizedVendors = vendors.map((vendor) => {
+    const cached = vendorProfileCache.get(vendor.id);
+    if (!cached) {
+      return { ...vendor };
+    }
+    return {
+      ...vendor,
+      name: cached.name || vendor.name,
+      avatarUrl: cached.avatarUrl || vendor.avatarUrl,
+    };
+  });
+
+  if (supportsPublicUserApi === false) {
+    return normalizedVendors;
+  }
+
+  const enrichmentCandidates = normalizedVendors
+    .filter((vendor) => !vendorProfileCache.has(vendor.id))
+    .slice(0, 24);
+
+  for (const vendor of enrichmentCandidates) {
+    try {
+      const payload = await request<unknown>(`/api/users/${vendor.id}`);
+      supportsPublicUserApi = true;
+      const user = normalizeSessionUserItem(payload);
+      if (!user) {
+        continue;
+      }
+
+      const cachedProfile = {
+        name: toStringValue(user.name) || vendor.name,
+        avatarUrl: toStringValue(user.avatarUrl),
+      };
+      vendorProfileCache.set(vendor.id, cachedProfile);
+      vendor.name = cachedProfile.name || vendor.name;
+      vendor.avatarUrl = cachedProfile.avatarUrl || vendor.avatarUrl;
+    } catch (error) {
+      if (isMissingApiRouteError(error) || isUnauthorizedApiError(error)) {
+        supportsPublicUserApi = false;
+        break;
+      }
+      if (error instanceof Error && error.message.toLowerCase().includes("404")) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return normalizedVendors;
+}
+
 function extractArrayPayload(value: unknown, keys: string[]): unknown[] {
   const parsed = parseJsonIfNeeded(value);
   if (Array.isArray(parsed)) {
@@ -1005,7 +1080,7 @@ async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
   return payload as T;
 }
 
-async function uploadImageFile(
+async function uploadImageFileToEndpoint(
   file: File,
   endpoint: string,
 ): Promise<UploadImageResponse> {
@@ -1063,12 +1138,41 @@ async function uploadImageFile(
   return payload as UploadImageResponse;
 }
 
+async function uploadImageFile(
+  file: File,
+  endpointOrEndpoints: string | string[],
+): Promise<UploadImageResponse> {
+  const endpointList = Array.isArray(endpointOrEndpoints)
+    ? endpointOrEndpoints
+    : [endpointOrEndpoints];
+  let lastError: unknown = null;
+
+  for (const endpoint of endpointList) {
+    try {
+      return await uploadImageFileToEndpoint(file, endpoint);
+    } catch (error) {
+      lastError = error;
+      if (!isMissingApiRouteError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+  throw new Error("Falha ao enviar imagem.");
+}
+
 async function uploadProductImageFile(file: File): Promise<UploadImageResponse> {
   return uploadImageFile(file, "/api/uploads/product-image");
 }
 
 async function uploadProfileImageFile(file: File): Promise<UploadImageResponse> {
-  return uploadImageFile(file, "/api/uploads/profile-image");
+  return uploadImageFile(file, [
+    "/api/uploads/profile-image",
+    "/api/uploads/product-image",
+  ]);
 }
 
 export const api = {
@@ -1107,9 +1211,58 @@ export const api = {
       acceptTerms: true,
       acceptCommunity: true,
       acceptGuidelines: true,
+      acceptedInstructions: true,
+      instructionsAccepted: true,
+      acceptedBottleInfo: true,
+      bottleInfoAccepted: true,
+      thermalBottleInfoAccepted: true,
+      acceptedThermalBottleInfo: true,
+      acceptedInstructionManual: true,
+      instructionManualAccepted: true,
+      acknowledgedThermalBottleInfo: true,
+      acknowledgedInstructions: true,
+      consents: {
+        privacyPolicy: true,
+        termsOfService: true,
+        communityGuidelines: true,
+        instructions: true,
+        thermalBottleInfo: true,
+      },
+      consent: {
+        privacyPolicy: true,
+        terms: true,
+        guidelines: true,
+        instructions: true,
+        bottleInfo: true,
+      },
     };
 
-    const registerPayloadSnakeCase = {
+    const registerPayloadTargeted = {
+      ...registerPayloadBase,
+      acceptedPrivacyPolicy: true,
+      privacyPolicyAccepted: true,
+      acceptPrivacyPolicy: true,
+      acceptedTerms: true,
+      termsAccepted: true,
+      acceptedGuidelines: true,
+      guidelinesAccepted: true,
+      acceptedInstructions: true,
+      instructionsAccepted: true,
+      acceptedThermalBottleInfo: true,
+      thermalBottleInfoAccepted: true,
+      accepted_privacy_policy: true,
+      privacy_policy_accepted: true,
+      accepted_terms: true,
+      terms_accepted: true,
+      accepted_guidelines: true,
+      guidelines_accepted: true,
+      accepted_instructions: true,
+      instructions_accepted: true,
+      accepted_thermal_bottle_info: true,
+      thermal_bottle_info_accepted: true,
+    };
+
+    const registerPayloadExtended = {
       ...registerPayload,
       accepted_privacy: true,
       accepted_privacy_policy: true,
@@ -1123,22 +1276,27 @@ export const api = {
       guidelines_accepted: true,
       policy_accepted: true,
       legal_accepted: true,
-    };
-
-    const registerPayloadExtended = {
-      ...registerPayloadSnakeCase,
-      acceptedInstructions: true,
-      instructionsAccepted: true,
-      acceptedBottleInfo: true,
-      bottleInfoAccepted: true,
-      thermalBottleInfoAccepted: true,
-      acceptedThermalBottleInfo: true,
+      accepted_instructions: true,
+      instructions_accepted: true,
+      accepted_bottle_info: true,
+      bottle_info_accepted: true,
+      thermal_bottle_info_accepted: true,
+      accepted_thermal_bottle_info: true,
+      acknowledged_thermal_bottle_info: true,
+      acknowledged_instructions: true,
+      consent_flags: {
+        privacy_policy: true,
+        terms: true,
+        guidelines: true,
+        instructions: true,
+        thermal_bottle_info: true,
+      },
     };
 
     const payloadCandidates = [
-      registerPayload,
-      registerPayloadSnakeCase,
+      registerPayloadTargeted,
       registerPayloadExtended,
+      registerPayloadBase,
     ];
     const routeCandidates = [
       "/api/auth/register",
@@ -1150,7 +1308,10 @@ export const api = {
     let lastError: unknown;
 
     for (const route of routeCandidates) {
-      for (const payloadCandidate of payloadCandidates) {
+      let routeMissing = false;
+      for (let index = 0; index < payloadCandidates.length; index += 1) {
+        const payloadCandidate = payloadCandidates[index];
+        const hasNextPayloadCandidate = index < payloadCandidates.length - 1;
         try {
           const raw = await request<unknown>(route, {
             method: "POST",
@@ -1174,10 +1335,18 @@ export const api = {
           return user;
         } catch (error) {
           lastError = error;
-          if (!shouldRetryRegisterRequest(error)) {
-            throw error;
+          if (isMissingApiRouteError(error)) {
+            routeMissing = true;
+            break;
           }
+          if (hasNextPayloadCandidate && shouldRetryRegisterPayloadOnSameRoute(error)) {
+            continue;
+          }
+          throw error;
         }
+      }
+      if (routeMissing) {
+        continue;
       }
     }
 
@@ -1335,7 +1504,8 @@ export const api = {
         )
       : fallbackVendors;
 
-    return filteredFallback.slice(0, safeLimit);
+    const limitedFallback = filteredFallback.slice(0, safeLimit);
+    return enrichVendorsWithPublicProfiles(limitedFallback);
   },
   async getVendorProducts(vendorId: number): Promise<{ vendor: VendorDto; products: ProductDto[] }> {
     if (!Number.isInteger(vendorId) || vendorId <= 0) {
