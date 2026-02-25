@@ -729,6 +729,14 @@ export const api = {
     }
     return normalized;
   },
+  async getPublicUserById(id: number) {
+    const payload = await request<unknown>(`/api/users/${id}`);
+    const normalized = normalizeSessionUserItem(payload);
+    if (!normalized) {
+      throw new Error("Resposta inválida ao carregar vendedor.");
+    }
+    return normalized;
+  },
   async getMyProducts() {
     const payload = await request<unknown>("/api/my-products");
     return normalizeProductList(payload);

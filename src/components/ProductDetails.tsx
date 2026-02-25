@@ -138,18 +138,36 @@ export default function ProductDetails({
     const resolveSellerContact = async () => {
       try {
         const detailedProduct = await api.getProductById(product.id);
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
+
         const detailedDigits = String(detailedProduct.sellerWhatsappNumber ?? "").replace(/\D/g, "");
         if (detailedDigits.length >= 6 || detailedProduct.sellerWhatsappCountryIso) {
           setResolvedSellerContact({
             sellerWhatsappCountryIso: detailedProduct.sellerWhatsappCountryIso,
             sellerWhatsappNumber: detailedProduct.sellerWhatsappNumber,
           });
+          return;
         }
       } catch {
-        // Keep fallback UI when the endpoint doesn't expose seller contact.
+        // Try the public user endpoint fallback below.
+      }
+
+      try {
+        if (!product.ownerId) {
+          return;
+        }
+        const seller = await api.getPublicUserById(product.ownerId);
+        if (cancelled) return;
+
+        const sellerDigits = String(seller.whatsappNumber ?? "").replace(/\D/g, "");
+        if (sellerDigits.length >= 6 || seller.whatsappCountryIso) {
+          setResolvedSellerContact({
+            sellerWhatsappCountryIso: seller.whatsappCountryIso,
+            sellerWhatsappNumber: seller.whatsappNumber,
+          });
+        }
+      } catch {
+        // Keep fallback UI when public endpoints don't expose seller contact.
       }
     };
 
@@ -158,7 +176,7 @@ export default function ProductDetails({
     return () => {
       cancelled = true;
     };
-  }, [product.id, product.sellerWhatsappNumber]);
+  }, [product.id, product.ownerId, product.sellerWhatsappNumber]);
 
   const nextImage = () => setActiveImageIndex((prev) => (prev + 1) % images.length);
   const prevImage = () => setActiveImageIndex((prev) => (prev - 1 + images.length) % images.length);
