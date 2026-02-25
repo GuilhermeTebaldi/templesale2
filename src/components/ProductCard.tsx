@@ -11,6 +11,7 @@ export interface Product {
   name: string;
   category: string;
   price: string;
+  quantity?: number;
   image: string;
   images?: string[];
   description?: string;
@@ -28,6 +29,7 @@ interface ProductCardProps {
   onClick?: () => void;
   isLiked?: boolean;
   onToggleLike?: () => void;
+  onAddToCart?: () => void;
 }
 
 export default function ProductCard({
@@ -35,6 +37,7 @@ export default function ProductCard({
   onClick,
   isLiked = false,
   onToggleLike,
+  onAddToCart,
 }: ProductCardProps) {
   const { t, locale } = useI18n();
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
@@ -120,9 +123,12 @@ export default function ProductCard({
             />
           </button>
         </div>
-        <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-full transition-transform duration-300 group-hover:translate-y-0 bg-linear-to-t from-black/20 to-transparent">
+        <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-0 md:translate-y-full transition-transform duration-300 md:group-hover:translate-y-0 bg-linear-to-t from-black/20 to-transparent">
           <button 
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddToCart?.();
+            }}
             className="w-full py-2 bg-white text-black text-xs font-medium uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-stone-100 transition-colors"
           >
             <ShoppingBag className="w-3 h-3" />

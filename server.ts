@@ -14,6 +14,7 @@ type ProductRecord = {
   name: string;
   category: string;
   price: string;
+  quantity?: number;
   image: string;
   images: string[];
   description?: string;
@@ -31,6 +32,7 @@ type ProductRow = {
   name: string;
   category: string;
   price: string;
+  quantity: number;
   image: string;
   images: string;
   description: string | null;
@@ -89,10 +91,27 @@ type SessionUser = {
   whatsappNumber?: string;
 };
 
+type AdminSessionUser = {
+  email: string;
+};
+
+type AdminUserRecord = {
+  id: number;
+  name: string;
+  email: string;
+  username?: string;
+  phone?: string;
+  country?: string;
+  city?: string;
+  productCount: number;
+  createdAt?: string;
+};
+
 type NormalizedProductInput = {
   name: string;
   category: string;
   price: string;
+  quantity: number;
   image: string;
   images: string;
   description: string;
@@ -150,6 +169,15 @@ const CLEAN_LOCAL_PRODUCTS_ON_BOOT =
   String(process.env.CLEAN_LOCAL_PRODUCTS_ON_BOOT ?? "true").toLowerCase() === "true";
 const SESSION_COOKIE_NAME = "templesale_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL ?? "templesale@admin.com")
+  .trim()
+  .toLowerCase();
+const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD ?? "Gui@1604").trim();
+const ADMIN_SESSION_COOKIE_NAME = "templesale_admin_session";
+const ADMIN_SESSION_TTL_SECONDS = 60 * 60 * 12;
+const ADMIN_SESSION_SECRET = String(
+  process.env.ADMIN_SESSION_SECRET ?? "templesale_admin_secret",
+).trim();
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAP_TILE_PROVIDER_TEMPLATES = [
   "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -176,6 +204,7 @@ const PRODUCT_SELECT_FIELDS = `
   p.name,
   p.category,
   p.price,
+  p.quantity,
   p.image,
   p.images,
   p.description,
@@ -256,12 +285,25 @@ function toRequiredNumber(value: unknown): number {
   return parsed;
 }
 
+function toRequiredNonNegativeInteger(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  const integerValue = Math.floor(parsed);
+  if (integerValue < 0) {
+    return fallback;
+  }
+  return integerValue;
+}
+
 function normalizeProductRow(row: Record<string, unknown>): ProductRow {
   return {
     id: toRequiredNumber(row.id),
     name: String(row.name ?? ""),
     category: String(row.category ?? ""),
     price: String(row.price ?? ""),
+    quantity: toRequiredNonNegativeInteger(row.quantity, 1),
     image: String(row.image ?? DEFAULT_IMAGE),
     images: String(row.images ?? "[]"),
     description: toNullableString(row.description),
@@ -317,6 +359,50 @@ function normalizeLikeNotificationRow(row: Record<string, unknown>): LikeNotific
   };
 }
 
+function toOptionalTrimmedString(value: unknown): string | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  const normalized = String(value).trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function toOptionalIsoDateString(value: unknown): string | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  const stringValue = String(value).trim();
+  if (!stringValue) {
+    return undefined;
+  }
+  const parsed = new Date(stringValue);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString();
+  }
+  return stringValue;
+}
+
+function normalizeAdminUserRecord(row: Record<string, unknown>): AdminUserRecord {
+  return {
+    id: toRequiredNumber(row.id),
+    name:
+      toOptionalTrimmedString(row.name) ??
+      toOptionalTrimmedString(row.username) ??
+      toOptionalTrimmedString(row.email) ??
+      `Usuário ${toRequiredNumber(row.id)}`,
+    email: toOptionalTrimmedString(row.email) ?? "",
+    username: toOptionalTrimmedString(row.username),
+    phone: toOptionalTrimmedString(row.phone),
+    country: toOptionalTrimmedString(row.country),
+    city: toOptionalTrimmedString(row.city),
+    productCount: toRequiredNumber(row.product_count ?? row.productCount ?? 0),
+    createdAt: toOptionalIsoDateString(row.created_at ?? row.createdAt),
+  };
+}
+
 function initializeSqliteDatabase() {
   if (sqliteDb) {
     return;
@@ -333,6 +419,7 @@ function initializeSqliteDatabase() {
       name TEXT NOT NULL,
       category TEXT NOT NULL,
       price TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
       image TEXT NOT NULL,
       images TEXT NOT NULL DEFAULT '[]',
       description TEXT DEFAULT '',
@@ -392,6 +479,10 @@ function initializeSqliteDatabase() {
   if (!productColumns.some((column) => column.name === "longitude")) {
     db.exec("ALTER TABLE products ADD COLUMN longitude REAL");
   }
+  if (!productColumns.some((column) => column.name === "quantity")) {
+    db.exec("ALTER TABLE products ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1");
+  }
+  db.exec("UPDATE products SET quantity = 1 WHERE quantity IS NULL OR quantity < 0");
 
   const userColumns = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
   if (!userColumns.some((column) => column.name === "country")) {
@@ -450,6 +541,7 @@ async function initializePostgresDatabase() {
         name TEXT NOT NULL,
         category TEXT NOT NULL,
         price TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1,
         image TEXT NOT NULL,
         images TEXT NOT NULL DEFAULT '[]',
         description TEXT DEFAULT '',
@@ -488,6 +580,7 @@ async function initializePostgresDatabase() {
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS title TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS category TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS price TEXT",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS quantity INTEGER",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS images TEXT DEFAULT '[]'",
@@ -516,8 +609,11 @@ async function initializePostgresDatabase() {
     "UPDATE products SET title = COALESCE(NULLIF(BTRIM(title), ''), NULLIF(BTRIM(name), ''), 'Produto sem título') WHERE title IS NULL OR BTRIM(title) = ''",
     "UPDATE products SET image_url = COALESCE(NULLIF(BTRIM(image_url), ''), NULLIF(BTRIM(image), ''), '') WHERE image_url IS NULL OR BTRIM(image_url) = ''",
     "UPDATE products SET image_urls = COALESCE(NULLIF(BTRIM(image_urls), ''), images, '[]') WHERE image_urls IS NULL OR BTRIM(image_urls) = ''",
+    "UPDATE products SET quantity = 1 WHERE quantity IS NULL OR quantity < 0",
     "UPDATE products SET lat = COALESCE(lat, latitude) WHERE lat IS NULL",
     "UPDATE products SET lng = COALESCE(lng, longitude) WHERE lng IS NULL",
+    "ALTER TABLE products ALTER COLUMN quantity SET DEFAULT 1",
+    "ALTER TABLE products ALTER COLUMN quantity SET NOT NULL",
     "ALTER TABLE products ALTER COLUMN title SET DEFAULT ''",
     "ALTER TABLE products ALTER COLUMN title SET NOT NULL",
     "UPDATE users SET password = COALESCE(NULLIF(BTRIM(password), ''), password_hash, '') WHERE password IS NULL OR BTRIM(password) = ''",
@@ -612,6 +708,66 @@ async function selectProductsByOwnerRows(ownerId: number): Promise<ProductRow[]>
     )
     .all(ownerId) as Array<Record<string, unknown>>;
   return rows.map(normalizeProductRow);
+}
+
+async function selectAdminUsersRows(): Promise<AdminUserRecord[]> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          u.id,
+          COALESCE(NULLIF(BTRIM(u.name), ''), NULLIF(BTRIM(u.username), ''), u.email) AS name,
+          NULLIF(BTRIM(u.username), '') AS username,
+          u.email,
+          NULLIF(BTRIM(u.whatsapp_number), '') AS phone,
+          NULLIF(BTRIM(u.country), '') AS country,
+          NULLIF(BTRIM(u.city), '') AS city,
+          u.created_at,
+          COUNT(p.id)::INT AS product_count
+        FROM users u
+        LEFT JOIN products p ON p.user_id = u.id
+        GROUP BY
+          u.id,
+          u.name,
+          u.username,
+          u.email,
+          u.whatsapp_number,
+          u.country,
+          u.city,
+          u.created_at
+        ORDER BY u.id DESC
+      `,
+    );
+    return result.rows.map(normalizeAdminUserRecord);
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          u.id,
+          u.name,
+          u.email,
+          u.whatsapp_number AS phone,
+          u.country,
+          u.city,
+          u.created_at,
+          COUNT(p.id) AS product_count
+        FROM users u
+        LEFT JOIN products p ON p.user_id = u.id
+        GROUP BY
+          u.id,
+          u.name,
+          u.email,
+          u.whatsapp_number,
+          u.country,
+          u.city,
+          u.created_at
+        ORDER BY u.id DESC
+      `,
+    )
+    .all() as Array<Record<string, unknown>>;
+  return rows.map(normalizeAdminUserRecord);
 }
 
 async function selectProductByIdRow(productId: number): Promise<ProductRow | undefined> {
@@ -728,6 +884,7 @@ async function createProductRecord(
           name,
           category,
           price,
+          quantity,
           image,
           images,
           image_url,
@@ -740,7 +897,7 @@ async function createProductRecord(
           lat,
           lng
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         RETURNING id
       `,
       [
@@ -748,6 +905,7 @@ async function createProductRecord(
         normalized.name,
         normalized.category,
         normalized.price,
+        normalized.quantity,
         normalized.image,
         normalized.images,
         normalized.image,
@@ -771,6 +929,7 @@ async function createProductRecord(
           name,
           category,
           price,
+          quantity,
           image,
           images,
           description,
@@ -783,6 +942,7 @@ async function createProductRecord(
           @name,
           @category,
           @price,
+          @quantity,
           @image,
           @images,
           @description,
@@ -810,23 +970,25 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
           name = $2,
           category = $3,
           price = $4,
-          image = $5,
-          images = $6,
-          image_url = $7,
-          image_urls = $8,
-          description = $9,
-          details = $10,
-          latitude = $11,
-          longitude = $12,
-          lat = $13,
-          lng = $14
-        WHERE id = $15
+          quantity = $5,
+          image = $6,
+          images = $7,
+          image_url = $8,
+          image_urls = $9,
+          description = $10,
+          details = $11,
+          latitude = $12,
+          longitude = $13,
+          lat = $14,
+          lng = $15
+        WHERE id = $16
       `,
       [
         normalized.name,
         normalized.name,
         normalized.category,
         normalized.price,
+        normalized.quantity,
         normalized.image,
         normalized.images,
         normalized.image,
@@ -851,6 +1013,7 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
           name = @name,
           category = @category,
           price = @price,
+          quantity = @quantity,
           image = @image,
           images = @images,
           description = @description,
@@ -873,6 +1036,84 @@ async function deleteProductRecord(id: number): Promise<void> {
   }
 
   requireSqliteDb().prepare("DELETE FROM products WHERE id = ?").run(id);
+}
+
+async function deleteProductRecordAsAdmin(productId: number): Promise<boolean> {
+  if (pgPool) {
+    const client = await pgPool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("DELETE FROM product_likes WHERE product_id = $1", [productId]);
+      const deleted = await client.query("DELETE FROM products WHERE id = $1", [productId]);
+      await client.query("COMMIT");
+      return (deleted.rowCount ?? 0) > 0;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  const db = requireSqliteDb();
+  const deleteProduct = db.prepare("DELETE FROM products WHERE id = ?");
+  const deleteLikes = db.prepare("DELETE FROM product_likes WHERE product_id = ?");
+  const runDelete = db.transaction((id: number) => {
+    deleteLikes.run(id);
+    const result = deleteProduct.run(id);
+    return Number(result.changes ?? 0) > 0;
+  });
+  return runDelete(productId);
+}
+
+async function deleteUserRecordAsAdmin(userId: number): Promise<boolean> {
+  if (pgPool) {
+    const client = await pgPool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `
+          DELETE FROM product_likes
+          WHERE product_id IN (SELECT id FROM products WHERE user_id = $1)
+        `,
+        [userId],
+      );
+      await client.query("DELETE FROM product_likes WHERE user_id = $1", [userId]);
+      await client.query("DELETE FROM sessions WHERE user_id = $1", [userId]);
+      await client.query("DELETE FROM products WHERE user_id = $1", [userId]);
+      const deleted = await client.query("DELETE FROM users WHERE id = $1", [userId]);
+      await client.query("COMMIT");
+      return (deleted.rowCount ?? 0) > 0;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  const db = requireSqliteDb();
+  const deleteLikesByProducts = db.prepare(
+    `
+      DELETE FROM product_likes
+      WHERE product_id IN (SELECT id FROM products WHERE user_id = ?)
+    `,
+  );
+  const deleteLikesByUser = db.prepare("DELETE FROM product_likes WHERE user_id = ?");
+  const deleteSessions = db.prepare("DELETE FROM sessions WHERE user_id = ?");
+  const deleteProducts = db.prepare("DELETE FROM products WHERE user_id = ?");
+  const deleteUser = db.prepare("DELETE FROM users WHERE id = ?");
+
+  const runDelete = db.transaction((id: number) => {
+    deleteLikesByProducts.run(id);
+    deleteLikesByUser.run(id);
+    deleteSessions.run(id);
+    deleteProducts.run(id);
+    const result = deleteUser.run(id);
+    return Number(result.changes ?? 0) > 0;
+  });
+
+  return runDelete(userId);
 }
 
 async function createProductLikeRecord(userId: number, productId: number): Promise<void> {
@@ -1173,6 +1414,7 @@ function rowToProduct(row: ProductRow): ProductRecord {
     name: row.name,
     category: row.category,
     price: row.price,
+    quantity: row.quantity,
     image: row.image,
     images: images.length > 0 ? images : [row.image || DEFAULT_IMAGE],
     description: row.description ?? "",
@@ -1286,6 +1528,25 @@ function normalizeIncomingPrice(rawValue: unknown): string {
   return parsed.toFixed(2);
 }
 
+function normalizeIncomingQuantity(rawValue: unknown): number {
+  const normalizedRaw = String(rawValue ?? "").trim();
+  if (!normalizedRaw) {
+    return 1;
+  }
+
+  const parsed = Number(normalizedRaw);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    throw new Error("Quantidade inválida.");
+  }
+  if (parsed < 0) {
+    throw new Error("Quantidade não pode ser negativa.");
+  }
+  if (parsed > 999999) {
+    throw new Error("Quantidade muito alta.");
+  }
+  return parsed;
+}
+
 function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
   if (!payload || typeof payload !== "object") {
     throw new Error("Payload inválido.");
@@ -1295,6 +1556,7 @@ function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
   const name = String(body.name ?? "").trim();
   const category = String(body.category ?? "").trim();
   const price = normalizeIncomingPrice(body.price);
+  const quantity = normalizeIncomingQuantity(body.quantity);
   const rawImage = String(body.image ?? "").trim();
   const images = normalizeImages(body.images, rawImage || DEFAULT_IMAGE);
   const image = rawImage || images[0] || DEFAULT_IMAGE;
@@ -1329,6 +1591,7 @@ function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
     name,
     category,
     price,
+    quantity,
     image,
     images: JSON.stringify(images),
     description,
@@ -1466,13 +1729,96 @@ function getSessionTokenFromRequest(req: Request): string | null {
   return token ? token.trim() : null;
 }
 
-function sessionCookieOptions(isProduction: boolean) {
+function createAdminSessionToken(): string {
+  const expiresAt = Math.floor(Date.now() / 1000) + ADMIN_SESSION_TTL_SECONDS;
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const payload = `${expiresAt}.${nonce}`;
+  const signature = crypto
+    .createHmac("sha256", ADMIN_SESSION_SECRET)
+    .update(payload)
+    .digest("hex");
+  return `${payload}.${signature}`;
+}
+
+function verifyAdminSessionToken(token: string): boolean {
+  const [expiresAtRaw, nonce, signature] = token.split(".");
+  if (!expiresAtRaw || !nonce || !signature) {
+    return false;
+  }
+  if (!/^\d+$/.test(expiresAtRaw)) {
+    return false;
+  }
+  if (!/^[a-f0-9]{32}$/i.test(nonce) || !/^[a-f0-9]{64}$/i.test(signature)) {
+    return false;
+  }
+
+  const payload = `${expiresAtRaw}.${nonce}`;
+  const expectedSignature = crypto
+    .createHmac("sha256", ADMIN_SESSION_SECRET)
+    .update(payload)
+    .digest("hex");
+  const providedBuffer = Buffer.from(signature, "hex");
+  const expectedBuffer = Buffer.from(expectedSignature, "hex");
+  if (providedBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+  if (!crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
+    return false;
+  }
+
+  const expiresAt = Number(expiresAtRaw);
+  if (!Number.isFinite(expiresAt)) {
+    return false;
+  }
+
+  return expiresAt > Math.floor(Date.now() / 1000);
+}
+
+function getAdminSessionTokenFromRequest(req: Request): string | null {
+  const cookies = parseCookies(req.headers.cookie);
+  const cookieToken = cookies[ADMIN_SESSION_COOKIE_NAME];
+  if (cookieToken) {
+    return cookieToken.trim();
+  }
+
+  const authorizationHeader = String(req.headers.authorization ?? "").trim();
+  if (authorizationHeader.toLowerCase().startsWith("bearer ")) {
+    const token = authorizationHeader.slice(7).trim();
+    return token || null;
+  }
+
+  return null;
+}
+
+function sessionCookieBaseOptions(isProduction: boolean) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
     secure: isProduction,
     path: "/",
+  };
+}
+
+function sessionCookieOptions(isProduction: boolean) {
+  return {
+    ...sessionCookieBaseOptions(isProduction),
     maxAge: SESSION_TTL_SECONDS * 1000,
+  };
+}
+
+function adminSessionCookieBaseOptions(isProduction: boolean) {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: isProduction,
+    path: "/",
+  };
+}
+
+function adminSessionCookieOptions(isProduction: boolean) {
+  return {
+    ...adminSessionCookieBaseOptions(isProduction),
+    maxAge: ADMIN_SESSION_TTL_SECONDS * 1000,
   };
 }
 
@@ -1481,7 +1827,15 @@ function setSessionCookie(res: Response, token: string, isProduction: boolean) {
 }
 
 function clearSessionCookie(res: Response, isProduction: boolean) {
-  res.clearCookie(SESSION_COOKIE_NAME, sessionCookieOptions(isProduction));
+  res.clearCookie(SESSION_COOKIE_NAME, sessionCookieBaseOptions(isProduction));
+}
+
+function setAdminSessionCookie(res: Response, token: string, isProduction: boolean) {
+  res.cookie(ADMIN_SESSION_COOKIE_NAME, token, adminSessionCookieOptions(isProduction));
+}
+
+function clearAdminSessionCookie(res: Response, isProduction: boolean) {
+  res.clearCookie(ADMIN_SESSION_COOKIE_NAME, adminSessionCookieBaseOptions(isProduction));
 }
 
 function sanitizeUser(
@@ -1640,6 +1994,17 @@ async function bootstrap() {
 
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: "2mb" }));
+
+  const requireAdmin = (req: Request, res: Response): AdminSessionUser | null => {
+    const adminToken = getAdminSessionTokenFromRequest(req);
+    if (!adminToken || !verifyAdminSessionToken(adminToken)) {
+      clearAdminSessionCookie(res, isProduction);
+      res.status(401).json({ error: "Acesso de administrador não autorizado." });
+      return null;
+    }
+
+    return { email: ADMIN_EMAIL };
+  };
 
   app.get("/api/health", (_req, res) => {
     res.json({
@@ -1848,6 +2213,149 @@ async function bootstrap() {
       }
     },
   );
+
+  app.post("/api/admin/auth/login", (req, res) => {
+    try {
+      const body = req.body as Record<string, unknown>;
+      const email = String(body.email ?? "").trim().toLowerCase();
+      const password = String(body.password ?? "").trim();
+
+      if (!email || !password) {
+        res.status(400).json({ error: "Email e senha do administrador são obrigatórios." });
+        return;
+      }
+
+      if (email !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {
+        clearAdminSessionCookie(res, isProduction);
+        res.status(401).json({ error: "Credenciais de administrador inválidas." });
+        return;
+      }
+
+      const token = createAdminSessionToken();
+      setAdminSessionCookie(res, token, isProduction);
+      res.json({
+        email: ADMIN_EMAIL,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao autenticar administrador.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/admin/auth/me", (req, res) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    res.json({ email: ADMIN_EMAIL });
+  });
+
+  app.post("/api/admin/auth/logout", (_req, res) => {
+    clearAdminSessionCookie(res, isProduction);
+    res.json({ success: true });
+  });
+
+  app.get("/api/admin/users", async (req, res) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    try {
+      const users = await selectAdminUsersRows();
+      res.json(users);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar usuários.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/admin/users/:id/products", async (req, res) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    const userId = Number(req.params.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      res.status(400).json({ error: "ID de usuário inválido." });
+      return;
+    }
+
+    try {
+      const user = await selectUserByIdRow(userId);
+      if (!user) {
+        res.status(404).json({ error: "Usuário não encontrado." });
+        return;
+      }
+
+      const products = await selectProductsByOwnerRows(userId);
+      res.json(products.map(rowToProduct));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar produtos do usuário.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.delete("/api/admin/products/:id", async (req, res) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    const productId = Number(req.params.id);
+    if (!Number.isInteger(productId) || productId <= 0) {
+      res.status(400).json({ error: "ID de produto inválido." });
+      return;
+    }
+
+    try {
+      const existingProduct = await selectProductByIdRow(productId);
+      if (!existingProduct) {
+        res.status(404).json({ error: "Produto não encontrado." });
+        return;
+      }
+
+      const deleted = await deleteProductRecordAsAdmin(productId);
+      if (!deleted) {
+        res.status(404).json({ error: "Produto não encontrado." });
+        return;
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao excluir produto.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.delete("/api/admin/users/:id", async (req, res) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    const userId = Number(req.params.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      res.status(400).json({ error: "ID de usuário inválido." });
+      return;
+    }
+
+    try {
+      const existingUser = await selectUserByIdRow(userId);
+      if (!existingUser) {
+        res.status(404).json({ error: "Usuário não encontrado." });
+        return;
+      }
+
+      const deleted = await deleteUserRecordAsAdmin(userId);
+      if (!deleted) {
+        res.status(404).json({ error: "Usuário não encontrado." });
+        return;
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao excluir usuário.";
+      res.status(500).json({ error: message });
+    }
+  });
 
   app.post("/api/auth/register", async (req, res) => {
     try {

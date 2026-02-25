@@ -39,6 +39,7 @@ type FormState = {
   name: string;
   category: string;
   price: string;
+  quantity: string;
   latitude: string;
   longitude: string;
   description: string;
@@ -129,6 +130,7 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
       name: "",
       category: "Imóveis",
       price: "",
+      quantity: "1",
       latitude: "",
       longitude: "",
       description: "",
@@ -140,6 +142,14 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
     name: product.name ?? "",
     category: product.category ?? "Imóveis",
     price: normalizePriceValue(product.price ?? ""),
+    quantity: (() => {
+      const parsed = Number(product.quantity);
+      if (!Number.isFinite(parsed)) {
+        return "1";
+      }
+      const normalized = Math.max(0, Math.floor(parsed));
+      return String(normalized);
+    })(),
     latitude:
       typeof product.latitude === "number" && Number.isFinite(product.latitude)
         ? product.latitude.toFixed(6)
@@ -286,6 +296,7 @@ export default function NewProduct({
     const latitude = Number(formData.latitude);
     const longitude = Number(formData.longitude);
     const parsedPrice = parsePriceToNumber(formData.price);
+    const parsedQuantity = Number(formData.quantity);
 
     if (!normalizedName) {
       setErrorMessage(t("Nome do produto é obrigatório."));
@@ -311,6 +322,10 @@ export default function NewProduct({
       setErrorMessage(t("Informe um preço válido em euro."));
       return;
     }
+    if (!Number.isFinite(parsedQuantity) || !Number.isInteger(parsedQuantity) || parsedQuantity < 0) {
+      setErrorMessage(t("Informe uma quantidade válida."));
+      return;
+    }
     if (!normalizedDescription) {
       setErrorMessage(t("Descrição é obrigatória."));
       return;
@@ -333,6 +348,7 @@ export default function NewProduct({
         name: normalizedName,
         category: normalizedCategory,
         price: parsedPrice.toFixed(2),
+        quantity: parsedQuantity,
         latitude,
         longitude,
         image: images[0],
@@ -602,6 +618,27 @@ export default function NewProduct({
                     setFormData((current) => ({
                       ...current,
                       price: nextValue,
+                    }));
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
+                  {t("Quantidade disponível")}
+                </label>
+                <input
+                  required
+                  type="number"
+                  min={0}
+                  step={1}
+                  inputMode="numeric"
+                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-mono"
+                  value={formData.quantity}
+                  onChange={(e) => {
+                    const digitsOnly = e.target.value.replace(/[^\d]/g, "");
+                    setFormData((current) => ({
+                      ...current,
+                      quantity: digitsOnly,
                     }));
                   }}
                 />

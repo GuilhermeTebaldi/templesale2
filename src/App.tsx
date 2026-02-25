@@ -9,6 +9,7 @@ import MeusAnuncios from "./components/MeusAnuncios";
 import EditePerfil from "./components/EditePerfil";
 import ProductMap from "./components/ProductMap";
 import Curtidas from "./components/Curtidas";
+import Carrinho, { type CartItem } from "./components/Carrinho";
 import { api, type NotificationDto, type SessionUser, type UpdateProfileInput } from "./lib/api";
 import { useI18n } from "./i18n/provider";
 import { localeOptions, type AppLocale } from "./i18n";
@@ -41,9 +42,55 @@ const CATEGORIES = [
 ];
 const BRAND_NAME = "TempleSale";
 const AUTH_TOKEN_STORAGE_KEY = "templesale_auth_token";
+const CART_STORAGE_KEY = "templesale_cart_items";
 
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function toSafeCartQuantity(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  const normalized = Math.floor(parsed);
+  return normalized > 0 ? normalized : 0;
+}
+
+function getProductStockQuantity(product: Product): number {
+  const parsed = Number(product.quantity);
+  if (!Number.isFinite(parsed)) {
+    return 1;
+  }
+  const normalized = Math.floor(parsed);
+  return normalized >= 0 ? normalized : 0;
+}
+
+function readCartStorage(): Record<number, number> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const raw = window.localStorage.getItem(CART_STORAGE_KEY);
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+
+    const normalizedEntries = Object.entries(parsed)
+      .map(([rawProductId, rawQuantity]) => [Number(rawProductId), toSafeCartQuantity(rawQuantity)] as const)
+      .filter(([productId, quantity]) => Number.isInteger(productId) && productId > 0 && quantity > 0)
+      .map(([productId, quantity]) => [productId, quantity] as const);
+
+    return Object.fromEntries(normalizedEntries);
+  } catch {
+    return {};
+  }
 }
 
 export default function App() {
@@ -59,6 +106,7 @@ export default function App() {
   const [isMeusAnunciosOpen, setIsMeusAnunciosOpen] = React.useState(false);
   const [editingProduct, setEditingProduct] = React.useState<Product | null>(null);
   const [isCurtidasOpen, setIsCurtidasOpen] = React.useState(false);
+  const [isCartOpen, setIsCartOpen] = React.useState(false);
   const [isEditePerfilOpen, setIsEditePerfilOpen] = React.useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = React.useState(false);
   const [authModalMode, setAuthModalMode] = React.useState<AuthMode>("register");
@@ -71,6 +119,9 @@ export default function App() {
   const [products, setProducts] = React.useState<Product[]>([]);
   const [myProducts, setMyProducts] = React.useState<Product[]>([]);
   const [likedProducts, setLikedProducts] = React.useState<Product[]>([]);
+  const [cartQuantitiesByProductId, setCartQuantitiesByProductId] = React.useState<Record<number, number>>(
+    () => readCartStorage(),
+  );
   const [notifications, setNotifications] = React.useState<NotificationDto[]>([]);
   const [readNotificationIds, setReadNotificationIds] = React.useState<string[]>([]);
   const [heroDate, setHeroDate] = React.useState<Date>(() => new Date());
@@ -346,12 +397,20 @@ export default function App() {
       setIsMeusAnunciosOpen(false);
       setEditingProduct(null);
       setIsCurtidasOpen(false);
+      setIsCartOpen(false);
       setIsEditePerfilOpen(false);
       setIsNotificationsOpen(false);
       setIsAccountSettingsOpen(false);
       setProfileCompletionMessage("");
     }
   }, [hasMemberAccess]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartQuantitiesByProductId));
+  }, [cartQuantitiesByProductId]);
 
   const handleLogout = async () => {
     try {
@@ -393,6 +452,76 @@ export default function App() {
     () => new Set(likedProducts.map((product) => product.id)),
     [likedProducts],
   );
+  const productsById = React.useMemo(() => {
+    const map = new Map<number, Product>();
+    [...products, ...myProducts, ...likedProducts].forEach((product) => {
+      map.set(product.id, product);
+    });
+    return map;
+  }, [products, myProducts, likedProducts]);
+  const cartItems = React.useMemo<CartItem[]>(() => {
+    return Object.entries(cartQuantitiesByProductId)
+      .map(([productId, quantity]) => ({
+        productId: Number(productId),
+        quantity: toSafeCartQuantity(quantity),
+      }))
+      .filter((item) => Number.isInteger(item.productId) && item.productId > 0 && item.quantity > 0)
+      .map((item) => {
+        const product = productsById.get(item.productId);
+        if (!product) {
+          return null;
+        }
+
+        const stock = getProductStockQuantity(product);
+        if (stock <= 0) {
+          return null;
+        }
+
+        return {
+          product,
+          quantity: Math.min(item.quantity, stock),
+        };
+      })
+      .filter((item): item is CartItem => item !== null);
+  }, [cartQuantitiesByProductId, productsById]);
+  const cartItemsCount = React.useMemo(
+    () => cartItems.reduce((sum, item) => sum + item.quantity, 0),
+    [cartItems],
+  );
+  React.useEffect(() => {
+    setCartQuantitiesByProductId((current) => {
+      const nextEntries = Object.entries(current)
+        .map(([productId, rawQuantity]) => {
+          const normalizedProductId = Number(productId);
+          const normalizedQuantity = toSafeCartQuantity(rawQuantity);
+          if (!Number.isInteger(normalizedProductId) || normalizedProductId <= 0 || normalizedQuantity <= 0) {
+            return null;
+          }
+
+          const product = productsById.get(normalizedProductId);
+          if (!product) {
+            return null;
+          }
+
+          const stock = getProductStockQuantity(product);
+          if (stock <= 0) {
+            return null;
+          }
+
+          return [normalizedProductId, Math.min(normalizedQuantity, stock)] as const;
+        })
+        .filter((entry): entry is readonly [number, number] => entry !== null);
+
+      const next = Object.fromEntries(nextEntries);
+      const currentSerialized = JSON.stringify(current);
+      const nextSerialized = JSON.stringify(next);
+      if (currentSerialized === nextSerialized) {
+        return current;
+      }
+      return next;
+    });
+  }, [productsById]);
+
   const readNotificationIdSet = React.useMemo(
     () => new Set(readNotificationIds),
     [readNotificationIds],
@@ -448,6 +577,36 @@ export default function App() {
     }
   }, [restoreSearchAfterProductClose]);
 
+  const hasResolvedProductFromUrl = React.useRef(false);
+  React.useEffect(() => {
+    if (hasResolvedProductFromUrl.current) {
+      return;
+    }
+    if (products.length === 0 || typeof window === "undefined") {
+      return;
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const rawProductId = searchParams.get("product");
+    if (!rawProductId) {
+      hasResolvedProductFromUrl.current = true;
+      return;
+    }
+
+    const productId = Number(rawProductId);
+    if (!Number.isInteger(productId) || productId <= 0) {
+      hasResolvedProductFromUrl.current = true;
+      return;
+    }
+
+    const sharedProduct = products.find((item) => item.id === productId);
+    if (sharedProduct) {
+      setSelectedProduct(sharedProduct);
+    }
+
+    hasResolvedProductFromUrl.current = true;
+  }, [products]);
+
   const handleToggleLike = async (product: Product) => {
     if (!currentUser) {
       setAuthModalMode("register");
@@ -470,6 +629,70 @@ export default function App() {
       console.error("Error toggling like:", err);
     }
   };
+
+  const handleAddToCart = React.useCallback((product: Product, quantityToAdd = 1) => {
+    const stockQuantity = getProductStockQuantity(product);
+    if (stockQuantity <= 0) {
+      return;
+    }
+
+    const normalizedAddition = Math.max(1, Math.floor(quantityToAdd));
+    setCartQuantitiesByProductId((current) => {
+      const currentQuantity = toSafeCartQuantity(current[product.id]);
+      const nextQuantity = Math.min(stockQuantity, currentQuantity + normalizedAddition);
+      if (nextQuantity <= 0 || nextQuantity === currentQuantity) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [product.id]: nextQuantity,
+      };
+    });
+  }, []);
+
+  const handleRemoveFromCart = React.useCallback((productId: number) => {
+    setCartQuantitiesByProductId((current) => {
+      if (!(productId in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[productId];
+      return next;
+    });
+  }, []);
+
+  const handleClearCart = React.useCallback(() => {
+    setCartQuantitiesByProductId({});
+  }, []);
+
+  const handleUpdateCartItemQuantity = React.useCallback(
+    (productId: number, nextQuantity: number) => {
+      const product = productsById.get(productId);
+      if (!product) {
+        return;
+      }
+
+      const stockQuantity = getProductStockQuantity(product);
+      if (stockQuantity <= 0) {
+        return;
+      }
+
+      const normalizedQuantity = Math.max(1, Math.floor(nextQuantity));
+      const safeQuantity = Math.min(stockQuantity, normalizedQuantity);
+
+      setCartQuantitiesByProductId((current) => {
+        if (toSafeCartQuantity(current[productId]) === safeQuantity) {
+          return current;
+        }
+        return {
+          ...current,
+          [productId]: safeQuantity,
+        };
+      });
+    },
+    [productsById],
+  );
 
   const syncUpdatedProduct = (updated: Product) => {
     setProducts((current) =>
@@ -715,6 +938,25 @@ export default function App() {
             <button
               onClick={() => {
                 setIsUserOpen(false);
+                setIsCartOpen(true);
+              }}
+              className="w-full flex items-center justify-between p-4 hover:bg-stone-50 transition-colors group"
+            >
+              <div className="flex items-center gap-4">
+                <ShoppingBag className="w-4 h-4 text-stone-400 group-hover:text-stone-800 transition-colors" />
+                <span className="text-xs uppercase tracking-widest font-medium text-stone-600 group-hover:text-stone-800 transition-colors">
+                  {t("Carrinho")}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-stone-400">{cartItemsCount}</span>
+                <ChevronRight className="w-3 h-3 text-stone-300 group-hover:text-stone-500 transition-colors" />
+              </div>
+            </button>
+
+            <button
+              onClick={() => {
+                setIsUserOpen(false);
                 setIsCurtidasOpen(true);
               }}
               className="w-full flex items-center justify-between p-4 hover:bg-stone-50 transition-colors group"
@@ -885,6 +1127,9 @@ export default function App() {
             onToggleLike={() => {
               void handleToggleLike(selectedProduct);
             }}
+            onAddToCart={(quantity) => {
+              handleAddToCart(selectedProduct, quantity);
+            }}
           />
         )}
       </AnimatePresence>
@@ -949,7 +1194,31 @@ export default function App() {
               setLikedProducts((current) => current.filter((p) => p.id !== id));
               setSelectedProduct((current) => (current?.id === id ? null : current));
               setEditingProduct((current) => (current?.id === id ? null : current));
+              setCartQuantitiesByProductId((current) => {
+                if (!(id in current)) {
+                  return current;
+                }
+                const next = { ...current };
+                delete next[id];
+                return next;
+              });
             }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isCartOpen && (
+          <Carrinho
+            items={cartItems}
+            onClose={() => setIsCartOpen(false)}
+            onOpenProduct={(product) => {
+              setIsCartOpen(false);
+              openProductDetails(product);
+            }}
+            onRemove={handleRemoveFromCart}
+            onClear={handleClearCart}
+            onUpdateQuantity={handleUpdateCartItemQuantity}
           />
         )}
       </AnimatePresence>
@@ -1188,6 +1457,18 @@ export default function App() {
             >
               <Search className="w-5 h-5 text-stone-600" />
             </button>
+            <button
+              onClick={() => setIsCartOpen(true)}
+              className="p-2 hover:bg-stone-50 rounded-full transition-colors relative"
+              aria-label={t("Abrir carrinho")}
+            >
+              <ShoppingBag className="w-5 h-5 text-stone-600" />
+              {cartItemsCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-stone-900 text-white text-[9px] font-mono rounded-full flex items-center justify-center">
+                  {cartItemsCount > 99 ? "99+" : cartItemsCount}
+                </span>
+              )}
+            </button>
             {hasMemberAccess ? (
               <>
                 <div className="relative">
@@ -1351,6 +1632,7 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.8, delay: 0.4 }}
+              onClick={() => setIsSearchOpen(true)}
               className="group flex items-center gap-3 px-8 py-4 bg-white text-black text-xs uppercase tracking-[0.2em] font-medium hover:bg-stone-100 transition-all"
             >
               {t("Explorar coleção")}
@@ -1412,6 +1694,9 @@ export default function App() {
                     isLiked={likedProductIds.has(product.id)}
                     onToggleLike={() => {
                       void handleToggleLike(product);
+                    }}
+                    onAddToCart={() => {
+                      handleAddToCart(product, 1);
                     }}
                   />
                 </div>

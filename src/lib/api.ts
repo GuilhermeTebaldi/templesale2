@@ -3,6 +3,7 @@ export interface ProductDto {
   name: string;
   category: string;
   price: string;
+  quantity?: number;
   image: string;
   images?: string[];
   description?: string;
@@ -39,6 +40,7 @@ export interface CreateProductInput {
   name: string;
   category: string;
   price: string;
+  quantity: number;
   image?: string;
   images?: string[];
   description: string;
@@ -87,6 +89,22 @@ export interface UploadImageResponse {
   publicId?: string;
   width?: number;
   height?: number;
+}
+
+export interface AdminSessionDto {
+  email: string;
+}
+
+export interface AdminUserDto {
+  id: number;
+  name: string;
+  email: string;
+  username?: string;
+  phone?: string;
+  country?: string;
+  city?: string;
+  productCount: number;
+  createdAt?: string;
 }
 
 type ApiEnvelope = {
@@ -233,6 +251,15 @@ function toOptionalNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function toNonNegativeInteger(value: unknown): number | undefined {
+  const parsed = toOptionalNumber(value);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const integerValue = Math.floor(parsed);
+  return integerValue >= 0 ? integerValue : undefined;
+}
+
 function toStringArray(value: unknown): string[] {
   const parsed = parseJsonIfNeeded(value);
   if (Array.isArray(parsed)) {
@@ -298,6 +325,10 @@ function normalizeProductItem(value: unknown): ProductDto | null {
     image,
     images,
   };
+
+  const quantity =
+    toNonNegativeInteger(firstDefined(parsed, ["quantity", "stock", "stockQuantity"])) ?? 1;
+  product.quantity = quantity;
 
   const description = toStringValue(firstDefined(parsed, ["description"]));
   if (description) {
@@ -534,6 +565,79 @@ function normalizeProductList(value: unknown): ProductDto[] {
 function normalizeNotificationList(value: unknown): NotificationDto[] {
   const items = extractArrayPayload(value, ["data", "notifications", "items", "rows", "results"]);
   return items.filter((item): item is NotificationDto => isRecord(item));
+}
+
+function normalizeAdminSessionItem(value: unknown): AdminSessionDto | null {
+  const parsed = parseJsonIfNeeded(value);
+  if (!isRecord(parsed)) {
+    return null;
+  }
+
+  const email = toStringValue(firstDefined(parsed, ["email"])).toLowerCase();
+  if (!email) {
+    return null;
+  }
+
+  return { email };
+}
+
+function normalizeAdminUserItem(value: unknown): AdminUserDto | null {
+  const parsed = parseJsonIfNeeded(value);
+  if (!isRecord(parsed)) {
+    return null;
+  }
+
+  const id = toOptionalNumber(firstDefined(parsed, ["id", "userId", "user_id"]));
+  if (id === undefined) {
+    return null;
+  }
+
+  const email = toStringValue(firstDefined(parsed, ["email"])).toLowerCase();
+  const name =
+    toStringValue(firstDefined(parsed, ["name", "username"])) || email || `Usuário ${id}`;
+  const productCount =
+    toOptionalNumber(firstDefined(parsed, ["productCount", "product_count"])) ?? 0;
+
+  const user: AdminUserDto = {
+    id,
+    name,
+    email,
+    productCount,
+  };
+
+  const username = toStringValue(firstDefined(parsed, ["username"]));
+  if (username) {
+    user.username = username;
+  }
+
+  const phone = normalizePhoneDigits(firstDefined(parsed, ["phone", "whatsapp_number"]));
+  if (phone) {
+    user.phone = phone;
+  }
+
+  const country = toStringValue(firstDefined(parsed, ["country"]));
+  if (country) {
+    user.country = country;
+  }
+
+  const city = toStringValue(firstDefined(parsed, ["city"]));
+  if (city) {
+    user.city = city;
+  }
+
+  const createdAt = toStringValue(firstDefined(parsed, ["createdAt", "created_at"]));
+  if (createdAt) {
+    user.createdAt = createdAt;
+  }
+
+  return user;
+}
+
+function normalizeAdminUserList(value: unknown): AdminUserDto[] {
+  const items = extractArrayPayload(value, ["data", "users", "items", "rows", "results"]);
+  return items
+    .map((item) => normalizeAdminUserItem(item))
+    .filter((item): item is AdminUserDto => item !== null);
 }
 
 function extractTokenFromAuthPayload(value: unknown): string {
@@ -949,5 +1053,49 @@ export const api = {
   },
   uploadProductImage(file: File) {
     return uploadProductImageFile(file);
+  },
+  admin: {
+    async login(email: string, password: string) {
+      const payload = await request<unknown>("/api/admin/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+      const session = normalizeAdminSessionItem(payload);
+      if (!session) {
+        throw new Error("Resposta inválida ao autenticar administrador.");
+      }
+      return session;
+    },
+    async getCurrent() {
+      const payload = await request<unknown>("/api/admin/auth/me");
+      const session = normalizeAdminSessionItem(payload);
+      if (!session) {
+        throw new Error("Sessão de administrador inválida.");
+      }
+      return session;
+    },
+    logout() {
+      return request<{ success: boolean }>("/api/admin/auth/logout", {
+        method: "POST",
+      });
+    },
+    async getUsers() {
+      const payload = await request<unknown>("/api/admin/users");
+      return normalizeAdminUserList(payload);
+    },
+    async getUserProducts(userId: number) {
+      const payload = await request<unknown>(`/api/admin/users/${userId}/products`);
+      return normalizeProductList(payload);
+    },
+    deleteProduct(productId: number) {
+      return request<{ success: boolean }>(`/api/admin/products/${productId}`, {
+        method: "DELETE",
+      });
+    },
+    deleteUser(userId: number) {
+      return request<{ success: boolean }>(`/api/admin/users/${userId}`, {
+        method: "DELETE",
+      });
+    },
   },
 };

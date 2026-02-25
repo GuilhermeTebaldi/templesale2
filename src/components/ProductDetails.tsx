@@ -4,6 +4,7 @@ import {
   X,
   Heart,
   Share2,
+  ShoppingBag,
   ChevronRight,
   Minus,
   Plus,
@@ -29,6 +30,7 @@ interface ProductDetailsProps {
   onOpenProduct?: (product: Product) => void;
   isLiked?: boolean;
   onToggleLike?: () => void;
+  onAddToCart?: (quantity: number) => void;
 }
 
 const detailLabelByKey: Record<string, string> = {
@@ -53,13 +55,16 @@ export default function ProductDetails({
   onOpenProduct,
   isLiked = false,
   onToggleLike,
+  onAddToCart,
 }: ProductDetailsProps) {
   const { t, locale } = useI18n();
-  const [quantity, setQuantity] = React.useState(1);
+  const [selectedQuantity, setSelectedQuantity] = React.useState(1);
   const [isLightboxOpen, setIsLightboxOpen] = React.useState(false);
   const [activeImageIndex, setActiveImageIndex] = React.useState(0);
   const [isLocationMapOpen, setIsLocationMapOpen] = React.useState(false);
   const [isLocationAlertOpen, setIsLocationAlertOpen] = React.useState(false);
+  const [shareFeedback, setShareFeedback] = React.useState("");
+  const [cartFeedback, setCartFeedback] = React.useState("");
   const [resolvedSellerContact, setResolvedSellerContact] = React.useState<{
     sellerWhatsappCountryIso?: string;
     sellerWhatsappNumber?: string;
@@ -92,6 +97,15 @@ export default function ProductDetails({
     sellerWhatsappNumber,
   );
   const hasSellerWhatsapp = Boolean(whatsappUrl);
+  const availableQuantity = React.useMemo(() => {
+    const raw = Number(product.quantity);
+    if (!Number.isFinite(raw)) {
+      return 1;
+    }
+    const normalized = Math.floor(raw);
+    return normalized >= 0 ? normalized : 0;
+  }, [product.quantity]);
+  const canAddToCart = availableQuantity > 0 && selectedQuantity > 0;
   const productsForMap = React.useMemo(() => {
     if (products.length === 0) {
       return [product];
@@ -121,10 +135,12 @@ export default function ProductDetails({
 
   React.useEffect(() => {
     setActiveImageIndex(0);
-    setQuantity(1);
+    setSelectedQuantity(availableQuantity > 0 ? 1 : 0);
     setIsLocationMapOpen(false);
     setIsLocationAlertOpen(false);
-  }, [product.id]);
+    setShareFeedback("");
+    setCartFeedback("");
+  }, [product.id, availableQuantity]);
 
   React.useEffect(() => {
     const localDigits = String(product.sellerWhatsappNumber ?? "").replace(/\D/g, "");
@@ -187,6 +203,63 @@ export default function ProductDetails({
       return;
     }
     setIsLocationAlertOpen(true);
+  };
+
+  const handleShare = async () => {
+    const shareUrl = (() => {
+      if (typeof window === "undefined") {
+        return `https://www.templesale.com/?product=${product.id}`;
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.set("product", String(product.id));
+      return url.toString();
+    })();
+
+    const sharePayload = {
+      title: product.name,
+      text: `${product.name} - ${formatEuroFromUnknown(product.price, locale)}`,
+      url: shareUrl,
+    };
+
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+        await navigator.share(sharePayload);
+        setShareFeedback(t("Produto compartilhado."));
+        return;
+      }
+
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === "function"
+      ) {
+        await navigator.clipboard.writeText(shareUrl);
+        setShareFeedback(t("Link copiado para a área de transferência."));
+        return;
+      }
+
+      if (typeof window !== "undefined") {
+        window.prompt(t("Copie o link do produto"), shareUrl);
+      }
+      setShareFeedback(t("Link pronto para compartilhar."));
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return;
+      }
+      setShareFeedback(t("Não foi possível compartilhar agora."));
+    }
+  };
+
+  const handleAddToCart = () => {
+    if (!canAddToCart) {
+      return;
+    }
+    onAddToCart?.(selectedQuantity);
+    setCartFeedback(
+      t("{count} item(s) adicionado(s) ao carrinho.", {
+        count: String(selectedQuantity),
+      }),
+    );
   };
 
   return (
@@ -371,19 +444,46 @@ export default function ProductDetails({
                   <span className="text-[10px] uppercase tracking-widest text-stone-400 font-bold">{t("Quantidade")}</span>
                   <div className="flex items-center w-32 border border-stone-200 rounded-sm">
                     <button 
-                      onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                      className="p-3 hover:bg-stone-50 transition-colors"
+                      onClick={() =>
+                        setSelectedQuantity((current) =>
+                          availableQuantity === 0 ? 0 : Math.max(1, current - 1),
+                        )
+                      }
+                      disabled={availableQuantity === 0}
+                      className="p-3 hover:bg-stone-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <Minus className="w-3 h-3" />
                     </button>
-                    <span className="grow text-center font-mono text-sm">{quantity}</span>
+                    <span className="grow text-center font-mono text-sm">{selectedQuantity}</span>
                     <button 
-                      onClick={() => setQuantity(quantity + 1)}
-                      className="p-3 hover:bg-stone-50 transition-colors"
+                      onClick={() =>
+                        setSelectedQuantity((current) =>
+                          Math.min(availableQuantity, Math.max(1, current + 1)),
+                        )
+                      }
+                      disabled={availableQuantity === 0 || selectedQuantity >= availableQuantity}
+                      className="p-3 hover:bg-stone-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <Plus className="w-3 h-3" />
                     </button>
                   </div>
+                  <span className="text-[10px] uppercase tracking-[0.15em] text-stone-400">
+                    {availableQuantity > 0
+                      ? t("Disponível: {count}", { count: String(availableQuantity) })
+                      : t("Produto esgotado")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAddToCart}
+                    disabled={!canAddToCart}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-3 border border-stone-300 text-[10px] uppercase tracking-[0.15em] font-bold text-stone-700 hover:border-stone-800 hover:text-stone-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <ShoppingBag className="w-4 h-4" />
+                    {t("Adicionar ao carrinho")}
+                  </button>
+                  {cartFeedback && (
+                    <p className="text-xs text-stone-500">{cartFeedback}</p>
+                  )}
                 </div>
 
                 {/* Actions */}
@@ -427,10 +527,17 @@ export default function ProductDetails({
                       }`}
                     />
                   </button>
-                  <button className="p-5 border border-stone-200 hover:border-stone-400 transition-all rounded-sm">
+                  <button
+                    type="button"
+                    onClick={handleShare}
+                    className="p-5 border border-stone-200 hover:border-stone-400 transition-all rounded-sm"
+                  >
                     <Share2 className="w-5 h-5 text-stone-600" />
                   </button>
                 </div>
+                {shareFeedback && (
+                  <p className="text-xs text-stone-500">{shareFeedback}</p>
+                )}
               </div>
 
               {/* Additional Details Accordion-style */}
