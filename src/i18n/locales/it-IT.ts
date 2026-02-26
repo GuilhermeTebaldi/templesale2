@@ -35,6 +35,10 @@ export const itITTranslations: Record<string, string> = {
   '{actor} curtiu seu anúncio "{product}".': '{actor} ha messo like al tuo annuncio "{product}".',
   '{actor} adicionou seu anúncio "{product}" ao carrinho.':
     '{actor} ha aggiunto il tuo annuncio "{product}" al carrello.',
+  "{count} itens encontrados": "{count} elementi trovati",
+  "Expandir painel": "Espandi pannello",
+  "Reduzir painel": "Riduci pannello",
+  "Limpar busca": "Pulisci ricerca",
   "notification": "notifica",
   "notifications": "notifiche",
   "Bem-vindo a TempleSale": "Benvenuto su TempleSale",

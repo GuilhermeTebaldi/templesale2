@@ -1,6 +1,6 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, Pencil, Trash2, Package, X } from "lucide-react";
+import { Search, Pencil, Trash2, Package, X, Maximize2, Minimize2 } from "lucide-react";
 import { type Product } from "./ProductCard";
 import { useI18n } from "../i18n/provider";
 import { formatEuroFromUnknown } from "../lib/currency";
@@ -11,6 +11,9 @@ interface ProductMapProps {
   onClose: () => void;
   initialFocusProductId?: number;
   onOpenProduct?: (product: Product) => void;
+  initialCategory?: string;
+  openResultsByDefault?: boolean;
+  autoFocusPanelSearch?: boolean;
 }
 
 type LocatedProduct = Product & {
@@ -293,6 +296,9 @@ export default function ProductMap({
   onClose,
   initialFocusProductId,
   onOpenProduct,
+  initialCategory = "All",
+  openResultsByDefault = false,
+  autoFocusPanelSearch = false,
 }: ProductMapProps) {
   const { t, locale } = useI18n();
   const productsWithLocation = React.useMemo(
@@ -308,7 +314,10 @@ export default function ProductMap({
   const [isDrawing, setIsDrawing] = React.useState(false);
   const [currentPolygon, setCurrentPolygon] = React.useState<GeoPoint[]>([]);
   const [selectedProducts, setSelectedProducts] = React.useState<LocatedProduct[]>([]);
-  const [showResults, setShowResults] = React.useState(false);
+  const [showResults, setShowResults] = React.useState(openResultsByDefault);
+  const [isSearchResultsMode, setIsSearchResultsMode] = React.useState(openResultsByDefault);
+  const [isResultsExpanded, setIsResultsExpanded] = React.useState(false);
+  const [activeCategory, setActiveCategory] = React.useState(initialCategory);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [panelSearchQuery, setPanelSearchQuery] = React.useState("");
   const [mapReadyVersion, setMapReadyVersion] = React.useState(0);
@@ -328,6 +337,7 @@ export default function ProductMap({
   const tileFallbackTimerRef = React.useRef<number | null>(null);
   const activeTileLoadRef = React.useRef(0);
   const hasLoadedAnyTileRef = React.useRef(false);
+  const panelSearchInputRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
     isDrawingRef.current = isDrawing;
@@ -340,18 +350,51 @@ export default function ProductMap({
     productsWithLocationRef.current = productsWithLocation;
   }, [productsWithLocation]);
 
-  const filteredProducts = React.useMemo(() => {
-    const normalized = searchQuery.trim().toLowerCase();
-    if (!normalized) {
+  const availableCategoryFilters = React.useMemo(() => {
+    const categoryCounts = new globalThis.Map<string, number>();
+    productsWithLocation.forEach((product) => {
+      const category = String(product.category ?? "").trim();
+      if (!category) {
+        return;
+      }
+      categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
+    });
+
+    const categories = Array.from(categoryCounts.entries())
+      .sort(([left], [right]) => left.localeCompare(right, locale))
+      .map(([key, count]) => ({ key, count }));
+
+    return [
+      { key: "All", count: productsWithLocation.length },
+      ...categories,
+    ];
+  }, [productsWithLocation, locale]);
+
+  React.useEffect(() => {
+    const hasActiveCategory = availableCategoryFilters.some(
+      (category) => category.key === activeCategory,
+    );
+    if (!hasActiveCategory) {
+      setActiveCategory("All");
+    }
+  }, [availableCategoryFilters, activeCategory]);
+
+  const categoryFilteredProducts = React.useMemo(() => {
+    if (activeCategory === "All") {
       return productsWithLocation;
     }
+    return productsWithLocation.filter((product) => product.category === activeCategory);
+  }, [productsWithLocation, activeCategory]);
 
-    return productsWithLocation.filter(
+  const filteredProducts = React.useMemo(() => {
+    const normalized = searchQuery.trim().toLowerCase();
+    return categoryFilteredProducts.filter(
       (product) =>
+        normalized.length === 0 ||
         product.name.toLowerCase().includes(normalized) ||
         product.category.toLowerCase().includes(normalized),
     );
-  }, [productsWithLocation, searchQuery]);
+  }, [categoryFilteredProducts, searchQuery]);
 
   const filteredPanelProducts = React.useMemo(() => {
     const normalized = panelSearchQuery.trim().toLowerCase();
@@ -365,6 +408,33 @@ export default function ProductMap({
         product.category.toLowerCase().includes(normalized),
     );
   }, [panelSearchQuery, selectedProducts]);
+
+  React.useEffect(() => {
+    if (!openResultsByDefault) {
+      return;
+    }
+    setShowResults(true);
+    setIsSearchResultsMode(true);
+  }, [openResultsByDefault]);
+
+  React.useEffect(() => {
+    if (!showResults || !isSearchResultsMode) {
+      return;
+    }
+    setSelectedProducts(categoryFilteredProducts);
+  }, [showResults, isSearchResultsMode, categoryFilteredProducts]);
+
+  React.useEffect(() => {
+    if (!showResults || !autoFocusPanelSearch) {
+      return;
+    }
+    const focusTimer = window.setTimeout(() => {
+      panelSearchInputRef.current?.focus();
+    }, 120);
+    return () => {
+      window.clearTimeout(focusTimer);
+    };
+  }, [showResults, autoFocusPanelSearch]);
 
   const clearMarkers = React.useCallback(() => {
     markersRef.current.forEach((marker) => {
@@ -405,6 +475,7 @@ export default function ProductMap({
     isPointerDownRef.current = false;
     drawPointsRef.current = [];
     clearDrawingPolygon();
+    setIsSearchResultsMode(false);
     if (mapRef.current) {
       setMapInteractionForDrawing(mapRef.current, true);
     }
@@ -644,6 +715,7 @@ export default function ProductMap({
           );
           setSelectedProducts(found);
           setShowResults(true);
+          setIsSearchResultsMode(false);
           setIsDrawing(false);
         };
 
@@ -929,6 +1001,26 @@ export default function ProductMap({
             <div className="w-px h-6 bg-stone-200 mx-1" />
             <button
               type="button"
+              onClick={() => {
+                if (showResults) {
+                  setShowResults(false);
+                  return;
+                }
+                setIsSearchResultsMode(true);
+                setShowResults(true);
+              }}
+              className={`p-3 rounded-xl transition-all duration-200 ${
+                showResults
+                  ? "bg-stone-900 text-white shadow-lg"
+                  : "text-stone-500 hover:bg-stone-100"
+              }`}
+              title={t("Produtos encontrados")}
+            >
+              <Package size={18} />
+            </button>
+            <div className="w-px h-6 bg-stone-200 mx-1" />
+            <button
+              type="button"
               onClick={clearSelection}
               className="p-3 rounded-xl text-stone-500 hover:bg-red-50 hover:text-red-500 transition-all duration-200"
               title={t("Limpar seleção")}
@@ -980,7 +1072,9 @@ export default function ProductMap({
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="absolute top-0 right-0 h-full w-full sm:w-[420px] bg-stone-50/98 backdrop-blur-xl border-l border-stone-200 z-[2000] shadow-2xl flex flex-col"
+              className={`absolute top-0 right-0 h-full ${
+                isResultsExpanded ? "w-full" : "w-full sm:w-[420px]"
+              } bg-stone-50/98 backdrop-blur-xl border-l border-stone-200 z-[2000] shadow-2xl flex flex-col`}
             >
               <div className="p-6 border-b border-stone-100 bg-stone-100/80">
                 <div className="flex items-center justify-between mb-4 gap-3">
@@ -989,19 +1083,33 @@ export default function ProductMap({
                       {t("Produtos encontrados")}
                     </h2>
                     <p className="text-xs text-stone-500">
-                      {t("{count} itens na área selecionada", {
-                        count: selectedProducts.length,
-                      })}
+                      {isSearchResultsMode
+                        ? t("{count} itens encontrados", {
+                            count: selectedProducts.length,
+                          })
+                        : t("{count} itens na área selecionada", {
+                            count: selectedProducts.length,
+                          })}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowResults(false)}
-                    className="p-2 hover:bg-white/50 rounded-full transition-colors text-stone-400 hover:text-stone-600"
-                    title={t("Fechar resultados")}
-                  >
-                    <X size={20} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsResultsExpanded((current) => !current)}
+                      className="p-2 hover:bg-white/50 rounded-full transition-colors text-stone-400 hover:text-stone-600"
+                      title={isResultsExpanded ? t("Reduzir painel") : t("Expandir painel")}
+                    >
+                      {isResultsExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowResults(false)}
+                      className="p-2 hover:bg-white/50 rounded-full transition-colors text-stone-400 hover:text-stone-600"
+                      title={t("Fechar resultados")}
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="relative">
@@ -1010,12 +1118,38 @@ export default function ProductMap({
                     size={14}
                   />
                   <input
+                    ref={panelSearchInputRef}
                     type="text"
                     placeholder={t("Filtrar resultados...")}
                     value={panelSearchQuery}
                     onChange={(event) => setPanelSearchQuery(event.target.value)}
                     className="w-full pl-9 pr-4 py-2 bg-white/80 border border-stone-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"
                   />
+                </div>
+
+                <div className="mt-3 flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                  {availableCategoryFilters.map((category) => (
+                    <button
+                      key={`map-results-category-${category.key}`}
+                      onClick={() => {
+                        setActiveCategory(category.key);
+                        setIsSearchResultsMode(true);
+                        setShowResults(true);
+                      }}
+                      className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 border rounded-full text-[9px] uppercase tracking-[0.16em] transition-colors ${
+                        activeCategory === category.key
+                          ? "border-stone-900 bg-stone-900 text-white"
+                          : "border-stone-200 text-stone-600 hover:border-stone-400"
+                      }`}
+                    >
+                      <span>
+                        {category.key === "All" ? t("Todos") : getCategoryLabel(category.key, locale)}
+                      </span>
+                      <span className={activeCategory === category.key ? "text-white/80" : "text-stone-400"}>
+                        {category.count}
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -1035,7 +1169,11 @@ export default function ProductMap({
                     </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-1 gap-4 sm:gap-6">
+                  <div
+                    className={`grid gap-4 sm:gap-6 ${
+                      isResultsExpanded ? "grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4" : "grid-cols-2 sm:grid-cols-1"
+                    }`}
+                  >
                     {filteredPanelProducts.map((product) => (
                       <motion.button
                         key={product.id}
@@ -1106,10 +1244,18 @@ export default function ProductMap({
               <div className="p-6 bg-stone-50/50 border-t border-stone-100">
                 <button
                   type="button"
-                  onClick={clearSelection}
+                  onClick={() => {
+                    if (isSearchResultsMode) {
+                      setPanelSearchQuery("");
+                      setSearchQuery("");
+                      setActiveCategory("All");
+                      return;
+                    }
+                    clearSelection();
+                  }}
                   className="w-full py-3 bg-stone-900 text-white rounded-xl font-medium shadow-lg shadow-stone-900/20 hover:bg-black transition-all active:scale-[0.98]"
                 >
-                  {t("Nova pesquisa")}
+                  {isSearchResultsMode ? t("Limpar busca") : t("Nova pesquisa")}
                 </button>
               </div>
             </motion.div>

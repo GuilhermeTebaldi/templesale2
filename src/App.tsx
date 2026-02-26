@@ -16,7 +16,6 @@ import { useI18n } from "./i18n/provider";
 import { localeOptions, type AppLocale } from "./i18n";
 import { formatCollectionDate, formatRelativeTime } from "./i18n/formatters";
 import { getCategoryLabel } from "./i18n/categories";
-import { formatEuroFromUnknown } from "./lib/currency";
 
 const CATEGORIES = [
   "All",
@@ -156,12 +155,14 @@ function readNotificationIdsStorage(storageKey: string): string[] {
 export default function App() {
   const { locale, setLocale, t } = useI18n();
   const [activeCategory, setActiveCategory] = React.useState("All");
-  const [isSearchOpen, setIsSearchOpen] = React.useState(false);
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = React.useState(false);
   const [isLanguageMenuOpen, setIsLanguageMenuOpen] = React.useState(false);
   const [isUserOpen, setIsUserOpen] = React.useState(false);
   const [isMapOpen, setIsMapOpen] = React.useState(false);
+  const [mapInitialCategory, setMapInitialCategory] = React.useState("All");
+  const [mapOpenWithResults, setMapOpenWithResults] = React.useState(false);
+  const [mapAutoFocusPanelSearch, setMapAutoFocusPanelSearch] = React.useState(false);
   const [isNewProductOpen, setIsNewProductOpen] = React.useState(false);
   const [isMeusAnunciosOpen, setIsMeusAnunciosOpen] = React.useState(false);
   const [editingProduct, setEditingProduct] = React.useState<Product | null>(null);
@@ -176,7 +177,6 @@ export default function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = React.useState(false);
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null);
-  const [restoreSearchAfterProductClose, setRestoreSearchAfterProductClose] = React.useState(false);
   const [products, setProducts] = React.useState<Product[]>([]);
   const [myProducts, setMyProducts] = React.useState<Product[]>([]);
   const [likedProducts, setLikedProducts] = React.useState<Product[]>([]);
@@ -221,7 +221,6 @@ export default function App() {
   );
   const isOverlayBlockingScroll =
     isAuthModalOpen ||
-    isSearchOpen ||
     isMenuOpen ||
     isUserOpen ||
     isMapOpen ||
@@ -910,26 +909,13 @@ export default function App() {
     [],
   );
 
-  const openProductDetails = React.useCallback(
-    (product: Product, options?: { fromSearch?: boolean }) => {
-      setSelectedProduct(product);
-      if (options?.fromSearch) {
-        setRestoreSearchAfterProductClose(true);
-        setIsSearchOpen(false);
-        return;
-      }
-      setRestoreSearchAfterProductClose(false);
-    },
-    [],
-  );
+  const openProductDetails = React.useCallback((product: Product) => {
+    setSelectedProduct(product);
+  }, []);
 
   const handleProductDetailsClose = React.useCallback(() => {
     setSelectedProduct(null);
-    if (restoreSearchAfterProductClose) {
-      setIsSearchOpen(true);
-      setRestoreSearchAfterProductClose(false);
-    }
-  }, [restoreSearchAfterProductClose]);
+  }, []);
 
   const hasResolvedProductFromUrl = React.useRef(false);
   React.useEffect(() => {
@@ -1198,6 +1184,29 @@ export default function App() {
     setIsEditePerfilOpen(false);
     setIsNewProductOpen(true);
   };
+
+  const openMapWithSearch = React.useCallback(
+    (category?: string) => {
+      const normalizedCategory = String(category ?? activeCategory).trim() || "All";
+      setMapInitialCategory(normalizedCategory);
+      setMapOpenWithResults(true);
+      setMapAutoFocusPanelSearch(true);
+      setIsMenuOpen(false);
+      setIsFilterMenuOpen(false);
+      setIsMapOpen(true);
+    },
+    [activeCategory],
+  );
+
+  const openMapDefault = React.useCallback(() => {
+    const normalizedCategory = String(activeCategory).trim() || "All";
+    setMapInitialCategory(normalizedCategory);
+    setMapOpenWithResults(false);
+    setMapAutoFocusPanelSearch(false);
+    setIsMenuOpen(false);
+    setIsFilterMenuOpen(false);
+    setIsMapOpen(true);
+  }, [activeCategory]);
 
   const availableCategoryFilters = React.useMemo(() => {
     const categoryCounts = new globalThis.Map<string, number>();
@@ -1578,10 +1587,17 @@ export default function App() {
         {isMapOpen && (
           <ProductMap
             products={products}
+            initialCategory={mapInitialCategory}
+            openResultsByDefault={mapOpenWithResults}
+            autoFocusPanelSearch={mapAutoFocusPanelSearch}
             onOpenProduct={(product) => {
               openProductDetails(product);
             }}
-            onClose={() => setIsMapOpen(false)}
+            onClose={() => {
+              setIsMapOpen(false);
+              setMapOpenWithResults(false);
+              setMapAutoFocusPanelSearch(false);
+            }}
           />
         )}
       </AnimatePresence>
@@ -1791,9 +1807,7 @@ export default function App() {
                         onClick={() => {
                           setActiveCategory(category.key);
                           setSearchQuery("");
-                          setIsFilterMenuOpen(false);
-                          setIsMenuOpen(false);
-                          setIsSearchOpen(true);
+                          openMapWithSearch(category.key);
                         }}
                         className={`w-full flex items-center justify-between gap-4 px-4 py-3 border-b border-stone-100 last:border-b-0 transition-colors ${
                           activeCategory === category.key ? "bg-stone-100" : "hover:bg-stone-100/70"
@@ -1817,9 +1831,7 @@ export default function App() {
             <button
               className="flex items-center gap-4 text-xl font-serif italic text-stone-800 hover:translate-x-2 transition-transform duration-300 group"
               onClick={() => {
-                setIsFilterMenuOpen(false);
-                setIsMenuOpen(false);
-                setIsMapOpen(true);
+                openMapDefault();
               }}
             >
               <Map className="w-5 h-5 text-stone-300 group-hover:text-stone-800 transition-colors" />
@@ -1882,112 +1894,6 @@ export default function App() {
         </div>
       </motion.div>
 
-      {/* Search Overlay */}
-      <motion.div
-        initial={false}
-        animate={isSearchOpen ? { opacity: 1, y: 0 } : { opacity: 0, y: -20 }}
-        className={`fixed inset-0 z-60 bg-[#fdfcfb] overscroll-none transition-all duration-300 ${
-          isSearchOpen ? "pointer-events-auto" : "pointer-events-none"
-        }`}
-      >
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="grow flex items-center gap-4">
-            <Search className="w-5 h-5 text-stone-400" />
-            <input
-              autoFocus={isSearchOpen}
-              type="text"
-              placeholder={t("Buscar em nossos produtos...")}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-transparent border-none outline-none text-xl font-serif italic text-stone-800 placeholder:text-stone-300"
-            />
-          </div>
-          <button 
-            onClick={() => {
-              setIsSearchOpen(false);
-              setSearchQuery("");
-            }}
-            className="p-2 hover:bg-stone-50 rounded-full transition-colors"
-          >
-            <X className="w-6 h-6 text-stone-600" />
-          </button>
-        </div>
-
-        <div className="h-[calc(100%-5rem)] overflow-y-auto overscroll-contain">
-          <div className="max-w-7xl mx-auto px-6 py-6">
-            <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-2">
-              {availableCategoryFilters.map((category) => (
-                <button
-                  key={`search-category-${category.key}`}
-                  onClick={() => setActiveCategory(category.key)}
-                  className={`shrink-0 inline-flex items-center gap-2 px-3 py-2 border rounded-full text-[10px] uppercase tracking-[0.16em] transition-colors ${
-                    activeCategory === category.key
-                      ? "border-stone-900 bg-stone-900 text-white"
-                      : "border-stone-200 text-stone-600 hover:border-stone-400"
-                  }`}
-                >
-                  <span>
-                    {category.key === "All" ? t("Todos") : getCategoryLabel(category.key, locale)}
-                  </span>
-                  <span className={activeCategory === category.key ? "text-white/80" : "text-stone-400"}>
-                    {category.count}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {searchQuery ? (
-              <p className="text-[10px] uppercase tracking-[0.2em] text-stone-400 mt-4 mb-8">
-                {t("Resultados para \"{query}\"", { query: searchQuery })}
-              </p>
-            ) : (
-              <p className="text-[10px] uppercase tracking-[0.2em] text-stone-400 mt-4 mb-8">
-                {activeCategory === "All"
-                  ? t("Todos")
-                  : getCategoryLabel(activeCategory, locale)}
-              </p>
-            )}
-
-            {filteredProducts.length === 0 ? (
-              <div className="py-16 text-center">
-                <p className="text-xs uppercase tracking-[0.2em] text-stone-400">
-                  {t("Nenhum produto real publicado ainda.")}
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-                {filteredProducts.map((product) => (
-                  <div
-                    key={`search-product-${product.id}`}
-                    className="group cursor-pointer rounded-2xl border border-stone-200 bg-white overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300"
-                    onClick={() => openProductDetails(product, { fromSearch: true })}
-                  >
-                    <div className="relative aspect-3/4 overflow-hidden bg-stone-100">
-                      <img
-                        src={product.image}
-                        alt={product.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
-                      <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-white/90 backdrop-blur-sm border border-stone-200 text-[9px] uppercase tracking-[0.16em] text-stone-600">
-                        {getCategoryLabel(product.category, locale)}
-                      </span>
-                    </div>
-                    <div className="p-3 sm:p-4">
-                      <h4 className="text-sm sm:text-base font-serif italic text-stone-900 leading-snug mb-2 truncate">
-                        {product.name}
-                      </h4>
-                      <span className="font-mono text-sm text-stone-700">
-                        {formatEuroFromUnknown(product.price, locale)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </motion.div>
-
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-[#fdfcfb]/80 backdrop-blur-md border-b border-stone-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
@@ -2013,7 +1919,7 @@ export default function App() {
 
           <div className="flex items-center justify-end gap-1 sm:gap-4 w-auto sm:w-1/3 shrink-0">
             <button 
-              onClick={() => setIsSearchOpen(true)}
+              onClick={() => openMapWithSearch(activeCategory)}
               className="p-2 hover:bg-stone-50 rounded-full transition-colors"
             >
               <Search className="w-5 h-5 text-stone-600" />
@@ -2184,7 +2090,7 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.8, delay: 0.4 }}
-              onClick={() => setIsSearchOpen(true)}
+              onClick={() => openMapWithSearch(activeCategory)}
               className="group flex items-center gap-3 px-8 py-4 bg-white text-black text-xs uppercase tracking-[0.2em] font-medium hover:bg-stone-100 transition-all"
             >
               {t("Explorar coleção")}
