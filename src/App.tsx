@@ -221,6 +221,7 @@ export default function App() {
   );
   const isOverlayBlockingScroll =
     isAuthModalOpen ||
+    isSearchOpen ||
     isMenuOpen ||
     isUserOpen ||
     isMapOpen ||
@@ -1885,7 +1886,7 @@ export default function App() {
       <motion.div
         initial={false}
         animate={isSearchOpen ? { opacity: 1, y: 0 } : { opacity: 0, y: -20 }}
-        className={`fixed inset-0 z-60 bg-[#fdfcfb] transition-all duration-300 ${
+        className={`fixed inset-0 z-60 bg-[#fdfcfb] overscroll-none transition-all duration-300 ${
           isSearchOpen ? "pointer-events-auto" : "pointer-events-none"
         }`}
       >
@@ -1912,7 +1913,7 @@ export default function App() {
           </button>
         </div>
 
-        <div className="h-[calc(100%-5rem)] overflow-y-auto">
+        <div className="h-[calc(100%-5rem)] overflow-y-auto overscroll-contain">
           <div className="max-w-7xl mx-auto px-6 py-6">
             <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-2">
               {availableCategoryFilters.map((category) => (
