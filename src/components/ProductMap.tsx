@@ -1096,7 +1096,7 @@ export default function ProductMap({
                     <button
                       type="button"
                       onClick={() => setIsResultsExpanded((current) => !current)}
-                      className="p-2 hover:bg-white/50 rounded-full transition-colors text-stone-400 hover:text-stone-600"
+                      className="hidden sm:inline-flex p-2 hover:bg-white/50 rounded-full transition-colors text-stone-400 hover:text-stone-600"
                       title={isResultsExpanded ? t("Reduzir painel") : t("Expandir painel")}
                     >
                       {isResultsExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
