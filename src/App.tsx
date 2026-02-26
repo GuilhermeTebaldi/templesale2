@@ -1975,16 +1975,9 @@ export default function App() {
                       <h4 className="text-sm sm:text-base font-serif italic text-stone-900 leading-snug mb-2 truncate">
                         {product.name}
                       </h4>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono text-sm text-stone-700">
-                          {formatEuroFromUnknown(product.price, locale)}
-                        </span>
-                        {product.quantity !== undefined && (
-                          <span className="text-[10px] uppercase tracking-[0.16em] text-stone-400">
-                            {t("Quantidade")}: {Math.max(0, Number(product.quantity) || 0)}
-                          </span>
-                        )}
-                      </div>
+                      <span className="font-mono text-sm text-stone-700">
+                        {formatEuroFromUnknown(product.price, locale)}
+                      </span>
                     </div>
                   </div>
                 ))}
