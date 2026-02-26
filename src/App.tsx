@@ -42,17 +42,9 @@ const CATEGORIES = [
   "Outros"
 ];
 const BRAND_NAME = "TempleSale";
+const AUTH_TOKEN_STORAGE_KEY = "templesale_auth_token";
 const CART_STORAGE_KEY = "templesale_cart_items";
 const CART_UNSEEN_STORAGE_KEY = "templesale_cart_unseen_alert";
-const READ_NOTIFICATIONS_STORAGE_KEY = "templesale_read_notifications";
-
-function getScopedStorageKey(baseKey: string, userId?: number | null): string {
-  const normalizedUserId = Number(userId);
-  if (Number.isInteger(normalizedUserId) && normalizedUserId > 0) {
-    return `${baseKey}:user:${normalizedUserId}`;
-  }
-  return `${baseKey}:guest`;
-}
 
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
@@ -76,7 +68,16 @@ function getProductStockQuantity(product: Product): number {
   return normalized >= 0 ? normalized : 0;
 }
 
-function parseCartStorage(raw: string): Record<number, number> {
+function readCartStorage(): Record<number, number> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const raw = window.localStorage.getItem(CART_STORAGE_KEY);
+  if (!raw) {
+    return {};
+  }
+
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (!parsed || typeof parsed !== "object") {
@@ -94,75 +95,22 @@ function parseCartStorage(raw: string): Record<number, number> {
   }
 }
 
-function readCartStorage(storageKey: string, fallbackKeys: string[] = []): Record<number, number> {
-  if (typeof window === "undefined") {
-    return {};
-  }
-
-  const keys = [storageKey, ...fallbackKeys];
-  for (const key of keys) {
-    const raw = window.localStorage.getItem(key);
-    if (raw === null) {
-      continue;
-    }
-    return parseCartStorage(raw);
-  }
-
-  return {};
-}
-
-function readCartUnseenAlertStorage(storageKey: string, fallbackKeys: string[] = []): boolean {
+function readCartUnseenAlertStorage(): boolean {
   if (typeof window === "undefined") {
     return false;
   }
-
-  const keys = [storageKey, ...fallbackKeys];
-  for (const key of keys) {
-    const raw = window.localStorage.getItem(key);
-    if (raw === null) {
-      continue;
-    }
-    return raw === "1";
-  }
-
-  return false;
-}
-
-function readNotificationIdsStorage(storageKey: string): string[] {
-  if (typeof window === "undefined") {
-    return [];
-  }
-
-  const raw = window.localStorage.getItem(storageKey);
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed
-      .filter((value): value is string => typeof value === "string")
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0);
-  } catch {
-    return [];
-  }
+  return window.localStorage.getItem(CART_UNSEEN_STORAGE_KEY) === "1";
 }
 
 export default function App() {
   const { locale, setLocale, t } = useI18n();
   const [activeCategory, setActiveCategory] = React.useState("All");
+  const [isSearchOpen, setIsSearchOpen] = React.useState(false);
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = React.useState(false);
   const [isLanguageMenuOpen, setIsLanguageMenuOpen] = React.useState(false);
   const [isUserOpen, setIsUserOpen] = React.useState(false);
   const [isMapOpen, setIsMapOpen] = React.useState(false);
-  const [mapInitialCategory, setMapInitialCategory] = React.useState("All");
-  const [mapOpenWithResults, setMapOpenWithResults] = React.useState(false);
-  const [mapAutoFocusPanelSearch, setMapAutoFocusPanelSearch] = React.useState(false);
   const [isNewProductOpen, setIsNewProductOpen] = React.useState(false);
   const [isMeusAnunciosOpen, setIsMeusAnunciosOpen] = React.useState(false);
   const [editingProduct, setEditingProduct] = React.useState<Product | null>(null);
@@ -177,20 +125,15 @@ export default function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = React.useState(false);
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null);
+  const [restoreSearchAfterProductClose, setRestoreSearchAfterProductClose] = React.useState(false);
   const [products, setProducts] = React.useState<Product[]>([]);
   const [myProducts, setMyProducts] = React.useState<Product[]>([]);
   const [likedProducts, setLikedProducts] = React.useState<Product[]>([]);
   const [cartQuantitiesByProductId, setCartQuantitiesByProductId] = React.useState<Record<number, number>>(
-    () =>
-      readCartStorage(getScopedStorageKey(CART_STORAGE_KEY), [
-        CART_STORAGE_KEY,
-      ]),
+    () => readCartStorage(),
   );
   const [hasUnseenCartAlert, setHasUnseenCartAlert] = React.useState<boolean>(
-    () =>
-      readCartUnseenAlertStorage(getScopedStorageKey(CART_UNSEEN_STORAGE_KEY), [
-        CART_UNSEEN_STORAGE_KEY,
-      ]),
+    () => readCartUnseenAlertStorage(),
   );
   const [notifications, setNotifications] = React.useState<NotificationDto[]>([]);
   const [readNotificationIds, setReadNotificationIds] = React.useState<string[]>([]);
@@ -207,32 +150,6 @@ export default function App() {
   const [avatarUploadError, setAvatarUploadError] = React.useState("");
   const cartToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasMemberAccess = Boolean(currentUser);
-  const cartStorageKey = React.useMemo(
-    () => getScopedStorageKey(CART_STORAGE_KEY, currentUser?.id),
-    [currentUser?.id],
-  );
-  const cartUnseenStorageKey = React.useMemo(
-    () => getScopedStorageKey(CART_UNSEEN_STORAGE_KEY, currentUser?.id),
-    [currentUser?.id],
-  );
-  const readNotificationsStorageKey = React.useMemo(
-    () => getScopedStorageKey(READ_NOTIFICATIONS_STORAGE_KEY, currentUser?.id),
-    [currentUser?.id],
-  );
-  const isOverlayBlockingScroll =
-    isAuthModalOpen ||
-    isMenuOpen ||
-    isUserOpen ||
-    isMapOpen ||
-    isVendedoresOpen ||
-    Boolean(selectedProduct) ||
-    (hasMemberAccess &&
-      (isNewProductOpen ||
-        Boolean(editingProduct) ||
-        isMeusAnunciosOpen ||
-        isCurtidasOpen ||
-        isCartOpen ||
-        isEditePerfilOpen));
   const hasRequiredProfileForPublishing = React.useMemo(() => {
     if (!currentUser) {
       return false;
@@ -254,55 +171,10 @@ export default function App() {
   const avatarPickerPanelRef = React.useRef<HTMLDivElement | null>(null);
   const notificationsButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const notificationsPanelRef = React.useRef<HTMLDivElement | null>(null);
-  const hydratedCartStorageKeyRef = React.useRef<string | null>(null);
-  const hydratedCartUnseenStorageKeyRef = React.useRef<string | null>(null);
-  const hydratedReadNotificationsStorageKeyRef = React.useRef<string | null>(null);
   const heroCollectionLabel = React.useMemo(
     () => formatCollectionDate(heroDate, locale),
     [heroDate, locale],
   );
-
-  React.useEffect(() => {
-    if (typeof window === "undefined" || typeof document === "undefined") {
-      return;
-    }
-
-    const body = document.body;
-    const unlockScroll = () => {
-      if (!body.classList.contains("ts-scroll-lock")) {
-        return;
-      }
-      const restoreY = Number(body.dataset.tsScrollLockY ?? "0");
-      body.classList.remove("ts-scroll-lock");
-      body.style.top = "";
-      body.style.left = "";
-      body.style.right = "";
-      body.style.width = "";
-      delete body.dataset.tsScrollLockY;
-      window.scrollTo(0, Number.isFinite(restoreY) ? restoreY : 0);
-    };
-
-    if (!isOverlayBlockingScroll) {
-      unlockScroll();
-      return;
-    }
-
-    if (!body.classList.contains("ts-scroll-lock")) {
-      const currentY = window.scrollY || window.pageYOffset || 0;
-      body.dataset.tsScrollLockY = String(currentY);
-      body.classList.add("ts-scroll-lock");
-      body.style.top = `-${currentY}px`;
-      body.style.left = "0";
-      body.style.right = "0";
-      body.style.width = "100%";
-    }
-
-    return () => {
-      if (!isOverlayBlockingScroll) {
-        unlockScroll();
-      }
-    };
-  }, [isOverlayBlockingScroll]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -326,6 +198,23 @@ export default function App() {
     };
 
     const restoreSession = async () => {
+      if (typeof window !== "undefined") {
+        const hostname = window.location.hostname.toLowerCase();
+        const isTemplesaleHost =
+          hostname === "templesale.com" || hostname === "www.templesale.com";
+        if (isTemplesaleHost) {
+          const storedToken = String(
+            window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) ?? "",
+          ).trim();
+          if (!storedToken) {
+            if (!cancelled) {
+              setCurrentUser(null);
+            }
+            return;
+          }
+        }
+      }
+
       try {
         const user = await api.getCurrentUser();
         if (!cancelled) {
@@ -400,16 +289,6 @@ export default function App() {
   }, [currentUser]);
 
   React.useEffect(() => {
-    const preferredLocale = currentUser?.preferredLocale;
-    if (!preferredLocale) {
-      return;
-    }
-    if (preferredLocale !== locale) {
-      setLocale(preferredLocale);
-    }
-  }, [currentUser?.id, currentUser?.preferredLocale, locale, setLocale]);
-
-  React.useEffect(() => {
     let cancelled = false;
 
     const fetchNotifications = async () => {
@@ -464,14 +343,8 @@ export default function App() {
   }, [currentUser, isNotificationsOpen]);
 
   React.useEffect(() => {
-    if (!currentUser) {
-      setReadNotificationIds([]);
-      hydratedReadNotificationsStorageKeyRef.current = null;
-      return;
-    }
-    setReadNotificationIds(readNotificationIdsStorage(readNotificationsStorageKey));
-    hydratedReadNotificationsStorageKeyRef.current = readNotificationsStorageKey;
-  }, [currentUser?.id, readNotificationsStorageKey]);
+    setReadNotificationIds([]);
+  }, [currentUser?.id]);
 
   React.useEffect(() => {
     if (!isNotificationsOpen) {
@@ -607,27 +480,6 @@ export default function App() {
   }, [hasMemberAccess]);
 
   React.useEffect(() => {
-    setCartQuantitiesByProductId(
-      readCartStorage(cartStorageKey, [CART_STORAGE_KEY]),
-    );
-    setHasUnseenCartAlert(
-      readCartUnseenAlertStorage(cartUnseenStorageKey, [CART_UNSEEN_STORAGE_KEY]),
-    );
-    hydratedCartStorageKeyRef.current = cartStorageKey;
-    hydratedCartUnseenStorageKeyRef.current = cartUnseenStorageKey;
-  }, [cartStorageKey, cartUnseenStorageKey]);
-
-  React.useEffect(() => {
-    if (typeof window === "undefined" || !currentUser) {
-      return;
-    }
-    if (hydratedReadNotificationsStorageKeyRef.current !== readNotificationsStorageKey) {
-      return;
-    }
-    window.localStorage.setItem(readNotificationsStorageKey, JSON.stringify(readNotificationIds));
-  }, [currentUser?.id, readNotificationIds, readNotificationsStorageKey]);
-
-  React.useEffect(() => {
     return () => {
       if (cartToastTimerRef.current) {
         clearTimeout(cartToastTimerRef.current);
@@ -639,21 +491,15 @@ export default function App() {
     if (typeof window === "undefined") {
       return;
     }
-    if (hydratedCartStorageKeyRef.current !== cartStorageKey) {
-      return;
-    }
-    window.localStorage.setItem(cartStorageKey, JSON.stringify(cartQuantitiesByProductId));
-  }, [cartQuantitiesByProductId, cartStorageKey]);
+    window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartQuantitiesByProductId));
+  }, [cartQuantitiesByProductId]);
 
   React.useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-    if (hydratedCartUnseenStorageKeyRef.current !== cartUnseenStorageKey) {
-      return;
-    }
-    window.localStorage.setItem(cartUnseenStorageKey, hasUnseenCartAlert ? "1" : "0");
-  }, [hasUnseenCartAlert, cartUnseenStorageKey]);
+    window.localStorage.setItem(CART_UNSEEN_STORAGE_KEY, hasUnseenCartAlert ? "1" : "0");
+  }, [hasUnseenCartAlert]);
 
   const handleLogout = async () => {
     try {
@@ -693,40 +539,6 @@ export default function App() {
     setCurrentUser(user);
     setIsAuthModalOpen(false);
   };
-
-  const handleLocaleChange = React.useCallback(
-    (nextLocale: AppLocale) => {
-      setLocale(nextLocale);
-      if (!currentUser) {
-        return;
-      }
-
-      setCurrentUser((prev) =>
-        prev ? { ...prev, preferredLocale: nextLocale } : prev,
-      );
-
-      void api
-        .updatePreferredLocale(nextLocale)
-        .then((updatedUser) => {
-          if (!updatedUser) {
-            return;
-          }
-          setCurrentUser((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  ...updatedUser,
-                  preferredLocale: updatedUser.preferredLocale ?? nextLocale,
-                }
-              : prev,
-          );
-        })
-        .catch((error) => {
-          console.error("Error updating preferred locale:", error);
-        });
-    },
-    [currentUser, setLocale],
-  );
 
   const likedProductIds = React.useMemo(
     () => new Set(likedProducts.map((product) => product.id)),
@@ -785,10 +597,6 @@ export default function App() {
   }, [isCartOpen, markCartAlertAsSeen]);
 
   React.useEffect(() => {
-    if (isLoadingProducts || productsById.size === 0) {
-      return;
-    }
-
     setCartQuantitiesByProductId((current) => {
       const nextEntries = Object.entries(current)
         .map(([productId, rawQuantity]) => {
@@ -820,7 +628,7 @@ export default function App() {
       }
       return next;
     });
-  }, [productsById, isLoadingProducts]);
+  }, [productsById]);
 
   const readNotificationIdSet = React.useMemo(
     () => new Set(readNotificationIds),
@@ -829,42 +637,6 @@ export default function App() {
   const containsBrandName = React.useCallback((value: string) => {
     return value.toLowerCase().includes("templesale");
   }, []);
-  const getNotificationPresentation = React.useCallback(
-    (notification: NotificationDto) => {
-      const actorName =
-        String(("actorName" in notification ? notification.actorName : "") ?? "").trim() ||
-        t("Alguém");
-      const productName =
-        String(("productName" in notification ? notification.productName : "") ?? "").trim() ||
-        t("seu anúncio");
-
-      if (notification.type === "product_like") {
-        return {
-          title: t("Nova curtida"),
-          message: t('{actor} curtiu seu anúncio "{product}".', {
-            actor: actorName,
-            product: productName,
-          }),
-        };
-      }
-
-      if (notification.type === "product_cart_interest") {
-        return {
-          title: t("Novo interesse no carrinho"),
-          message: t('{actor} adicionou seu anúncio "{product}" ao carrinho.', {
-            actor: actorName,
-            product: productName,
-          }),
-        };
-      }
-
-      return {
-        title: notification.title,
-        message: notification.message,
-      };
-    },
-    [t],
-  );
   const notificationsToDisplay = React.useMemo<NotificationDto[]>(() => {
     if (!currentUser) {
       return [];
@@ -877,8 +649,8 @@ export default function App() {
       {
         id: `system-welcome:${currentUser.id}`,
         type: "system_welcome",
-        title: t("Bem-vindo a TempleSale"),
-        message: t("Bem-vindo a plataforma de vendas TempleSale."),
+        title: t("Bem-vindo a TempleSale.com"),
+        message: t("Bem-vindo a plataforma de vendas TempleSale.com"),
         createdAt: Math.floor(Date.now() / 1000),
       },
     ];
@@ -909,13 +681,26 @@ export default function App() {
     [],
   );
 
-  const openProductDetails = React.useCallback((product: Product) => {
-    setSelectedProduct(product);
-  }, []);
+  const openProductDetails = React.useCallback(
+    (product: Product, options?: { fromSearch?: boolean }) => {
+      setSelectedProduct(product);
+      if (options?.fromSearch) {
+        setRestoreSearchAfterProductClose(true);
+        setIsSearchOpen(false);
+        return;
+      }
+      setRestoreSearchAfterProductClose(false);
+    },
+    [],
+  );
 
   const handleProductDetailsClose = React.useCallback(() => {
     setSelectedProduct(null);
-  }, []);
+    if (restoreSearchAfterProductClose) {
+      setIsSearchOpen(true);
+      setRestoreSearchAfterProductClose(false);
+    }
+  }, [restoreSearchAfterProductClose]);
 
   const hasResolvedProductFromUrl = React.useRef(false);
   React.useEffect(() => {
@@ -996,13 +781,6 @@ export default function App() {
         ...current,
         [product.id]: nextQuantity,
       }));
-
-      if (currentQuantity === 0) {
-        void api.notifyProductCartInterest(product.id).catch((error) => {
-          console.error("Error notifying product cart interest:", error);
-        });
-      }
-
       setHasUnseenCartAlert(true);
       showCartToast(
         t("{count} item(s) adicionado(s) ao carrinho.", {
@@ -1185,29 +963,6 @@ export default function App() {
     setIsNewProductOpen(true);
   };
 
-  const openMapWithSearch = React.useCallback(
-    (category?: string) => {
-      const normalizedCategory = String(category ?? activeCategory).trim() || "All";
-      setMapInitialCategory(normalizedCategory);
-      setMapOpenWithResults(true);
-      setMapAutoFocusPanelSearch(true);
-      setIsMenuOpen(false);
-      setIsFilterMenuOpen(false);
-      setIsMapOpen(true);
-    },
-    [activeCategory],
-  );
-
-  const openMapDefault = React.useCallback(() => {
-    const normalizedCategory = String(activeCategory).trim() || "All";
-    setMapInitialCategory(normalizedCategory);
-    setMapOpenWithResults(false);
-    setMapAutoFocusPanelSearch(false);
-    setIsMenuOpen(false);
-    setIsFilterMenuOpen(false);
-    setIsMapOpen(true);
-  }, [activeCategory]);
-
   const availableCategoryFilters = React.useMemo(() => {
     const categoryCounts = new globalThis.Map<string, number>();
     products.forEach((product) => {
@@ -1266,7 +1021,7 @@ export default function App() {
   }, [products, activeCategory, searchQuery]);
 
   return (
-    <div className="min-h-[100dvh] flex flex-col">
+    <div className="min-h-screen flex flex-col">
       <AnimatePresence>
         {isAuthModalOpen && (
           <Auth
@@ -1288,7 +1043,7 @@ export default function App() {
             className="fixed bottom-6 left-1/2 -translate-x-1/2 z-170 px-4"
           >
             <div
-              className={`min-w-[260px] max-w-[90vw] border px-4 py-3 shadow-xl backdrop-blur-sm flex items-center gap-3 ${
+              className={`min-w-65 max-w-[90vw] border px-4 py-3 shadow-xl backdrop-blur-sm flex items-center gap-3 ${
                 cartToast.variant === "warning"
                   ? "bg-amber-50/95 border-amber-200 text-amber-800"
                   : "bg-stone-900/95 border-stone-800 text-white"
@@ -1368,7 +1123,7 @@ export default function App() {
                     initial={{ opacity: 0, y: -6, scale: 0.96 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -6, scale: 0.96 }}
-                    className="absolute top-[calc(100%+0.5rem)] left-0 z-90 min-w-[180px] bg-white border border-stone-200 shadow-lg rounded-sm p-2"
+                    className="absolute top-[calc(100%+0.5rem)] left-0 z-90 min-w-45 bg-white border border-stone-200 shadow-lg rounded-sm p-2"
                   >
                     <button
                       disabled={isAvatarUploading}
@@ -1501,7 +1256,7 @@ export default function App() {
                       <button
                         key={option.value}
                         onClick={() => {
-                          handleLocaleChange(option.value as AppLocale);
+                          setLocale(option.value as AppLocale);
                           setIsLanguageMenuOpen(false);
                         }}
                         className={`w-full flex items-center justify-between gap-4 pl-12 pr-4 py-3 hover:bg-stone-100 transition-colors group ${
@@ -1587,17 +1342,10 @@ export default function App() {
         {isMapOpen && (
           <ProductMap
             products={products}
-            initialCategory={mapInitialCategory}
-            openResultsByDefault={mapOpenWithResults}
-            autoFocusPanelSearch={mapAutoFocusPanelSearch}
             onOpenProduct={(product) => {
               openProductDetails(product);
             }}
-            onClose={() => {
-              setIsMapOpen(false);
-              setMapOpenWithResults(false);
-              setMapAutoFocusPanelSearch(false);
-            }}
+            onClose={() => setIsMapOpen(false)}
           />
         )}
       </AnimatePresence>
@@ -1806,8 +1554,8 @@ export default function App() {
                         key={category.key}
                         onClick={() => {
                           setActiveCategory(category.key);
-                          setSearchQuery("");
-                          openMapWithSearch(category.key);
+                          setIsFilterMenuOpen(false);
+                          setIsMenuOpen(false);
                         }}
                         className={`w-full flex items-center justify-between gap-4 px-4 py-3 border-b border-stone-100 last:border-b-0 transition-colors ${
                           activeCategory === category.key ? "bg-stone-100" : "hover:bg-stone-100/70"
@@ -1831,7 +1579,9 @@ export default function App() {
             <button
               className="flex items-center gap-4 text-xl font-serif italic text-stone-800 hover:translate-x-2 transition-transform duration-300 group"
               onClick={() => {
-                openMapDefault();
+                setIsFilterMenuOpen(false);
+                setIsMenuOpen(false);
+                setIsMapOpen(true);
               }}
             >
               <Map className="w-5 h-5 text-stone-300 group-hover:text-stone-800 transition-colors" />
@@ -1894,6 +1644,64 @@ export default function App() {
         </div>
       </motion.div>
 
+      {/* Search Overlay */}
+      <motion.div
+        initial={false}
+        animate={isSearchOpen ? { opacity: 1, y: 0 } : { opacity: 0, y: -20 }}
+        className={`fixed inset-0 z-60 bg-[#fdfcfb] transition-all duration-300 ${
+          isSearchOpen ? "pointer-events-auto" : "pointer-events-none"
+        }`}
+      >
+        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="grow flex items-center gap-4">
+            <Search className="w-5 h-5 text-stone-400" />
+            <input
+              autoFocus={isSearchOpen}
+              type="text"
+              placeholder={t("Buscar em nossos produtos...")}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-transparent border-none outline-none text-xl font-serif italic text-stone-800 placeholder:text-stone-300"
+            />
+          </div>
+          <button 
+            onClick={() => {
+              setIsSearchOpen(false);
+              setSearchQuery("");
+            }}
+            className="p-2 hover:bg-stone-50 rounded-full transition-colors"
+          >
+            <X className="w-6 h-6 text-stone-600" />
+          </button>
+        </div>
+        
+        {/* Quick Results Preview (Optional but nice) */}
+        {searchQuery && (
+          <div className="max-w-7xl mx-auto px-6 py-10">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-stone-400 mb-8">
+              {t("Resultados para \"{query}\"", { query: searchQuery })}
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+              {products.filter(p => 
+                p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                p.category.toLowerCase().includes(searchQuery.toLowerCase())
+              ).slice(0, 6).map(product => (
+                <div
+                  key={product.id}
+                  className="flex flex-col gap-2 group cursor-pointer"
+                  onClick={() => openProductDetails(product, { fromSearch: true })}
+                >
+                  <div className="aspect-3/4 overflow-hidden bg-stone-100">
+                    <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  </div>
+                  <span className="text-[10px] font-serif italic text-stone-800 truncate">{product.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </motion.div>
+
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-[#fdfcfb]/80 backdrop-blur-md border-b border-stone-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
@@ -1919,7 +1727,7 @@ export default function App() {
 
           <div className="flex items-center justify-end gap-1 sm:gap-4 w-auto sm:w-1/3 shrink-0">
             <button 
-              onClick={() => openMapWithSearch(activeCategory)}
+              onClick={() => setIsSearchOpen(true)}
               className="p-2 hover:bg-stone-50 rounded-full transition-colors"
             >
               <Search className="w-5 h-5 text-stone-600" />
@@ -1980,9 +1788,6 @@ export default function App() {
                             ) : (
                               notificationsToDisplay.map((notification) => {
                                 const isRead = readNotificationIdSet.has(notification.id);
-                                const presentation = getNotificationPresentation(notification);
-                                const title = presentation.title;
-                                const message = presentation.message;
 
                                 return (
                                   <div
@@ -1998,11 +1803,11 @@ export default function App() {
                                     <div className="flex justify-between items-start mb-1">
                                       <h4
                                         className={`text-xs font-bold text-stone-800 ${
-                                          containsBrandName(title) ? "notranslate" : ""
+                                          containsBrandName(notification.title) ? "notranslate" : ""
                                         }`}
-                                        translate={containsBrandName(title) ? "no" : "yes"}
+                                        translate={containsBrandName(notification.title) ? "no" : "yes"}
                                       >
-                                        {title}
+                                        {notification.title}
                                       </h4>
                                       <span className="text-[9px] text-stone-400">
                                         {formatRelativeTime(notification.createdAt, locale)}
@@ -2010,11 +1815,11 @@ export default function App() {
                                     </div>
                                     <p
                                       className={`text-xs text-stone-500 leading-relaxed ${
-                                        containsBrandName(message) ? "notranslate" : ""
+                                        containsBrandName(notification.message) ? "notranslate" : ""
                                       }`}
-                                      translate={containsBrandName(message) ? "no" : "yes"}
+                                      translate={containsBrandName(notification.message) ? "no" : "yes"}
                                     >
-                                      {message}
+                                      {notification.message}
                                     </p>
                                   </div>
                                 );
@@ -2063,7 +1868,7 @@ export default function App() {
         {/* Hero Section */}
         <section className="relative h-[80vh] overflow-hidden">
           <img
-            src="https://i.pinimg.com/736x/45/d0/92/45d092205288243f80843dec565beabd.jpg?v=20260225"
+            src="https://i.pinimg.com/736x/d8/6a/96/d86a960149b06d59f2e8f4c992633874.jpg"
             alt={t("Imagem de destaque")}
             className="absolute inset-0 w-full h-full object-cover"
             referrerPolicy="no-referrer"
@@ -2090,7 +1895,7 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.8, delay: 0.4 }}
-              onClick={() => openMapWithSearch(activeCategory)}
+              onClick={() => setIsSearchOpen(true)}
               className="group flex items-center gap-3 px-8 py-4 bg-white text-black text-xs uppercase tracking-[0.2em] font-medium hover:bg-stone-100 transition-all"
             >
               {t("Explorar coleção")}
@@ -2167,7 +1972,7 @@ export default function App() {
         <section className="bg-stone-100 py-32 px-6">
           <div className="max-w-3xl mx-auto text-center">
             <h3 className="text-3xl md:text-5xl font-serif italic mb-6 notranslate" translate="no">
-              {t("Junte-se ao TempleSale")}
+              {t("Junte-se ao TempleSale.com")}
             </h3>
             <p className="text-stone-500 mb-10 text-sm tracking-wide leading-relaxed">
               {t("Inscreva-se para receber acesso antecipado às novas coleções, lançamentos exclusivos do arquivo e histórias dos nossos artesãos.")}
