@@ -42,9 +42,15 @@ const CATEGORIES = [
   "Outros"
 ];
 const BRAND_NAME = "TempleSale";
+const HOME_HERO_FALLBACK_IMAGE =
+  "https://i.pinimg.com/736x/d8/6a/96/d86a960149b06d59f2e8f4c992633874.jpg";
 const CART_STORAGE_KEY = "templesale_cart_items";
 const CART_UNSEEN_STORAGE_KEY = "templesale_cart_unseen_alert";
 const READ_NOTIFICATIONS_STORAGE_KEY = "templesale_read_notifications";
+
+function isPlaceholderImageUrl(value: string): boolean {
+  return /^https?:\/\/picsum\.photos\//i.test(value);
+}
 
 function getScopedStorageKey(baseKey: string, userId?: number | null): string {
   const normalizedUserId = Number(userId);
@@ -261,6 +267,24 @@ export default function App() {
     () => formatCollectionDate(heroDate, locale),
     [heroDate, locale],
   );
+  const homeHeroImage = React.useMemo(() => {
+    for (const product of products) {
+      const imageCandidates = [
+        ...(Array.isArray(product.images) ? product.images : []),
+        product.image,
+      ];
+
+      for (const candidate of imageCandidates) {
+        const normalizedUrl = String(candidate ?? "").trim();
+        if (!normalizedUrl || isPlaceholderImageUrl(normalizedUrl)) {
+          continue;
+        }
+        return normalizedUrl;
+      }
+    }
+
+    return HOME_HERO_FALLBACK_IMAGE;
+  }, [products]);
 
   React.useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") {
@@ -2063,7 +2087,7 @@ export default function App() {
         {/* Hero Section */}
         <section className="relative h-[80vh] overflow-hidden">
           <img
-            src="https://i.pinimg.com/736x/d8/6a/96/d86a960149b06d59f2e8f4c992633874.jpg"
+            src={homeHeroImage}
             alt={t("Imagem de destaque")}
             className="absolute inset-0 w-full h-full object-cover"
             referrerPolicy="no-referrer"
