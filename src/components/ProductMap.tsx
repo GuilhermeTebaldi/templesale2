@@ -1,6 +1,6 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, Pencil, Trash2, Package, X, Maximize2, Minimize2 } from "lucide-react";
+import { Search, Pencil, Trash2, Package, X, Maximize2, Minimize2, ShoppingBag } from "lucide-react";
 import { type Product } from "./ProductCard";
 import { useI18n } from "../i18n/provider";
 import { formatEuroFromUnknown } from "../lib/currency";
@@ -11,6 +11,7 @@ interface ProductMapProps {
   onClose: () => void;
   initialFocusProductId?: number;
   onOpenProduct?: (product: Product) => void;
+  onAddToCart?: (product: Product) => void;
   initialCategory?: string;
   openResultsByDefault?: boolean;
   autoFocusPanelSearch?: boolean;
@@ -444,6 +445,7 @@ export default function ProductMap({
   onClose,
   initialFocusProductId,
   onOpenProduct,
+  onAddToCart,
   initialCategory = "All",
   openResultsByDefault = false,
   autoFocusPanelSearch = false,
@@ -1360,14 +1362,15 @@ export default function ProductMap({
                     }`}
                   >
                     {filteredPanelProducts.map((product) => (
-                      <motion.button
+                      <motion.div
                         key={product.id}
-                        type="button"
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         className={`group text-left bg-white border border-stone-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 ${
                           onOpenProduct ? "cursor-pointer" : ""
                         }`}
+                        role={onOpenProduct ? "button" : undefined}
+                        tabIndex={onOpenProduct ? 0 : undefined}
                         onPointerDown={(event) => {
                           event.stopPropagation();
                         }}
@@ -1419,8 +1422,21 @@ export default function ProductMap({
                               {product.city?.trim() || t("Cidade não informada")}
                             </span>
                           </div>
+                          {onAddToCart && (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onAddToCart(product);
+                              }}
+                              className="mt-2.5 w-full inline-flex items-center justify-center gap-2 px-2.5 py-2 border border-stone-300 rounded-lg text-[9px] uppercase tracking-[0.14em] font-bold text-stone-700 hover:border-stone-800 hover:text-stone-900 transition-colors"
+                            >
+                              <ShoppingBag className="w-3.5 h-3.5" />
+                              {t("Adicionar ao carrinho")}
+                            </button>
+                          )}
                         </div>
-                      </motion.button>
+                      </motion.div>
                     ))}
                   </div>
                 )}

@@ -503,7 +503,7 @@ export default function ProductDetails({
                     type="button"
                     onClick={handleAddToCart}
                     disabled={!canAddToCart}
-                    className="inline-flex items-center justify-center gap-2 px-4 py-3 border border-stone-300 text-[10px] uppercase tracking-[0.15em] font-bold text-stone-700 hover:border-stone-800 hover:text-stone-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="inline-flex items-center justify-center gap-2 px-3 py-2.5 sm:px-4 sm:py-3 border border-stone-300 text-[9px] sm:text-[10px] uppercase tracking-[0.14em] sm:tracking-[0.15em] font-bold text-stone-700 hover:border-stone-800 hover:text-stone-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <ShoppingBag className="w-4 h-4" />
                     {t("Adicionar ao carrinho")}

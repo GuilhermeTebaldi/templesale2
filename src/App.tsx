@@ -1595,6 +1595,9 @@ export default function App() {
             onOpenProduct={(product) => {
               openProductDetails(product);
             }}
+            onAddToCart={(product) => {
+              handleAddToCart(product, 1);
+            }}
             onClose={() => {
               setIsMapOpen(false);
               setMapOpenWithResults(false);
