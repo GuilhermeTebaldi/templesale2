@@ -1788,8 +1788,10 @@ export default function App() {
                         key={category.key}
                         onClick={() => {
                           setActiveCategory(category.key);
+                          setSearchQuery("");
                           setIsFilterMenuOpen(false);
                           setIsMenuOpen(false);
+                          setIsSearchOpen(true);
                         }}
                         className={`w-full flex items-center justify-between gap-4 px-4 py-3 border-b border-stone-100 last:border-b-0 transition-colors ${
                           activeCategory === category.key ? "bg-stone-100" : "hover:bg-stone-100/70"
@@ -1908,32 +1910,72 @@ export default function App() {
             <X className="w-6 h-6 text-stone-600" />
           </button>
         </div>
-        
-        {/* Quick Results Preview (Optional but nice) */}
-        {searchQuery && (
-          <div className="max-w-7xl mx-auto px-6 py-10">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-stone-400 mb-8">
-              {t("Resultados para \"{query}\"", { query: searchQuery })}
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
-              {products.filter(p => 
-                p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                p.category.toLowerCase().includes(searchQuery.toLowerCase())
-              ).slice(0, 6).map(product => (
-                <div
-                  key={product.id}
-                  className="flex flex-col gap-2 group cursor-pointer"
-                  onClick={() => openProductDetails(product, { fromSearch: true })}
+
+        <div className="h-[calc(100%-5rem)] overflow-y-auto">
+          <div className="max-w-7xl mx-auto px-6 py-6">
+            <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-2">
+              {availableCategoryFilters.map((category) => (
+                <button
+                  key={`search-category-${category.key}`}
+                  onClick={() => setActiveCategory(category.key)}
+                  className={`shrink-0 inline-flex items-center gap-2 px-3 py-2 border rounded-full text-[10px] uppercase tracking-[0.16em] transition-colors ${
+                    activeCategory === category.key
+                      ? "border-stone-900 bg-stone-900 text-white"
+                      : "border-stone-200 text-stone-600 hover:border-stone-400"
+                  }`}
                 >
-                  <div className="aspect-3/4 overflow-hidden bg-stone-100">
-                    <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                  </div>
-                  <span className="text-[10px] font-serif italic text-stone-800 truncate">{product.name}</span>
-                </div>
+                  <span>
+                    {category.key === "All" ? t("Todos") : getCategoryLabel(category.key, locale)}
+                  </span>
+                  <span className={activeCategory === category.key ? "text-white/80" : "text-stone-400"}>
+                    {category.count}
+                  </span>
+                </button>
               ))}
             </div>
+
+            {searchQuery ? (
+              <p className="text-[10px] uppercase tracking-[0.2em] text-stone-400 mt-4 mb-8">
+                {t("Resultados para \"{query}\"", { query: searchQuery })}
+              </p>
+            ) : (
+              <p className="text-[10px] uppercase tracking-[0.2em] text-stone-400 mt-4 mb-8">
+                {activeCategory === "All"
+                  ? t("Todos")
+                  : getCategoryLabel(activeCategory, locale)}
+              </p>
+            )}
+
+            {filteredProducts.length === 0 ? (
+              <div className="py-16 text-center">
+                <p className="text-xs uppercase tracking-[0.2em] text-stone-400">
+                  {t("Nenhum produto real publicado ainda.")}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+                {filteredProducts.map((product) => (
+                  <div
+                    key={`search-product-${product.id}`}
+                    className="flex flex-col gap-2 group cursor-pointer"
+                    onClick={() => openProductDetails(product, { fromSearch: true })}
+                  >
+                    <div className="aspect-3/4 overflow-hidden bg-stone-100">
+                      <img
+                        src={product.image}
+                        alt={product.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                    </div>
+                    <span className="text-[10px] font-serif italic text-stone-800 truncate">
+                      {product.name}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </motion.div>
 
       {/* Navigation */}
