@@ -1707,6 +1707,10 @@ async function deleteSessionByTokenHashRecord(tokenHash: string): Promise<void> 
 }
 
 async function deleteExpiredSessionsRecords(): Promise<void> {
+  if (IS_DEV_REMOTE_READ_ONLY) {
+    return;
+  }
+
   if (pgPool) {
     await pgPool.query(
       "DELETE FROM sessions WHERE expires_at <= EXTRACT(EPOCH FROM NOW())::BIGINT",
