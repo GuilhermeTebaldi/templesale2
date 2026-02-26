@@ -1959,7 +1959,7 @@ export default function App() {
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           exit={{ opacity: 0, y: 10, scale: 0.95 }}
                           transition={{ type: "spring", damping: 20, stiffness: 300 }}
-                          className="absolute -right-2.5 sm:right-0 mt-2 w-[calc(100vw-2rem)] sm:w-80 bg-white border border-stone-100 shadow-xl rounded-xl z-100 overflow-hidden"
+                          className="fixed left-1/2 top-[5.5rem] w-[calc(100vw-3rem)] max-w-sm -translate-x-1/2 sm:absolute sm:left-auto sm:top-full sm:w-80 sm:max-w-none sm:translate-x-0 sm:right-0 sm:mt-2 bg-white border border-stone-100 shadow-xl rounded-xl z-100 overflow-hidden"
                         >
                           <div className="p-4 border-b border-stone-50 flex items-center justify-between">
                             <h3 className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-800">
