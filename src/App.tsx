@@ -44,6 +44,15 @@ const CATEGORIES = [
 const BRAND_NAME = "TempleSale";
 const CART_STORAGE_KEY = "templesale_cart_items";
 const CART_UNSEEN_STORAGE_KEY = "templesale_cart_unseen_alert";
+const READ_NOTIFICATIONS_STORAGE_KEY = "templesale_read_notifications";
+
+function getScopedStorageKey(baseKey: string, userId?: number | null): string {
+  const normalizedUserId = Number(userId);
+  if (Number.isInteger(normalizedUserId) && normalizedUserId > 0) {
+    return `${baseKey}:user:${normalizedUserId}`;
+  }
+  return `${baseKey}:guest`;
+}
 
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
@@ -67,16 +76,7 @@ function getProductStockQuantity(product: Product): number {
   return normalized >= 0 ? normalized : 0;
 }
 
-function readCartStorage(): Record<number, number> {
-  if (typeof window === "undefined") {
-    return {};
-  }
-
-  const raw = window.localStorage.getItem(CART_STORAGE_KEY);
-  if (!raw) {
-    return {};
-  }
-
+function parseCartStorage(raw: string): Record<number, number> {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (!parsed || typeof parsed !== "object") {
@@ -94,11 +94,62 @@ function readCartStorage(): Record<number, number> {
   }
 }
 
-function readCartUnseenAlertStorage(): boolean {
+function readCartStorage(storageKey: string, fallbackKeys: string[] = []): Record<number, number> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const keys = [storageKey, ...fallbackKeys];
+  for (const key of keys) {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) {
+      continue;
+    }
+    return parseCartStorage(raw);
+  }
+
+  return {};
+}
+
+function readCartUnseenAlertStorage(storageKey: string, fallbackKeys: string[] = []): boolean {
   if (typeof window === "undefined") {
     return false;
   }
-  return window.localStorage.getItem(CART_UNSEEN_STORAGE_KEY) === "1";
+
+  const keys = [storageKey, ...fallbackKeys];
+  for (const key of keys) {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) {
+      continue;
+    }
+    return raw === "1";
+  }
+
+  return false;
+}
+
+function readNotificationIdsStorage(storageKey: string): string[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  const raw = window.localStorage.getItem(storageKey);
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+  } catch {
+    return [];
+  }
 }
 
 export default function App() {
@@ -129,10 +180,16 @@ export default function App() {
   const [myProducts, setMyProducts] = React.useState<Product[]>([]);
   const [likedProducts, setLikedProducts] = React.useState<Product[]>([]);
   const [cartQuantitiesByProductId, setCartQuantitiesByProductId] = React.useState<Record<number, number>>(
-    () => readCartStorage(),
+    () =>
+      readCartStorage(getScopedStorageKey(CART_STORAGE_KEY), [
+        CART_STORAGE_KEY,
+      ]),
   );
   const [hasUnseenCartAlert, setHasUnseenCartAlert] = React.useState<boolean>(
-    () => readCartUnseenAlertStorage(),
+    () =>
+      readCartUnseenAlertStorage(getScopedStorageKey(CART_UNSEEN_STORAGE_KEY), [
+        CART_UNSEEN_STORAGE_KEY,
+      ]),
   );
   const [notifications, setNotifications] = React.useState<NotificationDto[]>([]);
   const [readNotificationIds, setReadNotificationIds] = React.useState<string[]>([]);
@@ -149,6 +206,18 @@ export default function App() {
   const [avatarUploadError, setAvatarUploadError] = React.useState("");
   const cartToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasMemberAccess = Boolean(currentUser);
+  const cartStorageKey = React.useMemo(
+    () => getScopedStorageKey(CART_STORAGE_KEY, currentUser?.id),
+    [currentUser?.id],
+  );
+  const cartUnseenStorageKey = React.useMemo(
+    () => getScopedStorageKey(CART_UNSEEN_STORAGE_KEY, currentUser?.id),
+    [currentUser?.id],
+  );
+  const readNotificationsStorageKey = React.useMemo(
+    () => getScopedStorageKey(READ_NOTIFICATIONS_STORAGE_KEY, currentUser?.id),
+    [currentUser?.id],
+  );
   const isOverlayBlockingScroll =
     isAuthModalOpen ||
     isMenuOpen ||
@@ -184,6 +253,9 @@ export default function App() {
   const avatarPickerPanelRef = React.useRef<HTMLDivElement | null>(null);
   const notificationsButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const notificationsPanelRef = React.useRef<HTMLDivElement | null>(null);
+  const hydratedCartStorageKeyRef = React.useRef<string | null>(null);
+  const hydratedCartUnseenStorageKeyRef = React.useRef<string | null>(null);
+  const hydratedReadNotificationsStorageKeyRef = React.useRef<string | null>(null);
   const heroCollectionLabel = React.useMemo(
     () => formatCollectionDate(heroDate, locale),
     [heroDate, locale],
@@ -391,8 +463,14 @@ export default function App() {
   }, [currentUser, isNotificationsOpen]);
 
   React.useEffect(() => {
-    setReadNotificationIds([]);
-  }, [currentUser?.id]);
+    if (!currentUser) {
+      setReadNotificationIds([]);
+      hydratedReadNotificationsStorageKeyRef.current = null;
+      return;
+    }
+    setReadNotificationIds(readNotificationIdsStorage(readNotificationsStorageKey));
+    hydratedReadNotificationsStorageKeyRef.current = readNotificationsStorageKey;
+  }, [currentUser?.id, readNotificationsStorageKey]);
 
   React.useEffect(() => {
     if (!isNotificationsOpen) {
@@ -528,6 +606,27 @@ export default function App() {
   }, [hasMemberAccess]);
 
   React.useEffect(() => {
+    setCartQuantitiesByProductId(
+      readCartStorage(cartStorageKey, [CART_STORAGE_KEY]),
+    );
+    setHasUnseenCartAlert(
+      readCartUnseenAlertStorage(cartUnseenStorageKey, [CART_UNSEEN_STORAGE_KEY]),
+    );
+    hydratedCartStorageKeyRef.current = cartStorageKey;
+    hydratedCartUnseenStorageKeyRef.current = cartUnseenStorageKey;
+  }, [cartStorageKey, cartUnseenStorageKey]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !currentUser) {
+      return;
+    }
+    if (hydratedReadNotificationsStorageKeyRef.current !== readNotificationsStorageKey) {
+      return;
+    }
+    window.localStorage.setItem(readNotificationsStorageKey, JSON.stringify(readNotificationIds));
+  }, [currentUser?.id, readNotificationIds, readNotificationsStorageKey]);
+
+  React.useEffect(() => {
     return () => {
       if (cartToastTimerRef.current) {
         clearTimeout(cartToastTimerRef.current);
@@ -539,15 +638,21 @@ export default function App() {
     if (typeof window === "undefined") {
       return;
     }
-    window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartQuantitiesByProductId));
-  }, [cartQuantitiesByProductId]);
+    if (hydratedCartStorageKeyRef.current !== cartStorageKey) {
+      return;
+    }
+    window.localStorage.setItem(cartStorageKey, JSON.stringify(cartQuantitiesByProductId));
+  }, [cartQuantitiesByProductId, cartStorageKey]);
 
   React.useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-    window.localStorage.setItem(CART_UNSEEN_STORAGE_KEY, hasUnseenCartAlert ? "1" : "0");
-  }, [hasUnseenCartAlert]);
+    if (hydratedCartUnseenStorageKeyRef.current !== cartUnseenStorageKey) {
+      return;
+    }
+    window.localStorage.setItem(cartUnseenStorageKey, hasUnseenCartAlert ? "1" : "0");
+  }, [hasUnseenCartAlert, cartUnseenStorageKey]);
 
   const handleLogout = async () => {
     try {
@@ -679,6 +784,10 @@ export default function App() {
   }, [isCartOpen, markCartAlertAsSeen]);
 
   React.useEffect(() => {
+    if (isLoadingProducts || productsById.size === 0) {
+      return;
+    }
+
     setCartQuantitiesByProductId((current) => {
       const nextEntries = Object.entries(current)
         .map(([productId, rawQuantity]) => {
@@ -710,7 +819,7 @@ export default function App() {
       }
       return next;
     });
-  }, [productsById]);
+  }, [productsById, isLoadingProducts]);
 
   const readNotificationIdSet = React.useMemo(
     () => new Set(readNotificationIds),
