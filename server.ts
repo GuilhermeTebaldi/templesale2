@@ -45,8 +45,11 @@ type ProductRow = {
   seller_whatsapp_number: string | null;
 };
 
-type LikeNotificationRow = {
-  actor_user_id: number;
+type NotificationEventType = "product_like" | "product_cart_interest";
+
+type NotificationEventRow = {
+  type: NotificationEventType;
+  actor_user_id: number | null;
   actor_name: string;
   product_id: number;
   product_name: string;
@@ -55,12 +58,14 @@ type LikeNotificationRow = {
 
 type NotificationRecord = {
   id: string;
-  type: "product_like";
+  type: NotificationEventType;
   title: string;
   message: string;
   createdAt: number;
-  actorUserId: number;
+  actorUserId?: number;
+  actorName?: string;
   productId: number;
+  productName: string;
 };
 
 type UserRow = {
@@ -208,6 +213,7 @@ const MAP_TILE_MAX_ZOOM = 20;
 const MAP_TILE_FETCH_TIMEOUT_MS = 4500;
 const MAP_TILE_CACHE_CONTROL = "public, max-age=21600, stale-while-revalidate=43200";
 const UPLOAD_MAX_BYTES = 12 * 1024 * 1024;
+const CART_NOTIFICATION_DEDUP_WINDOW_SECONDS = 15 * 60;
 const WHATSAPP_COUNTRIES = {
   IT: {
     iso: "IT",
@@ -372,9 +378,14 @@ function normalizeSessionUserRow(row: Record<string, unknown>): SessionUserRow {
   };
 }
 
-function normalizeLikeNotificationRow(row: Record<string, unknown>): LikeNotificationRow {
+function normalizeNotificationEventRow(row: Record<string, unknown>): NotificationEventRow {
+  const rawType = String(row.type ?? "").trim();
+  const type: NotificationEventType =
+    rawType === "product_cart_interest" ? "product_cart_interest" : "product_like";
+
   return {
-    actor_user_id: toRequiredNumber(row.actor_user_id),
+    type,
+    actor_user_id: toNullableNumber(row.actor_user_id),
     actor_name: String(row.actor_name ?? ""),
     product_id: toRequiredNumber(row.product_id),
     product_name: String(row.product_name ?? ""),
@@ -497,9 +508,25 @@ function initializeSqliteDatabase() {
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS product_cart_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_user_id INTEGER NOT NULL,
+      actor_user_id INTEGER,
+      actor_name TEXT NOT NULL DEFAULT '',
+      product_id INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id);
+    CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_owner_created
+      ON product_cart_notifications(owner_user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_product_id
+      ON product_cart_notifications(product_id);
   `);
 
   const productColumns = db.prepare("PRAGMA table_info(products)").all() as Array<{ name: string }>;
@@ -606,6 +633,16 @@ async function initializePostgresDatabase() {
         PRIMARY KEY (user_id, product_id)
       )
     `,
+    `
+      CREATE TABLE IF NOT EXISTS product_cart_notifications (
+        id BIGSERIAL PRIMARY KEY,
+        owner_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        actor_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+        actor_name TEXT NOT NULL DEFAULT '',
+        product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
+      )
+    `,
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT",
@@ -637,6 +674,11 @@ async function initializePostgresDatabase() {
     "ALTER TABLE product_likes ADD COLUMN IF NOT EXISTS user_id BIGINT",
     "ALTER TABLE product_likes ADD COLUMN IF NOT EXISTS product_id BIGINT",
     "ALTER TABLE product_likes ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
+    "ALTER TABLE product_cart_notifications ADD COLUMN IF NOT EXISTS owner_user_id BIGINT",
+    "ALTER TABLE product_cart_notifications ADD COLUMN IF NOT EXISTS actor_user_id BIGINT",
+    "ALTER TABLE product_cart_notifications ADD COLUMN IF NOT EXISTS actor_name TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE product_cart_notifications ADD COLUMN IF NOT EXISTS product_id BIGINT",
+    "ALTER TABLE product_cart_notifications ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT ''",
@@ -663,6 +705,8 @@ async function initializePostgresDatabase() {
     "CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)",
     "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id)",
+    "CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_owner_created ON product_cart_notifications(owner_user_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_product_id ON product_cart_notifications(product_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_product_likes_user_product_unique ON product_likes(user_id, product_id)",
     "CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)",
@@ -867,47 +911,83 @@ async function selectLikedProductsByUserRows(userId: number): Promise<ProductRow
   return rows.map(normalizeProductRow);
 }
 
-async function selectLikeNotificationsByOwnerRows(ownerId: number): Promise<LikeNotificationRow[]> {
+async function selectNotificationsByOwnerRows(ownerId: number): Promise<NotificationEventRow[]> {
   if (pgPool) {
     const result = await pgPool.query<Record<string, unknown>>(
       `
-        SELECT
-          l.user_id AS actor_user_id,
-          lu.name AS actor_name,
-          p.id AS product_id,
-          p.name AS product_name,
-          l.created_at
-        FROM product_likes l
-        INNER JOIN products p ON p.id = l.product_id
-        INNER JOIN users lu ON lu.id = l.user_id
-        WHERE p.user_id = $1 AND l.user_id <> $2
-        ORDER BY l.created_at DESC, p.id DESC
+        SELECT *
+        FROM (
+          SELECT
+            'product_like'::TEXT AS type,
+            l.user_id AS actor_user_id,
+            COALESCE(NULLIF(BTRIM(lu.name), ''), 'Alguém') AS actor_name,
+            p.id AS product_id,
+            p.name AS product_name,
+            l.created_at
+          FROM product_likes l
+          INNER JOIN products p ON p.id = l.product_id
+          LEFT JOIN users lu ON lu.id = l.user_id
+          WHERE p.user_id = $1 AND l.user_id <> $2
+
+          UNION ALL
+
+          SELECT
+            'product_cart_interest'::TEXT AS type,
+            c.actor_user_id,
+            COALESCE(NULLIF(BTRIM(c.actor_name), ''), '') AS actor_name,
+            p.id AS product_id,
+            p.name AS product_name,
+            c.created_at
+          FROM product_cart_notifications c
+          INNER JOIN products p ON p.id = c.product_id
+          WHERE c.owner_user_id = $1
+            AND (c.actor_user_id IS NULL OR c.actor_user_id <> $2)
+        ) notifications
+        ORDER BY created_at DESC, product_id DESC
         LIMIT 100
       `,
       [ownerId, ownerId],
     );
-    return result.rows.map(normalizeLikeNotificationRow);
+    return result.rows.map(normalizeNotificationEventRow);
   }
 
   const rows = requireSqliteDb()
     .prepare(
       `
-        SELECT
-          l.user_id AS actor_user_id,
-          lu.name AS actor_name,
-          p.id AS product_id,
-          p.name AS product_name,
-          l.created_at
-        FROM product_likes l
-        INNER JOIN products p ON p.id = l.product_id
-        INNER JOIN users lu ON lu.id = l.user_id
-        WHERE p.user_id = ? AND l.user_id <> ?
-        ORDER BY l.created_at DESC, p.id DESC
+        SELECT *
+        FROM (
+          SELECT
+            'product_like' AS type,
+            l.user_id AS actor_user_id,
+            COALESCE(NULLIF(TRIM(lu.name), ''), 'Alguém') AS actor_name,
+            p.id AS product_id,
+            p.name AS product_name,
+            l.created_at
+          FROM product_likes l
+          INNER JOIN products p ON p.id = l.product_id
+          LEFT JOIN users lu ON lu.id = l.user_id
+          WHERE p.user_id = ? AND l.user_id <> ?
+
+          UNION ALL
+
+          SELECT
+            'product_cart_interest' AS type,
+            c.actor_user_id AS actor_user_id,
+            COALESCE(NULLIF(TRIM(c.actor_name), ''), '') AS actor_name,
+            p.id AS product_id,
+            p.name AS product_name,
+            c.created_at
+          FROM product_cart_notifications c
+          INNER JOIN products p ON p.id = c.product_id
+          WHERE c.owner_user_id = ?
+            AND (c.actor_user_id IS NULL OR c.actor_user_id <> ?)
+        )
+        ORDER BY created_at DESC, product_id DESC
         LIMIT 100
       `,
     )
-    .all(ownerId, ownerId) as Array<Record<string, unknown>>;
-  return rows.map(normalizeLikeNotificationRow);
+    .all(ownerId, ownerId, ownerId, ownerId) as Array<Record<string, unknown>>;
+  return rows.map(normalizeNotificationEventRow);
 }
 
 async function createProductRecord(
@@ -1175,6 +1255,127 @@ async function createProductLikeRecord(userId: number, productId: number): Promi
       `,
     )
     .run(userId, productId);
+}
+
+async function hasRecentProductCartNotification(
+  ownerUserId: number,
+  productId: number,
+  actorUserId: number | null,
+  minCreatedAt: number,
+): Promise<boolean> {
+  if (pgPool) {
+    const actorConditionSql =
+      actorUserId === null
+        ? "actor_user_id IS NULL"
+        : "actor_user_id = $4";
+    const params =
+      actorUserId === null
+        ? [ownerUserId, productId, minCreatedAt]
+        : [ownerUserId, productId, minCreatedAt, actorUserId];
+
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT id
+        FROM product_cart_notifications
+        WHERE owner_user_id = $1
+          AND product_id = $2
+          AND created_at >= $3
+          AND ${actorConditionSql}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      params,
+    );
+    return result.rows.length > 0;
+  }
+
+  if (actorUserId === null) {
+    const row = requireSqliteDb()
+      .prepare(
+        `
+          SELECT id
+          FROM product_cart_notifications
+          WHERE owner_user_id = ?
+            AND product_id = ?
+            AND created_at >= ?
+            AND actor_user_id IS NULL
+          ORDER BY created_at DESC
+          LIMIT 1
+        `,
+      )
+      .get(ownerUserId, productId, minCreatedAt) as Record<string, unknown> | undefined;
+    return Boolean(row);
+  }
+
+  const row = requireSqliteDb()
+    .prepare(
+      `
+        SELECT id
+        FROM product_cart_notifications
+        WHERE owner_user_id = ?
+          AND product_id = ?
+          AND created_at >= ?
+          AND actor_user_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+    )
+    .get(ownerUserId, productId, minCreatedAt, actorUserId) as Record<string, unknown> | undefined;
+  return Boolean(row);
+}
+
+async function createProductCartNotificationRecord(
+  ownerUserId: number,
+  productId: number,
+  actorUserId: number | null,
+  actorName: string,
+): Promise<boolean> {
+  const now = Math.floor(Date.now() / 1000);
+  const minCreatedAt = now - CART_NOTIFICATION_DEDUP_WINDOW_SECONDS;
+  const normalizedActorName = actorName.trim();
+
+  const alreadyExists = await hasRecentProductCartNotification(
+    ownerUserId,
+    productId,
+    actorUserId,
+    minCreatedAt,
+  );
+  if (alreadyExists) {
+    return false;
+  }
+
+  if (pgPool) {
+    await pgPool.query(
+      `
+        INSERT INTO product_cart_notifications (
+          owner_user_id,
+          actor_user_id,
+          actor_name,
+          product_id,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5)
+      `,
+      [ownerUserId, actorUserId, normalizedActorName, productId, now],
+    );
+    return true;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        INSERT INTO product_cart_notifications (
+          owner_user_id,
+          actor_user_id,
+          actor_name,
+          product_id,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+      `,
+    )
+    .run(ownerUserId, actorUserId, normalizedActorName, productId, now);
+  return true;
 }
 
 async function deleteProductLikeRecord(userId: number, productId: number): Promise<void> {
@@ -1576,22 +1777,34 @@ function rowToPublicVendor(row: VendorRow): PublicVendorRecord {
   };
 }
 
-function rowToNotification(row: LikeNotificationRow): NotificationRecord {
+function rowToNotification(row: NotificationEventRow): NotificationRecord {
   const actorName = row.actor_name.trim() || "Alguém";
-  const productName = row.product_name.trim() || "sua publicação";
+  const productName = row.product_name.trim() || "seu anúncio";
   const createdAt = Number.isFinite(row.created_at)
     ? row.created_at
     : Math.floor(Date.now() / 1000);
+  const title = row.type === "product_cart_interest" ? "Novo interesse no carrinho" : "Nova curtida";
+  const message =
+    row.type === "product_cart_interest"
+      ? `${actorName} adicionou seu anúncio "${productName}" ao carrinho.`
+      : `${actorName} curtiu seu anúncio "${productName}".`;
 
-  return {
-    id: `like:${row.product_id}:${row.actor_user_id}:${createdAt}`,
-    type: "product_like",
-    title: "Nova curtida",
-    message: `${actorName} curtiu sua publicação "${productName}".`,
+  const normalized: NotificationRecord = {
+    id: `${row.type}:${row.product_id}:${row.actor_user_id ?? "anon"}:${createdAt}`,
+    type: row.type,
+    title,
+    message,
     createdAt,
-    actorUserId: row.actor_user_id,
+    actorName,
     productId: row.product_id,
+    productName,
   };
+
+  if (row.actor_user_id !== null) {
+    normalized.actorUserId = row.actor_user_id;
+  }
+
+  return normalized;
 }
 
 function parseIncomingPriceToNumber(rawValue: unknown): number | null {
@@ -2946,10 +3159,51 @@ async function bootstrap() {
     }
 
     try {
-      const rows = await selectLikeNotificationsByOwnerRows(user.id);
+      const rows = await selectNotificationsByOwnerRows(user.id);
       res.json(rows.map(rowToNotification));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao listar notificações.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/products/:id/cart-interest", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID inválido." });
+      return;
+    }
+
+    try {
+      const existing = await selectProductByIdRow(id);
+      if (!existing) {
+        res.status(404).json({ error: "Produto não encontrado." });
+        return;
+      }
+
+      const ownerUserId = existing.user_id;
+      if (!ownerUserId || ownerUserId <= 0) {
+        res.json({ success: true });
+        return;
+      }
+
+      const actorUser = await getSessionUser(req);
+      if (actorUser && actorUser.id === ownerUserId) {
+        res.json({ success: true });
+        return;
+      }
+
+      await createProductCartNotificationRecord(
+        ownerUserId,
+        id,
+        actorUser?.id ?? null,
+        actorUser?.name ?? "",
+      );
+
+      res.status(201).json({ success: true });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao registrar interesse no carrinho.";
       res.status(500).json({ error: message });
     }
   });

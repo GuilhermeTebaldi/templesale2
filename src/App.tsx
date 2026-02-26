@@ -828,6 +828,42 @@ export default function App() {
   const containsBrandName = React.useCallback((value: string) => {
     return value.toLowerCase().includes("templesale");
   }, []);
+  const getNotificationPresentation = React.useCallback(
+    (notification: NotificationDto) => {
+      const actorName =
+        String(("actorName" in notification ? notification.actorName : "") ?? "").trim() ||
+        t("Alguém");
+      const productName =
+        String(("productName" in notification ? notification.productName : "") ?? "").trim() ||
+        t("seu anúncio");
+
+      if (notification.type === "product_like") {
+        return {
+          title: t("Nova curtida"),
+          message: t('{actor} curtiu seu anúncio "{product}".', {
+            actor: actorName,
+            product: productName,
+          }),
+        };
+      }
+
+      if (notification.type === "product_cart_interest") {
+        return {
+          title: t("Novo interesse no carrinho"),
+          message: t('{actor} adicionou seu anúncio "{product}" ao carrinho.', {
+            actor: actorName,
+            product: productName,
+          }),
+        };
+      }
+
+      return {
+        title: notification.title,
+        message: notification.message,
+      };
+    },
+    [t],
+  );
   const notificationsToDisplay = React.useMemo<NotificationDto[]>(() => {
     if (!currentUser) {
       return [];
@@ -972,6 +1008,13 @@ export default function App() {
         ...current,
         [product.id]: nextQuantity,
       }));
+
+      if (currentQuantity === 0) {
+        void api.notifyProductCartInterest(product.id).catch((error) => {
+          console.error("Error notifying product cart interest:", error);
+        });
+      }
+
       setHasUnseenCartAlert(true);
       showCartToast(
         t("{count} item(s) adicionado(s) ao carrinho.", {
@@ -1979,6 +2022,9 @@ export default function App() {
                             ) : (
                               notificationsToDisplay.map((notification) => {
                                 const isRead = readNotificationIdSet.has(notification.id);
+                                const presentation = getNotificationPresentation(notification);
+                                const title = presentation.title;
+                                const message = presentation.message;
 
                                 return (
                                   <div
@@ -1994,11 +2040,11 @@ export default function App() {
                                     <div className="flex justify-between items-start mb-1">
                                       <h4
                                         className={`text-xs font-bold text-stone-800 ${
-                                          containsBrandName(notification.title) ? "notranslate" : ""
+                                          containsBrandName(title) ? "notranslate" : ""
                                         }`}
-                                        translate={containsBrandName(notification.title) ? "no" : "yes"}
+                                        translate={containsBrandName(title) ? "no" : "yes"}
                                       >
-                                        {notification.title}
+                                        {title}
                                       </h4>
                                       <span className="text-[9px] text-stone-400">
                                         {formatRelativeTime(notification.createdAt, locale)}
@@ -2006,11 +2052,11 @@ export default function App() {
                                     </div>
                                     <p
                                       className={`text-xs text-stone-500 leading-relaxed ${
-                                        containsBrandName(notification.message) ? "notranslate" : ""
+                                        containsBrandName(message) ? "notranslate" : ""
                                       }`}
-                                      translate={containsBrandName(notification.message) ? "no" : "yes"}
+                                      translate={containsBrandName(message) ? "no" : "yes"}
                                     >
-                                      {notification.message}
+                                      {message}
                                     </p>
                                   </div>
                                 );

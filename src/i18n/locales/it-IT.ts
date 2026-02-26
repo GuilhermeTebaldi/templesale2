@@ -28,6 +28,13 @@ export const itITTranslations: Record<string, string> = {
   "Notifications": "Notifiche",
   "Marcar tudo como lido": "Segna tutto come letto",
   "Nenhuma notificação disponível.": "Nessuna notifica disponibile.",
+  "Alguém": "Qualcuno",
+  "seu anúncio": "il tuo annuncio",
+  "Nova curtida": "Nuovo like",
+  "Novo interesse no carrinho": "Nuovo interesse nel carrello",
+  '{actor} curtiu seu anúncio "{product}".': '{actor} ha messo like al tuo annuncio "{product}".',
+  '{actor} adicionou seu anúncio "{product}" ao carrinho.':
+    '{actor} ha aggiunto il tuo annuncio "{product}" al carrello.',
   "notification": "notifica",
   "notifications": "notifiche",
   "Bem-vindo a TempleSale": "Benvenuto su TempleSale",

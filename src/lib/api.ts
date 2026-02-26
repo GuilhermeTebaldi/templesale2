@@ -23,7 +23,20 @@ export type NotificationDto =
       title: string;
       message: string;
       createdAt: number;
-      actorUserId: number;
+      actorUserId?: number;
+      actorName?: string;
+      productName?: string;
+      productId: number;
+    }
+  | {
+      id: string;
+      type: "product_cart_interest";
+      title: string;
+      message: string;
+      createdAt: number;
+      actorUserId?: number;
+      actorName?: string;
+      productName?: string;
       productId: number;
     }
   | {
@@ -1775,6 +1788,16 @@ export const api = {
   },
   likeProduct(id: number) {
     return request<{ success: boolean }>(`/api/products/${id}/like`, {
+      method: "POST",
+    }).catch((error) => {
+      if (isMissingApiRouteError(error)) {
+        return { success: true };
+      }
+      throw error;
+    });
+  },
+  notifyProductCartInterest(id: number) {
+    return request<{ success: boolean }>(`/api/products/${id}/cart-interest`, {
       method: "POST",
     }).catch((error) => {
       if (isMissingApiRouteError(error)) {
