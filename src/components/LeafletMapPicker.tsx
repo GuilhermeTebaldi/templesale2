@@ -258,6 +258,7 @@ export default function LeafletMapPicker({
             <div
               ref={mapContainerRef}
               className="flex-1 min-h-[320px] border border-stone-200 rounded-sm overflow-hidden bg-stone-100"
+              style={{ touchAction: "none" }}
             />
           )}
 

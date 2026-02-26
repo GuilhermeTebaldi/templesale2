@@ -962,7 +962,7 @@ export default function ProductMap({
               background:
                 "radial-gradient(circle at 20% 20%, #f7f2e8 0%, #ece7db 45%, #e7e1d4 100%)",
               cursor: isDrawing ? "crosshair" : undefined,
-              touchAction: isDrawing ? "none" : "auto",
+              touchAction: "none",
             }}
           />
         )}
