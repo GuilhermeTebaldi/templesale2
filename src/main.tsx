@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import AdminPanel from "./components/AdminPanel";
+import GlobalLoadingOverlay from "./components/GlobalLoadingOverlay";
 import "./index.css";
 import { I18nProvider } from "./i18n/provider";
 
@@ -14,6 +15,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <I18nProvider>
       <RootComponent />
+      <GlobalLoadingOverlay />
     </I18nProvider>
   </StrictMode>,
 );

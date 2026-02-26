@@ -2,6 +2,7 @@ import React from "react";
 import { motion } from "motion/react";
 import { X, User, Save, Navigation } from "lucide-react";
 import { type SessionUser, type UpdateProfileInput } from "../lib/api";
+import { trackedFetch } from "../lib/networkActivity";
 import {
   getWhatsappCountryLabel,
   normalizeWhatsappLocalNumber,
@@ -71,7 +72,7 @@ export default function EditePerfil({
               lat: String(latitude),
               lng: String(longitude),
             });
-            const response = await fetch(`/api/geo/reverse?${params.toString()}`, {
+            const response = await trackedFetch(`/api/geo/reverse?${params.toString()}`, {
               credentials: "include",
               headers: { Accept: "application/json" },
               signal: controller.signal,

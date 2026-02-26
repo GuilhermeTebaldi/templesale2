@@ -1,3 +1,5 @@
+import { trackedFetch } from "./networkActivity";
+
 export interface ProductDto {
   id: number;
   name: string;
@@ -1085,7 +1087,7 @@ async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
     headers.set("X-Admin-Auth", token);
   }
 
-  const response = await fetch(buildApiUrl(url), {
+  const response = await trackedFetch(buildApiUrl(url), {
     credentials: "include",
     ...fetchInit,
     headers,
@@ -1167,7 +1169,7 @@ async function uploadImageFileToEndpoint(
     headers.set("Authorization", `Bearer ${authToken}`);
   }
 
-  const response = await fetch(buildApiUrl(endpoint), {
+  const response = await trackedFetch(buildApiUrl(endpoint), {
     method: "POST",
     credentials: "include",
     headers,
