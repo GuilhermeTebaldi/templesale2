@@ -176,7 +176,7 @@ export default function Vendedores({ onClose, onOpenProduct }: VendedoresProps) 
             />
           </div>
 
-          <div className="mt-4 grow overflow-y-auto pr-1">
+          <div className="mt-4 grow overflow-y-auto overscroll-contain pr-1">
             {isLoadingVendors ? (
               <div className="py-10 flex items-center justify-center text-stone-400">
                 <LoaderCircle className="w-5 h-5 animate-spin" />
@@ -232,7 +232,7 @@ export default function Vendedores({ onClose, onOpenProduct }: VendedoresProps) 
           </div>
         </aside>
 
-        <section className="p-5 sm:p-8 overflow-y-auto">
+        <section className="p-5 sm:p-8 overflow-y-auto overscroll-contain">
           {!selectedVendor ? (
             <div className="h-full min-h-[280px] flex flex-col items-center justify-center text-stone-400 gap-4">
               <Store className="w-10 h-10 text-stone-200" />

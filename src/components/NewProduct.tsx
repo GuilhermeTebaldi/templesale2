@@ -471,7 +471,7 @@ export default function NewProduct({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-120 bg-[#fdfcfb] overflow-y-auto"
+      className="fixed inset-0 z-120 bg-[#fdfcfb] overflow-y-auto overscroll-contain"
     >
       {/* Header */}
       <div className="sticky top-0 z-10 bg-[#fdfcfb]/80 backdrop-blur-md border-b border-stone-100 px-6 h-20 flex items-center justify-between">

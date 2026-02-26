@@ -59,7 +59,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
         </button>
       </div>
 
-      <div className="grow overflow-y-auto p-8">
+      <div className="grow overflow-y-auto overscroll-contain p-8">
         <div className="max-w-4xl mx-auto">
           {errorMessage && (
             <p className="mb-6 text-sm text-red-500">{errorMessage}</p>

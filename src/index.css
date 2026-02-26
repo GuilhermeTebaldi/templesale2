@@ -11,10 +11,26 @@
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+    height: 100%;
+    background: #fdfcfb;
+    overscroll-behavior-y: none;
   }
 
   body {
     @apply bg-[#fdfcfb] text-[#1a1a1a] antialiased;
+    min-height: 100%;
+    overflow-x: hidden;
+    overscroll-behavior-y: none;
+  }
+
+  #root {
+    min-height: 100%;
+    background: #fdfcfb;
+  }
+
+  body.ts-scroll-lock {
+    position: fixed;
+    overflow: hidden;
   }
 
   @media (max-width: 768px) {

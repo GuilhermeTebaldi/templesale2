@@ -196,7 +196,7 @@ export default function EditePerfil({
         </button>
       </div>
 
-      <div className="grow overflow-y-auto p-8">
+      <div className="grow overflow-y-auto overscroll-contain p-8">
         <form onSubmit={handleSubmit} className="max-w-xl mx-auto space-y-8">
           <div className="space-y-6">
             <div className="space-y-2">

@@ -52,7 +52,7 @@ export default function Curtidas({
         </button>
       </div>
 
-      <div className="grow overflow-y-auto p-8">
+      <div className="grow overflow-y-auto overscroll-contain p-8">
         <div className="max-w-4xl mx-auto">
           {products.length === 0 ? (
             <div className="text-center py-20">

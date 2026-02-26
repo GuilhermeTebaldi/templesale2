@@ -89,7 +89,7 @@ export default function Carrinho({
         </div>
       </div>
 
-      <div className="grow overflow-y-auto p-8">
+      <div className="grow overflow-y-auto overscroll-contain p-8">
         <div className="max-w-4xl mx-auto">
           {items.length === 0 ? (
             <div className="text-center py-20">

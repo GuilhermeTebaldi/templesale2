@@ -149,6 +149,20 @@ export default function App() {
   const [avatarUploadError, setAvatarUploadError] = React.useState("");
   const cartToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasMemberAccess = Boolean(currentUser);
+  const isOverlayBlockingScroll =
+    isAuthModalOpen ||
+    isMenuOpen ||
+    isUserOpen ||
+    isMapOpen ||
+    isVendedoresOpen ||
+    Boolean(selectedProduct) ||
+    (hasMemberAccess &&
+      (isNewProductOpen ||
+        Boolean(editingProduct) ||
+        isMeusAnunciosOpen ||
+        isCurtidasOpen ||
+        isCartOpen ||
+        isEditePerfilOpen));
   const hasRequiredProfileForPublishing = React.useMemo(() => {
     if (!currentUser) {
       return false;
@@ -174,6 +188,48 @@ export default function App() {
     () => formatCollectionDate(heroDate, locale),
     [heroDate, locale],
   );
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return;
+    }
+
+    const body = document.body;
+    const unlockScroll = () => {
+      if (!body.classList.contains("ts-scroll-lock")) {
+        return;
+      }
+      const restoreY = Number(body.dataset.tsScrollLockY ?? "0");
+      body.classList.remove("ts-scroll-lock");
+      body.style.top = "";
+      body.style.left = "";
+      body.style.right = "";
+      body.style.width = "";
+      delete body.dataset.tsScrollLockY;
+      window.scrollTo(0, Number.isFinite(restoreY) ? restoreY : 0);
+    };
+
+    if (!isOverlayBlockingScroll) {
+      unlockScroll();
+      return;
+    }
+
+    if (!body.classList.contains("ts-scroll-lock")) {
+      const currentY = window.scrollY || window.pageYOffset || 0;
+      body.dataset.tsScrollLockY = String(currentY);
+      body.classList.add("ts-scroll-lock");
+      body.style.top = `-${currentY}px`;
+      body.style.left = "0";
+      body.style.right = "0";
+      body.style.width = "100%";
+    }
+
+    return () => {
+      if (!isOverlayBlockingScroll) {
+        unlockScroll();
+      }
+    };
+  }, [isOverlayBlockingScroll]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1003,7 +1059,7 @@ export default function App() {
   }, [products, activeCategory, searchQuery]);
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-[100dvh] flex flex-col">
       <AnimatePresence>
         {isAuthModalOpen && (
           <Auth
