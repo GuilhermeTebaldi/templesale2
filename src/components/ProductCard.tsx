@@ -124,15 +124,15 @@ export default function ProductCard({
             />
           </button>
         </div>
-        <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-0 md:translate-y-full transition-transform duration-300 md:group-hover:translate-y-0 bg-linear-to-t from-black/20 to-transparent">
+        <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4 translate-y-0 md:translate-y-full transition-transform duration-300 md:group-hover:translate-y-0 bg-linear-to-t from-black/20 to-transparent">
           <button 
             onClick={(e) => {
               e.stopPropagation();
               onAddToCart?.();
             }}
-            className="w-full py-2 bg-white text-black text-xs font-medium uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-stone-100 transition-colors"
+            className="mx-auto w-auto max-w-full px-3 py-1.5 md:w-full md:px-4 md:py-2 bg-white text-black text-[10px] md:text-xs font-medium uppercase tracking-[0.12em] md:tracking-widest flex items-center justify-center gap-1.5 md:gap-2 hover:bg-stone-100 transition-colors"
           >
-            <ShoppingBag className="w-3 h-3" />
+            <ShoppingBag className="w-2.5 h-2.5 md:w-3 md:h-3" />
             {t("Adicionar ao carrinho")}
           </button>
         </div>
