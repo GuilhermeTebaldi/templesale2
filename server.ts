@@ -190,7 +190,7 @@ const CLOUDINARY_PROFILE_UPLOAD_FOLDER =
   String(process.env.CLOUDINARY_PROFILE_UPLOAD_FOLDER ?? "").trim() ||
   `${CLOUDINARY_UPLOAD_FOLDER.replace(/\/+$/, "")}/profiles`;
 const CLEAN_LOCAL_PRODUCTS_ON_BOOT =
-  String(process.env.CLEAN_LOCAL_PRODUCTS_ON_BOOT ?? "true").toLowerCase() === "true";
+  String(process.env.CLEAN_LOCAL_PRODUCTS_ON_BOOT ?? "false").toLowerCase() === "true";
 const SESSION_COOKIE_NAME = "templesale_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL ?? "templesale@admin.com")
