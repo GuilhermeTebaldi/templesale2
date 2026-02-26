@@ -264,17 +264,21 @@ type WhatsappCountryIso = keyof typeof WHATSAPP_COUNTRIES;
 
 const PRODUCT_SELECT_FIELDS = `
   p.id,
-  p.name,
+  COALESCE(NULLIF(TRIM(COALESCE(p.name, '')), ''), NULLIF(TRIM(COALESCE(p.title, '')), ''), 'Produto sem título') AS name,
   p.category,
   p.price,
-  p.quantity,
-  p.image,
-  p.images,
-  p.description,
-  p.details,
+  COALESCE(p.quantity, 1) AS quantity,
+  COALESCE(NULLIF(TRIM(COALESCE(p.image, '')), ''), NULLIF(TRIM(COALESCE(p.image_url, '')), ''), '') AS image,
+  CASE
+    WHEN p.images IS NOT NULL AND TRIM(p.images) <> '' AND TRIM(p.images) <> '[]' THEN p.images
+    WHEN p.image_urls IS NOT NULL AND TRIM(p.image_urls) <> '' AND TRIM(p.image_urls) <> '[]' THEN p.image_urls
+    ELSE '[]'
+  END AS images,
+  COALESCE(p.description, '') AS description,
+  COALESCE(p.details, '{}') AS details,
   p.user_id,
-  p.latitude,
-  p.longitude,
+  COALESCE(p.latitude, p.lat) AS latitude,
+  COALESCE(p.longitude, p.lng) AS longitude,
   u.name AS seller_name,
   u.whatsapp_country_iso AS seller_whatsapp_country_iso,
   u.whatsapp_number AS seller_whatsapp_number
@@ -575,14 +579,29 @@ function initializeSqliteDatabase() {
   `);
 
   const productColumns = db.prepare("PRAGMA table_info(products)").all() as Array<{ name: string }>;
+  if (!productColumns.some((column) => column.name === "title")) {
+    db.exec("ALTER TABLE products ADD COLUMN title TEXT");
+  }
   if (!productColumns.some((column) => column.name === "user_id")) {
     db.exec("ALTER TABLE products ADD COLUMN user_id INTEGER");
+  }
+  if (!productColumns.some((column) => column.name === "image_url")) {
+    db.exec("ALTER TABLE products ADD COLUMN image_url TEXT");
+  }
+  if (!productColumns.some((column) => column.name === "image_urls")) {
+    db.exec("ALTER TABLE products ADD COLUMN image_urls TEXT");
   }
   if (!productColumns.some((column) => column.name === "latitude")) {
     db.exec("ALTER TABLE products ADD COLUMN latitude REAL");
   }
   if (!productColumns.some((column) => column.name === "longitude")) {
     db.exec("ALTER TABLE products ADD COLUMN longitude REAL");
+  }
+  if (!productColumns.some((column) => column.name === "lat")) {
+    db.exec("ALTER TABLE products ADD COLUMN lat REAL");
+  }
+  if (!productColumns.some((column) => column.name === "lng")) {
+    db.exec("ALTER TABLE products ADD COLUMN lng REAL");
   }
   if (!productColumns.some((column) => column.name === "quantity")) {
     db.exec("ALTER TABLE products ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1");
