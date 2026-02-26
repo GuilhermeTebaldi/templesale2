@@ -108,7 +108,7 @@ export default function ProductCard({
           </div>
         )}
 
-        <div className="absolute top-4 right-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+        <div className="absolute top-4 right-4 opacity-100 md:opacity-0 transition-opacity duration-300 md:group-hover:opacity-100">
           <button 
             onClick={(e) => {
               e.stopPropagation();
