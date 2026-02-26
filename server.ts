@@ -183,6 +183,8 @@ if (!DATABASE_URL) {
 }
 const ALLOW_REMOTE_DATABASE_IN_DEV =
   String(process.env.ALLOW_REMOTE_DATABASE_IN_DEV ?? "false").toLowerCase() === "true";
+const DEV_REMOTE_READ_ONLY =
+  String(process.env.DEV_REMOTE_READ_ONLY ?? "true").toLowerCase() === "true";
 
 function isLocalDatabaseHost(hostname: string): boolean {
   const normalizedHost = String(hostname ?? "").trim().toLowerCase();
@@ -207,7 +209,11 @@ function extractDatabaseHostname(databaseUrl: string): string {
 }
 
 const DATABASE_HOSTNAME = extractDatabaseHostname(DATABASE_URL);
-if (!IS_PRODUCTION && !ALLOW_REMOTE_DATABASE_IN_DEV && !isLocalDatabaseHost(DATABASE_HOSTNAME)) {
+const IS_REMOTE_DATABASE = !isLocalDatabaseHost(DATABASE_HOSTNAME);
+const IS_DEV_REMOTE_DATABASE = !IS_PRODUCTION && IS_REMOTE_DATABASE;
+const IS_DEV_REMOTE_READ_ONLY =
+  IS_DEV_REMOTE_DATABASE && ALLOW_REMOTE_DATABASE_IN_DEV && DEV_REMOTE_READ_ONLY;
+if (IS_DEV_REMOTE_DATABASE && !ALLOW_REMOTE_DATABASE_IN_DEV) {
   throw new Error(
     "Safety guard: refusing to start dev server with remote DATABASE_URL. Use a local database or set ALLOW_REMOTE_DATABASE_IN_DEV=true only if you intentionally accept this risk.",
   );
@@ -313,6 +319,13 @@ pgPool = new Pool({
     ? false
     : { rejectUnauthorized: false },
 });
+if (IS_DEV_REMOTE_READ_ONLY && pgPool) {
+  pgPool.on("connect", (client) => {
+    void client.query("SET default_transaction_read_only = on").catch((error) => {
+      console.error("Failed to enforce read-only session in dev remote mode:", error);
+    });
+  });
+}
 
 function requireSqliteDb(): Database.Database {
   if (!sqliteDb) {
@@ -608,6 +621,13 @@ function initializeSqliteDatabase() {
 
 async function initializePostgresDatabase() {
   if (!pgPool) {
+    return;
+  }
+
+  if (IS_DEV_REMOTE_READ_ONLY) {
+    console.log(
+      "Remote dev read-only mode: skipping PostgreSQL migrations and startup cleanup.",
+    );
     return;
   }
 
@@ -2537,6 +2557,19 @@ async function bootstrap() {
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: "2mb" }));
 
+  if (IS_DEV_REMOTE_READ_ONLY) {
+    app.use("/api", (req, res, next) => {
+      if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+        next();
+        return;
+      }
+      res.status(403).json({
+        error:
+          "Modo somente leitura ativo no dev com banco remoto. Escritas foram bloqueadas para proteger dados reais.",
+      });
+    });
+  }
+
   const requireAdmin = (req: Request, res: Response): AdminSessionUser | null => {
     const adminToken = getAdminSessionTokenFromRequest(req);
     if (!adminToken || !verifyAdminSessionToken(adminToken)) {
@@ -3410,6 +3443,9 @@ async function bootstrap() {
     const mode = isProduction ? "production" : "development";
     console.log(`Server running at http://localhost:${port} (${mode})`);
     console.log("Database: PostgreSQL via DATABASE_URL");
+    if (IS_DEV_REMOTE_READ_ONLY) {
+      console.log("Remote database dev mode: READ ONLY");
+    }
   });
 }
 
