@@ -1977,7 +1977,7 @@ export default function App() {
                               {t("Marcar tudo como lido")}
                             </button>
                           </div>
-                          <div className="max-h-100 overflow-y-auto">
+                          <div className="max-h-[18rem] overflow-y-auto">
                             {notificationsToDisplay.length === 0 ? (
                               <div className="p-4 text-xs text-stone-400">
                                 {t("Nenhuma notificação disponível.")}
