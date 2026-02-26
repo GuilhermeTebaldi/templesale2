@@ -174,10 +174,42 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DB_DIR = path.join(__dirname, "data");
 const DB_PATH = path.join(DB_DIR, "local.db");
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 if (!DATABASE_URL) {
   throw new Error(
     "DATABASE_URL is required. Configure the Render PostgreSQL URL to start the backend.",
+  );
+}
+const ALLOW_REMOTE_DATABASE_IN_DEV =
+  String(process.env.ALLOW_REMOTE_DATABASE_IN_DEV ?? "false").toLowerCase() === "true";
+
+function isLocalDatabaseHost(hostname: string): boolean {
+  const normalizedHost = String(hostname ?? "").trim().toLowerCase();
+  if (!normalizedHost) {
+    return false;
+  }
+
+  return (
+    normalizedHost === "localhost" ||
+    normalizedHost === "127.0.0.1" ||
+    normalizedHost === "::1" ||
+    normalizedHost.endsWith(".local")
+  );
+}
+
+function extractDatabaseHostname(databaseUrl: string): string {
+  try {
+    return new URL(databaseUrl).hostname;
+  } catch {
+    return "";
+  }
+}
+
+const DATABASE_HOSTNAME = extractDatabaseHostname(DATABASE_URL);
+if (!IS_PRODUCTION && !ALLOW_REMOTE_DATABASE_IN_DEV && !isLocalDatabaseHost(DATABASE_HOSTNAME)) {
+  throw new Error(
+    "Safety guard: refusing to start dev server with remote DATABASE_URL. Use a local database or set ALLOW_REMOTE_DATABASE_IN_DEV=true only if you intentionally accept this risk.",
   );
 }
 const DEFAULT_IMAGE = "https://picsum.photos/seed/placeholder/800/1200";
