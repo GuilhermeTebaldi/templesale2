@@ -23,6 +23,154 @@ type LocatedProduct = Product & {
 
 type GeoPoint = [number, number];
 
+type ProductSearchIndex = {
+  searchableText: string;
+  city: string;
+};
+
+type SmartSearchQuery = {
+  normalizedQuery: string;
+  city: string | null;
+  terms: string[];
+};
+
+const SEARCH_CONNECTOR_TOKENS = new Set([
+  "a",
+  "ad",
+  "ao",
+  "au",
+  "da",
+  "de",
+  "del",
+  "della",
+  "dello",
+  "do",
+  "e",
+  "em",
+  "en",
+  "in",
+  "la",
+  "na",
+  "nel",
+  "nella",
+  "nello",
+  "no",
+  "nos",
+  "per",
+  "perto",
+  "sur",
+  "vicino",
+  "near",
+]);
+
+function normalizeSearchValue(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isWholePhraseMatch(haystack: string, phrase: string): boolean {
+  if (!haystack || !phrase) {
+    return false;
+  }
+  return (
+    haystack === phrase ||
+    haystack.startsWith(`${phrase} `) ||
+    haystack.endsWith(` ${phrase}`) ||
+    haystack.includes(` ${phrase} `)
+  );
+}
+
+function parseSmartSearchQuery(rawQuery: string, knownCities: string[]): SmartSearchQuery {
+  const normalizedQuery = normalizeSearchValue(rawQuery);
+  if (!normalizedQuery) {
+    return {
+      normalizedQuery: "",
+      city: null,
+      terms: [],
+    };
+  }
+
+  const matchedCity =
+    knownCities.find((city) => isWholePhraseMatch(normalizedQuery, city)) ?? null;
+
+  const cityTokens = new Set(
+    matchedCity
+      ? matchedCity
+          .split(" ")
+          .map((token) => token.trim())
+          .filter((token) => token.length > 0)
+      : [],
+  );
+  const tokens = normalizedQuery
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+  const terms = tokens.filter(
+    (token) => !SEARCH_CONNECTOR_TOKENS.has(token) && !cityTokens.has(token),
+  );
+
+  return {
+    normalizedQuery,
+    city: matchedCity,
+    terms: terms.length > 0 || matchedCity ? terms : tokens,
+  };
+}
+
+function buildProductSearchIndex(product: Product): ProductSearchIndex {
+  const categoryLabelPt = getCategoryLabel(product.category, "pt-BR");
+  const categoryLabelIt = getCategoryLabel(product.category, "it-IT");
+  const detailValues = Object.values(product.details ?? {})
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" ");
+
+  return {
+    searchableText: normalizeSearchValue(
+      [
+        product.name,
+        product.category,
+        categoryLabelPt,
+        categoryLabelIt,
+        product.city ?? "",
+        product.description ?? "",
+        detailValues,
+      ].join(" "),
+    ),
+    city: normalizeSearchValue(product.city ?? ""),
+  };
+}
+
+function matchesSmartSearchQuery(
+  query: SmartSearchQuery,
+  index: ProductSearchIndex | undefined,
+): boolean {
+  if (!index) {
+    return false;
+  }
+
+  if (!query.normalizedQuery) {
+    return true;
+  }
+
+  if (query.city && !isWholePhraseMatch(index.city, query.city)) {
+    return false;
+  }
+
+  if (query.terms.length === 0) {
+    return true;
+  }
+
+  return query.terms.every((term) => index.searchableText.includes(term));
+}
+
 function parseCoordinate(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -309,6 +457,30 @@ export default function ProductMap({
     [products],
   );
   const hasProductsWithLocation = productsWithLocation.length > 0;
+  const searchableIndexByProductId = React.useMemo(() => {
+    const index = new globalThis.Map<number, ProductSearchIndex>();
+    productsWithLocation.forEach((product) => {
+      index.set(product.id, buildProductSearchIndex(product));
+    });
+    return index;
+  }, [productsWithLocation]);
+  const knownNormalizedCities = React.useMemo(() => {
+    const cities = new Set<string>();
+    productsWithLocation.forEach((product) => {
+      const normalizedCity = normalizeSearchValue(product.city ?? "");
+      if (normalizedCity) {
+        cities.add(normalizedCity);
+      }
+    });
+
+    return Array.from(cities).sort((left, right) => {
+      const tokenCountDifference = right.split(" ").length - left.split(" ").length;
+      if (tokenCountDifference !== 0) {
+        return tokenCountDifference;
+      }
+      return right.length - left.length;
+    });
+  }, [productsWithLocation]);
 
   const [leafletError, setLeafletError] = React.useState("");
   const [isDrawing, setIsDrawing] = React.useState(false);
@@ -385,29 +557,36 @@ export default function ProductMap({
     }
     return productsWithLocation.filter((product) => product.category === activeCategory);
   }, [productsWithLocation, activeCategory]);
+  const mapSearchQuery = React.useMemo(
+    () => parseSmartSearchQuery(searchQuery, knownNormalizedCities),
+    [searchQuery, knownNormalizedCities],
+  );
+  const panelSearchFilterQuery = React.useMemo(
+    () => parseSmartSearchQuery(panelSearchQuery, knownNormalizedCities),
+    [panelSearchQuery, knownNormalizedCities],
+  );
 
   const filteredProducts = React.useMemo(() => {
-    const normalized = searchQuery.trim().toLowerCase();
-    return categoryFilteredProducts.filter(
-      (product) =>
-        normalized.length === 0 ||
-        product.name.toLowerCase().includes(normalized) ||
-        product.category.toLowerCase().includes(normalized),
+    return categoryFilteredProducts.filter((product) =>
+      matchesSmartSearchQuery(
+        mapSearchQuery,
+        searchableIndexByProductId.get(product.id),
+      ),
     );
-  }, [categoryFilteredProducts, searchQuery]);
+  }, [categoryFilteredProducts, mapSearchQuery, searchableIndexByProductId]);
 
   const filteredPanelProducts = React.useMemo(() => {
-    const normalized = panelSearchQuery.trim().toLowerCase();
-    if (!normalized) {
+    if (!panelSearchFilterQuery.normalizedQuery) {
       return selectedProducts;
     }
 
-    return selectedProducts.filter(
-      (product) =>
-        product.name.toLowerCase().includes(normalized) ||
-        product.category.toLowerCase().includes(normalized),
+    return selectedProducts.filter((product) =>
+      matchesSmartSearchQuery(
+        panelSearchFilterQuery,
+        searchableIndexByProductId.get(product.id),
+      ),
     );
-  }, [panelSearchQuery, selectedProducts]);
+  }, [panelSearchFilterQuery, searchableIndexByProductId, selectedProducts]);
 
   React.useEffect(() => {
     if (!openResultsByDefault) {
@@ -970,7 +1149,7 @@ export default function ProductMap({
               />
               <input
                 type="text"
-                placeholder={t("Buscar produtos ou categorias...")}
+                placeholder={t("Buscar produtos, categorias ou cidade (ex.: casa em Ardea)...")}
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 className="w-full pl-10 pr-4 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"
@@ -1120,7 +1299,7 @@ export default function ProductMap({
                   <input
                     ref={panelSearchInputRef}
                     type="text"
-                    placeholder={t("Filtrar resultados...")}
+                    placeholder={t("Filtrar resultados por produto, categoria ou cidade...")}
                     value={panelSearchQuery}
                     onChange={(event) => setPanelSearchQuery(event.target.value)}
                     className="w-full pl-9 pr-4 py-2 bg-white/80 border border-stone-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"

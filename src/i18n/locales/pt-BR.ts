@@ -12,5 +12,7 @@ export const ptBRTranslations: Record<string, string> = {
   "Expandir painel": "Expandir painel",
   "Reduzir painel": "Reduzir painel",
   "Cidade não informada": "Cidade não informada",
+  "Buscar produtos, categorias ou cidade (ex.: casa em Ardea)...": "Buscar produtos, categorias ou cidade (ex.: casa em Ardea)...",
+  "Filtrar resultados por produto, categoria ou cidade...": "Filtrar resultados por produto, categoria ou cidade...",
   "Limpar busca": "Limpar busca",
 };
