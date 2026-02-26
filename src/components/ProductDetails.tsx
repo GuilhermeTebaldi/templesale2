@@ -47,6 +47,32 @@ const detailLabelByKey: Record<string, string> = {
   color: "Cor",
   year: "Ano",
 };
+const REAL_ESTATE_CATEGORIES = new Set(["Imóveis", "Terreno", "Aluguel"]);
+const DETAIL_KEYS_REAL_ESTATE = new Set(["type", "area", "room", "rooms", "bathroom", "bathrooms", "garage", "parking"]);
+const DETAIL_KEYS_VEHICLE = new Set(["brand", "model", "color", "year"]);
+const DETAIL_KEYS_ELECTRONICS = new Set(["brand", "model", "color"]);
+
+function getAllowedDetailKeys(category: string): Set<string> | null {
+  const normalizedCategory = String(category ?? "").trim();
+  if (REAL_ESTATE_CATEGORIES.has(normalizedCategory)) {
+    return DETAIL_KEYS_REAL_ESTATE;
+  }
+  if (normalizedCategory === "Veículos") {
+    return DETAIL_KEYS_VEHICLE;
+  }
+  if (
+    [
+      "Eletrônicos e Celulares",
+      "Informática e Games",
+      "Moda e Acessórios",
+      "Eletrodomésticos",
+      "Outros",
+    ].includes(normalizedCategory)
+  ) {
+    return DETAIL_KEYS_ELECTRONICS;
+  }
+  return null;
+}
 
 export default function ProductDetails({
   product,
@@ -74,8 +100,10 @@ export default function ProductDetails({
 
   const images = resolveProductImages(product);
   const description = product.description?.trim() || t("Descrição não informada pelo vendedor.");
+  const allowedDetailKeys = getAllowedDetailKeys(product.category);
   const detailsEntries = Object.entries(product.details ?? {}).filter(
     (entry): entry is [string, string] =>
+      (!allowedDetailKeys || allowedDetailKeys.has(String(entry[0]).trim().toLowerCase())) &&
       typeof entry[1] === "string" && entry[1].trim() !== "",
   );
   const hasCoordinates =

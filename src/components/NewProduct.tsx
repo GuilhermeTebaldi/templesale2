@@ -62,6 +62,32 @@ const EURO_AMOUNT_FORMATTER = new Intl.NumberFormat("it-IT", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
+const REAL_ESTATE_CATEGORIES = new Set(["Imóveis", "Terreno", "Aluguel"]);
+const DETAILS_KEYS_REAL_ESTATE = new Set(["type", "area", "rooms", "bathrooms", "parking"]);
+const DETAILS_KEYS_VEHICLE = new Set(["brand", "model", "color", "year"]);
+const DETAILS_KEYS_ELECTRONICS = new Set(["brand", "model", "color"]);
+
+function getAllowedDetailKeys(category: string): Set<string> {
+  const normalizedCategory = String(category ?? "").trim();
+  if (REAL_ESTATE_CATEGORIES.has(normalizedCategory)) {
+    return DETAILS_KEYS_REAL_ESTATE;
+  }
+  if (normalizedCategory === "Veículos") {
+    return DETAILS_KEYS_VEHICLE;
+  }
+  if (
+    [
+      "Eletrônicos e Celulares",
+      "Informática e Games",
+      "Moda e Acessórios",
+      "Eletrodomésticos",
+      "Outros",
+    ].includes(normalizedCategory)
+  ) {
+    return DETAILS_KEYS_ELECTRONICS;
+  }
+  return new Set();
+}
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -338,10 +364,13 @@ export default function NewProduct({
     setIsPublishing(true);
 
     try {
+      const allowedDetailKeys = getAllowedDetailKeys(normalizedCategory);
       const details = Object.fromEntries(
         Object.entries(formData.details).filter(
           (entry): entry is [string, string] =>
-            typeof entry[1] === "string" && entry[1].trim() !== "",
+            allowedDetailKeys.has(String(entry[0]).trim().toLowerCase()) &&
+            typeof entry[1] === "string" &&
+            entry[1].trim() !== "",
         ),
       );
       const newProduct: CreateProductInput = {
