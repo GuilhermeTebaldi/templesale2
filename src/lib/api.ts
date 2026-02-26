@@ -500,8 +500,14 @@ function normalizeProductItem(value: unknown): ProductDto | null {
     return null;
   }
 
+  const legacyImagesValue = firstDefined(parsed, ["images"]);
+  const canonicalImagesValue = firstDefined(parsed, ["image_urls", "imageUrls"]);
+  const preferredImagesValue =
+    toStringArray(legacyImagesValue).length > 0
+      ? legacyImagesValue
+      : (canonicalImagesValue ?? legacyImagesValue);
   const images = normalizeProductImages(
-    firstDefined(parsed, ["images", "image_urls"]),
+    preferredImagesValue,
     firstDefined(parsed, ["image", "image_url"]),
   );
   const image = images[0] ?? "";
