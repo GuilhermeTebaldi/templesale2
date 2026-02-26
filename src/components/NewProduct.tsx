@@ -50,6 +50,7 @@ type GeoPoint = {
   latitude: number;
   longitude: number;
 };
+type LocationSource = "current" | "map" | null;
 
 const MAX_COORDINATE_LATITUDE = 90;
 const MAX_COORDINATE_LONGITUDE = 180;
@@ -222,6 +223,7 @@ export default function NewProduct({
   const [selectedMapPoint, setSelectedMapPoint] = React.useState<GeoPoint | null>(
     () => initialLocation,
   );
+  const [locationSource, setLocationSource] = React.useState<LocationSource>(null);
 
   React.useEffect(() => {
     setFormData(buildInitialFormState(initialProduct));
@@ -229,6 +231,7 @@ export default function NewProduct({
     setIsSuccess(false);
     setErrorMessage("");
     setIsMapPickerOpen(false);
+    setLocationSource(null);
 
     const nextLocation = getInitialLocationPoint(initialProduct);
     setSelectedMapPoint(nextLocation);
@@ -447,6 +450,7 @@ export default function NewProduct({
         }));
         setMapCenter(nextPoint);
         setSelectedMapPoint(nextPoint);
+        setLocationSource("current");
       },
       (message) => {
         setErrorMessage(message);
@@ -492,6 +496,7 @@ export default function NewProduct({
       latitude: point.latitude.toFixed(6),
       longitude: point.longitude.toFixed(6),
     }));
+    setLocationSource("map");
     handleCloseMapPicker();
   };
 
@@ -691,7 +696,11 @@ export default function NewProduct({
                 <button
                   type="button"
                   onClick={handleUseCurrentLocation}
-                  className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-600 hover:text-stone-900 transition-colors"
+                  className={`inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold transition-colors ${
+                    locationSource === "current"
+                      ? "text-emerald-600"
+                      : "text-stone-600 hover:text-stone-900"
+                  }`}
                 >
                   <Navigation className="w-4 h-4" />
                   {t("Usar localização atual")}
@@ -700,7 +709,11 @@ export default function NewProduct({
                 <button
                   type="button"
                   onClick={handleOpenMapPicker}
-                  className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-600 hover:text-stone-900 transition-colors"
+                  className={`inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold transition-colors ${
+                    locationSource === "map"
+                      ? "text-emerald-600"
+                      : "text-stone-600 hover:text-stone-900"
+                  }`}
                 >
                   <MapPin className="w-4 h-4" />
                   {t("Escolher local no mapa")}
