@@ -16,7 +16,22 @@ export const localeOptions: Array<{ value: AppLocale; label: string }> = [
   { value: "pt-BR", label: "Português (Brasil)" },
 ];
 
+function normalizeLocaleCandidate(value: unknown): AppLocale | null {
+  if (value === "it-IT" || value === "pt-BR") {
+    return value;
+  }
+  return null;
+}
+
 export function getInitialLocale(): AppLocale {
+  if (typeof window !== "undefined") {
+    const storedLocale = normalizeLocaleCandidate(
+      window.localStorage.getItem(LOCALE_STORAGE_KEY),
+    );
+    if (storedLocale) {
+      return storedLocale;
+    }
+  }
   return DEFAULT_LOCALE;
 }
 

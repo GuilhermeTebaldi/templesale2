@@ -327,6 +327,16 @@ export default function App() {
   }, [currentUser]);
 
   React.useEffect(() => {
+    const preferredLocale = currentUser?.preferredLocale;
+    if (!preferredLocale) {
+      return;
+    }
+    if (preferredLocale !== locale) {
+      setLocale(preferredLocale);
+    }
+  }, [currentUser?.id, currentUser?.preferredLocale, locale, setLocale]);
+
+  React.useEffect(() => {
     let cancelled = false;
 
     const fetchNotifications = async () => {
@@ -577,6 +587,40 @@ export default function App() {
     setCurrentUser(user);
     setIsAuthModalOpen(false);
   };
+
+  const handleLocaleChange = React.useCallback(
+    (nextLocale: AppLocale) => {
+      setLocale(nextLocale);
+      if (!currentUser) {
+        return;
+      }
+
+      setCurrentUser((prev) =>
+        prev ? { ...prev, preferredLocale: nextLocale } : prev,
+      );
+
+      void api
+        .updatePreferredLocale(nextLocale)
+        .then((updatedUser) => {
+          if (!updatedUser) {
+            return;
+          }
+          setCurrentUser((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  ...updatedUser,
+                  preferredLocale: updatedUser.preferredLocale ?? nextLocale,
+                }
+              : prev,
+          );
+        })
+        .catch((error) => {
+          console.error("Error updating preferred locale:", error);
+        });
+    },
+    [currentUser, setLocale],
+  );
 
   const likedProductIds = React.useMemo(
     () => new Set(likedProducts.map((product) => product.id)),
@@ -1294,7 +1338,7 @@ export default function App() {
                       <button
                         key={option.value}
                         onClick={() => {
-                          setLocale(option.value as AppLocale);
+                          handleLocaleChange(option.value as AppLocale);
                           setIsLanguageMenuOpen(false);
                         }}
                         className={`w-full flex items-center justify-between gap-4 pl-12 pr-4 py-3 hover:bg-stone-100 transition-colors group ${

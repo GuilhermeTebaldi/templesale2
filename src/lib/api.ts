@@ -58,6 +58,7 @@ export interface SessionUser {
   name: string;
   email: string;
   avatarUrl?: string;
+  preferredLocale?: "it-IT" | "pt-BR";
   country?: string;
   state?: string;
   city?: string;
@@ -473,6 +474,13 @@ function normalizeCountryIso(value: unknown): string | undefined {
   return undefined;
 }
 
+function normalizeLocaleValue(value: unknown): "it-IT" | "pt-BR" | undefined {
+  if (value === "it-IT" || value === "pt-BR") {
+    return value;
+  }
+  return undefined;
+}
+
 function normalizePhoneDigits(value: unknown): string {
   return toStringValue(value).replace(/\D/g, "");
 }
@@ -708,6 +716,19 @@ function normalizeSessionUserItem(value: unknown): SessionUser | null {
   );
   if (avatarUrl) {
     user.avatarUrl = avatarUrl;
+  }
+
+  const preferredLocale = normalizeLocaleValue(
+    firstDefined(parsed, [
+      "preferredLocale",
+      "preferred_locale",
+      "locale",
+      "language",
+      "lang",
+    ]),
+  );
+  if (preferredLocale) {
+    user.preferredLocale = preferredLocale;
   }
 
   const country = toStringValue(firstDefined(parsed, ["country", "seller_country"]));
@@ -1528,6 +1549,34 @@ export const api = {
     }
 
     throw new Error("Resposta inválida ao atualizar foto de perfil.");
+  },
+  async updatePreferredLocale(locale: "it-IT" | "pt-BR") {
+    const payload = { locale };
+    try {
+      const raw = await request<unknown>("/api/profile/locale", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      return normalizeSessionUserItem(raw);
+    } catch (error) {
+      if (!(error instanceof Error)) {
+        throw error;
+      }
+      const message = error.message.toLowerCase();
+      const shouldFallback =
+        message.includes("404") ||
+        message.includes("rota da api não encontrada") ||
+        message.includes("cannot put /api/profile/locale");
+      if (!shouldFallback) {
+        throw error;
+      }
+    }
+
+    const raw = await request<unknown>("/api/auth/locale", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    return normalizeSessionUserItem(raw);
   },
   async getProducts() {
     const payload = await request<unknown>("/api/products");
