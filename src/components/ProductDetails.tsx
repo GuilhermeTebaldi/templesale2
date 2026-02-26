@@ -567,17 +567,6 @@ export default function ProductDetails({
                 )}
               </div>
 
-              {/* Additional Details Accordion-style */}
-              <div className="mt-16 border-t border-stone-100">
-                {[t("Frete e devoluções"), t("Instruções de cuidado"), t("Sustentabilidade")].map((item) => (
-                  <div key={item} className="border-b border-stone-100 py-6 flex justify-between items-center cursor-pointer group">
-                    <span className="text-xs uppercase tracking-widest font-medium text-stone-600 group-hover:text-stone-900 transition-colors">
-                      {item}
-                    </span>
-                    <Plus className="w-4 h-4 text-stone-300 group-hover:text-stone-600 transition-colors" />
-                  </div>
-                ))}
-              </div>
             </motion.div>
           </div>
         </div>
