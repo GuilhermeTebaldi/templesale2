@@ -263,7 +263,6 @@ export default function ProductDetails({
   };
 
   return (
-    <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -602,6 +601,5 @@ export default function ProductDetails({
           )}
         </AnimatePresence>
       </motion.div>
-    </AnimatePresence>
   );
 }
