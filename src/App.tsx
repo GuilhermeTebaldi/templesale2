@@ -16,6 +16,7 @@ import { useI18n } from "./i18n/provider";
 import { localeOptions, type AppLocale } from "./i18n";
 import { formatCollectionDate, formatRelativeTime } from "./i18n/formatters";
 import { getCategoryLabel } from "./i18n/categories";
+import { formatEuroFromUnknown } from "./lib/currency";
 
 const CATEGORIES = [
   "All",
@@ -1953,23 +1954,38 @@ export default function App() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
                 {filteredProducts.map((product) => (
                   <div
                     key={`search-product-${product.id}`}
-                    className="flex flex-col gap-2 group cursor-pointer"
+                    className="group cursor-pointer rounded-2xl border border-stone-200 bg-white overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300"
                     onClick={() => openProductDetails(product, { fromSearch: true })}
                   >
-                    <div className="aspect-3/4 overflow-hidden bg-stone-100">
+                    <div className="relative aspect-3/4 overflow-hidden bg-stone-100">
                       <img
                         src={product.image}
                         alt={product.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
+                      <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-white/90 backdrop-blur-sm border border-stone-200 text-[9px] uppercase tracking-[0.16em] text-stone-600">
+                        {getCategoryLabel(product.category, locale)}
+                      </span>
                     </div>
-                    <span className="text-[10px] font-serif italic text-stone-800 truncate">
-                      {product.name}
-                    </span>
+                    <div className="p-3 sm:p-4">
+                      <h4 className="text-sm sm:text-base font-serif italic text-stone-900 leading-snug mb-2 truncate">
+                        {product.name}
+                      </h4>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-sm text-stone-700">
+                          {formatEuroFromUnknown(product.price, locale)}
+                        </span>
+                        {product.quantity !== undefined && (
+                          <span className="text-[10px] uppercase tracking-[0.16em] text-stone-400">
+                            {t("Quantidade")}: {Math.max(0, Number(product.quantity) || 0)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
