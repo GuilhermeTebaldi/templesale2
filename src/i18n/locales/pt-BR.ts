@@ -11,5 +11,6 @@ export const ptBRTranslations: Record<string, string> = {
   "{count} itens encontrados": "{count} itens encontrados",
   "Expandir painel": "Expandir painel",
   "Reduzir painel": "Reduzir painel",
+  "Cidade não informada": "Cidade não informada",
   "Limpar busca": "Limpar busca",
 };

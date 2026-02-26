@@ -107,6 +107,7 @@ export const itITTranslations: Record<string, string> = {
   "Nenhum produto encontrado": "Nessun prodotto trovato",
   "Tente mudar o filtro ou desenhar outra área.": "Prova a cambiare filtro o a disegnare un'altra area.",
   "Abrir detalhes de {name}": "Apri dettagli di {name}",
+  "Cidade não informada": "Città non disponibile",
   "Nova pesquisa": "Nuova ricerca",
   "Clique e arraste para desenhar no mapa": "Clicca e trascina per disegnare nella mappa",
   "Localização manual": "Posizione manuale",

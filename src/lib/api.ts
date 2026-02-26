@@ -11,6 +11,7 @@ export interface ProductDto {
   ownerId?: number;
   latitude?: number;
   longitude?: number;
+  city?: string;
   sellerName?: string;
   sellerWhatsappCountryIso?: string;
   sellerWhatsappNumber?: string;
@@ -599,6 +600,11 @@ function normalizeProductItem(value: unknown): ProductDto | null {
   const longitude = toOptionalNumber(firstDefined(parsed, ["longitude", "lng", "lon"]));
   if (longitude !== undefined) {
     product.longitude = longitude;
+  }
+
+  const city = toStringValue(firstDefined(parsed, ["city", "seller_city", "sellerCity"]));
+  if (city) {
+    product.city = city;
   }
 
   const sellerRecord = (() => {

@@ -1231,7 +1231,7 @@ export default function ProductMap({
                               {formatEuroFromUnknown(product.price, locale)}
                             </span>
                             <span className="text-[10px] sm:text-xs font-semibold text-stone-400 text-left sm:text-right">
-                              {product.latitude.toFixed(5)}, {product.longitude.toFixed(5)}
+                              {product.city?.trim() || t("Cidade não informada")}
                             </span>
                           </div>
                         </div>

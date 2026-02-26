@@ -19,6 +19,7 @@ export interface Product {
   ownerId?: number;
   latitude?: number;
   longitude?: number;
+  city?: string;
   sellerName?: string;
   sellerWhatsappCountryIso?: string;
   sellerWhatsappNumber?: string;
