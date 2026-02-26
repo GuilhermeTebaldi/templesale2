@@ -504,6 +504,7 @@ export default function ProductMap({
   const isPointerDownRef = React.useRef(false);
   const isDrawingRef = React.useRef(false);
   const productsWithLocationRef = React.useRef<LocatedProduct[]>([]);
+  const categoryFilteredProductsRef = React.useRef<LocatedProduct[]>([]);
   const lastStateSyncRef = React.useRef(0);
   const tileLayerRef = React.useRef<LeafletTileLayerInstance | null>(null);
   const tileFallbackTimerRef = React.useRef<number | null>(null);
@@ -557,6 +558,11 @@ export default function ProductMap({
     }
     return productsWithLocation.filter((product) => product.category === activeCategory);
   }, [productsWithLocation, activeCategory]);
+
+  React.useEffect(() => {
+    categoryFilteredProductsRef.current = categoryFilteredProducts;
+  }, [categoryFilteredProducts]);
+
   const mapSearchQuery = React.useMemo(
     () => parseSmartSearchQuery(searchQuery, knownNormalizedCities),
     [searchQuery, knownNormalizedCities],
@@ -889,7 +895,7 @@ export default function ProductMap({
           selectionPolygonRef.current = polygon;
 
           setCurrentPolygon(completedPolygon);
-          const found = productsWithLocationRef.current.filter((product) =>
+          const found = categoryFilteredProductsRef.current.filter((product) =>
             isPointInPolygon([product.latitude, product.longitude], completedPolygon),
           );
           setSelectedProducts(found);
@@ -1071,11 +1077,11 @@ export default function ProductMap({
       return;
     }
 
-    const found = productsWithLocation.filter((product) =>
+    const found = categoryFilteredProducts.filter((product) =>
       isPointInPolygon([product.latitude, product.longitude], currentPolygon),
     );
     setSelectedProducts(found);
-  }, [currentPolygon, productsWithLocation, showResults]);
+  }, [categoryFilteredProducts, currentPolygon, showResults]);
 
   React.useEffect(() => {
     if (filteredProducts.length !== 1 || !mapRef.current) {
