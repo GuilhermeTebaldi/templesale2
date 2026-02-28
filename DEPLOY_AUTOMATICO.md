@@ -7,7 +7,7 @@ Este repositório agora possui:
 - `.github/workflows/deploy-vercel.yml`
   - faz deploy automático para produção na Vercel em cada push na `main`
 - `.github/workflows/deploy-render-backend.yml`
-  - detecta mudanças de backend no push da `main` e dispara deploy automático no Render via Deploy Hook
+  - usa regra invertida: considera backend tudo que não for frontend conhecido e dispara deploy automático no Render via Deploy Hook
 
 ## O que você precisa configurar 1 vez
 
@@ -48,6 +48,9 @@ Opção 2: diretamente no Dashboard da Vercel em `Project Settings`.
 2. Faz commit + push para `main`.
 3. GitHub Actions valida e publica automático no `www.templesale.com` (Vercel).
 4. Se houver mudança de backend, o workflow dispara deploy automático do Render.
+
+Observação:
+- O workflow de backend está em modo fail-safe (regra invertida). Se surgir pasta nova de backend no futuro, o deploy do Render continua sendo acionado sem precisar atualizar lista de caminhos.
 
 Sem push para `main`, nada sobe para produção.
 
