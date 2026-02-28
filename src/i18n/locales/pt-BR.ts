@@ -27,4 +27,39 @@ export const ptBRTranslations: Record<string, string> = {
     "Você alterou os dados salvos. Clique em salvar novamente.",
   "Informações salvas na sua conta.": "Informações salvas na sua conta.",
   "Falha ao salvar as informações rápidas.": "Falha ao salvar as informações rápidas.",
+  "Comentários e avaliações": "Comentários e avaliações",
+  "Deixe sua avaliação com estrelas e seu comentário sobre esta publicação.":
+    "Deixe sua avaliação com estrelas e seu comentário sobre esta publicação.",
+  "Sua avaliação": "Sua avaliação",
+  "Escreva aqui seu comentário sobre este produto...":
+    "Escreva aqui seu comentário sobre este produto...",
+  "Caracteres restantes: {count}": "Caracteres restantes: {count}",
+  "Enviando comentário...": "Enviando comentário...",
+  "Comentar": "Comentar",
+  "Faça login para comentar e avaliar esta publicação.":
+    "Faça login para comentar e avaliar esta publicação.",
+  "Carregando comentários...": "Carregando comentários...",
+  "Ainda não existem comentários para esta publicação.":
+    "Ainda não existem comentários para esta publicação.",
+  "Resposta do dono": "Resposta do dono",
+  "Responder comentário": "Responder comentário",
+  "Escreva uma resposta para este comentário...":
+    "Escreva uma resposta para este comentário...",
+  "Responder": "Responder",
+  "Escreva um comentário para enviar.": "Escreva um comentário para enviar.",
+  "Escreva uma resposta antes de enviar.": "Escreva uma resposta antes de enviar.",
+  "Falha ao carregar comentários desta publicação.":
+    "Falha ao carregar comentários desta publicação.",
+  "Falha ao enviar comentário nesta publicação.":
+    "Falha ao enviar comentário nesta publicação.",
+  "Falha ao enviar resposta nesta publicação.":
+    "Falha ao enviar resposta nesta publicação.",
+  "Avaliar com {count} estrela(s)": "Avaliar com {count} estrela(s)",
+  "Outros produtos da mesma região": "Outros produtos da mesma região",
+  "Outros produtos da mesma categoria": "Outros produtos da mesma categoria",
+  "Outros produtos disponíveis": "Outros produtos disponíveis",
+  "Mostrando outros anúncios para você explorar rapidamente.":
+    "Mostrando outros anúncios para você explorar rapidamente.",
+  "Ainda não existem outros anúncios disponíveis.":
+    "Ainda não existem outros anúncios disponíveis.",
 };

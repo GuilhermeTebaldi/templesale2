@@ -45,6 +45,31 @@ type ProductRow = {
   seller_whatsapp_number: string | null;
 };
 
+type ProductCommentRow = {
+  id: number;
+  product_id: number;
+  user_id: number;
+  parent_comment_id: number | null;
+  rating: number | null;
+  body: string;
+  created_at: number;
+  author_name: string;
+  author_avatar_url: string | null;
+};
+
+type ProductCommentRecord = {
+  id: number;
+  productId: number;
+  userId: number;
+  parentCommentId?: number;
+  rating?: number;
+  body: string;
+  createdAt: number;
+  authorName: string;
+  authorAvatarUrl: string;
+  replies: ProductCommentRecord[];
+};
+
 type NotificationEventType = "product_like" | "product_cart_interest";
 
 type NotificationEventRow = {
@@ -324,6 +349,9 @@ const NEW_PRODUCT_DRAFT_ALLOWED_DETAIL_KEYS = new Set([
   "year",
 ]);
 const NEW_PRODUCT_DRAFT_MAX_DETAILS = 24;
+const PRODUCT_COMMENT_MIN_RATING = 1;
+const PRODUCT_COMMENT_MAX_RATING = 5;
+const PRODUCT_COMMENT_MAX_BODY_LENGTH = 1200;
 
 const PRODUCT_SELECT_FIELDS = `
   p.id,
@@ -505,6 +533,20 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
   };
 }
 
+function normalizeProductCommentRow(row: Record<string, unknown>): ProductCommentRow {
+  return {
+    id: toRequiredNumber(row.id),
+    product_id: toRequiredNumber(row.product_id),
+    user_id: toRequiredNumber(row.user_id),
+    parent_comment_id: toNullableNumber(row.parent_comment_id),
+    rating: toNullableNumber(row.rating),
+    body: String(row.body ?? ""),
+    created_at: toRequiredNumber(row.created_at),
+    author_name: String(row.author_name ?? "").trim() || `Usuário ${toRequiredNumber(row.user_id)}`,
+    author_avatar_url: toNullableString(row.author_avatar_url),
+  };
+}
+
 function normalizeVendorRow(row: Record<string, unknown>): VendorRow {
   return {
     id: toRequiredNumber(row.id),
@@ -633,6 +675,20 @@ function initializeSqliteDatabase() {
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS product_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      parent_comment_id INTEGER,
+      rating INTEGER,
+      body TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_comment_id) REFERENCES product_comments(id) ON DELETE CASCADE,
+      CHECK (rating IS NULL OR (rating >= 1 AND rating <= 5))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id);
@@ -640,6 +696,10 @@ function initializeSqliteDatabase() {
       ON product_cart_notifications(owner_user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_product_id
       ON product_cart_notifications(product_id);
+    CREATE INDEX IF NOT EXISTS idx_product_comments_product_created
+      ON product_comments(product_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_product_comments_parent
+      ON product_comments(parent_comment_id);
   `);
 
   const productColumns = db.prepare("PRAGMA table_info(products)").all() as Array<{ name: string }>;
@@ -782,6 +842,19 @@ async function initializePostgresDatabase() {
         created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
       )
     `,
+    `
+      CREATE TABLE IF NOT EXISTS product_comments (
+        id BIGSERIAL PRIMARY KEY,
+        product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        parent_comment_id BIGINT REFERENCES product_comments(id) ON DELETE CASCADE,
+        rating INTEGER,
+        body TEXT NOT NULL DEFAULT '',
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+        CONSTRAINT product_comments_rating_range
+          CHECK (rating IS NULL OR (rating >= 1 AND rating <= 5))
+      )
+    `,
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT",
@@ -818,6 +891,12 @@ async function initializePostgresDatabase() {
     "ALTER TABLE product_cart_notifications ADD COLUMN IF NOT EXISTS actor_name TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE product_cart_notifications ADD COLUMN IF NOT EXISTS product_id BIGINT",
     "ALTER TABLE product_cart_notifications ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
+    "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS product_id BIGINT",
+    "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS user_id BIGINT",
+    "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS parent_comment_id BIGINT",
+    "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS rating INTEGER",
+    "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS body TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT ''",
@@ -847,6 +926,8 @@ async function initializePostgresDatabase() {
     "CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id)",
     "CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_owner_created ON product_cart_notifications(owner_user_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_product_id ON product_cart_notifications(product_id)",
+    "CREATE INDEX IF NOT EXISTS idx_product_comments_product_created ON product_comments(product_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_product_comments_parent ON product_comments(parent_comment_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_product_likes_user_product_unique ON product_likes(user_id, product_id)",
     "CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)",
@@ -1018,6 +1099,163 @@ async function selectProductByIdRow(productId: number): Promise<ProductRow | und
     )
     .get(productId) as Record<string, unknown> | undefined;
   return row ? normalizeProductRow(row) : undefined;
+}
+
+async function selectProductCommentByIdRow(commentId: number): Promise<ProductCommentRow | undefined> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          c.id,
+          c.product_id,
+          c.user_id,
+          c.parent_comment_id,
+          c.rating,
+          c.body,
+          c.created_at,
+          COALESCE(
+            NULLIF(BTRIM(u.name), ''),
+            NULLIF(BTRIM(u.username), ''),
+            NULLIF(BTRIM(u.email), ''),
+            CONCAT('Usuário ', c.user_id::text)
+          ) AS author_name,
+          NULLIF(BTRIM(u.avatar_url), '') AS author_avatar_url
+        FROM product_comments c
+        INNER JOIN users u ON u.id = c.user_id
+        WHERE c.id = $1
+      `,
+      [commentId],
+    );
+    const row = result.rows[0];
+    return row ? normalizeProductCommentRow(row) : undefined;
+  }
+
+  const row = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          c.id,
+          c.product_id,
+          c.user_id,
+          c.parent_comment_id,
+          c.rating,
+          c.body,
+          c.created_at,
+          COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), 'Usuário') AS author_name,
+          NULLIF(TRIM(u.avatar_url), '') AS author_avatar_url
+        FROM product_comments c
+        INNER JOIN users u ON u.id = c.user_id
+        WHERE c.id = ?
+      `,
+    )
+    .get(commentId) as Record<string, unknown> | undefined;
+  return row ? normalizeProductCommentRow(row) : undefined;
+}
+
+async function selectProductCommentsRows(productId: number): Promise<ProductCommentRow[]> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          c.id,
+          c.product_id,
+          c.user_id,
+          c.parent_comment_id,
+          c.rating,
+          c.body,
+          c.created_at,
+          COALESCE(
+            NULLIF(BTRIM(u.name), ''),
+            NULLIF(BTRIM(u.username), ''),
+            NULLIF(BTRIM(u.email), ''),
+            CONCAT('Usuário ', c.user_id::text)
+          ) AS author_name,
+          NULLIF(BTRIM(u.avatar_url), '') AS author_avatar_url
+        FROM product_comments c
+        INNER JOIN users u ON u.id = c.user_id
+        WHERE c.product_id = $1
+        ORDER BY c.created_at DESC, c.id DESC
+      `,
+      [productId],
+    );
+    return result.rows.map(normalizeProductCommentRow);
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          c.id,
+          c.product_id,
+          c.user_id,
+          c.parent_comment_id,
+          c.rating,
+          c.body,
+          c.created_at,
+          COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), 'Usuário') AS author_name,
+          NULLIF(TRIM(u.avatar_url), '') AS author_avatar_url
+        FROM product_comments c
+        INNER JOIN users u ON u.id = c.user_id
+        WHERE c.product_id = ?
+        ORDER BY c.created_at DESC, c.id DESC
+      `,
+    )
+    .all(productId) as Array<Record<string, unknown>>;
+  return rows.map(normalizeProductCommentRow);
+}
+
+async function createProductCommentRecord(input: {
+  productId: number;
+  userId: number;
+  parentCommentId: number | null;
+  rating: number | null;
+  body: string;
+}): Promise<number> {
+  const createdAt = Math.floor(Date.now() / 1000);
+
+  if (pgPool) {
+    const result = await pgPool.query<{ id: number | string }>(
+      `
+        INSERT INTO product_comments (
+          product_id,
+          user_id,
+          parent_comment_id,
+          rating,
+          body,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+      `,
+      [input.productId, input.userId, input.parentCommentId, input.rating, input.body, createdAt],
+    );
+    return toRequiredNumber(result.rows[0]?.id);
+  }
+
+  const result = requireSqliteDb()
+    .prepare(
+      `
+        INSERT INTO product_comments (
+          product_id,
+          user_id,
+          parent_comment_id,
+          rating,
+          body,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+      `,
+    )
+    .run(
+      input.productId,
+      input.userId,
+      input.parentCommentId,
+      input.rating,
+      input.body,
+      createdAt,
+    );
+
+  return Number(result.lastInsertRowid);
 }
 
 async function selectLikedProductsByUserRows(userId: number): Promise<ProductRow[]> {
@@ -1973,6 +2211,82 @@ function rowToProduct(row: ProductRow): ProductRecord {
   return product;
 }
 
+function rowToProductComment(row: ProductCommentRow): ProductCommentRecord {
+  const normalized: ProductCommentRecord = {
+    id: row.id,
+    productId: row.product_id,
+    userId: row.user_id,
+    body: row.body,
+    createdAt: row.created_at,
+    authorName: row.author_name.trim() || `Usuário ${row.user_id}`,
+    authorAvatarUrl: row.author_avatar_url ?? "",
+    replies: [],
+  };
+
+  if (row.parent_comment_id !== null) {
+    normalized.parentCommentId = row.parent_comment_id;
+  }
+  if (row.rating !== null) {
+    normalized.rating = row.rating;
+  }
+
+  return normalized;
+}
+
+function buildProductCommentsThread(rows: ProductCommentRow[]): ProductCommentRecord[] {
+  const commentsById = new globalThis.Map<number, ProductCommentRecord>();
+  const topLevelComments: ProductCommentRecord[] = [];
+
+  for (const row of rows) {
+    commentsById.set(row.id, rowToProductComment(row));
+  }
+
+  for (const row of rows) {
+    const currentComment = commentsById.get(row.id);
+    if (!currentComment) {
+      continue;
+    }
+
+    if (row.parent_comment_id === null) {
+      topLevelComments.push(currentComment);
+      continue;
+    }
+
+    const parentComment = commentsById.get(row.parent_comment_id);
+    if (!parentComment) {
+      topLevelComments.push(currentComment);
+      continue;
+    }
+    parentComment.replies.push(currentComment);
+  }
+
+  const sortByNewest = (left: ProductCommentRecord, right: ProductCommentRecord) => {
+    if (right.createdAt !== left.createdAt) {
+      return right.createdAt - left.createdAt;
+    }
+    return right.id - left.id;
+  };
+  const sortByOldest = (left: ProductCommentRecord, right: ProductCommentRecord) => {
+    if (left.createdAt !== right.createdAt) {
+      return left.createdAt - right.createdAt;
+    }
+    return left.id - right.id;
+  };
+
+  const sortRecursively = (comments: ProductCommentRecord[]) => {
+    comments.forEach((comment) => {
+      if (comment.replies.length > 0) {
+        comment.replies.sort(sortByOldest);
+        sortRecursively(comment.replies);
+      }
+    });
+  };
+
+  topLevelComments.sort(sortByNewest);
+  sortRecursively(topLevelComments);
+  return topLevelComments;
+}
+
 function rowToPublicVendor(row: VendorRow): PublicVendorRecord {
   return {
     id: row.id,
@@ -2150,6 +2464,50 @@ function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
     latitude,
     longitude,
   };
+}
+
+function toOptionalPositiveInteger(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function normalizeIncomingProductCommentBody(value: unknown): string {
+  const body = String(value ?? "").trim();
+  if (!body) {
+    throw new Error("Comentário é obrigatório.");
+  }
+  if (body.length > PRODUCT_COMMENT_MAX_BODY_LENGTH) {
+    throw new Error(
+      `Comentário deve ter no máximo ${PRODUCT_COMMENT_MAX_BODY_LENGTH} caracteres.`,
+    );
+  }
+  return body;
+}
+
+function normalizeIncomingProductCommentRating(value: unknown, required: boolean): number | null {
+  const optionalRating = toOptionalPositiveInteger(value);
+  if (optionalRating === null) {
+    if (required) {
+      throw new Error("Avaliação em estrelas é obrigatória.");
+    }
+    return null;
+  }
+
+  if (
+    optionalRating < PRODUCT_COMMENT_MIN_RATING ||
+    optionalRating > PRODUCT_COMMENT_MAX_RATING
+  ) {
+    throw new Error(
+      `Avaliação deve estar entre ${PRODUCT_COMMENT_MIN_RATING} e ${PRODUCT_COMMENT_MAX_RATING}.`,
+    );
+  }
+  return optionalRating;
 }
 
 function createEmptyNewProductDraftDefaults(): NewProductDraftDefaults {
@@ -3446,6 +3804,118 @@ async function bootstrap() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao listar produtos.";
       res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/products/:id", async (req, res) => {
+    const productId = Number(req.params.id);
+    if (!Number.isInteger(productId) || productId <= 0) {
+      res.status(400).json({ error: "ID de produto inválido." });
+      return;
+    }
+
+    try {
+      const product = await selectProductByIdRow(productId);
+      if (!product) {
+        res.status(404).json({ error: "Produto não encontrado." });
+        return;
+      }
+      res.json(rowToProduct(product));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao carregar produto.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/products/:id/comments", async (req, res) => {
+    const productId = Number(req.params.id);
+    if (!Number.isInteger(productId) || productId <= 0) {
+      res.status(400).json({ error: "ID de produto inválido." });
+      return;
+    }
+
+    try {
+      const product = await selectProductByIdRow(productId);
+      if (!product) {
+        res.status(404).json({ error: "Produto não encontrado." });
+        return;
+      }
+
+      const comments = await selectProductCommentsRows(productId);
+      res.json({ comments: buildProductCommentsThread(comments) });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao carregar comentários do produto.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/products/:id/comments", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+
+    const productId = Number(req.params.id);
+    if (!Number.isInteger(productId) || productId <= 0) {
+      res.status(400).json({ error: "ID de produto inválido." });
+      return;
+    }
+
+    try {
+      const product = await selectProductByIdRow(productId);
+      if (!product) {
+        res.status(404).json({ error: "Produto não encontrado." });
+        return;
+      }
+
+      const body = req.body as Record<string, unknown>;
+      const parentCommentId = toOptionalPositiveInteger(
+        body.parentCommentId ?? body.parent_comment_id,
+      );
+      const isReply = parentCommentId !== null;
+      const commentBody = normalizeIncomingProductCommentBody(
+        body.body ?? body.comment ?? body.message,
+      );
+      const rating = normalizeIncomingProductCommentRating(
+        body.rating ?? body.stars,
+        !isReply,
+      );
+
+      if (isReply) {
+        if (rating !== null) {
+          res.status(400).json({ error: "Respostas não aceitam avaliação em estrelas." });
+          return;
+        }
+
+        const parentComment = await selectProductCommentByIdRow(parentCommentId);
+        if (!parentComment || parentComment.product_id !== productId) {
+          res.status(400).json({ error: "Comentário pai inválido para esta publicação." });
+          return;
+        }
+
+        if (!product.user_id || product.user_id !== user.id) {
+          res
+            .status(403)
+            .json({ error: "Somente o dono da publicação pode responder comentários." });
+          return;
+        }
+      }
+
+      await createProductCommentRecord({
+        productId,
+        userId: user.id,
+        parentCommentId,
+        rating,
+        body: commentBody,
+      });
+
+      const comments = await selectProductCommentsRows(productId);
+      res.status(201).json({ comments: buildProductCommentsThread(comments) });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao salvar comentário do produto.";
+      res.status(400).json({ error: message });
     }
   });
 

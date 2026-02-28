@@ -1639,6 +1639,11 @@ export default function App() {
             onAddToCart={(quantity) => {
               handleAddToCart(selectedProduct, quantity);
             }}
+            currentUser={currentUser}
+            onRequireAuth={() => {
+              setAuthModalMode("register");
+              setIsAuthModalOpen(true);
+            }}
           />
         )}
       </AnimatePresence>

@@ -153,6 +153,41 @@ export const itITTranslations: Record<string, string> = {
   "Informações salvas na sua conta.": "Informazioni salvate nel tuo account.",
   "Falha ao salvar as informações rápidas.":
     "Errore durante il salvataggio delle informazioni rapide.",
+  "Comentários e avaliações": "Commenti e valutazioni",
+  "Deixe sua avaliação com estrelas e seu comentário sobre esta publicação.":
+    "Lascia la tua valutazione a stelle e il tuo commento su questa pubblicazione.",
+  "Sua avaliação": "La tua valutazione",
+  "Escreva aqui seu comentário sobre este produto...":
+    "Scrivi qui il tuo commento su questo prodotto...",
+  "Caracteres restantes: {count}": "Caratteri rimanenti: {count}",
+  "Enviando comentário...": "Invio commento...",
+  "Comentar": "Commenta",
+  "Faça login para comentar e avaliar esta publicação.":
+    "Accedi per commentare e valutare questa pubblicazione.",
+  "Carregando comentários...": "Caricamento commenti...",
+  "Ainda não existem comentários para esta publicação.":
+    "Non ci sono ancora commenti per questa pubblicazione.",
+  "Resposta do dono": "Risposta del proprietario",
+  "Responder comentário": "Rispondi al commento",
+  "Escreva uma resposta para este comentário...":
+    "Scrivi una risposta per questo commento...",
+  "Responder": "Rispondi",
+  "Escreva um comentário para enviar.": "Scrivi un commento da inviare.",
+  "Escreva uma resposta antes de enviar.": "Scrivi una risposta prima di inviare.",
+  "Falha ao carregar comentários desta publicação.":
+    "Errore durante il caricamento dei commenti di questa pubblicazione.",
+  "Falha ao enviar comentário nesta publicação.":
+    "Errore durante l'invio del commento in questa pubblicazione.",
+  "Falha ao enviar resposta nesta publicação.":
+    "Errore durante l'invio della risposta in questa pubblicazione.",
+  "Avaliar com {count} estrela(s)": "Valuta con {count} stella/e",
+  "Outros produtos da mesma região": "Altri prodotti della stessa zona",
+  "Outros produtos da mesma categoria": "Altri prodotti della stessa categoria",
+  "Outros produtos disponíveis": "Altri prodotti disponibili",
+  "Mostrando outros anúncios para você explorar rapidamente.":
+    "Mostriamo altri annunci da esplorare rapidamente.",
+  "Ainda não existem outros anúncios disponíveis.":
+    "Non ci sono ancora altri annunci disponibili.",
   "Publicando...": "Pubblicazione...",
   "Publicar produto": "Pubblica prodotto",
   "Imóveis": "Immobili",

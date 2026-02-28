@@ -69,6 +69,25 @@ export interface CreateProductInput {
   whatsappCountryIso?: string;
 }
 
+export interface ProductCommentDto {
+  id: number;
+  productId: number;
+  userId: number;
+  parentCommentId?: number;
+  rating?: number;
+  body: string;
+  createdAt: number;
+  authorName: string;
+  authorAvatarUrl?: string;
+  replies: ProductCommentDto[];
+}
+
+export interface CreateProductCommentInput {
+  body: string;
+  rating?: number;
+  parentCommentId?: number;
+}
+
 export interface SessionUser {
   id: number;
   name: string;
@@ -1011,6 +1030,79 @@ function normalizeNotificationList(value: unknown): NotificationDto[] {
   return items.filter((item): item is NotificationDto => isRecord(item));
 }
 
+function normalizeProductCommentItem(value: unknown): ProductCommentDto | null {
+  const parsed = parseJsonIfNeeded(value);
+  if (!isRecord(parsed)) {
+    return null;
+  }
+
+  const id = toOptionalNumber(firstDefined(parsed, ["id", "commentId", "comment_id"]));
+  if (id === undefined) {
+    return null;
+  }
+
+  const productId =
+    toOptionalNumber(firstDefined(parsed, ["productId", "product_id"])) ?? 0;
+  const userId = toOptionalNumber(firstDefined(parsed, ["userId", "user_id"])) ?? 0;
+  const parentCommentId = toOptionalNumber(
+    firstDefined(parsed, ["parentCommentId", "parent_comment_id"]),
+  );
+  const ratingCandidate = toOptionalNumber(firstDefined(parsed, ["rating", "stars"]));
+  const rating =
+    ratingCandidate !== undefined &&
+    Number.isInteger(ratingCandidate) &&
+    ratingCandidate >= 1 &&
+    ratingCandidate <= 5
+      ? ratingCandidate
+      : undefined;
+
+  const createdAt =
+    toOptionalNumber(firstDefined(parsed, ["createdAt", "created_at"])) ??
+    Math.floor(Date.now() / 1000);
+  const authorName =
+    toStringValue(firstDefined(parsed, ["authorName", "author_name", "name"])) || "Usuário";
+  const authorAvatarUrl = toStringValue(
+    firstDefined(parsed, ["authorAvatarUrl", "author_avatar_url", "avatarUrl", "avatar_url"]),
+  );
+  const body = toStringValue(firstDefined(parsed, ["body", "comment", "message"]));
+
+  const rawReplies = parseJsonIfNeeded(firstDefined(parsed, ["replies", "children", "answers"]));
+  const replies = Array.isArray(rawReplies)
+    ? rawReplies
+        .map((item) => normalizeProductCommentItem(item))
+        .filter((item): item is ProductCommentDto => item !== null)
+    : [];
+
+  const comment: ProductCommentDto = {
+    id,
+    productId,
+    userId,
+    body,
+    createdAt,
+    authorName,
+    replies,
+  };
+
+  if (parentCommentId !== undefined) {
+    comment.parentCommentId = parentCommentId;
+  }
+  if (rating !== undefined) {
+    comment.rating = rating;
+  }
+  if (authorAvatarUrl) {
+    comment.authorAvatarUrl = authorAvatarUrl;
+  }
+
+  return comment;
+}
+
+function normalizeProductCommentList(value: unknown): ProductCommentDto[] {
+  const items = extractArrayPayload(value, ["data", "comments", "items", "rows", "results"]);
+  return items
+    .map((item) => normalizeProductCommentItem(item))
+    .filter((item): item is ProductCommentDto => item !== null);
+}
+
 function normalizeAdminSessionItem(value: unknown, fallbackEmail = ""): AdminSessionDto | null {
   const email = findStringInNestedRecords(
     value,
@@ -1784,6 +1876,47 @@ export const api = {
       throw new Error("Resposta inválida ao carregar produto.");
     }
     return normalized;
+  },
+  async getProductComments(productId: number) {
+    if (!Number.isInteger(productId) || productId <= 0) {
+      throw new Error("ID de produto inválido.");
+    }
+
+    try {
+      const payload = await request<unknown>(`/api/products/${productId}/comments`);
+      return normalizeProductCommentList(payload);
+    } catch (error) {
+      if (isMissingApiRouteError(error)) {
+        return [];
+      }
+      throw error;
+    }
+  },
+  async createProductComment(productId: number, input: CreateProductCommentInput) {
+    if (!Number.isInteger(productId) || productId <= 0) {
+      throw new Error("ID de produto inválido.");
+    }
+
+    const normalizedBody = toStringValue(input.body).trim();
+    if (!normalizedBody) {
+      throw new Error("Comentário é obrigatório.");
+    }
+
+    const payload = {
+      body: normalizedBody,
+      rating:
+        Number.isInteger(input.rating) && Number(input.rating) > 0 ? Number(input.rating) : undefined,
+      parentCommentId:
+        Number.isInteger(input.parentCommentId) && Number(input.parentCommentId) > 0
+          ? Number(input.parentCommentId)
+          : undefined,
+    };
+
+    const response = await request<unknown>(`/api/products/${productId}/comments`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return normalizeProductCommentList(response);
   },
   async getPublicUserById(id: number) {
     const payload = await request<unknown>(`/api/users/${id}`);
