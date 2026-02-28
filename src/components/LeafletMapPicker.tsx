@@ -251,14 +251,13 @@ export default function LeafletMapPicker({
           </p>
 
           {leafletError ? (
-            <div className="flex-1 min-h-[320px] border border-red-100 bg-red-50 rounded-sm flex items-center justify-center">
+            <div className="flex-1 min-h-80 border border-red-100 bg-red-50 rounded-sm flex items-center justify-center">
               <p className="text-sm text-red-600">{leafletError}</p>
             </div>
           ) : (
             <div
               ref={mapContainerRef}
-              className="flex-1 min-h-[320px] border border-stone-200 rounded-sm overflow-hidden bg-stone-100"
-              style={{ touchAction: "none" }}
+              className="flex-1 min-h-80 border border-stone-200 rounded-sm overflow-hidden bg-stone-100"
             />
           )}
 

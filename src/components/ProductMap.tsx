@@ -1,6 +1,6 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, Pencil, Trash2, Package, X, Maximize2, Minimize2, ShoppingBag } from "lucide-react";
+import { Search, Pencil, Trash2, Package, X } from "lucide-react";
 import { type Product } from "./ProductCard";
 import { useI18n } from "../i18n/provider";
 import { formatEuroFromUnknown } from "../lib/currency";
@@ -11,10 +11,6 @@ interface ProductMapProps {
   onClose: () => void;
   initialFocusProductId?: number;
   onOpenProduct?: (product: Product) => void;
-  onAddToCart?: (product: Product) => void;
-  initialCategory?: string;
-  openResultsByDefault?: boolean;
-  autoFocusPanelSearch?: boolean;
 }
 
 type LocatedProduct = Product & {
@@ -23,154 +19,6 @@ type LocatedProduct = Product & {
 };
 
 type GeoPoint = [number, number];
-
-type ProductSearchIndex = {
-  searchableText: string;
-  city: string;
-};
-
-type SmartSearchQuery = {
-  normalizedQuery: string;
-  city: string | null;
-  terms: string[];
-};
-
-const SEARCH_CONNECTOR_TOKENS = new Set([
-  "a",
-  "ad",
-  "ao",
-  "au",
-  "da",
-  "de",
-  "del",
-  "della",
-  "dello",
-  "do",
-  "e",
-  "em",
-  "en",
-  "in",
-  "la",
-  "na",
-  "nel",
-  "nella",
-  "nello",
-  "no",
-  "nos",
-  "per",
-  "perto",
-  "sur",
-  "vicino",
-  "near",
-]);
-
-function normalizeSearchValue(value: unknown): string {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isWholePhraseMatch(haystack: string, phrase: string): boolean {
-  if (!haystack || !phrase) {
-    return false;
-  }
-  return (
-    haystack === phrase ||
-    haystack.startsWith(`${phrase} `) ||
-    haystack.endsWith(` ${phrase}`) ||
-    haystack.includes(` ${phrase} `)
-  );
-}
-
-function parseSmartSearchQuery(rawQuery: string, knownCities: string[]): SmartSearchQuery {
-  const normalizedQuery = normalizeSearchValue(rawQuery);
-  if (!normalizedQuery) {
-    return {
-      normalizedQuery: "",
-      city: null,
-      terms: [],
-    };
-  }
-
-  const matchedCity =
-    knownCities.find((city) => isWholePhraseMatch(normalizedQuery, city)) ?? null;
-
-  const cityTokens = new Set(
-    matchedCity
-      ? matchedCity
-          .split(" ")
-          .map((token) => token.trim())
-          .filter((token) => token.length > 0)
-      : [],
-  );
-  const tokens = normalizedQuery
-    .split(" ")
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0);
-  const terms = tokens.filter(
-    (token) => !SEARCH_CONNECTOR_TOKENS.has(token) && !cityTokens.has(token),
-  );
-
-  return {
-    normalizedQuery,
-    city: matchedCity,
-    terms: terms.length > 0 || matchedCity ? terms : tokens,
-  };
-}
-
-function buildProductSearchIndex(product: Product): ProductSearchIndex {
-  const categoryLabelPt = getCategoryLabel(product.category, "pt-BR");
-  const categoryLabelIt = getCategoryLabel(product.category, "it-IT");
-  const detailValues = Object.values(product.details ?? {})
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-    .join(" ");
-
-  return {
-    searchableText: normalizeSearchValue(
-      [
-        product.name,
-        product.category,
-        categoryLabelPt,
-        categoryLabelIt,
-        product.city ?? "",
-        product.description ?? "",
-        detailValues,
-      ].join(" "),
-    ),
-    city: normalizeSearchValue(product.city ?? ""),
-  };
-}
-
-function matchesSmartSearchQuery(
-  query: SmartSearchQuery,
-  index: ProductSearchIndex | undefined,
-): boolean {
-  if (!index) {
-    return false;
-  }
-
-  if (!query.normalizedQuery) {
-    return true;
-  }
-
-  if (query.city && !isWholePhraseMatch(index.city, query.city)) {
-    return false;
-  }
-
-  if (query.terms.length === 0) {
-    return true;
-  }
-
-  return query.terms.every((term) => index.searchableText.includes(term));
-}
 
 function parseCoordinate(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -345,6 +193,20 @@ const MIN_DRAW_POINT_DELTA = 0.00003;
 const DRAW_STATE_SYNC_INTERVAL_MS = 80;
 const TILE_FALLBACK_TIMEOUT_MS = 20000;
 const TILE_ERROR_THRESHOLD = 8;
+const DEFAULT_MARKER_STYLE = {
+  radius: 7,
+  color: "#5d4037",
+  weight: 2,
+  fillColor: "#fbc02d",
+  fillOpacity: 0.85,
+};
+const FOCUSED_MARKER_STYLE = {
+  radius: 9,
+  color: "#1b5e20",
+  weight: 2,
+  fillColor: "#43a047",
+  fillOpacity: 0.95,
+};
 
 let leafletAssetsPromise: Promise<LeafletGlobal> | null = null;
 
@@ -445,10 +307,6 @@ export default function ProductMap({
   onClose,
   initialFocusProductId,
   onOpenProduct,
-  onAddToCart,
-  initialCategory = "All",
-  openResultsByDefault = false,
-  autoFocusPanelSearch = false,
 }: ProductMapProps) {
   const { t, locale } = useI18n();
   const productsWithLocation = React.useMemo(
@@ -459,39 +317,12 @@ export default function ProductMap({
     [products],
   );
   const hasProductsWithLocation = productsWithLocation.length > 0;
-  const searchableIndexByProductId = React.useMemo(() => {
-    const index = new globalThis.Map<number, ProductSearchIndex>();
-    productsWithLocation.forEach((product) => {
-      index.set(product.id, buildProductSearchIndex(product));
-    });
-    return index;
-  }, [productsWithLocation]);
-  const knownNormalizedCities = React.useMemo(() => {
-    const cities = new Set<string>();
-    productsWithLocation.forEach((product) => {
-      const normalizedCity = normalizeSearchValue(product.city ?? "");
-      if (normalizedCity) {
-        cities.add(normalizedCity);
-      }
-    });
-
-    return Array.from(cities).sort((left, right) => {
-      const tokenCountDifference = right.split(" ").length - left.split(" ").length;
-      if (tokenCountDifference !== 0) {
-        return tokenCountDifference;
-      }
-      return right.length - left.length;
-    });
-  }, [productsWithLocation]);
 
   const [leafletError, setLeafletError] = React.useState("");
   const [isDrawing, setIsDrawing] = React.useState(false);
   const [currentPolygon, setCurrentPolygon] = React.useState<GeoPoint[]>([]);
   const [selectedProducts, setSelectedProducts] = React.useState<LocatedProduct[]>([]);
-  const [showResults, setShowResults] = React.useState(openResultsByDefault);
-  const [isSearchResultsMode, setIsSearchResultsMode] = React.useState(openResultsByDefault);
-  const [isResultsExpanded, setIsResultsExpanded] = React.useState(false);
-  const [activeCategory, setActiveCategory] = React.useState(initialCategory);
+  const [showResults, setShowResults] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [panelSearchQuery, setPanelSearchQuery] = React.useState("");
   const [mapReadyVersion, setMapReadyVersion] = React.useState(0);
@@ -506,13 +337,11 @@ export default function ProductMap({
   const isPointerDownRef = React.useRef(false);
   const isDrawingRef = React.useRef(false);
   const productsWithLocationRef = React.useRef<LocatedProduct[]>([]);
-  const categoryFilteredProductsRef = React.useRef<LocatedProduct[]>([]);
   const lastStateSyncRef = React.useRef(0);
   const tileLayerRef = React.useRef<LeafletTileLayerInstance | null>(null);
   const tileFallbackTimerRef = React.useRef<number | null>(null);
   const activeTileLoadRef = React.useRef(0);
   const hasLoadedAnyTileRef = React.useRef(false);
-  const panelSearchInputRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
     isDrawingRef.current = isDrawing;
@@ -525,103 +354,31 @@ export default function ProductMap({
     productsWithLocationRef.current = productsWithLocation;
   }, [productsWithLocation]);
 
-  const availableCategoryFilters = React.useMemo(() => {
-    const categoryCounts = new globalThis.Map<string, number>();
-    productsWithLocation.forEach((product) => {
-      const category = String(product.category ?? "").trim();
-      if (!category) {
-        return;
-      }
-      categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
-    });
-
-    const categories = Array.from(categoryCounts.entries())
-      .sort(([left], [right]) => left.localeCompare(right, locale))
-      .map(([key, count]) => ({ key, count }));
-
-    return [
-      { key: "All", count: productsWithLocation.length },
-      ...categories,
-    ];
-  }, [productsWithLocation, locale]);
-
-  React.useEffect(() => {
-    const hasActiveCategory = availableCategoryFilters.some(
-      (category) => category.key === activeCategory,
-    );
-    if (!hasActiveCategory) {
-      setActiveCategory("All");
-    }
-  }, [availableCategoryFilters, activeCategory]);
-
-  const categoryFilteredProducts = React.useMemo(() => {
-    if (activeCategory === "All") {
+  const filteredProducts = React.useMemo(() => {
+    const normalized = searchQuery.trim().toLowerCase();
+    if (!normalized) {
       return productsWithLocation;
     }
-    return productsWithLocation.filter((product) => product.category === activeCategory);
-  }, [productsWithLocation, activeCategory]);
 
-  React.useEffect(() => {
-    categoryFilteredProductsRef.current = categoryFilteredProducts;
-  }, [categoryFilteredProducts]);
-
-  const mapSearchQuery = React.useMemo(
-    () => parseSmartSearchQuery(searchQuery, knownNormalizedCities),
-    [searchQuery, knownNormalizedCities],
-  );
-  const panelSearchFilterQuery = React.useMemo(
-    () => parseSmartSearchQuery(panelSearchQuery, knownNormalizedCities),
-    [panelSearchQuery, knownNormalizedCities],
-  );
-
-  const filteredProducts = React.useMemo(() => {
-    return categoryFilteredProducts.filter((product) =>
-      matchesSmartSearchQuery(
-        mapSearchQuery,
-        searchableIndexByProductId.get(product.id),
-      ),
+    return productsWithLocation.filter(
+      (product) =>
+        product.name.toLowerCase().includes(normalized) ||
+        product.category.toLowerCase().includes(normalized),
     );
-  }, [categoryFilteredProducts, mapSearchQuery, searchableIndexByProductId]);
+  }, [productsWithLocation, searchQuery]);
 
   const filteredPanelProducts = React.useMemo(() => {
-    if (!panelSearchFilterQuery.normalizedQuery) {
+    const normalized = panelSearchQuery.trim().toLowerCase();
+    if (!normalized) {
       return selectedProducts;
     }
 
-    return selectedProducts.filter((product) =>
-      matchesSmartSearchQuery(
-        panelSearchFilterQuery,
-        searchableIndexByProductId.get(product.id),
-      ),
+    return selectedProducts.filter(
+      (product) =>
+        product.name.toLowerCase().includes(normalized) ||
+        product.category.toLowerCase().includes(normalized),
     );
-  }, [panelSearchFilterQuery, searchableIndexByProductId, selectedProducts]);
-
-  React.useEffect(() => {
-    if (!openResultsByDefault) {
-      return;
-    }
-    setShowResults(true);
-    setIsSearchResultsMode(true);
-  }, [openResultsByDefault]);
-
-  React.useEffect(() => {
-    if (!showResults || !isSearchResultsMode) {
-      return;
-    }
-    setSelectedProducts(categoryFilteredProducts);
-  }, [showResults, isSearchResultsMode, categoryFilteredProducts]);
-
-  React.useEffect(() => {
-    if (!showResults || !autoFocusPanelSearch) {
-      return;
-    }
-    const focusTimer = window.setTimeout(() => {
-      panelSearchInputRef.current?.focus();
-    }, 120);
-    return () => {
-      window.clearTimeout(focusTimer);
-    };
-  }, [showResults, autoFocusPanelSearch]);
+  }, [panelSearchQuery, selectedProducts]);
 
   const clearMarkers = React.useCallback(() => {
     markersRef.current.forEach((marker) => {
@@ -662,7 +419,6 @@ export default function ProductMap({
     isPointerDownRef.current = false;
     drawPointsRef.current = [];
     clearDrawingPolygon();
-    setIsSearchResultsMode(false);
     if (mapRef.current) {
       setMapInteractionForDrawing(mapRef.current, true);
     }
@@ -897,12 +653,11 @@ export default function ProductMap({
           selectionPolygonRef.current = polygon;
 
           setCurrentPolygon(completedPolygon);
-          const found = categoryFilteredProductsRef.current.filter((product) =>
+          const found = productsWithLocationRef.current.filter((product) =>
             isPointInPolygon([product.latitude, product.longitude], completedPolygon),
           );
           setSelectedProducts(found);
           setShowResults(true);
-          setIsSearchResultsMode(false);
           setIsDrawing(false);
         };
 
@@ -1060,30 +815,33 @@ export default function ProductMap({
 
     const map = mapRef.current;
     const L = leafletRef.current;
+    const orderedProducts = [...filteredProducts].sort((a, b) => {
+      const aIsFocused = a.id === initialFocusProductId ? 1 : 0;
+      const bIsFocused = b.id === initialFocusProductId ? 1 : 0;
+      return aIsFocused - bIsFocused;
+    });
 
-    markersRef.current = filteredProducts.map((product) => {
-      const marker = L.circleMarker([product.latitude, product.longitude], {
-        radius: 7,
-        color: "#5d4037",
-        weight: 2,
-        fillColor: "#fbc02d",
-        fillOpacity: 0.85,
-      });
+    markersRef.current = orderedProducts.map((product) => {
+      const markerStyle =
+        product.id === initialFocusProductId
+          ? FOCUSED_MARKER_STYLE
+          : DEFAULT_MARKER_STYLE;
+      const marker = L.circleMarker([product.latitude, product.longitude], markerStyle);
       marker.addTo(map);
       return marker;
     });
-  }, [clearMarkers, filteredProducts, mapReadyVersion]);
+  }, [clearMarkers, filteredProducts, initialFocusProductId, mapReadyVersion]);
 
   React.useEffect(() => {
     if (!showResults || currentPolygon.length < 3) {
       return;
     }
 
-    const found = categoryFilteredProducts.filter((product) =>
+    const found = productsWithLocation.filter((product) =>
       isPointInPolygon([product.latitude, product.longitude], currentPolygon),
     );
     setSelectedProducts(found);
-  }, [categoryFilteredProducts, currentPolygon, showResults]);
+  }, [currentPolygon, productsWithLocation, showResults]);
 
   React.useEffect(() => {
     if (filteredProducts.length !== 1 || !mapRef.current) {
@@ -1132,7 +890,7 @@ export default function ProductMap({
       className="fixed inset-0 z-170 bg-[#fdfcfb] overflow-hidden"
     >
       <div className="relative w-full h-full font-sans text-stone-900">
-        <div className="absolute top-4 left-4 right-4 z-[1000] flex flex-col sm:flex-row items-start sm:items-center gap-4 pointer-events-none">
+        <div className="absolute top-4 left-4 right-4 z-1000 flex flex-col sm:flex-row items-start sm:items-center gap-4 pointer-events-none">
           <div className="bg-stone-50/95 backdrop-blur-md border border-stone-200 rounded-2xl p-4 shadow-xl pointer-events-auto flex items-center gap-4 w-full sm:w-auto">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-stone-800 rounded-xl flex items-center justify-center text-stone-100">
@@ -1157,7 +915,7 @@ export default function ProductMap({
               />
               <input
                 type="text"
-                placeholder={t("Buscar produtos, categorias ou cidade (ex.: casa em Ardea)...")}
+                placeholder={t("Buscar produtos ou categorias...")}
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 className="w-full pl-10 pr-4 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"
@@ -1184,26 +942,6 @@ export default function ProductMap({
               disabled={!hasProductsWithLocation}
             >
               <Pencil size={18} />
-            </button>
-            <div className="w-px h-6 bg-stone-200 mx-1" />
-            <button
-              type="button"
-              onClick={() => {
-                if (showResults) {
-                  setShowResults(false);
-                  return;
-                }
-                setIsSearchResultsMode(true);
-                setShowResults(true);
-              }}
-              className={`p-3 rounded-xl transition-all duration-200 ${
-                showResults
-                  ? "bg-stone-900 text-white shadow-lg"
-                  : "text-stone-500 hover:bg-stone-100"
-              }`}
-              title={t("Produtos encontrados")}
-            >
-              <Package size={18} />
             </button>
             <div className="w-px h-6 bg-stone-200 mx-1" />
             <button
@@ -1241,13 +979,13 @@ export default function ProductMap({
               background:
                 "radial-gradient(circle at 20% 20%, #f7f2e8 0%, #ece7db 45%, #e7e1d4 100%)",
               cursor: isDrawing ? "crosshair" : undefined,
-              touchAction: "none",
+              touchAction: isDrawing ? "none" : "auto",
             }}
           />
         )}
 
         {!leafletError && !hasProductsWithLocation && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-stone-900 text-white px-6 py-3 rounded-full shadow-2xl text-sm">
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-1000 bg-stone-900 text-white px-6 py-3 rounded-full shadow-2xl text-sm">
             {t("Nenhum produto com localização disponível no momento.")}
           </div>
         )}
@@ -1259,9 +997,7 @@ export default function ProductMap({
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className={`absolute top-0 right-0 h-full ${
-                isResultsExpanded ? "w-full" : "w-full sm:w-[420px]"
-              } bg-stone-50/98 backdrop-blur-xl border-l border-stone-200 z-[2000] shadow-2xl flex flex-col`}
+              className="absolute top-0 right-0 h-full w-full sm:w-105 bg-stone-50/98 backdrop-blur-xl border-l border-stone-200 z-2000 shadow-2xl flex flex-col"
             >
               <div className="p-6 border-b border-stone-100 bg-stone-100/80">
                 <div className="flex items-center justify-between mb-4 gap-3">
@@ -1270,33 +1006,19 @@ export default function ProductMap({
                       {t("Produtos encontrados")}
                     </h2>
                     <p className="text-xs text-stone-500">
-                      {isSearchResultsMode
-                        ? t("{count} itens encontrados", {
-                            count: selectedProducts.length,
-                          })
-                        : t("{count} itens na área selecionada", {
-                            count: selectedProducts.length,
-                          })}
+                      {t("{count} itens na área selecionada", {
+                        count: selectedProducts.length,
+                      })}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setIsResultsExpanded((current) => !current)}
-                      className="hidden sm:inline-flex p-2 hover:bg-white/50 rounded-full transition-colors text-stone-400 hover:text-stone-600"
-                      title={isResultsExpanded ? t("Reduzir painel") : t("Expandir painel")}
-                    >
-                      {isResultsExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowResults(false)}
-                      className="p-2 hover:bg-white/50 rounded-full transition-colors text-stone-400 hover:text-stone-600"
-                      title={t("Fechar resultados")}
-                    >
-                      <X size={20} />
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowResults(false)}
+                    className="p-2 hover:bg-white/50 rounded-full transition-colors text-stone-400 hover:text-stone-600"
+                    title={t("Fechar resultados")}
+                  >
+                    <X size={20} />
+                  </button>
                 </div>
 
                 <div className="relative">
@@ -1305,38 +1027,12 @@ export default function ProductMap({
                     size={14}
                   />
                   <input
-                    ref={panelSearchInputRef}
                     type="text"
-                    placeholder={t("Filtrar resultados por produto, categoria ou cidade...")}
+                    placeholder={t("Filtrar resultados...")}
                     value={panelSearchQuery}
                     onChange={(event) => setPanelSearchQuery(event.target.value)}
                     className="w-full pl-9 pr-4 py-2 bg-white/80 border border-stone-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"
                   />
-                </div>
-
-                <div className="mt-3 flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-                  {availableCategoryFilters.map((category) => (
-                    <button
-                      key={`map-results-category-${category.key}`}
-                      onClick={() => {
-                        setActiveCategory(category.key);
-                        setIsSearchResultsMode(true);
-                        setShowResults(true);
-                      }}
-                      className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 border rounded-full text-[9px] uppercase tracking-[0.16em] transition-colors ${
-                        activeCategory === category.key
-                          ? "border-stone-900 bg-stone-900 text-white"
-                          : "border-stone-200 text-stone-600 hover:border-stone-400"
-                      }`}
-                    >
-                      <span>
-                        {category.key === "All" ? t("Todos") : getCategoryLabel(category.key, locale)}
-                      </span>
-                      <span className={activeCategory === category.key ? "text-white/80" : "text-stone-400"}>
-                        {category.count}
-                      </span>
-                    </button>
-                  ))}
                 </div>
               </div>
 
@@ -1356,21 +1052,16 @@ export default function ProductMap({
                     </div>
                   </div>
                 ) : (
-                  <div
-                    className={`grid gap-4 sm:gap-6 ${
-                      isResultsExpanded ? "grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4" : "grid-cols-2 sm:grid-cols-1"
-                    }`}
-                  >
+                  <div className="grid grid-cols-2 sm:grid-cols-1 gap-4 sm:gap-6">
                     {filteredPanelProducts.map((product) => (
-                      <motion.div
+                      <motion.button
                         key={product.id}
+                        type="button"
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         className={`group text-left bg-white border border-stone-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 ${
                           onOpenProduct ? "cursor-pointer" : ""
                         }`}
-                        role={onOpenProduct ? "button" : undefined}
-                        tabIndex={onOpenProduct ? 0 : undefined}
                         onPointerDown={(event) => {
                           event.stopPropagation();
                         }}
@@ -1397,7 +1088,7 @@ export default function ProductMap({
                             : undefined
                         }
                       >
-                        <div className="aspect-[4/3] relative overflow-hidden">
+                        <div className="aspect-4/3 relative overflow-hidden">
                           <img
                             src={product.image}
                             alt={product.name}
@@ -1419,24 +1110,11 @@ export default function ProductMap({
                               {formatEuroFromUnknown(product.price, locale)}
                             </span>
                             <span className="text-[10px] sm:text-xs font-semibold text-stone-400 text-left sm:text-right">
-                              {product.city?.trim() || t("Cidade não informada")}
+                              {product.latitude.toFixed(5)}, {product.longitude.toFixed(5)}
                             </span>
                           </div>
-                          {onAddToCart && (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onAddToCart(product);
-                              }}
-                              className="mt-2.5 w-full inline-flex items-center justify-center gap-2 px-2.5 py-2 border border-stone-300 rounded-lg text-[9px] uppercase tracking-[0.14em] font-bold text-stone-700 hover:border-stone-800 hover:text-stone-900 transition-colors"
-                            >
-                              <ShoppingBag className="w-3.5 h-3.5" />
-                              {t("Adicionar ao carrinho")}
-                            </button>
-                          )}
                         </div>
-                      </motion.div>
+                      </motion.button>
                     ))}
                   </div>
                 )}
@@ -1445,18 +1123,10 @@ export default function ProductMap({
               <div className="p-6 bg-stone-50/50 border-t border-stone-100">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (isSearchResultsMode) {
-                      setPanelSearchQuery("");
-                      setSearchQuery("");
-                      setActiveCategory("All");
-                      return;
-                    }
-                    clearSelection();
-                  }}
+                  onClick={clearSelection}
                   className="w-full py-3 bg-stone-900 text-white rounded-xl font-medium shadow-lg shadow-stone-900/20 hover:bg-black transition-all active:scale-[0.98]"
                 >
-                  {isSearchResultsMode ? t("Limpar busca") : t("Nova pesquisa")}
+                  {t("Nova pesquisa")}
                 </button>
               </div>
             </motion.div>
@@ -1467,7 +1137,7 @@ export default function ProductMap({
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="absolute bottom-10 left-1/2 -translate-x-1/2 z-[1000] bg-stone-900 text-stone-100 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-stone-700/40"
+            className="absolute bottom-10 left-1/2 -translate-x-1/2 z-1000 bg-stone-900 text-stone-100 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-stone-700/40"
           >
             <Pencil size={16} className="animate-pulse" />
             <span className="text-sm font-medium">

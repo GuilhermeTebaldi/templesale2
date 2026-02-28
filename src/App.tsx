@@ -44,6 +44,8 @@ const CATEGORIES = [
 const BRAND_NAME = "TempleSale";
 const HOME_HERO_FALLBACK_IMAGE =
   "https://i.pinimg.com/736x/d8/6a/96/d86a960149b06d59f2e8f4c992633874.jpg";
+const INSTAGRAM_PROFILE_URL =
+  "https://www.instagram.com/templesale_?igsh=MWVndTY4Z3d6aHV0MA%3D%3D&utm_source=qr";
 const CART_STORAGE_KEY = "templesale_cart_items";
 const CART_UNSEEN_STORAGE_KEY = "templesale_cart_unseen_alert";
 const READ_NOTIFICATIONS_STORAGE_KEY = "templesale_read_notifications";
@@ -1892,7 +1894,14 @@ export default function App() {
         
         <div className="p-8 border-t border-stone-100 bg-stone-50/50">
           <div className="flex gap-6">
-            <Instagram className="w-5 h-5 text-stone-400 hover:text-black transition-colors cursor-pointer" />
+            <a
+              href={INSTAGRAM_PROFILE_URL}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Instagram TempleSale"
+            >
+              <Instagram className="w-5 h-5 text-stone-400 hover:text-black transition-colors cursor-pointer" />
+            </a>
             <Twitter className="w-5 h-5 text-stone-400 hover:text-black transition-colors cursor-pointer" />
             <Facebook className="w-5 h-5 text-stone-400 hover:text-black transition-colors cursor-pointer" />
           </div>
@@ -2214,7 +2223,13 @@ export default function App() {
           <div>
             <h4 className="text-[10px] uppercase tracking-[0.2em] font-bold mb-6">{t("Social")}</h4>
             <div className="flex gap-4">
-              <a href="#" className="p-2 bg-stone-50 rounded-full hover:bg-stone-100 transition-colors">
+              <a
+                href={INSTAGRAM_PROFILE_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Instagram TempleSale"
+                className="p-2 bg-stone-50 rounded-full hover:bg-stone-100 transition-colors"
+              >
                 <Instagram className="w-4 h-4 text-stone-600" />
               </a>
               <a href="#" className="p-2 bg-stone-50 rounded-full hover:bg-stone-100 transition-colors">
