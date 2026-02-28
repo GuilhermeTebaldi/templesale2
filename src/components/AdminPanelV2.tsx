@@ -1,5 +1,18 @@
 import React from "react";
-import { LoaderCircle, Shield, RefreshCw, LogOut, Search, Trash2, Ban, CheckCircle2 } from "lucide-react";
+import {
+  LoaderCircle,
+  Shield,
+  RefreshCw,
+  LogOut,
+  Search,
+  Trash2,
+  Ban,
+  CheckCircle2,
+  Lock,
+  ShieldCheck,
+  ShieldAlert,
+  AlertTriangle,
+} from "lucide-react";
 
 type AdminUserV2 = {
   id: number;
@@ -19,6 +32,38 @@ type AdminSessionV2 = {
   token: string;
 };
 
+type AdminViewV2 = "users" | "security";
+
+type SecurityCheckStatus = "pass" | "warn" | "fail";
+
+type SecurityCheckResult = {
+  id: string;
+  title: string;
+  status: SecurityCheckStatus;
+  details: string;
+};
+
+type AdminSecurityEventV2 = {
+  id: number;
+  createdAt: number;
+  method: string;
+  path: string;
+  status: number;
+  durationMs: number;
+  ip: string;
+  userAgent: string;
+  level: SecurityCheckStatus;
+  note: string;
+  isAdminRoute: boolean;
+  hasAuthToken: boolean;
+  hasAdminToken: boolean;
+};
+
+type AdminSecurityEventsResponseV2 = {
+  events: AdminSecurityEventV2[];
+  totalTracked: number;
+};
+
 class HttpError extends Error {
   status: number;
   body: unknown;
@@ -34,6 +79,8 @@ class HttpError extends Error {
 const ADMIN_DEFAULT_EMAIL = "templesale@admin.com";
 const ADMIN_TOKEN_STORAGE_KEY = "templesale_admin_token_v2";
 const ADMIN_EMAIL_STORAGE_KEY = "templesale_admin_email_v2";
+const SECURITY_EVENTS_LIMIT = 120;
+const SECURITY_EVENTS_POLL_INTERVAL_MS = 3500;
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "")
   .trim()
   .replace(/\/+$/, "");
@@ -271,6 +318,81 @@ function normalizeAdminUserList(payload: unknown): AdminUserV2[] {
   return [];
 }
 
+function toNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeSecurityLevel(value: unknown): SecurityCheckStatus {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "alert" || normalized === "fail") {
+    return "fail";
+  }
+  if (normalized === "warn" || normalized === "warning") {
+    return "warn";
+  }
+  return "pass";
+}
+
+function normalizeSecurityEvent(item: unknown): AdminSecurityEventV2 | null {
+  const record = asRecord(item);
+  if (!record) {
+    return null;
+  }
+
+  const id = toNumber(record.id);
+  const createdAt = toNumber(record.createdAt ?? record.created_at);
+  const method = String(record.method ?? "").trim().toUpperCase();
+  const path = String(record.path ?? "").trim();
+  if (id <= 0 || createdAt <= 0 || !method || !path) {
+    return null;
+  }
+
+  return {
+    id,
+    createdAt,
+    method,
+    path,
+    status: toNumber(record.status),
+    durationMs: toNumber(record.durationMs ?? record.duration_ms),
+    ip: String(record.ip ?? "").trim() || "-",
+    userAgent: String(record.userAgent ?? record.user_agent ?? "").trim() || "-",
+    level: normalizeSecurityLevel(record.level),
+    note: String(record.note ?? "").trim(),
+    isAdminRoute: toBoolean(record.isAdminRoute ?? record.is_admin_route),
+    hasAuthToken: toBoolean(record.hasAuthToken ?? record.has_auth_token),
+    hasAdminToken: toBoolean(record.hasAdminToken ?? record.has_admin_token),
+  };
+}
+
+function normalizeSecurityEventsPayload(payload: unknown): {
+  events: AdminSecurityEventV2[];
+  totalTracked: number;
+} {
+  const record = asRecord(payload);
+  if (!record) {
+    return { events: [], totalTracked: 0 };
+  }
+
+  const eventCandidates = [record.events, record.data, record.items, record.rows];
+  let rawEvents: unknown[] = [];
+  for (const candidate of eventCandidates) {
+    if (Array.isArray(candidate)) {
+      rawEvents = candidate;
+      break;
+    }
+  }
+
+  const events = rawEvents
+    .map((item) => normalizeSecurityEvent(item))
+    .filter((item): item is AdminSecurityEventV2 => item !== null);
+
+  const totalTrackedRaw = toNumber(record.totalTracked ?? record.total_tracked);
+  const totalTracked = totalTrackedRaw > 0 ? totalTrackedRaw : events.length;
+
+  return { events, totalTracked };
+}
+
 function formatDate(value?: string): string {
   if (!value) {
     return "-";
@@ -286,6 +408,37 @@ function formatDate(value?: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(parsed);
+}
+
+function formatDateTime(value: number): string {
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
+}
+
+function getSecurityStatusStyles(status: SecurityCheckStatus): string {
+  if (status === "pass") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+  if (status === "warn") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+  return "border-red-200 bg-red-50 text-red-700";
+}
+
+function getSecurityStatusLabel(status: SecurityCheckStatus): string {
+  if (status === "pass") {
+    return "Normal";
+  }
+  if (status === "warn") {
+    return "Atenção";
+  }
+  return "Alerta";
 }
 
 function isMissingApiRouteError(error: unknown): boolean {
@@ -493,8 +646,100 @@ async function adminLogout(token: string): Promise<void> {
   }
 }
 
+async function adminUnlockSecurityTestArea(token: string, password: string): Promise<void> {
+  const normalizedPassword = password.trim();
+  if (!normalizedPassword) {
+    throw new Error("Senha da área de testes é obrigatória.");
+  }
+
+  const routes = ["/api/admin/security-test/unlock", "/api/admin/security-tests/unlock"];
+  let lastError: unknown = null;
+
+  for (const route of routes) {
+    try {
+      await adminRequest<unknown>(route, {
+        method: "POST",
+        token,
+        body: { password: normalizedPassword },
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (isMissingApiRouteError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+  throw new Error("Falha ao acessar área de testes.");
+}
+
+async function adminGetSecurityEvents(
+  token: string,
+  limit = SECURITY_EVENTS_LIMIT,
+): Promise<AdminSecurityEventsResponseV2> {
+  const normalizedLimit = Math.min(Math.max(Number(limit) || SECURITY_EVENTS_LIMIT, 1), 500);
+  const params = new URLSearchParams();
+  params.set("limit", String(normalizedLimit));
+
+  const routes = [
+    `/api/admin/security-test/events?${params.toString()}`,
+    `/api/admin/security-tests/events?${params.toString()}`,
+  ];
+  let lastError: unknown = null;
+
+  for (const route of routes) {
+    try {
+      const response = await adminRequest<unknown>(route, { token });
+      return normalizeSecurityEventsPayload(response);
+    } catch (error) {
+      lastError = error;
+      if (isMissingApiRouteError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+  throw new Error("Falha ao carregar monitor de segurança.");
+}
+
+async function adminClearSecurityEvents(token: string): Promise<void> {
+  const routes = ["/api/admin/security-test/events", "/api/admin/security-tests/events"];
+  let lastError: unknown = null;
+
+  for (const route of routes) {
+    try {
+      await adminRequest<unknown>(route, {
+        method: "DELETE",
+        token,
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (isMissingApiRouteError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+  throw new Error("Falha ao limpar monitor de segurança.");
+}
+
 export default function AdminPanelV2() {
   const [isBootstrapping, setIsBootstrapping] = React.useState(true);
+  const [activeView, setActiveView] = React.useState<AdminViewV2>("users");
   const [sessionEmail, setSessionEmail] = React.useState<string | null>(null);
   const [authToken, setAuthToken] = React.useState("");
   const [email, setEmail] = React.useState(ADMIN_DEFAULT_EMAIL);
@@ -507,6 +752,20 @@ export default function AdminPanelV2() {
   const [usersError, setUsersError] = React.useState("");
   const [pendingBanUserId, setPendingBanUserId] = React.useState<number | null>(null);
   const [deletingUserId, setDeletingUserId] = React.useState<number | null>(null);
+  const [testAreaPassword, setTestAreaPassword] = React.useState("");
+  const [isTestAreaUnlocked, setIsTestAreaUnlocked] = React.useState(false);
+  const [isUnlockingTestArea, setIsUnlockingTestArea] = React.useState(false);
+  const [testAreaError, setTestAreaError] = React.useState("");
+  const [isRunningSecurityChecks, setIsRunningSecurityChecks] = React.useState(false);
+  const [securityChecks, setSecurityChecks] = React.useState<SecurityCheckResult[]>([]);
+  const [securityChecksRanAt, setSecurityChecksRanAt] = React.useState<number | null>(null);
+  const [securityEvents, setSecurityEvents] = React.useState<AdminSecurityEventV2[]>([]);
+  const [securityEventsTotalTracked, setSecurityEventsTotalTracked] = React.useState(0);
+  const [securityEventsUpdatedAt, setSecurityEventsUpdatedAt] = React.useState<number | null>(null);
+  const [securityEventsError, setSecurityEventsError] = React.useState("");
+  const [isLoadingSecurityEvents, setIsLoadingSecurityEvents] = React.useState(false);
+  const [isClearingSecurityEvents, setIsClearingSecurityEvents] = React.useState(false);
+  const [isLiveMonitorEnabled, setIsLiveMonitorEnabled] = React.useState(true);
 
   const loadUsers = React.useCallback(
     async (token: string, searchQuery = "") => {
@@ -521,6 +780,32 @@ export default function AdminPanelV2() {
         setUsersError(message);
       } finally {
         setIsLoadingUsers(false);
+      }
+    },
+    [],
+  );
+
+  const loadSecurityEvents = React.useCallback(
+    async (token: string, options?: { silent?: boolean }) => {
+      const silent = Boolean(options?.silent);
+      if (!silent) {
+        setIsLoadingSecurityEvents(true);
+      }
+      setSecurityEventsError("");
+
+      try {
+        const payload = await adminGetSecurityEvents(token, SECURITY_EVENTS_LIMIT);
+        setSecurityEvents(payload.events);
+        setSecurityEventsTotalTracked(payload.totalTracked);
+        setSecurityEventsUpdatedAt(Date.now());
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Falha ao carregar monitor de segurança.";
+        setSecurityEventsError(message);
+      } finally {
+        if (!silent) {
+          setIsLoadingSecurityEvents(false);
+        }
       }
     },
     [],
@@ -546,6 +831,7 @@ export default function AdminPanelV2() {
         setSessionEmail(currentEmail);
         setEmail(currentEmail);
         await loadUsers(storedToken);
+        await loadSecurityEvents(storedToken, { silent: true });
       } catch (error) {
         if (!cancelled) {
           clearSessionStorage();
@@ -570,7 +856,7 @@ export default function AdminPanelV2() {
     return () => {
       cancelled = true;
     };
-  }, [loadUsers]);
+  }, [loadSecurityEvents, loadUsers]);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -592,6 +878,7 @@ export default function AdminPanelV2() {
       setPassword("");
       persistSession(session);
       await loadUsers(session.token);
+      await loadSecurityEvents(session.token, { silent: true });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao autenticar administrador.";
@@ -618,11 +905,277 @@ export default function AdminPanelV2() {
       setAuthError("");
       setQuery("");
       setPassword("");
+      setActiveView("users");
+      setTestAreaPassword("");
+      setIsTestAreaUnlocked(false);
+      setIsUnlockingTestArea(false);
+      setTestAreaError("");
+      setIsRunningSecurityChecks(false);
+      setSecurityChecks([]);
+      setSecurityChecksRanAt(null);
+      setSecurityEvents([]);
+      setSecurityEventsTotalTracked(0);
+      setSecurityEventsUpdatedAt(null);
+      setSecurityEventsError("");
+      setIsLoadingSecurityEvents(false);
+      setIsClearingSecurityEvents(false);
+      setIsLiveMonitorEnabled(true);
+    }
+  };
+
+  const handleUnlockTestArea = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const normalizedPassword = testAreaPassword.trim();
+    if (!normalizedPassword) {
+      setTestAreaError("Informe a senha da área de testes.");
+      return;
+    }
+
+    setTestAreaError("");
+    setIsUnlockingTestArea(true);
+    try {
+      await adminUnlockSecurityTestArea(authToken, normalizedPassword);
+      setIsTestAreaUnlocked(true);
+      setTestAreaPassword("");
+      await loadSecurityEvents(authToken);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao desbloquear área de testes.";
+      setTestAreaError(message);
+    } finally {
+      setIsUnlockingTestArea(false);
+    }
+  };
+
+  const handleClearSecurityEvents = async () => {
+    if (!isTestAreaUnlocked) {
+      setTestAreaError("Desbloqueie a área de testes antes de limpar os eventos.");
+      return;
+    }
+
+    const confirmation = window.confirm(
+      "Deseja limpar o histórico do monitor de segurança agora?",
+    );
+    if (!confirmation) {
+      return;
+    }
+
+    setTestAreaError("");
+    setSecurityEventsError("");
+    setIsClearingSecurityEvents(true);
+    try {
+      await adminClearSecurityEvents(authToken);
+      setSecurityEvents([]);
+      setSecurityEventsTotalTracked(0);
+      setSecurityEventsUpdatedAt(Date.now());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao limpar eventos.";
+      setSecurityEventsError(message);
+    } finally {
+      setIsClearingSecurityEvents(false);
+    }
+  };
+
+  const handleRunSecurityChecks = async () => {
+    if (!isTestAreaUnlocked) {
+      setTestAreaError("Desbloqueie a área de testes antes de executar os diagnósticos.");
+      return;
+    }
+
+    setTestAreaError("");
+    setIsRunningSecurityChecks(true);
+
+    try {
+      const checks: SecurityCheckResult[] = [];
+
+      let healthStatus = 0;
+      let healthHeaders: Headers | null = null;
+      try {
+        const healthResponse = await fetch(buildApiUrl("/api/health"), {
+          method: "GET",
+          credentials: "include",
+        });
+        healthStatus = healthResponse.status;
+        healthHeaders = healthResponse.headers;
+        checks.push({
+          id: "health-endpoint",
+          title: "Endpoint de saúde da API",
+          status: healthResponse.ok ? "pass" : "warn",
+          details: healthResponse.ok
+            ? "API respondeu normalmente em /api/health."
+            : `API respondeu ${healthResponse.status} em /api/health.`,
+        });
+      } catch (error) {
+        checks.push({
+          id: "health-endpoint",
+          title: "Endpoint de saúde da API",
+          status: "fail",
+          details:
+            error instanceof Error
+              ? `Falha ao consultar /api/health: ${error.message}`
+              : "Falha ao consultar /api/health.",
+        });
+      }
+
+      if (healthHeaders) {
+        const missingHeaders: string[] = [];
+        const requiredHeaders = [
+          "x-content-type-options",
+          "x-frame-options",
+          "referrer-policy",
+          "content-security-policy",
+        ] as const;
+        for (const headerName of requiredHeaders) {
+          if (!healthHeaders.get(headerName)) {
+            missingHeaders.push(headerName);
+          }
+        }
+
+        checks.push({
+          id: "security-headers",
+          title: "Cabeçalhos básicos de segurança",
+          status: missingHeaders.length === 0 ? "pass" : "warn",
+          details:
+            missingHeaders.length === 0
+              ? "Todos os cabeçalhos básicos foram encontrados."
+              : `Cabeçalhos ausentes: ${missingHeaders.join(", ")}.`,
+        });
+      } else if (healthStatus === 0) {
+        checks.push({
+          id: "security-headers",
+          title: "Cabeçalhos básicos de segurança",
+          status: "fail",
+          details: "Não foi possível validar cabeçalhos porque /api/health não respondeu.",
+        });
+      }
+
+      try {
+        const response = await fetch(buildApiUrl("/api/auth/me"), {
+          method: "GET",
+          credentials: "omit",
+        });
+        const protectedStatus = response.status === 401 || response.status === 403;
+        checks.push({
+          id: "auth-route-anonymous",
+          title: "Proteção de rota autenticada (/api/auth/me)",
+          status: protectedStatus ? "pass" : "fail",
+          details: protectedStatus
+            ? `Sem credenciais, rota bloqueou com status ${response.status}.`
+            : `Sem credenciais, rota respondeu ${response.status}.`,
+        });
+      } catch (error) {
+        checks.push({
+          id: "auth-route-anonymous",
+          title: "Proteção de rota autenticada (/api/auth/me)",
+          status: "fail",
+          details:
+            error instanceof Error
+              ? `Falha ao executar teste anônimo: ${error.message}`
+              : "Falha ao executar teste anônimo.",
+        });
+      }
+
+      try {
+        const response = await fetch(buildApiUrl("/api/admin/users"), {
+          method: "GET",
+          credentials: "omit",
+        });
+        const protectedStatus = response.status === 401 || response.status === 403;
+        checks.push({
+          id: "admin-route-anonymous",
+          title: "Proteção de rota administrativa (/api/admin/users)",
+          status: protectedStatus ? "pass" : "fail",
+          details: protectedStatus
+            ? `Sem credenciais, rota admin bloqueou com status ${response.status}.`
+            : `Sem credenciais, rota admin respondeu ${response.status}.`,
+        });
+      } catch (error) {
+        checks.push({
+          id: "admin-route-anonymous",
+          title: "Proteção de rota administrativa (/api/admin/users)",
+          status: "fail",
+          details:
+            error instanceof Error
+              ? `Falha ao testar rota admin sem credenciais: ${error.message}`
+              : "Falha ao testar rota admin sem credenciais.",
+        });
+      }
+
+      try {
+        const response = await fetch(buildApiUrl("/api/auth/login"), {
+          method: "POST",
+          credentials: "omit",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: "email-invalido-sem-arroba",
+            password: "123",
+          }),
+        });
+
+        const isExpectedStatus = response.status === 400 || response.status === 401;
+        checks.push({
+          id: "input-validation-probe",
+          title: "Teste simples de validação de entrada",
+          status: isExpectedStatus ? "pass" : response.status >= 500 ? "fail" : "warn",
+          details: isExpectedStatus
+            ? `Payload inválido foi tratado corretamente com status ${response.status}.`
+            : `Payload inválido respondeu com status ${response.status}.`,
+        });
+      } catch (error) {
+        checks.push({
+          id: "input-validation-probe",
+          title: "Teste simples de validação de entrada",
+          status: "fail",
+          details:
+            error instanceof Error
+              ? `Falha ao executar teste de payload inválido: ${error.message}`
+              : "Falha ao executar teste de payload inválido.",
+        });
+      }
+
+      try {
+        const response = await fetch(buildApiUrl("/api/this-route-should-not-exist"), {
+          method: "GET",
+          credentials: "omit",
+        });
+        checks.push({
+          id: "unknown-route",
+          title: "Resposta para rota inexistente",
+          status: response.status === 404 ? "pass" : "warn",
+          details:
+            response.status === 404
+              ? "Rotas inexistentes retornam 404 normalmente."
+              : `Rota inexistente retornou ${response.status}.`,
+        });
+      } catch (error) {
+        checks.push({
+          id: "unknown-route",
+          title: "Resposta para rota inexistente",
+          status: "fail",
+          details:
+            error instanceof Error
+              ? `Falha ao consultar rota inexistente: ${error.message}`
+              : "Falha ao consultar rota inexistente.",
+        });
+      }
+
+      setSecurityChecks(checks);
+      setSecurityChecksRanAt(Date.now());
+    } finally {
+      setIsRunningSecurityChecks(false);
     }
   };
 
   const handleRefresh = async () => {
     if (!sessionEmail) {
+      return;
+    }
+    if (activeView === "security") {
+      if (!isTestAreaUnlocked) {
+        setTestAreaError("Desbloqueie a área de testes para atualizar o monitor.");
+        return;
+      }
+      await loadSecurityEvents(authToken);
       return;
     }
     await loadUsers(authToken, query);
@@ -692,6 +1245,65 @@ export default function AdminPanelV2() {
       );
     });
   }, [query, users]);
+
+  const securityEventsSummary = React.useMemo(() => {
+    return securityEvents.reduce(
+      (acc, item) => {
+        acc.total += 1;
+        if (item.level === "pass") {
+          acc.pass += 1;
+        } else if (item.level === "warn") {
+          acc.warn += 1;
+        } else {
+          acc.fail += 1;
+        }
+        return acc;
+      },
+      { pass: 0, warn: 0, fail: 0, total: 0 },
+    );
+  }, [securityEvents]);
+
+  React.useEffect(() => {
+    if (!sessionEmail || !authToken || !isTestAreaUnlocked || activeView !== "security") {
+      return;
+    }
+    if (!isLiveMonitorEnabled) {
+      return;
+    }
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async (silent: boolean) => {
+      if (cancelled) {
+        return;
+      }
+      await loadSecurityEvents(authToken, { silent });
+      if (cancelled) {
+        return;
+      }
+      timer = setTimeout(() => {
+        void poll(true);
+      }, SECURITY_EVENTS_POLL_INTERVAL_MS);
+    };
+
+    void poll(securityEvents.length > 0);
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+    };
+  }, [
+    activeView,
+    authToken,
+    isLiveMonitorEnabled,
+    isTestAreaUnlocked,
+    loadSecurityEvents,
+    securityEvents.length,
+    sessionEmail,
+  ]);
 
   if (isBootstrapping) {
     return (
@@ -792,98 +1404,368 @@ export default function AdminPanelV2() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <div className="mb-6 border border-stone-200 bg-white p-4 sm:p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <Search className="w-4 h-4 text-stone-600" />
-            <h2 className="text-sm font-semibold text-stone-900">
-              Usuários cadastrados ({users.length})
-            </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveView("users")}
+              className={`inline-flex items-center gap-2 px-3 py-2 text-xs uppercase tracking-[0.14em] border transition-colors ${
+                activeView === "users"
+                  ? "border-stone-900 bg-stone-900 text-white"
+                  : "border-stone-300 text-stone-700 hover:border-stone-800"
+              }`}
+            >
+              <Search className="w-3.5 h-3.5" />
+              Usuários
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("security")}
+              className={`inline-flex items-center gap-2 px-3 py-2 text-xs uppercase tracking-[0.14em] border transition-colors ${
+                activeView === "security"
+                  ? "border-stone-900 bg-stone-900 text-white"
+                  : "border-stone-300 text-stone-700 hover:border-stone-800"
+              }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              Área de testes
+            </button>
           </div>
-          <input
-            type="text"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Filtrar por nome, email, cidade, país ou ID"
-            className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
-          />
         </div>
 
-        {usersError && (
-          <div className="mb-4 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {usersError}
-          </div>
-        )}
+        {activeView === "users" ? (
+          <>
+            <div className="mb-6 border border-stone-200 bg-white p-4 sm:p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <Search className="w-4 h-4 text-stone-600" />
+                <h2 className="text-sm font-semibold text-stone-900">
+                  Usuários cadastrados ({users.length})
+                </h2>
+              </div>
+              <input
+                type="text"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Filtrar por nome, email, cidade, país ou ID"
+                className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
+              />
+            </div>
 
-        {isLoadingUsers ? (
-          <div className="py-16 text-center text-sm text-stone-500">Carregando usuários...</div>
-        ) : filteredUsers.length === 0 ? (
-          <div className="py-16 text-center text-sm text-stone-500">
-            Nenhum usuário encontrado.
-          </div>
+            {usersError && (
+              <div className="mb-4 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {usersError}
+              </div>
+            )}
+
+            {isLoadingUsers ? (
+              <div className="py-16 text-center text-sm text-stone-500">Carregando usuários...</div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="py-16 text-center text-sm text-stone-500">
+                Nenhum usuário encontrado.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {filteredUsers.map((user) => (
+                  <article
+                    key={user.id}
+                    className="border border-stone-200 bg-white p-4 sm:p-5 flex flex-col gap-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-stone-900">
+                          {user.username || user.email || `Usuário ${user.id}`}
+                        </h3>
+                        <p className="text-xs text-stone-600">{user.email || "-"}</p>
+                      </div>
+                      <span className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.12em] px-2 py-1 border border-stone-300 text-stone-600">
+                        ID {user.id}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-stone-600">
+                      <span>Cidade: {user.city || "-"}</span>
+                      <span>País: {user.country || "-"}</span>
+                      <span>Criado em: {formatDate(user.createdAt)}</span>
+                      <span>
+                        Status:{" "}
+                        <strong className={user.isBanned ? "text-red-700" : "text-emerald-700"}>
+                          {user.isBanned ? "Banido" : "Ativo"}
+                        </strong>
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleBan(user)}
+                        disabled={pendingBanUserId === user.id}
+                        className="inline-flex items-center gap-2 border border-amber-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                      >
+                        {user.isBanned ? (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        ) : (
+                          <Ban className="w-3.5 h-3.5" />
+                        )}
+                        {pendingBanUserId === user.id
+                          ? "Atualizando..."
+                          : user.isBanned
+                            ? "Desbanir"
+                            : "Banir"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteUser(user)}
+                        disabled={deletingUserId === user.id}
+                        className="inline-flex items-center gap-2 border border-red-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-red-700 hover:bg-red-50 disabled:opacity-60"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {deletingUserId === user.id ? "Excluindo..." : "Excluir usuário"}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {filteredUsers.map((user) => (
-              <article
-                key={user.id}
-                className="border border-stone-200 bg-white p-4 sm:p-5 flex flex-col gap-4"
-              >
-                <div className="flex items-start justify-between gap-3">
+          <section className="space-y-4">
+            <article className="border border-stone-200 bg-white p-4 sm:p-5 space-y-4">
+              <div className="flex items-start gap-3">
+                <Shield className="w-4 h-4 text-stone-700 mt-0.5" />
+                <div>
+                  <h2 className="text-sm font-semibold text-stone-900">Área de Testes de Segurança</h2>
+                  <p className="text-xs text-stone-500 mt-1">
+                    Esta área executa diagnósticos não destrutivos para você validar sua ferramenta
+                    de segurança. Nenhuma proteção nova é aplicada automaticamente.
+                  </p>
+                </div>
+              </div>
+
+              {!isTestAreaUnlocked ? (
+                <form onSubmit={handleUnlockTestArea} className="space-y-3">
+                  <label className="text-xs uppercase tracking-[0.12em] text-stone-500">
+                    Senha da área de testes
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="password"
+                      value={testAreaPassword}
+                      onChange={(event) => setTestAreaPassword(event.target.value)}
+                      className="w-full sm:max-w-sm border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
+                      placeholder="Digite a senha da área de testes"
+                      autoComplete="off"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isUnlockingTestArea}
+                      className="inline-flex items-center justify-center gap-2 border border-stone-900 bg-stone-900 text-white px-4 py-2.5 text-xs uppercase tracking-[0.14em] hover:bg-black disabled:opacity-60"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      {isUnlockingTestArea ? "Validando..." : "Entrar na área"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="space-y-3">
+                  <div className="inline-flex items-center gap-2 border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Área de testes desbloqueada.
+                  </div>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => void handleRunSecurityChecks()}
+                      disabled={isRunningSecurityChecks}
+                      className="inline-flex items-center justify-center gap-2 border border-stone-900 bg-stone-900 text-white px-4 py-2.5 text-xs uppercase tracking-[0.14em] hover:bg-black disabled:opacity-60"
+                    >
+                      {isRunningSecurityChecks ? (
+                        <LoaderCircle className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <ShieldAlert className="w-3.5 h-3.5" />
+                      )}
+                      {isRunningSecurityChecks ? "Executando..." : "Executar diagnósticos"}
+                    </button>
+                  </div>
+                  {securityChecksRanAt !== null && (
+                    <p className="text-xs text-stone-500">
+                      Última execução: {formatDateTime(securityChecksRanAt)}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {testAreaError && (
+                <div className="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {testAreaError}
+                </div>
+              )}
+            </article>
+
+            {isTestAreaUnlocked && (
+              <article className="border border-stone-200 bg-white p-4 sm:p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div>
                     <h3 className="text-sm font-semibold text-stone-900">
-                      {user.username || user.email || `Usuário ${user.id}`}
+                      Monitor ao vivo da API
                     </h3>
-                    <p className="text-xs text-stone-600">{user.email || "-"}</p>
+                    <p className="text-xs text-stone-500 mt-1">
+                      Exibe os movimentos recentes em <code>/api</code>, inclusive tentativas
+                      suspeitas, sem aplicar bloqueios automáticos.
+                    </p>
                   </div>
-                  <span className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.12em] px-2 py-1 border border-stone-300 text-stone-600">
-                    ID {user.id}
-                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsLiveMonitorEnabled((current) => !current)}
+                      className="inline-flex items-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-800"
+                    >
+                      {isLiveMonitorEnabled ? "Pausar ao vivo" : "Retomar ao vivo"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void loadSecurityEvents(authToken)}
+                      disabled={isLoadingSecurityEvents}
+                      className="inline-flex items-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-800 disabled:opacity-60"
+                    >
+                      {isLoadingSecurityEvents ? (
+                        <LoaderCircle className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      )}
+                      Atualizar eventos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleClearSecurityEvents()}
+                      disabled={isClearingSecurityEvents}
+                      className="inline-flex items-center gap-2 border border-red-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-red-700 hover:bg-red-50 disabled:opacity-60"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      {isClearingSecurityEvents ? "Limpando..." : "Limpar histórico"}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-stone-600">
-                  <span>Cidade: {user.city || "-"}</span>
-                  <span>País: {user.country || "-"}</span>
-                  <span>Criado em: {formatDate(user.createdAt)}</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="border border-stone-200 bg-stone-50 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">Total</p>
+                    <p className="text-sm font-semibold text-stone-900">{securityEventsSummary.total}</p>
+                  </div>
+                  <div className="border border-emerald-200 bg-emerald-50 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">Normal</p>
+                    <p className="text-sm font-semibold text-emerald-800">{securityEventsSummary.pass}</p>
+                  </div>
+                  <div className="border border-amber-200 bg-amber-50 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-amber-700">Atenção</p>
+                    <p className="text-sm font-semibold text-amber-800">{securityEventsSummary.warn}</p>
+                  </div>
+                  <div className="border border-red-200 bg-red-50 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-red-700">Alerta</p>
+                    <p className="text-sm font-semibold text-red-800">{securityEventsSummary.fail}</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
                   <span>
-                    Status:{" "}
-                    <strong className={user.isBanned ? "text-red-700" : "text-emerald-700"}>
-                      {user.isBanned ? "Banido" : "Ativo"}
-                    </strong>
+                    Histórico total em memória: <strong>{securityEventsTotalTracked}</strong>
+                  </span>
+                  {securityEventsUpdatedAt !== null && (
+                    <span>Atualizado em: {formatDateTime(securityEventsUpdatedAt)}</span>
+                  )}
+                  <span>
+                    Atualização automática:{" "}
+                    <strong>{isLiveMonitorEnabled ? "ligada" : "pausada"}</strong>
                   </span>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleToggleBan(user)}
-                    disabled={pendingBanUserId === user.id}
-                    className="inline-flex items-center gap-2 border border-amber-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-amber-700 hover:bg-amber-50 disabled:opacity-60"
-                  >
-                    {user.isBanned ? (
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                    ) : (
-                      <Ban className="w-3.5 h-3.5" />
-                    )}
-                    {pendingBanUserId === user.id
-                      ? "Atualizando..."
-                      : user.isBanned
-                        ? "Desbanir"
-                        : "Banir"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleDeleteUser(user)}
-                    disabled={deletingUserId === user.id}
-                    className="inline-flex items-center gap-2 border border-red-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-red-700 hover:bg-red-50 disabled:opacity-60"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    {deletingUserId === user.id ? "Excluindo..." : "Excluir usuário"}
-                  </button>
+                {securityEventsError && (
+                  <div className="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {securityEventsError}
+                  </div>
+                )}
+
+                {isLoadingSecurityEvents && securityEvents.length === 0 ? (
+                  <div className="py-10 text-center text-sm text-stone-500">
+                    Carregando eventos do monitor...
+                  </div>
+                ) : securityEvents.length === 0 ? (
+                  <div className="py-10 text-center text-sm text-stone-500">
+                    Nenhum movimento recente registrado no monitor.
+                  </div>
+                ) : (
+                  <div className="max-h-[460px] overflow-y-auto pr-1 space-y-2">
+                    {securityEvents.map((event) => (
+                      <article
+                        key={`${event.id}-${event.createdAt}`}
+                        className="border border-stone-200 bg-white px-3 py-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center border border-stone-300 px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] text-stone-700">
+                            {event.method}
+                          </span>
+                          <span
+                            className={`inline-flex items-center border px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] ${getSecurityStatusStyles(
+                              event.level,
+                            )}`}
+                          >
+                            {getSecurityStatusLabel(event.level)}
+                          </span>
+                          <span className="text-xs text-stone-600">HTTP {event.status}</span>
+                          <span className="text-xs text-stone-500">{formatDateTime(event.createdAt)}</span>
+                          <span className="text-xs text-stone-500">{event.durationMs} ms</span>
+                        </div>
+                        <p className="mt-2 text-xs text-stone-800 font-mono break-all">{event.path}</p>
+                        {event.note ? (
+                          <p className="mt-2 text-xs text-stone-700">{event.note}</p>
+                        ) : (
+                          <p className="mt-2 text-xs text-stone-400">Sem observações do classificador.</p>
+                        )}
+                        <p className="mt-2 text-[11px] text-stone-500 break-all">
+                          IP: {event.ip} | Admin route: {event.isAdminRoute ? "sim" : "não"} | Auth
+                          token: {event.hasAuthToken ? "sim" : "não"} | Admin token:{" "}
+                          {event.hasAdminToken ? "sim" : "não"}
+                        </p>
+                        <p className="mt-1 text-[11px] text-stone-500 break-all">
+                          User-Agent: {event.userAgent}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </article>
+            )}
+
+            {securityChecks.length > 0 && (
+              <article className="border border-stone-200 bg-white p-4 sm:p-5">
+                <h3 className="text-sm font-semibold text-stone-900 mb-3">
+                  Resultado dos diagnósticos ({securityChecks.length})
+                </h3>
+                <div className="space-y-3">
+                  {securityChecks.map((check) => (
+                    <div
+                      key={check.id}
+                      className={`border px-3 py-3 ${getSecurityStatusStyles(check.status)}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {check.status === "pass" ? (
+                          <CheckCircle2 className="w-4 h-4 mt-0.5" />
+                        ) : check.status === "warn" ? (
+                          <AlertTriangle className="w-4 h-4 mt-0.5" />
+                        ) : (
+                          <Ban className="w-4 h-4 mt-0.5" />
+                        )}
+                        <div>
+                          <p className="text-sm font-semibold">{check.title}</p>
+                          <p className="text-xs mt-1">{check.details}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </article>
-            ))}
-          </div>
+            )}
+          </section>
         )}
       </main>
     </div>
   );
 }
-

@@ -146,6 +146,24 @@ type AdminUserRecord = {
   createdAt?: string;
 };
 
+type SecurityMonitorLevel = "info" | "warn" | "alert";
+
+type SecurityMonitorEvent = {
+  id: number;
+  created_at: number;
+  method: string;
+  path: string;
+  status: number;
+  duration_ms: number;
+  ip: string;
+  user_agent: string;
+  level: SecurityMonitorLevel;
+  note: string;
+  is_admin_route: boolean;
+  has_auth_token: boolean;
+  has_admin_token: boolean;
+};
+
 type NormalizedProductInput = {
   name: string;
   category: string;
@@ -305,6 +323,12 @@ const ADMIN_EMAIL =
 const ADMIN_PASSWORD =
   normalizeCredentialValue(process.env.ADMIN_PASSWORD ?? DEFAULT_ADMIN_PASSWORD, false) ||
   DEFAULT_ADMIN_PASSWORD;
+const DEFAULT_ADMIN_TEST_AREA_PASSWORD = "@2t2b";
+const ADMIN_TEST_AREA_PASSWORD =
+  normalizeCredentialValue(
+    process.env.ADMIN_TEST_AREA_PASSWORD ?? DEFAULT_ADMIN_TEST_AREA_PASSWORD,
+    false,
+  ) || DEFAULT_ADMIN_TEST_AREA_PASSWORD;
 const ADMIN_EMAIL_ALIASES = parseCredentialAliases(process.env.ADMIN_EMAIL_ALIASES, true);
 const ADMIN_PASSWORD_ALIASES = parseCredentialAliases(process.env.ADMIN_PASSWORD_ALIASES, false);
 const ADMIN_EMAIL_CANDIDATES = Array.from(new Set([ADMIN_EMAIL, ...ADMIN_EMAIL_ALIASES]));
@@ -352,6 +376,11 @@ const NEW_PRODUCT_DRAFT_MAX_DETAILS = 24;
 const PRODUCT_COMMENT_MIN_RATING = 1;
 const PRODUCT_COMMENT_MAX_RATING = 5;
 const PRODUCT_COMMENT_MAX_BODY_LENGTH = 1200;
+const SECURITY_MONITOR_MAX_EVENTS = 800;
+const SECURITY_MONITOR_DEFAULT_LIMIT = 120;
+const SECURITY_MONITOR_MAX_LIMIT = 500;
+const securityMonitorEvents: SecurityMonitorEvent[] = [];
+let securityMonitorEventSequence = 0;
 
 const PRODUCT_SELECT_FIELDS = `
   p.id,
@@ -2957,6 +2986,132 @@ function getAdminSessionTokenFromRequest(req: Request): string | null {
   return null;
 }
 
+function normalizeSecurityMonitorPath(rawUrl: string): string {
+  const normalizedRaw = String(rawUrl ?? "").trim();
+  if (!normalizedRaw) {
+    return "/";
+  }
+
+  try {
+    const parsed = new URL(normalizedRaw, "http://localhost");
+    return parsed.pathname || "/";
+  } catch {
+    const fallback = normalizedRaw.split("?")[0]?.trim();
+    return fallback || "/";
+  }
+}
+
+function getRequestIp(req: Request): string {
+  const forwarded = String(req.headers["x-forwarded-for"] ?? "").trim();
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) {
+      return first;
+    }
+  }
+
+  const realIp = String(req.headers["x-real-ip"] ?? "").trim();
+  if (realIp) {
+    return realIp;
+  }
+
+  const ip = String(req.ip ?? req.socket?.remoteAddress ?? "").trim();
+  return ip || "unknown";
+}
+
+function truncateSecurityMonitorText(value: unknown, maxLength: number): string {
+  const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(1, maxLength - 3))}...`;
+}
+
+function selectHigherSecurityLevel(
+  current: SecurityMonitorLevel,
+  next: SecurityMonitorLevel,
+): SecurityMonitorLevel {
+  const levelWeight: Record<SecurityMonitorLevel, number> = {
+    info: 1,
+    warn: 2,
+    alert: 3,
+  };
+  return levelWeight[next] > levelWeight[current] ? next : current;
+}
+
+function classifySecurityMonitorEvent(
+  method: string,
+  rawUrl: string,
+  status: number,
+): { level: SecurityMonitorLevel; note: string } {
+  let level: SecurityMonitorLevel = "info";
+  const notes: string[] = [];
+
+  if (status >= 500) {
+    level = "alert";
+    notes.push("Resposta 5xx");
+  } else if (status >= 400) {
+    level = "warn";
+    notes.push("Resposta 4xx");
+  }
+
+  const normalizedMethod = String(method ?? "").trim().toUpperCase();
+  const knownMethods = new Set(["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]);
+  if (!knownMethods.has(normalizedMethod)) {
+    level = selectHigherSecurityLevel(level, "warn");
+    notes.push("Método HTTP incomum");
+  }
+
+  const normalizedUrl = String(rawUrl ?? "");
+  if (normalizedUrl.length > 1800) {
+    level = selectHigherSecurityLevel(level, "warn");
+    notes.push("URL muito longa");
+  }
+
+  const decoded = (() => {
+    try {
+      return decodeURIComponent(normalizedUrl);
+    } catch {
+      return normalizedUrl;
+    }
+  })();
+
+  const suspiciousPatternRegex =
+    /(\.\.\/|%2e%2e|<script|union\s+select|\bor\b\s+1=1|\/wp-admin|\/phpmyadmin)/i;
+  if (suspiciousPatternRegex.test(decoded)) {
+    level = selectHigherSecurityLevel(level, "alert");
+    notes.push("Padrão suspeito na URL");
+  }
+
+  return {
+    level,
+    note: notes.join(" | "),
+  };
+}
+
+function appendSecurityMonitorEvent(
+  event: Omit<SecurityMonitorEvent, "id" | "created_at">,
+) {
+  securityMonitorEventSequence += 1;
+  securityMonitorEvents.unshift({
+    id: securityMonitorEventSequence,
+    created_at: Date.now(),
+    ...event,
+  });
+
+  if (securityMonitorEvents.length > SECURITY_MONITOR_MAX_EVENTS) {
+    securityMonitorEvents.length = SECURITY_MONITOR_MAX_EVENTS;
+  }
+}
+
+function normalizeSecurityMonitorLimit(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    return SECURITY_MONITOR_DEFAULT_LIMIT;
+  }
+  return Math.min(Math.max(parsed, 1), SECURITY_MONITOR_MAX_LIMIT);
+}
+
 function sessionCookieBaseOptions(isProduction: boolean) {
   return {
     httpOnly: true,
@@ -3192,6 +3347,47 @@ async function bootstrap() {
 
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: "2mb" }));
+  app.use((req, res, next) => {
+    const startedAt = Date.now();
+    const rawUrl = String(req.originalUrl ?? req.url ?? "");
+    const normalizedPath = normalizeSecurityMonitorPath(rawUrl);
+    const method = String(req.method ?? "GET").trim().toUpperCase();
+    const isSecurityMonitorRoute =
+      normalizedPath === "/api/admin/security-test/events" ||
+      normalizedPath === "/api/admin/security-tests/events";
+    const hasAuthToken = Boolean(getSessionTokenFromRequest(req));
+    const hasAdminToken = Boolean(getAdminSessionTokenFromRequest(req));
+    const isAdminRoute = normalizedPath.startsWith("/api/admin");
+
+    res.on("finish", () => {
+      if (!normalizedPath.startsWith("/api")) {
+        return;
+      }
+      if (isSecurityMonitorRoute) {
+        return;
+      }
+
+      const durationMs = Math.max(0, Date.now() - startedAt);
+      const status = Number(res.statusCode || 0);
+      const classification = classifySecurityMonitorEvent(method, rawUrl, status);
+
+      appendSecurityMonitorEvent({
+        method,
+        path: normalizedPath,
+        status,
+        duration_ms: durationMs,
+        ip: truncateSecurityMonitorText(getRequestIp(req), 80),
+        user_agent: truncateSecurityMonitorText(req.headers["user-agent"] ?? "", 180),
+        level: classification.level,
+        note: classification.note,
+        is_admin_route: isAdminRoute,
+        has_auth_token: hasAuthToken,
+        has_admin_token: hasAdminToken,
+      });
+    });
+
+    next();
+  });
 
   if (IS_DEV_REMOTE_READ_ONLY) {
     app.use("/api", (req, res, next) => {
@@ -3464,6 +3660,76 @@ async function bootstrap() {
   app.post("/api/admin/auth", handleAdminLogin);
   app.get("/api/admin/auth", handleAdminCurrent);
   app.delete("/api/admin/auth", handleAdminLogout);
+
+  const handleAdminSecurityTestUnlock = (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    try {
+      const body = req.body as Record<string, unknown>;
+      const password = normalizeCredentialValue(body.password ?? "", false);
+      if (!password) {
+        res.status(400).json({ error: "Senha da área de testes é obrigatória." });
+        return;
+      }
+
+      if (!timingSafeEquals(password, ADMIN_TEST_AREA_PASSWORD)) {
+        res.status(401).json({ error: "Senha da área de testes inválida." });
+        return;
+      }
+
+      res.json({ success: true, unlocked: true });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao validar acesso da área de testes.";
+      res.status(500).json({ error: message });
+    }
+  };
+
+  app.post("/api/admin/security-test/unlock", handleAdminSecurityTestUnlock);
+  app.post("/api/admin/security-tests/unlock", handleAdminSecurityTestUnlock);
+
+  const handleAdminSecurityEventsList = (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    try {
+      const limit = normalizeSecurityMonitorLimit(req.query.limit);
+      const events = securityMonitorEvents.slice(0, limit);
+      const summary = {
+        info: events.filter((event) => event.level === "info").length,
+        warn: events.filter((event) => event.level === "warn").length,
+        alert: events.filter((event) => event.level === "alert").length,
+      };
+
+      res.json({
+        events,
+        totalTracked: securityMonitorEvents.length,
+        serverTime: Date.now(),
+        summary,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao carregar eventos de segurança.";
+      res.status(500).json({ error: message });
+    }
+  };
+
+  const handleAdminSecurityEventsClear = (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    securityMonitorEvents.length = 0;
+    res.json({ success: true, cleared: true });
+  };
+
+  app.get("/api/admin/security-test/events", handleAdminSecurityEventsList);
+  app.get("/api/admin/security-tests/events", handleAdminSecurityEventsList);
+  app.delete("/api/admin/security-test/events", handleAdminSecurityEventsClear);
+  app.delete("/api/admin/security-tests/events", handleAdminSecurityEventsClear);
 
   app.get("/api/admin/users", async (req, res) => {
     if (!requireAdmin(req, res)) {
