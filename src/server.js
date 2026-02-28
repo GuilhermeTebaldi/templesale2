@@ -1,2 +1,4 @@
-import "tsx/cjs";
-import "../server.ts";
+import { register } from "tsx/esm/api";
+
+register();
+await import("../server.ts");
