@@ -208,6 +208,38 @@ function extractDatabaseHostname(databaseUrl: string): string {
   }
 }
 
+function normalizeCredentialValue(value: unknown, lowercase: boolean): string {
+  const raw = String(value ?? "").trim();
+  const withoutQuotes =
+    (raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))
+      ? raw.slice(1, -1).trim()
+      : raw;
+  return lowercase ? withoutQuotes.toLowerCase() : withoutQuotes;
+}
+
+function parseCredentialAliases(value: unknown, lowercase: boolean): string[] {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return [];
+  }
+
+  const aliases = raw
+    .split(/[,\n;]+/)
+    .map((item) => normalizeCredentialValue(item, lowercase))
+    .filter((item) => item.length > 0);
+
+  return Array.from(new Set(aliases));
+}
+
+function timingSafeEquals(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left, "utf8");
+  const rightBuffer = Buffer.from(right, "utf8");
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
 const DATABASE_HOSTNAME = extractDatabaseHostname(DATABASE_URL);
 const IS_REMOTE_DATABASE = !isLocalDatabaseHost(DATABASE_HOSTNAME);
 const IS_DEV_REMOTE_DATABASE = !IS_PRODUCTION && IS_REMOTE_DATABASE;
@@ -231,10 +263,20 @@ const CLEAN_LOCAL_PRODUCTS_ON_BOOT =
   String(process.env.CLEAN_LOCAL_PRODUCTS_ON_BOOT ?? "false").toLowerCase() === "true";
 const SESSION_COOKIE_NAME = "templesale_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
-const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL ?? "templesale@admin.com")
-  .trim()
-  .toLowerCase();
-const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD ?? "Gui@1604").trim();
+const DEFAULT_ADMIN_EMAIL = "templesale@admin.com";
+const DEFAULT_ADMIN_PASSWORD = "Gui@1604";
+const ADMIN_EMAIL =
+  normalizeCredentialValue(process.env.ADMIN_EMAIL ?? DEFAULT_ADMIN_EMAIL, true) ||
+  DEFAULT_ADMIN_EMAIL;
+const ADMIN_PASSWORD =
+  normalizeCredentialValue(process.env.ADMIN_PASSWORD ?? DEFAULT_ADMIN_PASSWORD, false) ||
+  DEFAULT_ADMIN_PASSWORD;
+const ADMIN_EMAIL_ALIASES = parseCredentialAliases(process.env.ADMIN_EMAIL_ALIASES, true);
+const ADMIN_PASSWORD_ALIASES = parseCredentialAliases(process.env.ADMIN_PASSWORD_ALIASES, false);
+const ADMIN_EMAIL_CANDIDATES = Array.from(new Set([ADMIN_EMAIL, ...ADMIN_EMAIL_ALIASES]));
+const ADMIN_PASSWORD_CANDIDATES = Array.from(
+  new Set([ADMIN_PASSWORD, ...ADMIN_PASSWORD_ALIASES]),
+);
 const ADMIN_SESSION_COOKIE_NAME = "templesale_admin_session";
 const ADMIN_SESSION_TTL_SECONDS = 60 * 60 * 12;
 const ADMIN_SESSION_SECRET = String(
@@ -2784,18 +2826,26 @@ async function bootstrap() {
     },
   );
 
+  const isAllowedAdminEmail = (email: string) => {
+    return ADMIN_EMAIL_CANDIDATES.includes(email);
+  };
+
+  const isAllowedAdminPassword = (password: string) => {
+    return ADMIN_PASSWORD_CANDIDATES.some((candidate) => timingSafeEquals(password, candidate));
+  };
+
   const handleAdminLogin = (req: Request, res: Response) => {
     try {
       const body = req.body as Record<string, unknown>;
-      const email = String(body.email ?? "").trim().toLowerCase();
-      const password = String(body.password ?? "").trim();
+      const email = normalizeCredentialValue(body.email ?? "", true);
+      const password = normalizeCredentialValue(body.password ?? "", false);
 
       if (!email || !password) {
         res.status(400).json({ error: "Email e senha do administrador são obrigatórios." });
         return;
       }
 
-      if (email !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {
+      if (!isAllowedAdminEmail(email) || !isAllowedAdminPassword(password)) {
         clearAdminSessionCookie(res, isProduction);
         res.status(401).json({ error: "Credenciais de administrador inválidas." });
         return;
@@ -2829,6 +2879,15 @@ async function bootstrap() {
   app.post("/api/admin/auth/login", handleAdminLogin);
   app.get("/api/admin/auth/me", handleAdminCurrent);
   app.post("/api/admin/auth/logout", handleAdminLogout);
+
+  // Legacy admin auth routes still used by older deployed frontends
+  app.post("/api/admin/login", handleAdminLogin);
+  app.get("/api/admin/me", handleAdminCurrent);
+  app.post("/api/admin/logout", handleAdminLogout);
+  app.delete("/api/admin/logout", handleAdminLogout);
+  app.post("/api/admin", handleAdminLogin);
+  app.get("/api/admin", handleAdminCurrent);
+  app.delete("/api/admin", handleAdminLogout);
 
   // Backward-compatible aliases for older frontends
   app.post("/api/admin/auth", handleAdminLogin);
