@@ -46,6 +46,9 @@ const HOME_HERO_FALLBACK_IMAGE =
   "https://i.pinimg.com/736x/d8/6a/96/d86a960149b06d59f2e8f4c992633874.jpg";
 const INSTAGRAM_PROFILE_URL =
   "https://www.instagram.com/templesale_?igsh=MWVndTY4Z3d6aHV0MA%3D%3D&utm_source=qr";
+const PARTNER_PROMO_URL = "https://www.puntoescort.com/";
+const PARTNER_PROMO_LOGO =
+  "https://i.pinimg.com/736x/db/b4/39/dbb4391fea99581de1a5e4d2f02d2c7c.jpg";
 const CART_STORAGE_KEY = "templesale_cart_items";
 const CART_UNSEEN_STORAGE_KEY = "templesale_cart_unseen_alert";
 const READ_NOTIFICATIONS_STORAGE_KEY = "templesale_read_notifications";
@@ -2240,6 +2243,38 @@ export default function App() {
               </a>
             </div>
           </div>
+        </div>
+        <div className="max-w-7xl mx-auto mt-14">
+          <a
+            href={PARTNER_PROMO_URL}
+            target="_blank"
+            rel="noreferrer sponsored"
+            className="group block border border-stone-200 bg-linear-to-r from-stone-50 to-white p-4 sm:p-5 hover:border-stone-400 transition-colors"
+            aria-label="Visitar site parceiro PuntoEscort"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5">
+              <img
+                src={PARTNER_PROMO_LOGO}
+                alt="Logo PuntoEscort"
+                className="w-20 h-20 sm:w-24 sm:h-24 object-cover rounded-sm border border-stone-200 shrink-0"
+                referrerPolicy="no-referrer"
+              />
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-stone-500 mb-2">
+                  Parceiro em destaque
+                </p>
+                <h3 className="text-lg sm:text-xl font-serif italic text-stone-900 mb-1 notranslate" translate="no">
+                  PuntoEscort
+                </h3>
+                <p className="text-sm text-stone-500 leading-relaxed">
+                  Conheça nosso parceiro e acesse mais anúncios diretamente no site.
+                </p>
+              </div>
+              <span className="sm:ml-auto inline-flex items-center justify-center px-4 py-2 border border-stone-300 text-[10px] uppercase tracking-[0.2em] font-semibold text-stone-700 transition-colors group-hover:bg-stone-900 group-hover:text-white group-hover:border-stone-900">
+                Visitar site
+              </span>
+            </div>
+          </a>
         </div>
         <div className="max-w-7xl mx-auto mt-20 pt-8 border-t border-stone-50 flex flex-col md:flex-row justify-between items-center gap-4">
           <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400">
