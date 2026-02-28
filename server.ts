@@ -442,6 +442,136 @@ function resolveAgentProtectionStatus(siteId: string): boolean {
   return typeof stored === "boolean" ? stored : true;
 }
 
+function buildAgentRuntimeScript(siteId: string, apiBase: string): string {
+  const serializedSiteId = JSON.stringify(siteId);
+  const serializedApiBase = JSON.stringify(apiBase.replace(/\/+$/, ""));
+
+  return `(function() {
+  const SITE_ID = ${serializedSiteId};
+  const API_BASE = ${serializedApiBase};
+  const STATUS_URL = API_BASE + "/api/agent/status/" + SITE_ID;
+  const REPORT_URL = API_BASE + "/api/agent/report?siteId=" + SITE_ID;
+  const MAX_EVENTS = 30;
+  let sentEvents = 0;
+  const dedupe = {};
+
+  function textSafe(value, maxLen) {
+    const raw = String(value || "").replace(/\\s+/g, " ").trim();
+    if (!raw) return "-";
+    return raw.length > maxLen ? raw.slice(0, maxLen) + "..." : raw;
+  }
+
+  function markOnce(key) {
+    if (dedupe[key]) return false;
+    dedupe[key] = true;
+    return true;
+  }
+
+  function sendEvent(type, target, status) {
+    if (sentEvents >= MAX_EVENTS) return;
+    sentEvents += 1;
+
+    fetch(REPORT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        siteId: SITE_ID,
+        type: textSafe(type, 120),
+        source: textSafe(window.location.origin + window.location.pathname, 160),
+        target: textSafe(target, 260),
+        status: status || "Monitored"
+      }),
+      keepalive: true
+    }).catch(function() {});
+  }
+
+  function runPageChecks() {
+    if (window.location.protocol !== "https:") {
+      if (markOnce("no_https")) {
+        sendEvent("Agent: Site sem HTTPS", "Página em HTTP: " + window.location.href, "Monitored");
+      }
+    }
+
+    const insecureScripts = document.querySelectorAll('script[src^="http://"]');
+    if (insecureScripts.length > 0 && markOnce("insecure_scripts")) {
+      sendEvent("Agent: Script externo inseguro", "Scripts HTTP detectados: " + insecureScripts.length, "Monitored");
+    }
+
+    const insecureForms = Array.from(document.forms).filter(function(form) {
+      const action = form.getAttribute("action") || "";
+      return /^http:\\/\\//i.test(action);
+    });
+    if (insecureForms.length > 0 && markOnce("insecure_forms")) {
+      sendEvent("Agent: Formulário inseguro", "Formulários HTTP detectados: " + insecureForms.length, "Monitored");
+    }
+
+    const hasPassword = document.querySelector('input[type="password"]');
+    if (hasPassword && window.location.protocol !== "https:" && markOnce("password_no_https")) {
+      sendEvent("Agent: Senha sem HTTPS", "Campo de senha em página sem HTTPS", "Monitored");
+    }
+  }
+
+  function installRuntimeChecks() {
+    window.addEventListener("securitypolicyviolation", function(event) {
+      const key = "csp_" + textSafe(event.violatedDirective || "-", 120);
+      if (!markOnce(key)) return;
+      sendEvent(
+        "Agent: CSP violada",
+        "Diretiva: " + textSafe(event.violatedDirective || "-", 100) + " | Recurso: " + textSafe(event.blockedURI || "-", 120),
+        "Monitored"
+      );
+    });
+
+    window.addEventListener("error", function(event) {
+      const message = textSafe(event.message || "erro_js", 120);
+      const key = "js_" + message;
+      if (!markOnce(key)) return;
+      sendEvent(
+        "Agent: Erro JavaScript",
+        message + " | Arquivo: " + textSafe((event.filename || "-") + ":" + (event.lineno || 0), 120),
+        "Monitored"
+      );
+    });
+
+    window.addEventListener("unhandledrejection", function(event) {
+      const reason = textSafe(event.reason && (event.reason.message || event.reason) || "promise_rejeitada", 120);
+      const key = "promise_" + reason;
+      if (!markOnce(key)) return;
+      sendEvent("Agent: Promise rejeitada", reason, "Monitored");
+    });
+  }
+
+  async function checkSecurity() {
+    try {
+      const res = await fetch(STATUS_URL);
+      if (!res.ok) return;
+      const status = await res.json();
+      if (status.protected) {
+        console.log("🛡️ AntiImpostor Active: Site Protected");
+        if (markOnce("protection_on")) {
+          sendEvent("Agent: Proteção ativa", "Conectado ao painel AntiImpostor", "Monitored");
+        }
+      } else {
+        console.warn("⚠️ AntiImpostor Warning: Protection Disabled by Admin");
+        if (markOnce("protection_off")) {
+          sendEvent("Agent: Proteção desligada", "A proteção está desativada no painel", "Monitored");
+        }
+      }
+    } catch (e) {
+      console.error("AntiImpostor Connection Error");
+    }
+  }
+
+  if (markOnce("agent_connected")) {
+    sendEvent("Agent: Agente conectado", "Script carregado em " + window.location.origin, "Monitored");
+  }
+  runPageChecks();
+  installRuntimeChecks();
+  checkSecurity();
+  setInterval(checkSecurity, 60000);
+})();`;
+}
+
 const PRODUCT_SELECT_FIELDS = `
   p.id,
   COALESCE(NULLIF(TRIM(COALESCE(p.name, '')), ''), NULLIF(TRIM(COALESCE(p.title, '')), ''), 'Produto sem título') AS name,
@@ -3489,6 +3619,7 @@ async function bootstrap() {
       normalizedPath === "/api/admin/security-test/events" ||
       normalizedPath === "/api/admin/security-tests/events" ||
       normalizedPath === "/api/agent/report" ||
+      normalizedPath.startsWith("/api/agent/script/") ||
       normalizedPath.startsWith("/api/agent/status/");
     const hasAuthToken = Boolean(getSessionTokenFromRequest(req));
     const hasAdminToken = Boolean(getAdminSessionTokenFromRequest(req));
@@ -3563,6 +3694,24 @@ async function bootstrap() {
           ? "configured"
           : "missing_env",
     });
+  });
+
+  app.get("/api/agent/script/:siteId.js", (req, res) => {
+    const siteId = normalizeAgentSiteId(req.params.siteId);
+    if (!siteId) {
+      res.status(400).type("text/plain; charset=utf-8").send("siteId inválido.");
+      return;
+    }
+
+    const requestOrigin = `${req.protocol}://${req.get("host") || "localhost:3000"}`;
+    const apiBase = String(process.env.AGENT_API_BASE_URL ?? "").trim() || requestOrigin;
+    const script = buildAgentRuntimeScript(siteId, apiBase);
+
+    res
+      .status(200)
+      .type("application/javascript; charset=utf-8")
+      .setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=600")
+      .send(script);
   });
 
   app.get("/api/agent/status/:siteId", (req, res) => {
