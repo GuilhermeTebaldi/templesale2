@@ -1865,6 +1865,9 @@ export const api = {
       let lastError: unknown;
 
       for (const route of loginRouteCandidates) {
+        let routeHandledByServer = false;
+        let routeAuthError: unknown = null;
+
         for (const payloadCandidate of loginPayloadCandidates) {
           try {
             const payload = await request<unknown>(route, {
@@ -1887,11 +1890,20 @@ export const api = {
             if (isMissingApiRouteError(error)) {
               break;
             }
+            routeHandledByServer = true;
             if (isAdminLoginPayloadFormatError(error) || isUnauthorizedApiError(error)) {
+              routeAuthError = error;
               continue;
             }
             throw error;
           }
+        }
+
+        // If this route exists and auth failed, avoid falling through to legacy missing routes
+        // that would replace the real error with a noisy 404.
+        if (routeHandledByServer) {
+          lastError = routeAuthError ?? lastError;
+          break;
         }
       }
 
@@ -1905,16 +1917,19 @@ export const api = {
     async getCurrent() {
       const adminToken = readAdminToken();
       const persistedEmail = readAdminSessionEmail();
-      if (adminToken) {
-        try {
-          await request<unknown>("/api/admin/users", { useAdminToken: true });
-          if (persistedEmail) {
-            return { email: persistedEmail };
-          }
-        } catch (error) {
-          if (!isUnauthorizedApiError(error) && !isMissingApiRouteError(error)) {
-            throw error;
-          }
+      try {
+        await request<unknown>("/api/admin/users", { useAdminToken: true });
+        if (persistedEmail) {
+          return { email: persistedEmail };
+        }
+      } catch (error) {
+        if (isUnauthorizedApiError(error)) {
+          clearAdminToken();
+          clearAdminSessionEmail();
+          throw error;
+        }
+        if (!isMissingApiRouteError(error)) {
+          throw error;
         }
       }
 
@@ -1943,7 +1958,7 @@ export const api = {
         }
       }
 
-      if (readAdminToken() && persistedEmail) {
+      if (adminToken && persistedEmail) {
         return { email: persistedEmail };
       }
 
