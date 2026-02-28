@@ -631,6 +631,30 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
 }
 
 function normalizeProductCommentRow(row: Record<string, unknown>): ProductCommentRow {
+  const parsedCreatedAt = (() => {
+    const numericValue = Number(row.created_at);
+    if (Number.isFinite(numericValue)) {
+      return Math.floor(numericValue);
+    }
+
+    if (row.created_at instanceof Date) {
+      const fromDate = Math.floor(row.created_at.getTime() / 1000);
+      if (Number.isFinite(fromDate)) {
+        return fromDate;
+      }
+    }
+
+    const asText = String(row.created_at ?? "").trim();
+    if (asText) {
+      const parsedMs = Date.parse(asText);
+      if (Number.isFinite(parsedMs)) {
+        return Math.floor(parsedMs / 1000);
+      }
+    }
+
+    return Math.floor(Date.now() / 1000);
+  })();
+
   return {
     id: toRequiredNumber(row.id),
     product_id: toRequiredNumber(row.product_id),
@@ -638,7 +662,7 @@ function normalizeProductCommentRow(row: Record<string, unknown>): ProductCommen
     parent_comment_id: toNullableNumber(row.parent_comment_id),
     rating: toNullableNumber(row.rating),
     body: String(row.body ?? ""),
-    created_at: toRequiredNumber(row.created_at),
+    created_at: parsedCreatedAt,
     author_name: String(row.author_name ?? "").trim() || `Usuário ${toRequiredNumber(row.user_id)}`,
     author_avatar_url: toNullableString(row.author_avatar_url),
   };
@@ -1318,13 +1342,12 @@ async function createProductCommentRecord(input: {
           user_id,
           parent_comment_id,
           rating,
-          body,
-          created_at
+          body
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5)
         RETURNING id
       `,
-      [input.productId, input.userId, input.parentCommentId, input.rating, input.body, createdAt],
+      [input.productId, input.userId, input.parentCommentId, input.rating, input.body],
     );
     return toRequiredNumber(result.rows[0]?.id);
   }
