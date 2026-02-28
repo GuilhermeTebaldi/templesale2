@@ -350,6 +350,18 @@ const MAP_TILE_MIN_ZOOM = 0;
 const MAP_TILE_MAX_ZOOM = 20;
 const MAP_TILE_FETCH_TIMEOUT_MS = 4500;
 const MAP_TILE_CACHE_CONTROL = "public, max-age=21600, stale-while-revalidate=43200";
+const SECURITY_PERMISSIONS_POLICY = [
+  "accelerometer=()",
+  "autoplay=()",
+  "camera=()",
+  "display-capture=()",
+  "fullscreen=(self)",
+  "geolocation=()",
+  "gyroscope=()",
+  "microphone=()",
+  "payment=()",
+  "usb=()",
+].join(", ");
 const UPLOAD_MAX_BYTES = 12 * 1024 * 1024;
 const CART_NOTIFICATION_DEDUP_WINDOW_SECONDS = 15 * 60;
 const WHATSAPP_COUNTRIES = {
@@ -381,6 +393,39 @@ const SECURITY_MONITOR_DEFAULT_LIMIT = 120;
 const SECURITY_MONITOR_MAX_LIMIT = 500;
 const securityMonitorEvents: SecurityMonitorEvent[] = [];
 let securityMonitorEventSequence = 0;
+
+function buildContentSecurityPolicy(isProduction: boolean): string {
+  const scriptSources = ["'self'", "https://unpkg.com"];
+  const styleSources = ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://unpkg.com"];
+  const connectSources = [
+    "'self'",
+    "https://api.cloudinary.com",
+    "https://saleday-backend.onrender.com",
+    "https://www.templesale.com",
+    "https://templesale.com",
+  ];
+
+  if (!isProduction) {
+    scriptSources.push("'unsafe-eval'", "'unsafe-inline'", "http://localhost:*", "http://127.0.0.1:*");
+    connectSources.push("ws://localhost:*", "ws://127.0.0.1:*", "http://localhost:*", "http://127.0.0.1:*");
+  }
+
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "frame-ancestors 'self'",
+    "object-src 'none'",
+    "form-action 'self'",
+    `script-src ${scriptSources.join(" ")}`,
+    `style-src ${styleSources.join(" ")}`,
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    `connect-src ${connectSources.join(" ")}`,
+    "frame-src 'none'",
+    "worker-src 'self' blob:",
+    "upgrade-insecure-requests",
+  ].join("; ");
+}
 
 const PRODUCT_SELECT_FIELDS = `
   p.id,
@@ -3344,7 +3389,17 @@ async function bootstrap() {
   const app = express();
   const isProduction = process.env.NODE_ENV === "production";
   const port = Number(process.env.PORT || 5173);
+  const cspHeaderValue = buildContentSecurityPolicy(isProduction);
 
+  app.disable("x-powered-by");
+  app.use((_req, res, next) => {
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy", SECURITY_PERMISSIONS_POLICY);
+    res.setHeader("Content-Security-Policy", cspHeaderValue);
+    next();
+  });
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: "2mb" }));
   app.use((req, res, next) => {
