@@ -20,7 +20,32 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Detect backend changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'server.ts'
+              - 'src/server.js'
+              - 'api/**'
+              - 'backend/**'
+              - 'src/backend/**'
+              - 'src/server/**'
+              - 'src/routes/**'
+              - 'src/controllers/**'
+              - 'src/models/**'
+              - 'src/services/**'
+              - 'src/middlewares/**'
+              - 'sql/**'
+              - 'scripts/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig.json'
+              - '.github/workflows/deploy-render-backend.yml'
+
       - name: Trigger Render deploy hook
+        if: steps.changes.outputs.backend == 'true'
         env:
           RENDER_DEPLOY_HOOK_URL_SECRET: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
           RENDER_DEPLOY_HOOK_URL_VAR: ${{ vars.RENDER_DEPLOY_HOOK_URL }}
@@ -65,3 +90,7 @@ jobs:
           echo "Failed to trigger Render deploy hook after ${max_attempts} attempts."
           echo "Continuing without failing workflow because Render auto-deploy may already be active."
           exit 0
+
+      - name: Skip Render deploy (no backend changes)
+        if: steps.changes.outputs.backend != 'true'
+        run: echo "No backend-related files changed. Render deploy skipped."
