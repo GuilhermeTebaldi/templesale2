@@ -327,6 +327,7 @@ export default function ProductMap({
   const [panelSearchQuery, setPanelSearchQuery] = React.useState("");
   const [mapReadyVersion, setMapReadyVersion] = React.useState(0);
 
+  const overlayRef = React.useRef<HTMLDivElement | null>(null);
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<LeafletMapInstance | null>(null);
   const leafletRef = React.useRef<LeafletGlobal | null>(null);
@@ -349,6 +350,53 @@ export default function ProductMap({
       setMapInteractionForDrawing(mapRef.current, isDrawing);
     }
   }, [isDrawing]);
+
+  React.useEffect(() => {
+    const overlay = overlayRef.current;
+    if (!overlay) {
+      return;
+    }
+
+    const preventGestureZoom = (event: Event) => {
+      event.preventDefault();
+    };
+
+    const preventPinchTouchZoom = (event: TouchEvent) => {
+      if (event.touches.length > 1) {
+        event.preventDefault();
+      }
+    };
+
+    const preventCtrlWheelZoom = (event: WheelEvent) => {
+      if (event.ctrlKey) {
+        event.preventDefault();
+      }
+    };
+
+    overlay.addEventListener("gesturestart", preventGestureZoom, {
+      passive: false,
+    });
+    overlay.addEventListener("gesturechange", preventGestureZoom, {
+      passive: false,
+    });
+    overlay.addEventListener("gestureend", preventGestureZoom, {
+      passive: false,
+    });
+    overlay.addEventListener("touchmove", preventPinchTouchZoom, {
+      passive: false,
+    });
+    overlay.addEventListener("wheel", preventCtrlWheelZoom, {
+      passive: false,
+    });
+
+    return () => {
+      overlay.removeEventListener("gesturestart", preventGestureZoom);
+      overlay.removeEventListener("gesturechange", preventGestureZoom);
+      overlay.removeEventListener("gestureend", preventGestureZoom);
+      overlay.removeEventListener("touchmove", preventPinchTouchZoom);
+      overlay.removeEventListener("wheel", preventCtrlWheelZoom);
+    };
+  }, []);
 
   React.useEffect(() => {
     productsWithLocationRef.current = productsWithLocation;
@@ -884,6 +932,7 @@ export default function ProductMap({
 
   return (
     <motion.div
+      ref={overlayRef}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -979,7 +1028,7 @@ export default function ProductMap({
               background:
                 "radial-gradient(circle at 20% 20%, #f7f2e8 0%, #ece7db 45%, #e7e1d4 100%)",
               cursor: isDrawing ? "crosshair" : undefined,
-              touchAction: isDrawing ? "none" : "auto",
+              touchAction: "none",
             }}
           />
         )}
