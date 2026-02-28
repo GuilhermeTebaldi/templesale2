@@ -391,7 +391,9 @@ const PRODUCT_COMMENT_MAX_BODY_LENGTH = 1200;
 const SECURITY_MONITOR_MAX_EVENTS = 800;
 const SECURITY_MONITOR_DEFAULT_LIMIT = 120;
 const SECURITY_MONITOR_MAX_LIMIT = 500;
+const AGENT_SITE_ID_REGEX = /^[a-z0-9_-]{3,64}$/i;
 const securityMonitorEvents: SecurityMonitorEvent[] = [];
+const agentProtectionBySiteId = new globalThis.Map<string, boolean>();
 let securityMonitorEventSequence = 0;
 
 function buildContentSecurityPolicy(isProduction: boolean): string {
@@ -425,6 +427,19 @@ function buildContentSecurityPolicy(isProduction: boolean): string {
     "worker-src 'self' blob:",
     "upgrade-insecure-requests",
   ].join("; ");
+}
+
+function normalizeAgentSiteId(value: unknown): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized || !AGENT_SITE_ID_REGEX.test(normalized)) {
+    return "";
+  }
+  return normalized;
+}
+
+function resolveAgentProtectionStatus(siteId: string): boolean {
+  const stored = agentProtectionBySiteId.get(siteId);
+  return typeof stored === "boolean" ? stored : true;
 }
 
 const PRODUCT_SELECT_FIELDS = `
@@ -3180,6 +3195,23 @@ function classifySecurityMonitorEvent(
   };
 }
 
+function classifyAgentEventLevel(type: string, target: string, status: string): SecurityMonitorLevel {
+  const haystack = `${type} ${target} ${status}`.toLowerCase();
+  if (haystack.includes("proteção desligada") || haystack.includes("protecao desligada")) {
+    return "alert";
+  }
+  if (
+    haystack.includes("csp") ||
+    haystack.includes("erro javascript") ||
+    haystack.includes("promise rejeitada") ||
+    haystack.includes("senha sem https") ||
+    haystack.includes("inseguro")
+  ) {
+    return "warn";
+  }
+  return "info";
+}
+
 function appendSecurityMonitorEvent(
   event: Omit<SecurityMonitorEvent, "id" | "created_at">,
 ) {
@@ -3455,7 +3487,9 @@ async function bootstrap() {
     const method = String(req.method ?? "GET").trim().toUpperCase();
     const isSecurityMonitorRoute =
       normalizedPath === "/api/admin/security-test/events" ||
-      normalizedPath === "/api/admin/security-tests/events";
+      normalizedPath === "/api/admin/security-tests/events" ||
+      normalizedPath === "/api/agent/report" ||
+      normalizedPath.startsWith("/api/agent/status/");
     const hasAuthToken = Boolean(getSessionTokenFromRequest(req));
     const hasAdminToken = Boolean(getAdminSessionTokenFromRequest(req));
     const isAdminRoute = normalizedPath.startsWith("/api/admin");
@@ -3492,7 +3526,12 @@ async function bootstrap() {
 
   if (IS_DEV_REMOTE_READ_ONLY) {
     app.use("/api", (req, res, next) => {
+      const normalizedPath = normalizeSecurityMonitorPath(String(req.originalUrl ?? req.url ?? ""));
       if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+        next();
+        return;
+      }
+      if (normalizedPath === "/api/agent/report") {
         next();
         return;
       }
@@ -3524,6 +3563,59 @@ async function bootstrap() {
           ? "configured"
           : "missing_env",
     });
+  });
+
+  app.get("/api/agent/status/:siteId", (req, res) => {
+    const siteId = normalizeAgentSiteId(req.params.siteId);
+    if (!siteId) {
+      res.status(400).json({ error: "siteId inválido." });
+      return;
+    }
+
+    res.json({
+      siteId,
+      protected: resolveAgentProtectionStatus(siteId),
+      checkedAt: Date.now(),
+    });
+  });
+
+  app.post("/api/agent/report", (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const siteId = normalizeAgentSiteId(req.query.siteId ?? body.siteId);
+    if (!siteId) {
+      res.status(400).json({ error: "siteId inválido." });
+      return;
+    }
+
+    const type = truncateSecurityMonitorText(body.type ?? "Agent: Evento", 120) || "Agent: Evento";
+    const source =
+      truncateSecurityMonitorText(body.source ?? req.headers.origin ?? req.headers.referer ?? "/", 260) ||
+      "/";
+    const target = truncateSecurityMonitorText(body.target ?? "-", 260) || "-";
+    const statusLabel = truncateSecurityMonitorText(body.status ?? "Monitored", 80) || "Monitored";
+    const level = classifyAgentEventLevel(type, target, statusLabel);
+    const statusCode = level === "alert" ? 500 : level === "warn" ? 400 : 200;
+    const eventPath = normalizeSecurityMonitorPath(source);
+    const eventNote = truncateSecurityMonitorText(
+      `siteId=${siteId} | type=${type} | target=${target} | status=${statusLabel}`,
+      480,
+    );
+
+    appendSecurityMonitorEvent({
+      method: "AGENT",
+      path: eventPath,
+      status: statusCode,
+      duration_ms: 0,
+      ip: truncateSecurityMonitorText(getRequestIp(req), 80),
+      user_agent: truncateSecurityMonitorText(req.headers["user-agent"] ?? "", 180),
+      level,
+      note: eventNote,
+      is_admin_route: false,
+      has_auth_token: Boolean(getSessionTokenFromRequest(req)),
+      has_admin_token: Boolean(getAdminSessionTokenFromRequest(req)),
+    });
+
+    res.status(201).json({ success: true });
   });
 
   if (!isProduction) {
@@ -3761,6 +3853,47 @@ async function bootstrap() {
   app.post("/api/admin/auth", handleAdminLogin);
   app.get("/api/admin/auth", handleAdminCurrent);
   app.delete("/api/admin/auth", handleAdminLogout);
+
+  app.get("/api/admin/agent/status/:siteId", (req, res) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    const siteId = normalizeAgentSiteId(req.params.siteId);
+    if (!siteId) {
+      res.status(400).json({ error: "siteId inválido." });
+      return;
+    }
+
+    res.json({
+      siteId,
+      protected: resolveAgentProtectionStatus(siteId),
+    });
+  });
+
+  app.patch("/api/admin/agent/status/:siteId", (req, res) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    const siteId = normalizeAgentSiteId(req.params.siteId);
+    if (!siteId) {
+      res.status(400).json({ error: "siteId inválido." });
+      return;
+    }
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.protected !== "boolean") {
+      res.status(400).json({ error: "Campo protected deve ser booleano." });
+      return;
+    }
+
+    agentProtectionBySiteId.set(siteId, body.protected);
+    res.json({
+      siteId,
+      protected: body.protected,
+    });
+  });
 
   const handleAdminSecurityTestUnlock = (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) {
