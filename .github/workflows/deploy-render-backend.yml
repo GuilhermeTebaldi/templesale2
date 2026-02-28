@@ -60,18 +60,45 @@ jobs:
       - name: Trigger Render deploy hook
         if: steps.changes.outputs.backend == 'true'
         env:
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          RENDER_DEPLOY_HOOK_URL_SECRET: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          RENDER_DEPLOY_HOOK_URL_VAR: ${{ vars.RENDER_DEPLOY_HOOK_URL }}
         run: |
           set -euo pipefail
+
+          RENDER_DEPLOY_HOOK_URL="${RENDER_DEPLOY_HOOK_URL_SECRET:-${RENDER_DEPLOY_HOOK_URL_VAR:-}}"
+
           if [ -z "${RENDER_DEPLOY_HOOK_URL:-}" ]; then
-            echo "Missing secret: RENDER_DEPLOY_HOOK_URL"
+            echo "Missing configuration: set RENDER_DEPLOY_HOOK_URL in repo Secrets or Variables."
             exit 1
           fi
 
-          # Render deploy hooks accept POST and trigger a fresh deploy.
-          curl --fail --silent --show-error \
-            -X POST \
-            "$RENDER_DEPLOY_HOOK_URL" \
-            > /tmp/render-deploy-hook-response.json
+          attempts=0
+          max_attempts=3
+          while [ "$attempts" -lt "$max_attempts" ]; do
+            attempts=$((attempts + 1))
+            echo "Triggering Render deploy hook (attempt ${attempts}/${max_attempts})..."
 
-          echo "Render deploy hook triggered successfully."
+            http_code="$(curl --silent --show-error \
+              --output /tmp/render-deploy-hook-response.json \
+              --write-out '%{http_code}' \
+              -X POST \
+              "$RENDER_DEPLOY_HOOK_URL" || true)"
+
+            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+              echo "Render deploy hook triggered successfully (HTTP ${http_code})."
+              echo "Render response:"
+              cat /tmp/render-deploy-hook-response.json
+              exit 0
+            fi
+
+            echo "Render deploy hook failed with HTTP ${http_code}."
+            echo "Response body:"
+            cat /tmp/render-deploy-hook-response.json || true
+
+            if [ "$attempts" -lt "$max_attempts" ]; then
+              sleep 5
+            fi
+          done
+
+          echo "Failed to trigger Render deploy hook after ${max_attempts} attempts."
+          exit 1
