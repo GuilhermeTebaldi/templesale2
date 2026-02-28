@@ -54,6 +54,7 @@ Observação:
 - Esse modo prioriza simplicidade: qualquer push na `main` também dispara deploy do backend no Render.
 - Vantagem: você não precisa pensar se a mudança foi frontend ou backend.
 - Custo: haverá mais deploys no Render.
+- Se o hook estiver ausente ou indisponível, o workflow segue sem falhar para não bloquear o fluxo.
 
 ## Troubleshooting rápido
 
