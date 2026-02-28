@@ -596,6 +596,29 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
   const rawType = String(row.type ?? "").trim();
   const type: NotificationEventType =
     rawType === "product_cart_interest" ? "product_cart_interest" : "product_like";
+  const parsedCreatedAt = (() => {
+    const numericValue = Number(row.created_at);
+    if (Number.isFinite(numericValue)) {
+      return Math.floor(numericValue);
+    }
+
+    if (row.created_at instanceof Date) {
+      const fromDate = Math.floor(row.created_at.getTime() / 1000);
+      if (Number.isFinite(fromDate)) {
+        return fromDate;
+      }
+    }
+
+    const asText = String(row.created_at ?? "").trim();
+    if (asText) {
+      const parsedMs = Date.parse(asText);
+      if (Number.isFinite(parsedMs)) {
+        return Math.floor(parsedMs / 1000);
+      }
+    }
+
+    return Math.floor(Date.now() / 1000);
+  })();
 
   return {
     type,
@@ -603,7 +626,7 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
     actor_name: String(row.actor_name ?? ""),
     product_id: toRequiredNumber(row.product_id),
     product_name: String(row.product_name ?? ""),
-    created_at: toRequiredNumber(row.created_at),
+    created_at: parsedCreatedAt,
   };
 }
 
@@ -1375,7 +1398,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             COALESCE(NULLIF(BTRIM(lu.name), ''), 'Alguém') AS actor_name,
             p.id AS product_id,
             p.name AS product_name,
-            l.created_at
+            l.created_at::TEXT AS created_at
           FROM product_likes l
           INNER JOIN products p ON p.id = l.product_id
           LEFT JOIN users lu ON lu.id = l.user_id
@@ -1389,7 +1412,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             COALESCE(NULLIF(BTRIM(c.actor_name), ''), '') AS actor_name,
             p.id AS product_id,
             p.name AS product_name,
-            c.created_at
+            c.created_at::TEXT AS created_at
           FROM product_cart_notifications c
           INNER JOIN products p ON p.id = c.product_id
           WHERE c.owner_user_id = $1
