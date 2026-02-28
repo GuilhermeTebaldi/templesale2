@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  detect-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,45 +20,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect non-frontend changes
-        id: changes
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            frontend:
-              - "src/components/**"
-              - "src/i18n/**"
-              - "src/lib/**"
-              - "src/App.tsx"
-              - "src/main.tsx"
-              - "src/index.css"
-              - "index.html"
-              - "vite.config.ts"
-              - "vercel.json"
-              - "metadata.json"
-              - "logo-cropped-*.png"
-              - "DEPLOY_AUTOMATICO.md"
-            backend:
-              - "**"
-              - "!src/components/**"
-              - "!src/i18n/**"
-              - "!src/lib/**"
-              - "!src/App.tsx"
-              - "!src/main.tsx"
-              - "!src/index.css"
-              - "!index.html"
-              - "!vite.config.ts"
-              - "!vercel.json"
-              - "!metadata.json"
-              - "!logo-cropped-*.png"
-              - "!DEPLOY_AUTOMATICO.md"
-
-      - name: Skip when only frontend changed
-        if: steps.changes.outputs.backend != 'true'
-        run: echo "No backend changes detected. Render deploy skipped."
-
       - name: Trigger Render deploy hook
-        if: steps.changes.outputs.backend == 'true'
         env:
           RENDER_DEPLOY_HOOK_URL_SECRET: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
           RENDER_DEPLOY_HOOK_URL_VAR: ${{ vars.RENDER_DEPLOY_HOOK_URL }}
