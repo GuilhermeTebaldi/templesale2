@@ -797,7 +797,7 @@ export default function ProductDetails({
               </div>
             </motion.div>
 
-            <section className="order-2 lg:order-none lg:col-start-1 lg:row-start-2 mt-2 border-t border-stone-200 pt-8">
+            <section className="order-4 lg:order-none lg:col-start-1 lg:row-start-2 mt-2 border-t border-stone-200 pt-8">
               <div>
                 <h2 className="text-xl font-serif italic text-stone-800">
                   {t("Comentários e avaliações")}
