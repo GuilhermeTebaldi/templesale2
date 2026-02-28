@@ -1,4 +1,5 @@
 const DEFAULT_SITE_ID = "ugo3ifae3";
+const DEFAULT_AGENT_API_BASE_URL = "http://localhost:3000";
 const MAX_EVENTS = 30;
 const STATUS_POLL_INTERVAL_MS = 60_000;
 
@@ -33,7 +34,7 @@ function buildAgentApiBase(): string {
   if (configuredBase) {
     return configuredBase;
   }
-  return "";
+  return DEFAULT_AGENT_API_BASE_URL;
 }
 
 function buildAgentUrl(path: string): string {
@@ -178,15 +179,22 @@ export function installAntiImpostorAgent(): void {
 
   const checkSecurity = async () => {
     try {
-      const response = await fetch(statusUrl, { cache: "no-store" });
+      const response = await fetch(statusUrl);
       if (!response.ok) {
         return;
       }
       const payload = (await response.json()) as { protected?: unknown };
       if (payload.protected === true) {
-        console.log("AntiImpostor Active: Site Protected");
+        console.log("🛡️ AntiImpostor Active: Site Protected");
+        if (markOnce("protection_on")) {
+          sendEvent(
+            "Agent: Proteção ativa",
+            "Conectado ao painel AntiImpostor",
+            "Monitored",
+          );
+        }
       } else {
-        console.warn("AntiImpostor Warning: Protection Disabled by Admin");
+        console.warn("⚠️ AntiImpostor Warning: Protection Disabled by Admin");
         if (markOnce("protection_off")) {
           sendEvent(
             "Agent: Proteção desligada",
@@ -200,6 +208,13 @@ export function installAntiImpostorAgent(): void {
     }
   };
 
+  if (markOnce("agent_connected")) {
+    sendEvent(
+      "Agent: Agente conectado",
+      `Script carregado em ${window.location.origin}`,
+      "Monitored",
+    );
+  }
   runPageChecks();
   installRuntimeChecks();
   void checkSecurity();
