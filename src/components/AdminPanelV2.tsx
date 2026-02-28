@@ -35,6 +35,7 @@ type AdminSessionV2 = {
 type AdminViewV2 = "users" | "security";
 
 type SecurityCheckStatus = "pass" | "warn" | "fail";
+type SecurityEventFilter = "all" | SecurityCheckStatus;
 
 type SecurityCheckResult = {
   id: string;
@@ -441,6 +442,57 @@ function getSecurityStatusLabel(status: SecurityCheckStatus): string {
   return "Alerta";
 }
 
+function getSecurityFilterLabel(filter: SecurityEventFilter): string {
+  if (filter === "all") {
+    return "Total";
+  }
+  return getSecurityStatusLabel(filter);
+}
+
+function explainHttpStatus(status: number): string {
+  if (status >= 500) {
+    return "erro interno no servidor";
+  }
+  if (status >= 400) {
+    return "acesso negado ou requisição inválida";
+  }
+  if (status >= 300) {
+    return "redirecionamento";
+  }
+  if (status >= 200) {
+    return "requisição concluída com sucesso";
+  }
+  if (status > 0) {
+    return "resposta fora do padrão";
+  }
+  return "sem retorno HTTP";
+}
+
+function buildSecurityEventFriendlySummary(event: AdminSecurityEventV2): string {
+  const routeType = event.isAdminRoute ? "na área administrativa" : "na API pública";
+  const authContext = event.hasAdminToken
+    ? "com credencial de administrador"
+    : event.hasAuthToken
+      ? "com credencial de usuário"
+      : "sem credencial de login";
+
+  if (event.level === "pass") {
+    return `Movimento normal: a requisição foi feita ${routeType}, ${authContext}, e a API respondeu sem sinal de risco.`;
+  }
+  if (event.level === "warn") {
+    return `Atenção: houve um comportamento fora do padrão ${routeType}, ${authContext}. Recomendado acompanhar este padrão de acesso.`;
+  }
+  return `Alerta: foi detectado um comportamento suspeito ${routeType}, ${authContext}. Recomendado revisar imediatamente este acesso.`;
+}
+
+function formatSecurityEventNote(note: string): string {
+  const cleaned = note.trim();
+  if (!cleaned) {
+    return "";
+  }
+  return `Detalhe detectado automaticamente: ${cleaned}`;
+}
+
 function isMissingApiRouteError(error: unknown): boolean {
   if (!(error instanceof HttpError)) {
     return false;
@@ -766,6 +818,7 @@ export default function AdminPanelV2() {
   const [isLoadingSecurityEvents, setIsLoadingSecurityEvents] = React.useState(false);
   const [isClearingSecurityEvents, setIsClearingSecurityEvents] = React.useState(false);
   const [isLiveMonitorEnabled, setIsLiveMonitorEnabled] = React.useState(true);
+  const [securityEventsFilter, setSecurityEventsFilter] = React.useState<SecurityEventFilter>("all");
 
   const loadUsers = React.useCallback(
     async (token: string, searchQuery = "") => {
@@ -1263,6 +1316,13 @@ export default function AdminPanelV2() {
     );
   }, [securityEvents]);
 
+  const filteredSecurityEvents = React.useMemo(() => {
+    if (securityEventsFilter === "all") {
+      return securityEvents;
+    }
+    return securityEvents.filter((event) => event.level === securityEventsFilter);
+  }, [securityEvents, securityEventsFilter]);
+
   React.useEffect(() => {
     if (!sessionEmail || !authToken || !isTestAreaUnlocked || activeView !== "security") {
       return;
@@ -1646,22 +1706,78 @@ export default function AdminPanelV2() {
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div className="border border-stone-200 bg-stone-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">Total</p>
-                    <p className="text-sm font-semibold text-stone-900">{securityEventsSummary.total}</p>
-                  </div>
-                  <div className="border border-emerald-200 bg-emerald-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">Normal</p>
-                    <p className="text-sm font-semibold text-emerald-800">{securityEventsSummary.pass}</p>
-                  </div>
-                  <div className="border border-amber-200 bg-amber-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-amber-700">Atenção</p>
-                    <p className="text-sm font-semibold text-amber-800">{securityEventsSummary.warn}</p>
-                  </div>
-                  <div className="border border-red-200 bg-red-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-red-700">Alerta</p>
-                    <p className="text-sm font-semibold text-red-800">{securityEventsSummary.fail}</p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSecurityEventsFilter("all")}
+                    className={`text-left border px-3 py-2 transition-colors ${
+                      securityEventsFilter === "all"
+                        ? "border-stone-900 bg-stone-900 text-white"
+                        : "border-stone-200 bg-stone-50 hover:border-stone-400"
+                    }`}
+                  >
+                    <p
+                      className={`text-[11px] uppercase tracking-[0.12em] ${
+                        securityEventsFilter === "all" ? "text-white/80" : "text-stone-500"
+                      }`}
+                    >
+                      Total
+                    </p>
+                    <p className="text-sm font-semibold">{securityEventsSummary.total}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSecurityEventsFilter("pass")}
+                    className={`text-left border px-3 py-2 transition-colors ${
+                      securityEventsFilter === "pass"
+                        ? "border-emerald-800 bg-emerald-800 text-white"
+                        : "border-emerald-200 bg-emerald-50 hover:border-emerald-400"
+                    }`}
+                  >
+                    <p
+                      className={`text-[11px] uppercase tracking-[0.12em] ${
+                        securityEventsFilter === "pass" ? "text-white/80" : "text-emerald-700"
+                      }`}
+                    >
+                      Normal
+                    </p>
+                    <p className="text-sm font-semibold">{securityEventsSummary.pass}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSecurityEventsFilter("warn")}
+                    className={`text-left border px-3 py-2 transition-colors ${
+                      securityEventsFilter === "warn"
+                        ? "border-amber-800 bg-amber-800 text-white"
+                        : "border-amber-200 bg-amber-50 hover:border-amber-400"
+                    }`}
+                  >
+                    <p
+                      className={`text-[11px] uppercase tracking-[0.12em] ${
+                        securityEventsFilter === "warn" ? "text-white/80" : "text-amber-700"
+                      }`}
+                    >
+                      Atenção
+                    </p>
+                    <p className="text-sm font-semibold">{securityEventsSummary.warn}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSecurityEventsFilter("fail")}
+                    className={`text-left border px-3 py-2 transition-colors ${
+                      securityEventsFilter === "fail"
+                        ? "border-red-800 bg-red-800 text-white"
+                        : "border-red-200 bg-red-50 hover:border-red-400"
+                    }`}
+                  >
+                    <p
+                      className={`text-[11px] uppercase tracking-[0.12em] ${
+                        securityEventsFilter === "fail" ? "text-white/80" : "text-red-700"
+                      }`}
+                    >
+                      Alerta
+                    </p>
+                    <p className="text-sm font-semibold">{securityEventsSummary.fail}</p>
+                  </button>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
@@ -1674,6 +1790,9 @@ export default function AdminPanelV2() {
                   <span>
                     Atualização automática:{" "}
                     <strong>{isLiveMonitorEnabled ? "ligada" : "pausada"}</strong>
+                  </span>
+                  <span>
+                    Filtro ativo: <strong>{getSecurityFilterLabel(securityEventsFilter)}</strong>
                   </span>
                 </div>
 
@@ -1691,9 +1810,13 @@ export default function AdminPanelV2() {
                   <div className="py-10 text-center text-sm text-stone-500">
                     Nenhum movimento recente registrado no monitor.
                   </div>
+                ) : filteredSecurityEvents.length === 0 ? (
+                  <div className="py-10 text-center text-sm text-stone-500">
+                    Não há eventos no filtro <strong>{getSecurityFilterLabel(securityEventsFilter)}</strong>.
+                  </div>
                 ) : (
                   <div className="max-h-[460px] overflow-y-auto pr-1 space-y-2">
-                    {securityEvents.map((event) => (
+                    {filteredSecurityEvents.map((event) => (
                       <article
                         key={`${event.id}-${event.createdAt}`}
                         className="border border-stone-200 bg-white px-3 py-3"
@@ -1709,23 +1832,36 @@ export default function AdminPanelV2() {
                           >
                             {getSecurityStatusLabel(event.level)}
                           </span>
-                          <span className="text-xs text-stone-600">HTTP {event.status}</span>
+                          <span className="text-xs text-stone-600">
+                            Retorno HTTP: {event.status} ({explainHttpStatus(event.status)})
+                          </span>
                           <span className="text-xs text-stone-500">{formatDateTime(event.createdAt)}</span>
-                          <span className="text-xs text-stone-500">{event.durationMs} ms</span>
+                          <span className="text-xs text-stone-500">
+                            Tempo de resposta: {event.durationMs} ms
+                          </span>
                         </div>
-                        <p className="mt-2 text-xs text-stone-800 font-mono break-all">{event.path}</p>
-                        {event.note ? (
-                          <p className="mt-2 text-xs text-stone-700">{event.note}</p>
+                        <p className="mt-2 text-sm text-stone-800">
+                          {buildSecurityEventFriendlySummary(event)}
+                        </p>
+                        <p className="mt-2 text-xs text-stone-600 break-all">
+                          Rota acessada: <span className="font-mono text-stone-700">{event.path}</span>
+                        </p>
+                        {formatSecurityEventNote(event.note) ? (
+                          <p className="mt-2 text-xs text-stone-600">
+                            {formatSecurityEventNote(event.note)}
+                          </p>
                         ) : (
-                          <p className="mt-2 text-xs text-stone-400">Sem observações do classificador.</p>
+                          <p className="mt-2 text-xs text-stone-400">
+                            Sem detalhe técnico adicional neste evento.
+                          </p>
                         )}
                         <p className="mt-2 text-[11px] text-stone-500 break-all">
-                          IP: {event.ip} | Admin route: {event.isAdminRoute ? "sim" : "não"} | Auth
-                          token: {event.hasAuthToken ? "sim" : "não"} | Admin token:{" "}
+                          Origem (IP): {event.ip} | Área admin: {event.isAdminRoute ? "sim" : "não"} |
+                          Login de usuário: {event.hasAuthToken ? "sim" : "não"} | Login de admin:{" "}
                           {event.hasAdminToken ? "sim" : "não"}
                         </p>
                         <p className="mt-1 text-[11px] text-stone-500 break-all">
-                          User-Agent: {event.userAgent}
+                          Navegador/aplicativo da origem: {event.userAgent}
                         </p>
                       </article>
                     ))}
