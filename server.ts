@@ -146,6 +146,15 @@ type UserProfileUpdateInput = {
   whatsapp_number: string;
 };
 
+type NewProductDraftDefaults = {
+  name: string;
+  category: string;
+  latitude: string;
+  longitude: string;
+  description: string;
+  details: Record<string, string>;
+};
+
 type VendorRow = {
   id: number;
   name: string;
@@ -303,6 +312,18 @@ const WHATSAPP_COUNTRIES = {
 } as const;
 
 type WhatsappCountryIso = keyof typeof WHATSAPP_COUNTRIES;
+const NEW_PRODUCT_DRAFT_ALLOWED_DETAIL_KEYS = new Set([
+  "type",
+  "area",
+  "rooms",
+  "bathrooms",
+  "parking",
+  "brand",
+  "model",
+  "color",
+  "year",
+]);
+const NEW_PRODUCT_DRAFT_MAX_DETAILS = 24;
 
 const PRODUCT_SELECT_FIELDS = `
   p.id,
@@ -578,6 +599,7 @@ function initializeSqliteDatabase() {
       street TEXT NOT NULL DEFAULT '',
       whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT',
       whatsapp_number TEXT NOT NULL DEFAULT '',
+      new_product_defaults TEXT NOT NULL DEFAULT '{}',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
     );
 
@@ -675,6 +697,9 @@ function initializeSqliteDatabase() {
   if (!userColumns.some((column) => column.name === "whatsapp_number")) {
     db.exec("ALTER TABLE users ADD COLUMN whatsapp_number TEXT NOT NULL DEFAULT ''");
   }
+  if (!userColumns.some((column) => column.name === "new_product_defaults")) {
+    db.exec("ALTER TABLE users ADD COLUMN new_product_defaults TEXT NOT NULL DEFAULT '{}'");
+  }
 
   db.exec("CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)");
   sqliteDb = db;
@@ -709,6 +734,7 @@ async function initializePostgresDatabase() {
         street TEXT NOT NULL DEFAULT '',
         whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT',
         whatsapp_number TEXT NOT NULL DEFAULT '',
+        new_product_defaults TEXT NOT NULL DEFAULT '{}',
         created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
       )
     `,
@@ -799,6 +825,7 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS street TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT'",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS new_product_defaults TEXT NOT NULL DEFAULT '{}'",
     "UPDATE products SET title = COALESCE(NULLIF(BTRIM(title), ''), NULLIF(BTRIM(name), ''), 'Produto sem título') WHERE title IS NULL OR BTRIM(title) = ''",
     "UPDATE products SET image_url = COALESCE(NULLIF(BTRIM(image_url), ''), NULLIF(BTRIM(image), ''), '') WHERE image_url IS NULL OR BTRIM(image_url) = ''",
     "UPDATE products SET image_urls = COALESCE(NULLIF(BTRIM(image_urls), ''), images, '[]') WHERE image_urls IS NULL OR BTRIM(image_urls) = ''",
@@ -1670,6 +1697,67 @@ async function updateUserAvatarRecord(userId: number, avatarUrl: string): Promis
     });
 }
 
+async function selectUserNewProductDraftDefaultsRecord(
+  userId: number,
+): Promise<NewProductDraftDefaults> {
+  if (pgPool) {
+    const result = await pgPool.query<{ new_product_defaults: string | null }>(
+      `
+        SELECT new_product_defaults
+        FROM users
+        WHERE id = $1
+      `,
+      [userId],
+    );
+    const row = result.rows[0];
+    return normalizeStoredNewProductDraftDefaults(row?.new_product_defaults ?? null);
+  }
+
+  const row = requireSqliteDb()
+    .prepare(
+      `
+        SELECT new_product_defaults
+        FROM users
+        WHERE id = ?
+      `,
+    )
+    .get(userId) as { new_product_defaults?: unknown } | undefined;
+
+  return normalizeStoredNewProductDraftDefaults(row?.new_product_defaults ?? null);
+}
+
+async function updateUserNewProductDraftDefaultsRecord(
+  userId: number,
+  defaults: NewProductDraftDefaults,
+): Promise<void> {
+  const serializedDefaults = JSON.stringify(defaults);
+
+  if (pgPool) {
+    await pgPool.query(
+      `
+        UPDATE users
+        SET new_product_defaults = $1
+        WHERE id = $2
+      `,
+      [serializedDefaults, userId],
+    );
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        UPDATE users
+        SET new_product_defaults = @new_product_defaults
+        WHERE id = @id
+      `,
+    )
+    .run({
+      id: userId,
+      new_product_defaults: serializedDefaults,
+    });
+}
+
 async function selectVendorsRows(searchTerm: string, limit: number): Promise<VendorRow[]> {
   if (pgPool) {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -2062,6 +2150,131 @@ function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
     latitude,
     longitude,
   };
+}
+
+function createEmptyNewProductDraftDefaults(): NewProductDraftDefaults {
+  return {
+    name: "",
+    category: "",
+    latitude: "",
+    longitude: "",
+    description: "",
+    details: {},
+  };
+}
+
+function normalizeDraftCoordinate(
+  value: unknown,
+  fieldName: string,
+  min: number,
+  max: number,
+  strict: boolean,
+): string {
+  const normalizedValue = String(value ?? "").trim().replace(",", ".");
+  if (!normalizedValue) {
+    return "";
+  }
+
+  const parsed = Number(normalizedValue);
+  if (!Number.isFinite(parsed)) {
+    if (!strict) {
+      return "";
+    }
+    throw new Error(`${fieldName} inválida.`);
+  }
+
+  if (parsed < min || parsed > max) {
+    if (!strict) {
+      return "";
+    }
+    throw new Error(`${fieldName} deve estar entre ${min} e ${max}.`);
+  }
+
+  return parsed.toFixed(6);
+}
+
+function normalizeDraftTextField(
+  value: unknown,
+  fieldName: string,
+  maxLength: number,
+  strict: boolean,
+): string {
+  const normalized = String(value ?? "").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  if (!strict) {
+    return normalized.slice(0, maxLength).trim();
+  }
+  throw new Error(`${fieldName} deve ter no maximo ${maxLength} caracteres.`);
+}
+
+function normalizeNewProductDraftDefaultsPayload(
+  payload: unknown,
+  strict: boolean,
+): NewProductDraftDefaults {
+  const fallback = createEmptyNewProductDraftDefaults();
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    if (!strict) {
+      return fallback;
+    }
+    throw new Error("Payload de preferências do anúncio inválido.");
+  }
+
+  const body = payload as Record<string, unknown>;
+  const name = normalizeDraftTextField(body.name ?? "", "Nome", 120, strict);
+  const category = normalizeDraftTextField(body.category ?? "", "Categoria", 120, strict);
+  const description = normalizeDraftTextField(body.description ?? "", "Descrição", 2500, strict);
+  const latitude = normalizeDraftCoordinate(body.latitude, "Latitude", -90, 90, strict);
+  const longitude = normalizeDraftCoordinate(body.longitude, "Longitude", -180, 180, strict);
+
+  const details = (() => {
+    const rawDetails = body.details;
+    if (rawDetails === null || rawDetails === undefined) {
+      return {};
+    }
+    if (!rawDetails || typeof rawDetails !== "object" || Array.isArray(rawDetails)) {
+      if (!strict) {
+        return {};
+      }
+      throw new Error("Detalhes do rascunho inválidos.");
+    }
+
+    const normalizedDetails: Record<string, string> = {};
+    for (const [rawKey, rawValue] of Object.entries(rawDetails)) {
+      if (Object.keys(normalizedDetails).length >= NEW_PRODUCT_DRAFT_MAX_DETAILS) {
+        break;
+      }
+
+      const key = String(rawKey ?? "").trim().toLowerCase();
+      if (!key || !NEW_PRODUCT_DRAFT_ALLOWED_DETAIL_KEYS.has(key)) {
+        continue;
+      }
+
+      const value = normalizeDraftTextField(rawValue ?? "", `Detalhe "${key}"`, 250, strict);
+      if (!value) {
+        continue;
+      }
+      normalizedDetails[key] = value;
+    }
+
+    return normalizedDetails;
+  })();
+
+  return {
+    name,
+    category,
+    latitude,
+    longitude,
+    description,
+    details,
+  };
+}
+
+function normalizeStoredNewProductDraftDefaults(value: unknown): NewProductDraftDefaults {
+  const parsedValue =
+    typeof value === "string" ? safeJsonParse<unknown>(value, null) : value;
+  return normalizeNewProductDraftDefaultsPayload(parsedValue, false);
 }
 
 function normalizeEmail(value: string): string {
@@ -3148,6 +3361,41 @@ async function bootstrap() {
       res.json(sanitizeUser(updatedUser));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao atualizar perfil.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.get("/api/profile/new-product-defaults", async (req, res) => {
+    const sessionUser = await requireAuth(req, res);
+    if (!sessionUser) {
+      return;
+    }
+
+    try {
+      const defaults = await selectUserNewProductDraftDefaultsRecord(sessionUser.id);
+      res.json(defaults);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Falha ao carregar preferências do anúncio.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.put("/api/profile/new-product-defaults", async (req, res) => {
+    const sessionUser = await requireAuth(req, res);
+    if (!sessionUser) {
+      return;
+    }
+
+    try {
+      const defaults = normalizeNewProductDraftDefaultsPayload(req.body, true);
+      await updateUserNewProductDraftDefaultsRecord(sessionUser.id, defaults);
+      res.json(defaults);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao salvar preferências do anúncio.";
       res.status(400).json({ error: message });
     }
   });

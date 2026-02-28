@@ -2250,28 +2250,28 @@ export default function App() {
             target="_blank"
             rel="noreferrer sponsored"
             className="group block border border-stone-200 bg-linear-to-r from-stone-50 to-white p-4 sm:p-5 hover:border-stone-400 transition-colors"
-            aria-label="Visitar site parceiro PuntoEscort"
+            aria-label={t("Visitar site parceiro PuntoEscort")}
           >
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5">
               <img
                 src={PARTNER_PROMO_LOGO}
-                alt="Logo PuntoEscort"
+                alt={t("Logo PuntoEscort")}
                 className="w-20 h-20 sm:w-24 sm:h-24 object-cover rounded-sm border border-stone-200 shrink-0"
                 referrerPolicy="no-referrer"
               />
               <div className="min-w-0">
                 <p className="text-[10px] uppercase tracking-[0.2em] text-stone-500 mb-2">
-                  Parceiro em destaque
+                  {t("Parceiro em destaque")}
                 </p>
                 <h3 className="text-lg sm:text-xl font-serif italic text-stone-900 mb-1 notranslate" translate="no">
                   PuntoEscort
                 </h3>
                 <p className="text-sm text-stone-500 leading-relaxed">
-                  Conheça nosso parceiro e acesse mais anúncios diretamente no site.
+                  {t("Conheça nosso parceiro e acesse mais anúncios diretamente no site.")}
                 </p>
               </div>
               <span className="sm:ml-auto inline-flex items-center justify-center px-4 py-2 border border-stone-300 text-[10px] uppercase tracking-[0.2em] font-semibold text-stone-700 transition-colors group-hover:bg-stone-900 group-hover:text-white group-hover:border-stone-900">
-                Visitar site
+                {t("Visitar site")}
               </span>
             </div>
           </a>

@@ -102,6 +102,15 @@ export interface UpdateProfileInput {
   whatsappNumber: string;
 }
 
+export interface NewProductDraftDefaults {
+  name: string;
+  category: string;
+  latitude: string;
+  longitude: string;
+  description: string;
+  details: Record<string, string>;
+}
+
 export interface AuthInput {
   email: string;
   password: string;
@@ -803,6 +812,44 @@ function normalizeSessionUserItem(value: unknown): SessionUser | null {
   }
 
   return user;
+}
+
+function normalizeNewProductDraftDefaultsItem(value: unknown): NewProductDraftDefaults {
+  const parsed = parseJsonIfNeeded(value);
+  const emptyDefaults: NewProductDraftDefaults = {
+    name: "",
+    category: "",
+    latitude: "",
+    longitude: "",
+    description: "",
+    details: {},
+  };
+
+  if (!isRecord(parsed)) {
+    return emptyDefaults;
+  }
+
+  const detailsValue = parseJsonIfNeeded(firstDefined(parsed, ["details"]));
+  const details: Record<string, string> = {};
+  if (isRecord(detailsValue)) {
+    Object.entries(detailsValue).forEach(([rawKey, rawValue]) => {
+      const key = String(rawKey ?? "").trim().toLowerCase();
+      const value = toStringValue(rawValue);
+      if (!key || !value) {
+        return;
+      }
+      details[key] = value;
+    });
+  }
+
+  return {
+    name: toStringValue(firstDefined(parsed, ["name"])),
+    category: toStringValue(firstDefined(parsed, ["category"])),
+    latitude: toStringValue(firstDefined(parsed, ["latitude"])),
+    longitude: toStringValue(firstDefined(parsed, ["longitude"])),
+    description: toStringValue(firstDefined(parsed, ["description"])),
+    details,
+  };
 }
 
 function normalizeVendorItem(value: unknown): VendorDto | null {
@@ -1598,6 +1645,25 @@ export const api = {
       body: JSON.stringify(payload),
     });
     return normalizeSessionUserItem(raw);
+  },
+  async getNewProductDraftDefaults() {
+    try {
+      const raw = await request<unknown>("/api/profile/new-product-defaults");
+      return normalizeNewProductDraftDefaultsItem(raw);
+    } catch (error) {
+      if (isMissingApiRouteError(error)) {
+        return null;
+      }
+      throw error;
+    }
+  },
+  async updateNewProductDraftDefaults(payload: NewProductDraftDefaults) {
+    const normalizedPayload = normalizeNewProductDraftDefaultsItem(payload);
+    const raw = await request<unknown>("/api/profile/new-product-defaults", {
+      method: "PUT",
+      body: JSON.stringify(normalizedPayload),
+    });
+    return normalizeNewProductDraftDefaultsItem(raw);
   },
   async getProducts() {
     const payload = await request<unknown>("/api/products");

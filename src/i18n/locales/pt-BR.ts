@@ -15,4 +15,16 @@ export const ptBRTranslations: Record<string, string> = {
   "Buscar produtos, categorias ou cidade (ex.: casa em Ardea)...": "Buscar produtos, categorias ou cidade (ex.: casa em Ardea)...",
   "Filtrar resultados por produto, categoria ou cidade...": "Filtrar resultados por produto, categoria ou cidade...",
   "Limpar busca": "Limpar busca",
+  "Visitar site parceiro PuntoEscort": "Visitar site parceiro PuntoEscort",
+  "Logo PuntoEscort": "Logo PuntoEscort",
+  "Parceiro em destaque": "Parceiro em destaque",
+  "Conheça nosso parceiro e acesse mais anúncios diretamente no site.":
+    "Conheça nosso parceiro e acesse mais anúncios diretamente no site.",
+  "Visitar site": "Visitar site",
+  "Salvar informações": "Salvar informações",
+  "Carregando informações salvas...": "Carregando informações salvas...",
+  "Você alterou os dados salvos. Clique em salvar novamente.":
+    "Você alterou os dados salvos. Clique em salvar novamente.",
+  "Informações salvas na sua conta.": "Informações salvas na sua conta.",
+  "Falha ao salvar as informações rápidas.": "Falha ao salvar as informações rápidas.",
 };

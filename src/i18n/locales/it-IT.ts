@@ -146,6 +146,13 @@ export const itITTranslations: Record<string, string> = {
   "Ano": "Anno",
   "Modelo / Variação": "Modello / Variante",
   "Descrição": "Descrizione",
+  "Salvar informações": "Salva informazioni",
+  "Carregando informações salvas...": "Caricamento informazioni salvate...",
+  "Você alterou os dados salvos. Clique em salvar novamente.":
+    "Hai modificato i dati salvati. Clicca di nuovo su salva.",
+  "Informações salvas na sua conta.": "Informazioni salvate nel tuo account.",
+  "Falha ao salvar as informações rápidas.":
+    "Errore durante il salvataggio delle informazioni rapide.",
   "Publicando...": "Pubblicazione...",
   "Publicar produto": "Pubblica prodotto",
   "Imóveis": "Immobili",
@@ -218,6 +225,12 @@ export const itITTranslations: Record<string, string> = {
   "Social": "Social",
   "Política de privacidade": "Informativa sulla privacy",
   "Termos de serviço": "Termini di servizio",
+  "Visitar site parceiro PuntoEscort": "Visita il sito partner PuntoEscort",
+  "Logo PuntoEscort": "Logo PuntoEscort",
+  "Parceiro em destaque": "Partner in evidenza",
+  "Conheça nosso parceiro e acesse mais anúncios diretamente no site.":
+    "Scopri il nostro partner e accedi a più annunci direttamente sul sito.",
+  "Visitar site": "Visita il sito",
   "Design com intenção": "Design con intenzione",
   "Uma vitrine curada de objetos que definem o santuário moderno. Acreditamos na beleza duradoura dos materiais naturais e na alma do feito à mão.": "Una selezione curata di oggetti che definiscono il santuario moderno. Crediamo nella bellezza duratura dei materiali naturali e nell'anima del fatto a mano.",
   "voce@email.com": "tuo@email.com",

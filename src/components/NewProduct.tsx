@@ -9,7 +9,11 @@ import {
   Navigation,
   MapPin,
 } from "lucide-react";
-import { api, type CreateProductInput } from "../lib/api";
+import {
+  api,
+  type CreateProductInput,
+  type NewProductDraftDefaults,
+} from "../lib/api";
 import { type Product } from "./ProductCard";
 import LeafletMapPicker from "./LeafletMapPicker";
 import { useI18n } from "../i18n/provider";
@@ -51,6 +55,10 @@ type GeoPoint = {
   longitude: number;
 };
 type LocationSource = "current" | "map" | null;
+type DraftSaveFeedback = {
+  type: "success" | "error";
+  message: string;
+};
 
 const MAX_COORDINATE_LATITUDE = 90;
 const MAX_COORDINATE_LONGITUDE = 180;
@@ -193,6 +201,99 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
   };
 }
 
+function buildDraftDefaultsFromForm(formData: FormState): NewProductDraftDefaults {
+  const normalizedCategory = String(formData.category ?? "").trim();
+  const allowedDetailKeys = getAllowedDetailKeys(normalizedCategory);
+  const normalizedDetails = Object.fromEntries(
+    Object.entries(formData.details).filter(
+      (entry): entry is [string, string] =>
+        allowedDetailKeys.has(String(entry[0]).trim().toLowerCase()) &&
+        typeof entry[1] === "string" &&
+        entry[1].trim() !== "",
+    ),
+  );
+
+  return {
+    name: String(formData.name ?? "").trim(),
+    category: normalizedCategory,
+    latitude: String(formData.latitude ?? "").trim(),
+    longitude: String(formData.longitude ?? "").trim(),
+    description: String(formData.description ?? "").trim(),
+    details: normalizedDetails,
+  };
+}
+
+function applyDraftDefaultsToForm(
+  currentForm: FormState,
+  defaults: NewProductDraftDefaults,
+): FormState {
+  const nextCategory = String(defaults.category ?? "").trim() || currentForm.category || "Imóveis";
+  const detailsByDefaults = Object.fromEntries(
+    Object.entries(defaults.details ?? {})
+      .map(([rawKey, rawValue]) => [String(rawKey).trim().toLowerCase(), String(rawValue ?? "").trim()])
+      .filter(([key, value]) => key.length > 0 && value.length > 0),
+  );
+
+  return {
+    ...currentForm,
+    name: String(defaults.name ?? "").trim(),
+    category: nextCategory,
+    latitude: String(defaults.latitude ?? "").trim(),
+    longitude: String(defaults.longitude ?? "").trim(),
+    description: String(defaults.description ?? "").trim(),
+    details: {
+      ...DEFAULT_DETAILS,
+      ...detailsByDefaults,
+    },
+  };
+}
+
+function hasMeaningfulDraftDefaults(defaults: NewProductDraftDefaults): boolean {
+  if (
+    String(defaults.name ?? "").trim() ||
+    String(defaults.category ?? "").trim() ||
+    String(defaults.latitude ?? "").trim() ||
+    String(defaults.longitude ?? "").trim() ||
+    String(defaults.description ?? "").trim()
+  ) {
+    return true;
+  }
+
+  return Object.values(defaults.details ?? {}).some((value) => String(value ?? "").trim().length > 0);
+}
+
+function areDraftDefaultsEqual(
+  left: NewProductDraftDefaults,
+  right: NewProductDraftDefaults,
+): boolean {
+  const normalizeDetails = (details: Record<string, string>) =>
+    Object.fromEntries(
+      Object.entries(details)
+        .map(([rawKey, rawValue]) => [String(rawKey).trim().toLowerCase(), String(rawValue ?? "").trim()])
+        .filter(([key, value]) => key.length > 0 && value.length > 0)
+        .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey)),
+    );
+
+  const normalizedLeft = {
+    name: String(left.name ?? "").trim(),
+    category: String(left.category ?? "").trim(),
+    latitude: String(left.latitude ?? "").trim(),
+    longitude: String(left.longitude ?? "").trim(),
+    description: String(left.description ?? "").trim(),
+    details: normalizeDetails(left.details ?? {}),
+  };
+  const normalizedRight = {
+    name: String(right.name ?? "").trim(),
+    category: String(right.category ?? "").trim(),
+    latitude: String(right.latitude ?? "").trim(),
+    longitude: String(right.longitude ?? "").trim(),
+    description: String(right.description ?? "").trim(),
+    details: normalizeDetails(right.details ?? {}),
+  };
+
+  return JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
+}
+
 export default function NewProduct({
   onClose,
   onPublish,
@@ -224,6 +325,11 @@ export default function NewProduct({
     () => initialLocation,
   );
   const [locationSource, setLocationSource] = React.useState<LocationSource>(null);
+  const [savedDraftDefaults, setSavedDraftDefaults] = React.useState<NewProductDraftDefaults | null>(null);
+  const [isDraftSaveChecked, setIsDraftSaveChecked] = React.useState(false);
+  const [isSavingDraftDefaults, setIsSavingDraftDefaults] = React.useState(false);
+  const [isLoadingDraftDefaults, setIsLoadingDraftDefaults] = React.useState(false);
+  const [draftSaveFeedback, setDraftSaveFeedback] = React.useState<DraftSaveFeedback | null>(null);
 
   React.useEffect(() => {
     setFormData(buildInitialFormState(initialProduct));
@@ -232,11 +338,63 @@ export default function NewProduct({
     setErrorMessage("");
     setIsMapPickerOpen(false);
     setLocationSource(null);
+    setSavedDraftDefaults(null);
+    setIsDraftSaveChecked(false);
+    setIsSavingDraftDefaults(false);
+    setIsLoadingDraftDefaults(false);
+    setDraftSaveFeedback(null);
 
     const nextLocation = getInitialLocationPoint(initialProduct);
     setSelectedMapPoint(nextLocation);
     setMapCenter(nextLocation ?? DEFAULT_MAP_CENTER);
   }, [initialProduct]);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    if (isEditing) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    setIsLoadingDraftDefaults(true);
+    void api
+      .getNewProductDraftDefaults()
+      .then((defaults) => {
+        if (!isMounted || !defaults || !hasMeaningfulDraftDefaults(defaults)) {
+          return;
+        }
+
+        setFormData((current) => applyDraftDefaultsToForm(current, defaults));
+        setSavedDraftDefaults(defaults);
+        setIsDraftSaveChecked(true);
+        setDraftSaveFeedback(null);
+
+        const savedPoint = parseCoordinateStrings(defaults.latitude, defaults.longitude);
+        if (savedPoint) {
+          setMapCenter(savedPoint);
+          setSelectedMapPoint(savedPoint);
+        }
+      })
+      .catch(() => {
+        if (!isMounted) {
+          return;
+        }
+        setDraftSaveFeedback({
+          type: "error",
+          message: "Falha ao carregar as informações salvas.",
+        });
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingDraftDefaults(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isEditing]);
 
   const isRealEstate = ["Imóveis", "Terreno", "Aluguel"].includes(formData.category);
   const isVehicle = formData.category === "Veículos";
@@ -248,6 +406,29 @@ export default function NewProduct({
     "Outros"
   ].includes(formData.category);
   const hasLocationSelected = Boolean(parseCoordinateStrings(formData.latitude, formData.longitude));
+  const draftDefaultsFromForm = React.useMemo(
+    () => buildDraftDefaultsFromForm(formData),
+    [formData],
+  );
+  const hasDraftDefaultsPendingSave = React.useMemo(() => {
+    if (!savedDraftDefaults) {
+      return false;
+    }
+    return !areDraftDefaultsEqual(savedDraftDefaults, draftDefaultsFromForm);
+  }, [savedDraftDefaults, draftDefaultsFromForm]);
+
+  React.useEffect(() => {
+    if (isDraftSaveChecked && hasDraftDefaultsPendingSave) {
+      setIsDraftSaveChecked(false);
+    }
+  }, [hasDraftDefaultsPendingSave, isDraftSaveChecked]);
+
+  React.useEffect(() => {
+    if (!hasDraftDefaultsPendingSave) {
+      return;
+    }
+    setDraftSaveFeedback((current) => (current?.type === "success" ? null : current));
+  }, [hasDraftDefaultsPendingSave]);
 
   const handleRemoveImage = (index: number) => {
     setImages((current) => current.filter((_, i) => i !== index));
@@ -314,6 +495,34 @@ export default function NewProduct({
         [field]: value,
       },
     }));
+  };
+
+  const handleSaveDraftDefaults = async () => {
+    if (isEditing || !isDraftSaveChecked) {
+      return;
+    }
+
+    setDraftSaveFeedback(null);
+    setIsSavingDraftDefaults(true);
+
+    try {
+      const savedDefaults = await api.updateNewProductDraftDefaults(draftDefaultsFromForm);
+      setSavedDraftDefaults(savedDefaults);
+      setIsDraftSaveChecked(true);
+      setDraftSaveFeedback({
+        type: "success",
+        message: t("Informações salvas na sua conta."),
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t("Falha ao salvar as informações rápidas.");
+      setDraftSaveFeedback({
+        type: "error",
+        message,
+      });
+    } finally {
+      setIsSavingDraftDefaults(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -876,6 +1085,65 @@ export default function NewProduct({
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
               />
             </div>
+
+            {!isEditing && (
+              <div className="space-y-2 border border-stone-200 rounded-sm bg-stone-50/70 px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] font-bold text-stone-600">
+                    <input
+                      type="checkbox"
+                      checked={isDraftSaveChecked}
+                      onChange={(e) => {
+                        setIsDraftSaveChecked(e.target.checked);
+                        if (!e.target.checked) {
+                          setDraftSaveFeedback(null);
+                        }
+                      }}
+                      className="w-3 h-3 accent-stone-900"
+                    />
+                    {t("Salvar informações")}
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleSaveDraftDefaults();
+                    }}
+                    disabled={
+                      !isDraftSaveChecked ||
+                      isSavingDraftDefaults ||
+                      isLoadingDraftDefaults ||
+                      isPublishing
+                    }
+                    className="px-2.5 py-1 border border-stone-300 text-[10px] uppercase tracking-[0.18em] font-bold text-stone-700 hover:border-stone-700 hover:text-stone-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {isSavingDraftDefaults ? t("Salvando...") : t("Confirmar")}
+                  </button>
+                </div>
+
+                {isLoadingDraftDefaults && (
+                  <p className="text-[11px] text-stone-500">
+                    {t("Carregando informações salvas...")}
+                  </p>
+                )}
+
+                {savedDraftDefaults && hasDraftDefaultsPendingSave && (
+                  <p className="text-[11px] text-amber-600">
+                    {t("Você alterou os dados salvos. Clique em salvar novamente.")}
+                  </p>
+                )}
+
+                {draftSaveFeedback && (
+                  <p
+                    className={`text-[11px] ${
+                      draftSaveFeedback.type === "error" ? "text-red-500" : "text-emerald-600"
+                    }`}
+                  >
+                    {draftSaveFeedback.message}
+                  </p>
+                )}
+              </div>
+            )}
 
             <button 
               disabled={isPublishing || isUploadingImages}
