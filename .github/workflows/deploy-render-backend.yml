@@ -1,0 +1,64 @@
+name: Deploy Render Backend
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: render-backend-production
+  cancel-in-progress: true
+
+jobs:
+  detect-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect backend changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - "server.ts"
+              - "src/server/**"
+              - "src/routes/**"
+              - "src/controllers/**"
+              - "src/models/**"
+              - "src/middlewares/**"
+              - "src/services/**"
+              - "src/config/**"
+              - "src/utils/**"
+              - "sql/**"
+              - "scripts/**"
+              - "package.json"
+              - "package-lock.json"
+
+      - name: Skip when only frontend changed
+        if: steps.changes.outputs.backend != 'true'
+        run: echo "No backend changes detected. Render deploy skipped."
+
+      - name: Trigger Render deploy hook
+        if: steps.changes.outputs.backend == 'true'
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RENDER_DEPLOY_HOOK_URL:-}" ]; then
+            echo "Missing secret: RENDER_DEPLOY_HOOK_URL"
+            exit 1
+          fi
+
+          # Render deploy hooks accept POST and trigger a fresh deploy.
+          curl --fail --silent --show-error \
+            -X POST \
+            "$RENDER_DEPLOY_HOOK_URL" \
+            > /tmp/render-deploy-hook-response.json
+
+          echo "Render deploy hook triggered successfully."
