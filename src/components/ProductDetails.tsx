@@ -23,6 +23,7 @@ import { useI18n } from "../i18n/provider";
 import { formatEuroFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 import { resolveProductImages } from "../lib/product-images";
+import { normalizeProductDetailsRecord } from "../lib/product-details";
 
 interface ProductDetailsProps {
   product: Product | null;
@@ -126,11 +127,15 @@ export default function ProductDetails({
   const images = resolveProductImages(product);
   const description = product.description?.trim() || t("Descrição não informada pelo vendedor.");
   const allowedDetailKeys = getAllowedDetailKeys(product.category);
-  const detailsEntries = Object.entries(product.details ?? {}).filter(
-    (entry): entry is [string, string] =>
-      (!allowedDetailKeys || allowedDetailKeys.has(String(entry[0]).trim().toLowerCase())) &&
-      typeof entry[1] === "string" && entry[1].trim() !== "",
+  const normalizedDetails = normalizeProductDetailsRecord(product.details ?? {});
+  const allDetailEntries = Object.entries(normalizedDetails).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim() !== "",
   );
+  const filteredDetailEntries = allDetailEntries.filter((entry) =>
+    allowedDetailKeys ? allowedDetailKeys.has(String(entry[0]).trim().toLowerCase()) : true,
+  );
+  const detailsEntries =
+    filteredDetailEntries.length > 0 ? filteredDetailEntries : allDetailEntries;
   const hasCoordinates =
     typeof product.latitude === "number" &&
     Number.isFinite(product.latitude) &&

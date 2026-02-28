@@ -1,4 +1,8 @@
 import { trackedFetch } from "./networkActivity";
+import {
+  normalizeProductDetailKey,
+  normalizeProductDetailsRecord,
+} from "./product-details";
 
 export interface ProductDto {
   id: number;
@@ -583,26 +587,36 @@ function normalizeProductItem(value: unknown): ProductDto | null {
   }
 
   const parsedDetails: Record<string, string> = {};
-  const detailsValue = parseJsonIfNeeded(firstDefined(parsed, ["details"]));
-  if (isRecord(detailsValue)) {
-    Object.entries(detailsValue).forEach(([key, detailValue]) => {
-      const normalizedValue = toStringValue(detailValue);
-      if (normalizedValue.length > 0) {
-        parsedDetails[key] = normalizedValue;
-      }
+  const detailsSourceKeys = [
+    "details",
+    "attributes",
+    "specs",
+    "specifications",
+    "product_details",
+    "productDetails",
+  ];
+  detailsSourceKeys.forEach((sourceKey) => {
+    const sourceValue = parseJsonIfNeeded(firstDefined(parsed, [sourceKey]));
+    if (!isRecord(sourceValue)) {
+      return;
+    }
+
+    const normalizedDetails = normalizeProductDetailsRecord(sourceValue);
+    Object.entries(normalizedDetails).forEach(([key, normalizedValue]) => {
+      parsedDetails[key] = normalizedValue;
     });
-  }
+  });
 
   const detailFallbackMap: Record<string, string[]> = {
-    type: ["property_type", "propertyType", "type"],
-    area: ["surface_area", "surfaceArea", "area"],
-    rooms: ["bedrooms", "rooms", "room"],
-    bathrooms: ["bathrooms", "bathroom"],
-    parking: ["parking", "garage"],
-    brand: ["brand"],
-    model: ["model"],
-    color: ["color"],
-    year: ["year"],
+    type: ["property_type", "propertyType", "type", "tipo", "tipo_imovel"],
+    area: ["surface_area", "surfaceArea", "area", "area_m2", "sqm", "m2", "metros"],
+    rooms: ["bedrooms", "rooms", "room", "quartos", "quarto"],
+    bathrooms: ["bathrooms", "bathroom", "banheiros", "banheiro"],
+    parking: ["parking", "garage", "vagas", "vaga"],
+    brand: ["brand", "marca"],
+    model: ["model", "modelo"],
+    color: ["color", "cor"],
+    year: ["year", "ano"],
   };
   Object.entries(detailFallbackMap).forEach(([detailKey, sourceKeys]) => {
     if (parsedDetails[detailKey]) {
@@ -610,7 +624,10 @@ function normalizeProductItem(value: unknown): ProductDto | null {
     }
     const normalizedValue = toStringValue(firstDefined(parsed, sourceKeys));
     if (normalizedValue) {
-      parsedDetails[detailKey] = normalizedValue;
+      const normalizedDetailKey = normalizeProductDetailKey(detailKey);
+      if (normalizedDetailKey) {
+        parsedDetails[normalizedDetailKey] = normalizedValue;
+      }
     }
   });
   if (Object.keys(parsedDetails).length > 0) {
@@ -632,7 +649,20 @@ function normalizeProductItem(value: unknown): ProductDto | null {
     product.longitude = longitude;
   }
 
-  const city = toStringValue(firstDefined(parsed, ["city", "seller_city", "sellerCity"]));
+  const locationRecord = (() => {
+    const candidate = firstDefined(parsed, [
+      "location",
+      "address",
+      "seller_location",
+      "sellerLocation",
+    ]);
+    return isRecord(candidate) ? candidate : null;
+  })();
+  const city =
+    toStringValue(firstDefined(parsed, ["city", "seller_city", "sellerCity"])) ||
+    (locationRecord
+      ? toStringValue(firstDefined(locationRecord, ["city", "cidade"]))
+      : "");
   if (city) {
     product.city = city;
   }

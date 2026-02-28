@@ -19,6 +19,7 @@ import LeafletMapPicker from "./LeafletMapPicker";
 import { useI18n } from "../i18n/provider";
 import { CATEGORY_VALUES, getCategoryLabel } from "../i18n/categories";
 import { parsePriceToNumber } from "../lib/currency";
+import { normalizeProductDetailsRecord } from "../lib/product-details";
 
 interface NewProductProps {
   onClose: () => void;
@@ -196,7 +197,7 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
     description: product.description ?? "",
     details: {
       ...DEFAULT_DETAILS,
-      ...(product.details ?? {}),
+      ...normalizeProductDetailsRecord(product.details ?? {}),
     },
   };
 }
