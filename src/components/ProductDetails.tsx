@@ -1027,7 +1027,7 @@ export default function ProductDetails({
                 {t("Ainda não existem outros anúncios disponíveis.")}
               </p>
             ) : (
-              <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="mt-8 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
                 {relatedProducts.map((relatedProduct) => (
                   <button
                     key={relatedProduct.id}
@@ -1042,14 +1042,14 @@ export default function ProductDetails({
                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                       />
                     </div>
-                    <div className="p-4 space-y-1">
-                      <p className="text-[10px] uppercase tracking-[0.14em] text-stone-400">
+                    <div className="p-2 sm:p-3 space-y-0.5">
+                      <p className="text-[8px] sm:text-[9px] uppercase tracking-[0.12em] text-stone-400 line-clamp-1">
                         {getCategoryLabel(relatedProduct.category, locale)}
                       </p>
-                      <p className="text-base font-serif italic text-stone-800 line-clamp-2">
+                      <p className="text-[11px] sm:text-xs font-medium text-stone-800 leading-tight line-clamp-2">
                         {relatedProduct.name}
                       </p>
-                      <p className="text-sm font-mono text-stone-600">
+                      <p className="text-[10px] sm:text-xs font-mono text-stone-600">
                         {formatEuroFromUnknown(relatedProduct.price, locale)}
                       </p>
                     </div>
