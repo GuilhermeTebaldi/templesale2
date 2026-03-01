@@ -1971,7 +1971,12 @@ async function hasRecentProductCartNotification(
         FROM product_cart_notifications
         WHERE owner_user_id = $1
           AND product_id = $2
-          AND created_at >= $3
+          AND (
+            CASE
+              WHEN created_at::TEXT ~ '^[0-9]+$' THEN created_at::TEXT::BIGINT
+              ELSE EXTRACT(EPOCH FROM created_at::TEXT::TIMESTAMPTZ)::BIGINT
+            END
+          ) >= $3
           AND ${actorConditionSql}
         ORDER BY created_at DESC
         LIMIT 1
@@ -2043,12 +2048,11 @@ async function createProductCartNotificationRecord(
           owner_user_id,
           actor_user_id,
           actor_name,
-          product_id,
-          created_at
+          product_id
         )
-        VALUES ($1, $2, $3, $4, $5)
+        VALUES ($1, $2, $3, $4)
       `,
-      [ownerUserId, actorUserId, normalizedActorName, productId, now],
+      [ownerUserId, actorUserId, normalizedActorName, productId],
     );
     return true;
   }
