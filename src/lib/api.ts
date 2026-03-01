@@ -48,6 +48,17 @@ export type NotificationDto =
     }
   | {
       id: string;
+      type: "product_comment";
+      title: string;
+      message: string;
+      createdAt: number;
+      actorUserId?: number;
+      actorName?: string;
+      productName?: string;
+      productId: number;
+    }
+  | {
+      id: string;
       type: "system_welcome";
       title: string;
       message: string;

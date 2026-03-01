@@ -32,9 +32,12 @@ export const itITTranslations: Record<string, string> = {
   "seu anúncio": "il tuo annuncio",
   "Nova curtida": "Nuovo like",
   "Novo interesse no carrinho": "Nuovo interesse nel carrello",
+  "Novo comentário na publicação": "Nuovo commento sulla pubblicazione",
   '{actor} curtiu seu anúncio "{product}".': '{actor} ha messo like al tuo annuncio "{product}".',
   '{actor} adicionou seu anúncio "{product}" ao carrinho.':
     '{actor} ha aggiunto il tuo annuncio "{product}" al carrello.',
+  '{actor} comentou na sua publicação "{product}".':
+    '{actor} ha commentato la tua pubblicazione "{product}".',
   "{count} itens encontrados": "{count} elementi trovati",
   "Expandir painel": "Espandi pannello",
   "Reduzir painel": "Riduci pannello",

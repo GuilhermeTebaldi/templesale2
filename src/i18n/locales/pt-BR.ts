@@ -5,9 +5,12 @@ export const ptBRTranslations: Record<string, string> = {
   "seu anúncio": "seu anúncio",
   "Nova curtida": "Nova curtida",
   "Novo interesse no carrinho": "Novo interesse no carrinho",
+  "Novo comentário na publicação": "Novo comentário na publicação",
   '{actor} curtiu seu anúncio "{product}".': '{actor} curtiu seu anúncio "{product}".',
   '{actor} adicionou seu anúncio "{product}" ao carrinho.':
     '{actor} adicionou seu anúncio "{product}" ao carrinho.',
+  '{actor} comentou na sua publicação "{product}".':
+    '{actor} comentou na sua publicação "{product}".',
   "{count} itens encontrados": "{count} itens encontrados",
   "Expandir painel": "Expandir painel",
   "Reduzir painel": "Reduzir painel",

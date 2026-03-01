@@ -865,6 +865,16 @@ export default function App() {
         };
       }
 
+      if (notification.type === "product_comment") {
+        return {
+          title: t("Novo comentário na publicação"),
+          message: t('{actor} comentou na sua publicação "{product}".', {
+            actor: actorName,
+            product: productName,
+          }),
+        };
+      }
+
       return {
         title: notification.title,
         message: notification.message,
@@ -898,6 +908,30 @@ export default function App() {
       ),
     [notificationsToDisplay, readNotificationIdSet],
   );
+
+  React.useEffect(() => {
+    if (!isNotificationsOpen || notificationsToDisplay.length === 0) {
+      return;
+    }
+
+    setReadNotificationIds((current) => {
+      const readSet = new Set(current);
+      let changed = false;
+
+      notificationsToDisplay.forEach((notification) => {
+        if (readSet.has(notification.id)) {
+          return;
+        }
+        readSet.add(notification.id);
+        changed = true;
+      });
+
+      if (!changed) {
+        return current;
+      }
+      return Array.from(readSet);
+    });
+  }, [isNotificationsOpen, notificationsToDisplay]);
 
   const showCartToast = React.useCallback(
     (message: string, variant: "success" | "warning" = "success") => {

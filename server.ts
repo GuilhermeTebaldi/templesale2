@@ -70,7 +70,10 @@ type ProductCommentRecord = {
   replies: ProductCommentRecord[];
 };
 
-type NotificationEventType = "product_like" | "product_cart_interest";
+type NotificationEventType =
+  | "product_like"
+  | "product_cart_interest"
+  | "product_comment";
 
 type NotificationEventRow = {
   type: NotificationEventType;
@@ -79,6 +82,7 @@ type NotificationEventRow = {
   product_id: number;
   product_name: string;
   created_at: number;
+  event_id: string;
 };
 
 type NotificationRecord = {
@@ -740,7 +744,13 @@ function normalizeSessionUserRow(row: Record<string, unknown>): SessionUserRow {
 function normalizeNotificationEventRow(row: Record<string, unknown>): NotificationEventRow {
   const rawType = String(row.type ?? "").trim();
   const type: NotificationEventType =
-    rawType === "product_cart_interest" ? "product_cart_interest" : "product_like";
+    rawType === "product_cart_interest"
+      ? "product_cart_interest"
+      : rawType === "product_comment"
+        ? "product_comment"
+        : "product_like";
+  const productId = toRequiredNumber(row.product_id);
+  const actorUserId = toNullableNumber(row.actor_user_id);
   const parsedCreatedAt = (() => {
     const numericValue = Number(row.created_at);
     if (Number.isFinite(numericValue)) {
@@ -767,11 +777,14 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
 
   return {
     type,
-    actor_user_id: toNullableNumber(row.actor_user_id),
+    actor_user_id: actorUserId,
     actor_name: String(row.actor_name ?? ""),
-    product_id: toRequiredNumber(row.product_id),
+    product_id: productId,
     product_name: String(row.product_name ?? ""),
     created_at: parsedCreatedAt,
+    event_id:
+      String(row.event_id ?? "").trim() ||
+      `${type}:${productId}:${actorUserId ?? "anon"}:${parsedCreatedAt}`,
   };
 }
 
@@ -1566,7 +1579,8 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             COALESCE(NULLIF(BTRIM(lu.name), ''), 'Alguém') AS actor_name,
             p.id AS product_id,
             p.name AS product_name,
-            l.created_at::TEXT AS created_at
+            l.created_at::TEXT AS created_at,
+            'product_like:' || l.user_id::TEXT || ':' || l.product_id::TEXT || ':' || l.created_at::TEXT AS event_id
           FROM product_likes l
           INNER JOIN products p ON p.id = l.product_id
           LEFT JOIN users lu ON lu.id = l.user_id
@@ -1580,11 +1594,28 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             COALESCE(NULLIF(BTRIM(c.actor_name), ''), '') AS actor_name,
             p.id AS product_id,
             p.name AS product_name,
-            c.created_at::TEXT AS created_at
+            c.created_at::TEXT AS created_at,
+            'product_cart_interest:' || c.id::TEXT AS event_id
           FROM product_cart_notifications c
           INNER JOIN products p ON p.id = c.product_id
           WHERE c.owner_user_id = $1
             AND (c.actor_user_id IS NULL OR c.actor_user_id <> $2)
+
+          UNION ALL
+
+          SELECT
+            'product_comment'::TEXT AS type,
+            c.user_id AS actor_user_id,
+            COALESCE(NULLIF(BTRIM(cu.name), ''), 'Alguém') AS actor_name,
+            p.id AS product_id,
+            p.name AS product_name,
+            c.created_at::TEXT AS created_at,
+            'product_comment:' || c.id::TEXT AS event_id
+          FROM product_comments c
+          INNER JOIN products p ON p.id = c.product_id
+          LEFT JOIN users cu ON cu.id = c.user_id
+          WHERE p.user_id = $1
+            AND c.user_id <> $2
         ) notifications
         ORDER BY created_at DESC, product_id DESC
         LIMIT 100
@@ -1605,7 +1636,8 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             COALESCE(NULLIF(TRIM(lu.name), ''), 'Alguém') AS actor_name,
             p.id AS product_id,
             p.name AS product_name,
-            l.created_at
+            l.created_at,
+            'product_like:' || l.user_id || ':' || l.product_id || ':' || l.created_at AS event_id
           FROM product_likes l
           INNER JOIN products p ON p.id = l.product_id
           LEFT JOIN users lu ON lu.id = l.user_id
@@ -1619,17 +1651,34 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             COALESCE(NULLIF(TRIM(c.actor_name), ''), '') AS actor_name,
             p.id AS product_id,
             p.name AS product_name,
-            c.created_at
+            c.created_at,
+            'product_cart_interest:' || c.id AS event_id
           FROM product_cart_notifications c
           INNER JOIN products p ON p.id = c.product_id
           WHERE c.owner_user_id = ?
             AND (c.actor_user_id IS NULL OR c.actor_user_id <> ?)
+
+          UNION ALL
+
+          SELECT
+            'product_comment' AS type,
+            c.user_id AS actor_user_id,
+            COALESCE(NULLIF(TRIM(cu.name), ''), 'Alguém') AS actor_name,
+            p.id AS product_id,
+            p.name AS product_name,
+            c.created_at,
+            'product_comment:' || c.id AS event_id
+          FROM product_comments c
+          INNER JOIN products p ON p.id = c.product_id
+          LEFT JOIN users cu ON cu.id = c.user_id
+          WHERE p.user_id = ?
+            AND c.user_id <> ?
         )
         ORDER BY created_at DESC, product_id DESC
         LIMIT 100
       `,
     )
-    .all(ownerId, ownerId, ownerId, ownerId) as Array<Record<string, unknown>>;
+    .all(ownerId, ownerId, ownerId, ownerId, ownerId, ownerId) as Array<Record<string, unknown>>;
   return rows.map(normalizeNotificationEventRow);
 }
 
@@ -2567,14 +2616,21 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
   const createdAt = Number.isFinite(row.created_at)
     ? row.created_at
     : Math.floor(Date.now() / 1000);
-  const title = row.type === "product_cart_interest" ? "Novo interesse no carrinho" : "Nova curtida";
+  const title =
+    row.type === "product_cart_interest"
+      ? "Novo interesse no carrinho"
+      : row.type === "product_comment"
+        ? "Novo comentário na publicação"
+        : "Nova curtida";
   const message =
     row.type === "product_cart_interest"
       ? `${actorName} adicionou seu anúncio "${productName}" ao carrinho.`
-      : `${actorName} curtiu seu anúncio "${productName}".`;
+      : row.type === "product_comment"
+        ? `${actorName} comentou na sua publicação "${productName}".`
+        : `${actorName} curtiu seu anúncio "${productName}".`;
 
   const normalized: NotificationRecord = {
-    id: `${row.type}:${row.product_id}:${row.actor_user_id ?? "anon"}:${createdAt}`,
+    id: row.event_id,
     type: row.type,
     title,
     message,
