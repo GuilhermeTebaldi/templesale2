@@ -335,9 +335,18 @@ const ADMIN_TEST_AREA_PASSWORD =
   ) || DEFAULT_ADMIN_TEST_AREA_PASSWORD;
 const ADMIN_EMAIL_ALIASES = parseCredentialAliases(process.env.ADMIN_EMAIL_ALIASES, true);
 const ADMIN_PASSWORD_ALIASES = parseCredentialAliases(process.env.ADMIN_PASSWORD_ALIASES, false);
+const ADMIN_API_KEY_ALIASES = parseCredentialAliases(process.env.ADMIN_API_KEY_ALIASES, false);
 const ADMIN_EMAIL_CANDIDATES = Array.from(new Set([ADMIN_EMAIL, ...ADMIN_EMAIL_ALIASES]));
 const ADMIN_PASSWORD_CANDIDATES = Array.from(
   new Set([ADMIN_PASSWORD, ...ADMIN_PASSWORD_ALIASES]),
+);
+const ADMIN_API_KEY_CANDIDATES = Array.from(
+  new Set(
+    [
+      normalizeCredentialValue(process.env.ADMIN_API_KEY ?? "", false),
+      ...ADMIN_API_KEY_ALIASES,
+    ].filter((value) => value.length > 0),
+  ),
 );
 const ADMIN_SESSION_COOKIE_NAME = "templesale_admin_session";
 const ADMIN_SESSION_TTL_SECONDS = 60 * 60 * 12;
@@ -366,6 +375,25 @@ const SECURITY_PERMISSIONS_POLICY = [
   "payment=()",
   "usb=()",
 ].join(", ");
+const SECURITY_HSTS_VALUE = "max-age=63072000; includeSubDomains; preload";
+const SECURITY_CONTACT_EMAIL =
+  String(process.env.SECURITY_CONTACT_EMAIL ?? "security@templesale.com")
+    .trim()
+    .toLowerCase() || "security@templesale.com";
+const SECURITY_POLICY_URL =
+  String(process.env.SECURITY_POLICY_URL ?? "https://www.templesale.com/.well-known/security.txt")
+    .trim() || "https://www.templesale.com/.well-known/security.txt";
+const SENSITIVE_PUBLIC_PATH_PATTERNS: RegExp[] = [
+  /^\/\.svn(?:\/|$)/i,
+  /^\/\.git(?:\/|$)/i,
+  /^\/\.hg(?:\/|$)/i,
+  /^\/\.DS_Store$/i,
+  /^\/Dockerfile(?:\.[^/]*)?$/i,
+  /^\/docker-compose(?:\.[^/]*)?\.ya?ml$/i,
+  /^\/config\.php(?:\.[^/]*)?$/i,
+  /^\/\.env(?:\.[^/]*)?$/i,
+  /(?:^|\/)[^/]+\.(?:bak|backup|old|orig|swp|tmp)$/i,
+];
 const UPLOAD_MAX_BYTES = 12 * 1024 * 1024;
 const CART_NOTIFICATION_DEDUP_WINDOW_SECONDS = 15 * 60;
 const WHATSAPP_COUNTRIES = {
@@ -3221,6 +3249,13 @@ function getSessionTokenFromRequest(req: Request): string | null {
   return token ? token.trim() : null;
 }
 
+function getRequestHeaderTokenValue(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return String(value[0] ?? "").trim();
+  }
+  return String(value ?? "").trim();
+}
+
 function createAdminSessionToken(): string {
   const expiresAt = Math.floor(Date.now() / 1000) + ADMIN_SESSION_TTL_SECONDS;
   const nonce = crypto.randomBytes(16).toString("hex");
@@ -3266,6 +3301,14 @@ function verifyAdminSessionToken(token: string): boolean {
   return expiresAt > Math.floor(Date.now() / 1000);
 }
 
+function verifyAdminAccessToken(token: string): boolean {
+  if (verifyAdminSessionToken(token)) {
+    return true;
+  }
+
+  return ADMIN_API_KEY_CANDIDATES.some((candidate) => timingSafeEquals(token, candidate));
+}
+
 function getAdminSessionTokenFromRequest(req: Request): string | null {
   const cookies = parseCookies(req.headers.cookie);
   const cookieToken = cookies[ADMIN_SESSION_COOKIE_NAME];
@@ -3273,13 +3316,43 @@ function getAdminSessionTokenFromRequest(req: Request): string | null {
     return cookieToken.trim();
   }
 
-  const authorizationHeader = String(req.headers.authorization ?? "").trim();
+  const headerToken = getRequestHeaderTokenValue(req.headers["x-admin-token"]);
+  if (headerToken) {
+    return headerToken;
+  }
+
+  const headerAuthToken = getRequestHeaderTokenValue(req.headers["x-admin-auth"]);
+  if (headerAuthToken) {
+    return headerAuthToken;
+  }
+
+  const authorizationHeader = getRequestHeaderTokenValue(req.headers.authorization);
   if (authorizationHeader.toLowerCase().startsWith("bearer ")) {
     const token = authorizationHeader.slice(7).trim();
     return token || null;
   }
 
   return null;
+}
+
+function isSensitivePublicPath(pathname: string): boolean {
+  return SENSITIVE_PUBLIC_PATH_PATTERNS.some((pattern) => pattern.test(pathname));
+}
+
+function buildSecurityTxtContent(): string {
+  const expiresDate = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000);
+  const expires = expiresDate.toISOString().replace(/\.\d{3}Z$/, "Z");
+  const contact = SECURITY_CONTACT_EMAIL.includes(":")
+    ? SECURITY_CONTACT_EMAIL
+    : `mailto:${SECURITY_CONTACT_EMAIL}`;
+
+  return [
+    `Contact: ${contact}`,
+    "Preferred-Languages: pt-BR, en",
+    "Canonical: https://www.templesale.com/.well-known/security.txt",
+    `Policy: ${SECURITY_POLICY_URL}`,
+    `Expires: ${expires}`,
+  ].join("\n");
 }
 
 function normalizeSecurityMonitorPath(rawUrl: string): string {
@@ -3659,6 +3732,7 @@ async function bootstrap() {
   const port = Number(process.env.PORT || 5173);
   const cspHeaderValue = buildContentSecurityPolicy(isProduction);
 
+  app.set("trust proxy", 1);
   app.disable("x-powered-by");
   app.use((_req, res, next) => {
     res.setHeader("X-Frame-Options", "SAMEORIGIN");
@@ -3666,10 +3740,21 @@ async function bootstrap() {
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("Permissions-Policy", SECURITY_PERMISSIONS_POLICY);
     res.setHeader("Content-Security-Policy", cspHeaderValue);
+    if (isProduction) {
+      res.setHeader("Strict-Transport-Security", SECURITY_HSTS_VALUE);
+    }
     next();
   });
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: "2mb" }));
+  app.use((req, res, next) => {
+    const normalizedPath = normalizeSecurityMonitorPath(String(req.originalUrl ?? req.url ?? ""));
+    if (isSensitivePublicPath(normalizedPath)) {
+      res.status(404).type("text/plain; charset=utf-8").send("Not found.");
+      return;
+    }
+    next();
+  });
   app.use((req, res, next) => {
     const startedAt = Date.now();
     const rawUrl = String(req.originalUrl ?? req.url ?? "");
@@ -3735,7 +3820,7 @@ async function bootstrap() {
 
   const requireAdmin = (req: Request, res: Response): AdminSessionUser | null => {
     const adminToken = getAdminSessionTokenFromRequest(req);
-    if (!adminToken || !verifyAdminSessionToken(adminToken)) {
+    if (!adminToken || !verifyAdminAccessToken(adminToken)) {
       clearAdminSessionCookie(res, isProduction);
       res.status(401).json({ error: "Acesso de administrador não autorizado." });
       return null;
@@ -3754,6 +3839,11 @@ async function bootstrap() {
           ? "configured"
           : "missing_env",
     });
+  });
+
+  app.get("/.well-known/security.txt", (_req, res) => {
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.type("text/plain; charset=utf-8").send(buildSecurityTxtContent());
   });
 
   app.get("/api/agent/script/:siteId.js", (req, res) => {

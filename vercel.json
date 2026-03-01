@@ -20,6 +20,10 @@
           "value": "accelerometer=(), autoplay=(), camera=(), display-capture=(), fullscreen=(self), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()"
         },
         {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=63072000; includeSubDomains; preload"
+        },
+        {
           "key": "Content-Security-Policy",
           "value": "default-src 'self'; base-uri 'self'; frame-ancestors 'self'; object-src 'none'; form-action 'self'; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://api.cloudinary.com https://saleday-backend.onrender.com https://www.templesale.com https://templesale.com; frame-src 'none'; worker-src 'self' blob:; upgrade-insecure-requests"
         }
@@ -30,6 +34,38 @@
     {
       "source": "/api/:path*",
       "destination": "https://saleday-backend.onrender.com/api/:path*"
+    },
+    {
+      "source": "/.well-known/security.txt",
+      "destination": "/.well-known/security.txt"
+    },
+    {
+      "source": "/.svn",
+      "destination": "https://saleday-backend.onrender.com/api/sensitive-file-probe-blocked"
+    },
+    {
+      "source": "/.svn/:path*",
+      "destination": "https://saleday-backend.onrender.com/api/sensitive-file-probe-blocked"
+    },
+    {
+      "source": "/.git",
+      "destination": "https://saleday-backend.onrender.com/api/sensitive-file-probe-blocked"
+    },
+    {
+      "source": "/.git/:path*",
+      "destination": "https://saleday-backend.onrender.com/api/sensitive-file-probe-blocked"
+    },
+    {
+      "source": "/config.php.bak",
+      "destination": "https://saleday-backend.onrender.com/api/sensitive-file-probe-blocked"
+    },
+    {
+      "source": "/Dockerfile",
+      "destination": "https://saleday-backend.onrender.com/api/sensitive-file-probe-blocked"
+    },
+    {
+      "source": "/.DS_Store",
+      "destination": "https://saleday-backend.onrender.com/api/sensitive-file-probe-blocked"
     },
     {
       "source": "/:path*",
