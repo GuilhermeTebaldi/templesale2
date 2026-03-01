@@ -1038,11 +1038,9 @@ export default function App() {
         [product.id]: nextQuantity,
       }));
 
-      if (currentQuantity === 0) {
-        void api.notifyProductCartInterest(product.id).catch((error) => {
-          console.error("Error notifying product cart interest:", error);
-        });
-      }
+      void api.notifyProductCartInterest(product.id).catch((error) => {
+        console.error("Error notifying product cart interest:", error);
+      });
 
       setHasUnseenCartAlert(true);
       showCartToast(
