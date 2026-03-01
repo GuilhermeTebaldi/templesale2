@@ -13,6 +13,13 @@ import {
   ShieldAlert,
   AlertTriangle,
 } from "lucide-react";
+import {
+  getSecurityCategoryLabel,
+  runComprehensiveSecurityScan,
+  type SecurityCheckCategory,
+  type SecurityCheckResult,
+  type SecurityCheckStatus,
+} from "../lib/security-scanner";
 
 type AdminUserV2 = {
   id: number;
@@ -34,15 +41,7 @@ type AdminSessionV2 = {
 
 type AdminViewV2 = "users" | "security";
 
-type SecurityCheckStatus = "pass" | "warn" | "fail";
 type SecurityEventFilter = "all" | SecurityCheckStatus;
-
-type SecurityCheckResult = {
-  id: string;
-  title: string;
-  status: SecurityCheckStatus;
-  details: string;
-};
 
 type AdminSecurityEventV2 = {
   id: number;
@@ -442,6 +441,33 @@ function getSecurityStatusLabel(status: SecurityCheckStatus): string {
   return "Alerta";
 }
 
+function getSecurityCategoryStyles(category: SecurityCheckCategory): string {
+  switch (category) {
+    case "auth":
+      return "border-blue-200 bg-blue-50 text-blue-700";
+    case "authorization":
+      return "border-indigo-200 bg-indigo-50 text-indigo-700";
+    case "headers":
+      return "border-cyan-200 bg-cyan-50 text-cyan-700";
+    case "api-public":
+      return "border-stone-200 bg-stone-50 text-stone-700";
+    case "api-private":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "api-admin":
+      return "border-purple-200 bg-purple-50 text-purple-700";
+    case "input-validation":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "error-handling":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    case "monitoring":
+      return "border-teal-200 bg-teal-50 text-teal-700";
+    case "exposure":
+      return "border-orange-200 bg-orange-50 text-orange-700";
+    default:
+      return "border-stone-200 bg-stone-50 text-stone-700";
+  }
+}
+
 function getSecurityFilterLabel(filter: SecurityEventFilter): string {
   if (filter === "all") {
     return "Total";
@@ -811,6 +837,10 @@ export default function AdminPanelV2() {
   const [isRunningSecurityChecks, setIsRunningSecurityChecks] = React.useState(false);
   const [securityChecks, setSecurityChecks] = React.useState<SecurityCheckResult[]>([]);
   const [securityChecksRanAt, setSecurityChecksRanAt] = React.useState<number | null>(null);
+  const [securityChecksProgress, setSecurityChecksProgress] = React.useState<{
+    done: number;
+    total: number;
+  }>({ done: 0, total: 0 });
   const [securityEvents, setSecurityEvents] = React.useState<AdminSecurityEventV2[]>([]);
   const [securityEventsTotalTracked, setSecurityEventsTotalTracked] = React.useState(0);
   const [securityEventsUpdatedAt, setSecurityEventsUpdatedAt] = React.useState<number | null>(null);
@@ -966,6 +996,7 @@ export default function AdminPanelV2() {
       setIsRunningSecurityChecks(false);
       setSecurityChecks([]);
       setSecurityChecksRanAt(null);
+      setSecurityChecksProgress({ done: 0, total: 0 });
       setSecurityEvents([]);
       setSecurityEventsTotalTracked(0);
       setSecurityEventsUpdatedAt(null);
@@ -1037,183 +1068,21 @@ export default function AdminPanelV2() {
 
     setTestAreaError("");
     setIsRunningSecurityChecks(true);
+    setSecurityChecks([]);
+    setSecurityChecksProgress({ done: 0, total: 0 });
 
     try {
-      const checks: SecurityCheckResult[] = [];
-
-      let healthStatus = 0;
-      let healthHeaders: Headers | null = null;
-      try {
-        const healthResponse = await fetch(buildApiUrl("/api/health"), {
-          method: "GET",
-          credentials: "include",
-        });
-        healthStatus = healthResponse.status;
-        healthHeaders = healthResponse.headers;
-        checks.push({
-          id: "health-endpoint",
-          title: "Endpoint de saúde da API",
-          status: healthResponse.ok ? "pass" : "warn",
-          details: healthResponse.ok
-            ? "API respondeu normalmente em /api/health."
-            : `API respondeu ${healthResponse.status} em /api/health.`,
-        });
-      } catch (error) {
-        checks.push({
-          id: "health-endpoint",
-          title: "Endpoint de saúde da API",
-          status: "fail",
-          details:
-            error instanceof Error
-              ? `Falha ao consultar /api/health: ${error.message}`
-              : "Falha ao consultar /api/health.",
-        });
-      }
-
-      if (healthHeaders) {
-        const missingHeaders: string[] = [];
-        const requiredHeaders = [
-          "x-content-type-options",
-          "x-frame-options",
-          "referrer-policy",
-          "content-security-policy",
-        ] as const;
-        for (const headerName of requiredHeaders) {
-          if (!healthHeaders.get(headerName)) {
-            missingHeaders.push(headerName);
-          }
-        }
-
-        checks.push({
-          id: "security-headers",
-          title: "Cabeçalhos básicos de segurança",
-          status: missingHeaders.length === 0 ? "pass" : "warn",
-          details:
-            missingHeaders.length === 0
-              ? "Todos os cabeçalhos básicos foram encontrados."
-              : `Cabeçalhos ausentes: ${missingHeaders.join(", ")}.`,
-        });
-      } else if (healthStatus === 0) {
-        checks.push({
-          id: "security-headers",
-          title: "Cabeçalhos básicos de segurança",
-          status: "fail",
-          details: "Não foi possível validar cabeçalhos porque /api/health não respondeu.",
-        });
-      }
-
-      try {
-        const response = await fetch(buildApiUrl("/api/auth/me"), {
-          method: "GET",
-          credentials: "omit",
-        });
-        const protectedStatus = response.status === 401 || response.status === 403;
-        checks.push({
-          id: "auth-route-anonymous",
-          title: "Proteção de rota autenticada (/api/auth/me)",
-          status: protectedStatus ? "pass" : "fail",
-          details: protectedStatus
-            ? `Sem credenciais, rota bloqueou com status ${response.status}.`
-            : `Sem credenciais, rota respondeu ${response.status}.`,
-        });
-      } catch (error) {
-        checks.push({
-          id: "auth-route-anonymous",
-          title: "Proteção de rota autenticada (/api/auth/me)",
-          status: "fail",
-          details:
-            error instanceof Error
-              ? `Falha ao executar teste anônimo: ${error.message}`
-              : "Falha ao executar teste anônimo.",
-        });
-      }
-
-      try {
-        const response = await fetch(buildApiUrl("/api/admin/users"), {
-          method: "GET",
-          credentials: "omit",
-        });
-        const protectedStatus = response.status === 401 || response.status === 403;
-        checks.push({
-          id: "admin-route-anonymous",
-          title: "Proteção de rota administrativa (/api/admin/users)",
-          status: protectedStatus ? "pass" : "fail",
-          details: protectedStatus
-            ? `Sem credenciais, rota admin bloqueou com status ${response.status}.`
-            : `Sem credenciais, rota admin respondeu ${response.status}.`,
-        });
-      } catch (error) {
-        checks.push({
-          id: "admin-route-anonymous",
-          title: "Proteção de rota administrativa (/api/admin/users)",
-          status: "fail",
-          details:
-            error instanceof Error
-              ? `Falha ao testar rota admin sem credenciais: ${error.message}`
-              : "Falha ao testar rota admin sem credenciais.",
-        });
-      }
-
-      try {
-        const response = await fetch(buildApiUrl("/api/auth/login"), {
-          method: "POST",
-          credentials: "omit",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: "email-invalido-sem-arroba",
-            password: "123",
-          }),
-        });
-
-        const isExpectedStatus = response.status === 400 || response.status === 401;
-        checks.push({
-          id: "input-validation-probe",
-          title: "Teste simples de validação de entrada",
-          status: isExpectedStatus ? "pass" : response.status >= 500 ? "fail" : "warn",
-          details: isExpectedStatus
-            ? `Payload inválido foi tratado corretamente com status ${response.status}.`
-            : `Payload inválido respondeu com status ${response.status}.`,
-        });
-      } catch (error) {
-        checks.push({
-          id: "input-validation-probe",
-          title: "Teste simples de validação de entrada",
-          status: "fail",
-          details:
-            error instanceof Error
-              ? `Falha ao executar teste de payload inválido: ${error.message}`
-              : "Falha ao executar teste de payload inválido.",
-        });
-      }
-
-      try {
-        const response = await fetch(buildApiUrl("/api/this-route-should-not-exist"), {
-          method: "GET",
-          credentials: "omit",
-        });
-        checks.push({
-          id: "unknown-route",
-          title: "Resposta para rota inexistente",
-          status: response.status === 404 ? "pass" : "warn",
-          details:
-            response.status === 404
-              ? "Rotas inexistentes retornam 404 normalmente."
-              : `Rota inexistente retornou ${response.status}.`,
-        });
-      } catch (error) {
-        checks.push({
-          id: "unknown-route",
-          title: "Resposta para rota inexistente",
-          status: "fail",
-          details:
-            error instanceof Error
-              ? `Falha ao consultar rota inexistente: ${error.message}`
-              : "Falha ao consultar rota inexistente.",
-        });
-      }
-
-      setSecurityChecks(checks);
+      const scan = await runComprehensiveSecurityScan({
+        buildApiUrl,
+        adminToken: authToken,
+        onProgress: (done, total) => {
+          setSecurityChecksProgress({ done, total });
+        },
+      });
+      setSecurityChecks(scan.checks);
+      setSecurityChecksProgress({ done: scan.totalProbes, total: scan.totalProbes });
       setSecurityChecksRanAt(Date.now());
+      await loadSecurityEvents(authToken, { silent: true });
     } finally {
       setIsRunningSecurityChecks(false);
     }
@@ -1322,6 +1191,36 @@ export default function AdminPanelV2() {
     }
     return securityEvents.filter((event) => event.level === securityEventsFilter);
   }, [securityEvents, securityEventsFilter]);
+
+  const securityChecksSummary = React.useMemo(() => {
+    const byCategory = new globalThis.Map<SecurityCheckCategory, number>();
+    let pass = 0;
+    let warn = 0;
+    let fail = 0;
+
+    securityChecks.forEach((check) => {
+      byCategory.set(check.category, (byCategory.get(check.category) ?? 0) + 1);
+      if (check.status === "pass") {
+        pass += 1;
+      } else if (check.status === "warn") {
+        warn += 1;
+      } else {
+        fail += 1;
+      }
+    });
+
+    const orderedCategories = Array.from(byCategory.entries())
+      .sort((left, right) => right[1] - left[1])
+      .map(([category, count]) => ({ category, count }));
+
+    return {
+      total: securityChecks.length,
+      pass,
+      warn,
+      fail,
+      categories: orderedCategories,
+    };
+  }, [securityChecks]);
 
   React.useEffect(() => {
     if (!sessionEmail || !authToken || !isTestAreaUnlocked || activeView !== "security") {
@@ -1645,6 +1544,18 @@ export default function AdminPanelV2() {
                       {isRunningSecurityChecks ? "Executando..." : "Executar diagnósticos"}
                     </button>
                   </div>
+                  <p className="text-xs text-stone-500">
+                    Este scanner executa mais de 300 verificações reais de API, autorização, validação
+                    de entrada e respostas de erro.
+                  </p>
+                  {(isRunningSecurityChecks || securityChecksProgress.total > 0) && (
+                    <p className="text-xs text-stone-500">
+                      Progresso da varredura:{" "}
+                      <strong>
+                        {securityChecksProgress.done}/{securityChecksProgress.total}
+                      </strong>
+                    </p>
+                  )}
                   {securityChecksRanAt !== null && (
                     <p className="text-xs text-stone-500">
                       Última execução: {formatDateTime(securityChecksRanAt)}
@@ -1872,9 +1783,41 @@ export default function AdminPanelV2() {
 
             {securityChecks.length > 0 && (
               <article className="border border-stone-200 bg-white p-4 sm:p-5">
-                <h3 className="text-sm font-semibold text-stone-900 mb-3">
-                  Resultado dos diagnósticos ({securityChecks.length})
-                </h3>
+                <div className="flex flex-col gap-3 mb-4">
+                  <h3 className="text-sm font-semibold text-stone-900">
+                    Resultado dos diagnósticos ({securityChecksSummary.total})
+                  </h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="border border-stone-200 bg-stone-50 px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">Total</p>
+                      <p className="text-sm font-semibold text-stone-900">{securityChecksSummary.total}</p>
+                    </div>
+                    <div className="border border-emerald-200 bg-emerald-50 px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">Normal</p>
+                      <p className="text-sm font-semibold text-emerald-800">{securityChecksSummary.pass}</p>
+                    </div>
+                    <div className="border border-amber-200 bg-amber-50 px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-amber-700">Atenção</p>
+                      <p className="text-sm font-semibold text-amber-800">{securityChecksSummary.warn}</p>
+                    </div>
+                    <div className="border border-red-200 bg-red-50 px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-red-700">Alerta</p>
+                      <p className="text-sm font-semibold text-red-800">{securityChecksSummary.fail}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {securityChecksSummary.categories.map((item) => (
+                      <span
+                        key={item.category}
+                        className={`inline-flex items-center border px-2.5 py-1 text-[11px] uppercase tracking-[0.1em] ${getSecurityCategoryStyles(
+                          item.category,
+                        )}`}
+                      >
+                        {getSecurityCategoryLabel(item.category)}: {item.count}
+                      </span>
+                    ))}
+                  </div>
+                </div>
                 <div className="space-y-3">
                   {securityChecks.map((check) => (
                     <div
@@ -1889,9 +1832,34 @@ export default function AdminPanelV2() {
                         ) : (
                           <Ban className="w-4 h-4 mt-0.5" />
                         )}
-                        <div>
-                          <p className="text-sm font-semibold">{check.title}</p>
-                          <p className="text-xs mt-1">{check.details}</p>
+                        <div className="w-full">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold">{check.title}</p>
+                            <span
+                              className={`inline-flex items-center border px-2 py-0.5 text-[10px] uppercase tracking-[0.1em] ${getSecurityCategoryStyles(
+                                check.category,
+                              )}`}
+                            >
+                              {getSecurityCategoryLabel(check.category)}
+                            </span>
+                          </div>
+                          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                            <div className="border border-current/20 bg-white/60 px-2.5 py-2">
+                              <p className="text-[10px] uppercase tracking-[0.12em] font-bold mb-1">
+                                Falha/diagnóstico
+                              </p>
+                              <p>{check.details}</p>
+                            </div>
+                            <div className="border border-current/20 bg-white/60 px-2.5 py-2">
+                              <p className="text-[10px] uppercase tracking-[0.12em] font-bold mb-1">
+                                Como corrigir
+                              </p>
+                              <p>{check.howToFix}</p>
+                            </div>
+                          </div>
+                          <p className="text-[11px] mt-2 break-all">
+                            Evidência técnica: <span className="font-mono">{check.technicalEvidence}</span>
+                          </p>
                         </div>
                       </div>
                     </div>
