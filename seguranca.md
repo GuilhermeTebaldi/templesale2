@@ -274,3 +274,28 @@ O modulo implementado no TempleSale ja entrega:
 - base concreta para ampliar seu sistema de seguranca alem de URL unica
 
 Isso permite transformar seu sistema atual em uma plataforma de avaliacao de seguranca com cobertura real de autenticacao, autorizacao, exposicao e comportamento de API sob diferentes contextos de acesso.
+
+
+
+
+
+Ajustei o código para cobrir os 6 pontos do diagnóstico.
+
+O que foi corrigido
+
+1) security.txt: adicionei rota e conteúdo oficial em [server.ts:3844](/Users/admin/Downloads/novotemplesale 2/server.ts#L3844) e arquivo estático em [public/.well-known/security.txt](/Users/admin/Downloads/novotemplesale 2/public/.well-known/security.txt#L1).
+2) HSTS forte: adicionei Strict-Transport-Security: max-age=63072000; includeSubDomains; preload no backend em [server.ts:3743](/Users/admin/Downloads/novotemplesale 2/server.ts#L3743) e no edge Vercel em [vercel.json:23](/Users/admin/Downloads/novotemplesale 2/vercel.json#L23).
+3) arquivos sensíveis expostos: criei bloqueio explícito de caminhos sensíveis (/.svn, /config.php.bak, /Dockerfile, /.DS_Store, etc.) em [server.ts:386](/Users/admin/Downloads/novotemplesale 2/server.ts#L386) e middleware de bloqueio em [server.ts:3750](/Users/admin/Downloads/novotemplesale 2/server.ts#L3750). Também adicionei rewrites de bloqueio no Vercel em [vercel.json:42](/Users/admin/Downloads/novotemplesale 2/vercel.json#L42).
+4) ambiente adicional (onrender): com o HSTS agora no backend, respostas do ambiente backend passam a sair com header forte em produção ([server.ts:3743](/Users/admin/Downloads/novotemplesale 2/server.ts#L3743)).
+5 e 6) credencial de teste admin: adicionei suporte seguro a token admin via Authorization Bearer, X-Admin-Token e X-Admin-Auth, com opção de ADMIN_API_KEY/aliases para scanner em [server.ts:3304](/Users/admin/Downloads/novotemplesale 2/server.ts#L3304), [server.ts:3312](/Users/admin/Downloads/novotemplesale 2/server.ts#L3312) e variáveis em [.env.example:31](/Users/admin/Downloads/novotemplesale 2/.env.example#L31).
+Validação
+
+vercel.json válido (parse JSON ok).
+npm run lint continua falhando por erro preexistente fora deste ajuste em [src/App.tsx:1629](/Users/admin/Downloads/novotemplesale 2/src/App.tsx#L1629).
+Observação
+
+Havia mudanças locais não relacionadas em data/local.db*; não alterei essas mudanças.
+Fazer deploy backend + frontend para produção.
+Configurar ADMIN_API_KEY (temporária/rotacionável) no ambiente e usar no scanner.
+Rodar novamente o diagnóstico para confirmar queda dos 6 alertas.
+

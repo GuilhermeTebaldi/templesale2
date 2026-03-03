@@ -669,27 +669,34 @@ export default function NewProduct({
   };
 
   const handleOpenMapPicker = () => {
-    const savedLocation = parseCoordinateStrings(formData.latitude, formData.longitude);
-    if (savedLocation) {
-      setMapCenter(savedLocation);
-      setSelectedMapPoint(savedLocation);
-    } else {
-      setMapCenter(DEFAULT_MAP_CENTER);
-      setSelectedMapPoint(null);
-    }
     setErrorMessage("");
-    setIsMapPickerOpen(true);
-
     requestCurrentLocation(
       (nextPoint) => {
+        setFormData((prev) => ({
+          ...prev,
+          latitude: nextPoint.latitude.toFixed(6),
+          longitude: nextPoint.longitude.toFixed(6),
+        }));
         setMapCenter(nextPoint);
+        setSelectedMapPoint(nextPoint);
+        setLocationSource("current");
+        setIsMapPickerOpen(true);
       },
       (message) => {
+        const savedLocation = parseCoordinateStrings(formData.latitude, formData.longitude);
+        if (savedLocation) {
+          setMapCenter(savedLocation);
+          setSelectedMapPoint(savedLocation);
+        } else {
+          setMapCenter(DEFAULT_MAP_CENTER);
+          setSelectedMapPoint(null);
+        }
         setErrorMessage(
           t("{message} Você ainda pode escolher manualmente no mapa.", {
             message,
           }),
         );
+        setIsMapPickerOpen(true);
       },
     );
   };
