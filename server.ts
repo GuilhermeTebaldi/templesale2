@@ -369,7 +369,7 @@ const SECURITY_PERMISSIONS_POLICY = [
   "camera=()",
   "display-capture=()",
   "fullscreen=(self)",
-  "geolocation=()",
+  "geolocation=(self)",
   "gyroscope=()",
   "microphone=()",
   "payment=()",
@@ -433,6 +433,7 @@ function buildContentSecurityPolicy(isProduction: boolean): string {
   const styleSources = ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://unpkg.com"];
   const connectSources = [
     "'self'",
+    "https://unpkg.com",
     "https://api.cloudinary.com",
     "https://saleday-backend.onrender.com",
     "https://www.templesale.com",
