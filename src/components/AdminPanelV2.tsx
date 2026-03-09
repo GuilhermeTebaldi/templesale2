@@ -958,7 +958,6 @@ export default function AdminPanelV2() {
       setAuthToken(session.token);
       setSessionEmail(session.email);
       setEmail(session.email);
-      setPassword("");
       persistSession(session);
       await loadUsers(session.token);
       await loadSecurityEvents(session.token, { silent: true });
@@ -1286,12 +1285,23 @@ export default function AdminPanelV2() {
           <p className="text-xs text-stone-500 mb-6">
             Novo acesso administrativo em <code>/admin</code>.
           </p>
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form
+            onSubmit={handleLogin}
+            className="space-y-4"
+            method="post"
+            action="/api/admin/auth/login"
+            autoComplete="on"
+          >
             <div className="space-y-1">
-              <label className="text-xs uppercase tracking-[0.15em] text-stone-500">
+              <label
+                htmlFor="admin-login-username"
+                className="text-xs uppercase tracking-[0.15em] text-stone-500"
+              >
                 Email
               </label>
               <input
+                id="admin-login-username"
+                name="username"
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -1301,10 +1311,15 @@ export default function AdminPanelV2() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs uppercase tracking-[0.15em] text-stone-500">
+              <label
+                htmlFor="admin-login-password"
+                className="text-xs uppercase tracking-[0.15em] text-stone-500"
+              >
                 Senha
               </label>
               <input
+                id="admin-login-password"
+                name="password"
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
