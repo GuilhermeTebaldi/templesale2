@@ -125,6 +125,7 @@ export default function ProductDetails({
   const [activeReplyBoxCommentId, setActiveReplyBoxCommentId] = React.useState<number | null>(null);
   const [replyDraftByCommentId, setReplyDraftByCommentId] = React.useState<Record<number, string>>({});
   const [submittingReplyByCommentId, setSubmittingReplyByCommentId] = React.useState<Record<number, boolean>>({});
+  const detailsScrollRef = React.useRef<HTMLDivElement | null>(null);
 
   if (!product) return null;
 
@@ -268,6 +269,30 @@ export default function ProductDetails({
     setReplyDraftByCommentId({});
     setSubmittingReplyByCommentId({});
   }, [product.id, availableQuantity]);
+
+  React.useEffect(() => {
+    const container = detailsScrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    const frameId =
+      typeof window !== "undefined"
+        ? window.requestAnimationFrame(() => {
+            if (typeof container.scrollTo === "function") {
+              container.scrollTo({ top: 0, behavior: "smooth" });
+              return;
+            }
+            container.scrollTop = 0;
+          })
+        : null;
+
+    return () => {
+      if (frameId !== null && typeof window !== "undefined") {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [product.id]);
 
   React.useEffect(() => {
     const localDigits = String(product.sellerWhatsappNumber ?? "").replace(/\D/g, "");
@@ -531,6 +556,7 @@ export default function ProductDetails({
 
   return (
       <motion.div
+        ref={detailsScrollRef}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}

@@ -1247,6 +1247,26 @@ export default function App() {
     setIsMapOpen(true);
   }, [activeCategory]);
 
+  const scrollToTopSmooth = React.useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      window.scrollTo(0, 0);
+    }
+  }, []);
+
+  const handleCategorySelect = React.useCallback(
+    (categoryKey: string) => {
+      setActiveCategory(categoryKey);
+      scrollToTopSmooth();
+    },
+    [scrollToTopSmooth],
+  );
+
   const availableCategoryFilters = React.useMemo(() => {
     const categoryCounts = new globalThis.Map<string, number>();
     products.forEach((product) => {
@@ -2164,7 +2184,7 @@ export default function App() {
               {availableCategoryFilters.map((category) => (
                 <button
                   key={category.key}
-                  onClick={() => setActiveCategory(category.key)}
+                  onClick={() => handleCategorySelect(category.key)}
                   className={`text-[10px] uppercase tracking-[0.2em] font-medium transition-all whitespace-nowrap relative py-2 ${
                     activeCategory === category.key
                       ? "text-black" 
