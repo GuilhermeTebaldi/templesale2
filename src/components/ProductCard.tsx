@@ -2,7 +2,7 @@ import React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ShoppingBag, Heart, ChevronLeft, ChevronRight } from "lucide-react";
 import { useI18n } from "../i18n/provider";
-import { formatEuroFromUnknown } from "../lib/currency";
+import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 import { resolveProductImages } from "../lib/product-images";
 
@@ -148,7 +148,9 @@ export default function ProductCard({
             {product.name}
           </h3>
           <span className="font-mono text-sm text-stone-600">
-            {formatEuroFromUnknown(product.price, locale)}
+            {formatCompactPriceFromUnknown(product.price, locale, {
+              priceNegotiable: product.priceNegotiable,
+            })}
           </span>
         </div>
       </div>

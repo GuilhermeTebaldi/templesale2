@@ -20,7 +20,11 @@ import ProductMap from "./ProductMap";
 import { buildWhatsappUrl, formatWhatsappDisplay } from "../lib/whatsapp";
 import { api, type ProductCommentDto, type SessionUser } from "../lib/api";
 import { useI18n } from "../i18n/provider";
-import { formatEuroFromUnknown, isNegotiablePrice } from "../lib/currency";
+import {
+  formatCompactPriceFromUnknown,
+  formatEuroFromUnknown,
+  isNegotiablePrice,
+} from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 import { resolveProductImages } from "../lib/product-images";
 import { normalizeProductDetailsRecord } from "../lib/product-details";
@@ -1055,7 +1059,9 @@ export default function ProductDetails({
                         {relatedProduct.name}
                       </p>
                       <p className="text-[10px] sm:text-xs font-mono text-stone-600">
-                        {formatEuroFromUnknown(relatedProduct.price, locale)}
+                        {formatCompactPriceFromUnknown(relatedProduct.price, locale, {
+                          priceNegotiable: relatedProduct.priceNegotiable,
+                        })}
                       </p>
                     </div>
                   </button>

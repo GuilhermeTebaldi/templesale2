@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Search, Pencil, Trash2, Package, X } from "lucide-react";
 import { type Product } from "./ProductCard";
 import { useI18n } from "../i18n/provider";
-import { formatEuroFromUnknown } from "../lib/currency";
+import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 
 interface ProductMapProps {
@@ -1056,7 +1056,9 @@ export default function ProductMap({
                             </p>
                             <p className="text-[10px] text-stone-500 truncate">
                               {getCategoryLabel(product.category, locale)} •{" "}
-                              {formatEuroFromUnknown(product.price, locale)}
+                              {formatCompactPriceFromUnknown(product.price, locale, {
+                                priceNegotiable: product.priceNegotiable,
+                              })}
                             </p>
                           </div>
                         </button>
@@ -1252,7 +1254,9 @@ export default function ProductMap({
                           </h3>
                           <div className="mt-1 sm:mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                             <span className="text-sm sm:text-lg font-semibold text-stone-700">
-                              {formatEuroFromUnknown(product.price, locale)}
+                              {formatCompactPriceFromUnknown(product.price, locale, {
+                                priceNegotiable: product.priceNegotiable,
+                              })}
                             </span>
                             <span className="text-[10px] sm:text-xs font-semibold text-stone-400 text-left sm:text-right">
                               {product.latitude.toFixed(5)}, {product.longitude.toFixed(5)}

@@ -68,6 +68,11 @@ export const ptBRTranslations: Record<string, string> = {
   "Publicar como a negociar (não mostrar preço)":
     "Publicar como a negociar (não mostrar preço)",
   "Preço será definido na negociação": "Preço será definido na negociação",
+  "Enviando fotos...": "Enviando fotos...",
+  "Fotos concluídas: {done}/{total}": "Fotos concluídas: {done}/{total}",
+  "Fotos enviadas: {count}/{max}": "Fotos enviadas: {count}/{max}",
+  "Limite atingido": "Limite atingido",
+  "Enviando...": "Enviando...",
   "Resultados da busca": "Resultados da busca",
   "{count} resultado(s)": "{count} resultado(s)",
   "Sem resultados para esta busca.": "Sem resultados para esta busca.",

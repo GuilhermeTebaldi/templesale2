@@ -23,6 +23,7 @@ import {
   parsePriceToNumber,
 } from "../lib/currency";
 import { normalizeProductDetailsRecord } from "../lib/product-details";
+import loadingLogoSrc from "../../logo-cropped-1772137553672.png";
 
 interface NewProductProps {
   onClose: () => void;
@@ -328,6 +329,10 @@ export default function NewProduct({
   );
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [isUploadingImages, setIsUploadingImages] = React.useState(false);
+  const [uploadPreviewUrls, setUploadPreviewUrls] = React.useState<string[]>([]);
+  const [uploadBatchTotal, setUploadBatchTotal] = React.useState(0);
+  const [uploadBatchCompleted, setUploadBatchCompleted] = React.useState(0);
+  const uploadPreviewUrlsRef = React.useRef<string[]>([]);
   const [isPublishing, setIsPublishing] = React.useState(false);
   const [isSuccess, setIsSuccess] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState("");
@@ -347,8 +352,33 @@ export default function NewProduct({
   const hasAutoUncheckedDraftSaveRef = React.useRef(false);
 
   React.useEffect(() => {
+    uploadPreviewUrlsRef.current = uploadPreviewUrls;
+  }, [uploadPreviewUrls]);
+
+  React.useEffect(() => {
+    return () => {
+      for (const previewUrl of uploadPreviewUrlsRef.current) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, []);
+
+  const clearUploadPreviewUrls = React.useCallback(() => {
+    setUploadPreviewUrls((current) => {
+      for (const previewUrl of current) {
+        URL.revokeObjectURL(previewUrl);
+      }
+      return [];
+    });
+  }, []);
+
+  React.useEffect(() => {
     setFormData(buildInitialFormState(initialProduct));
     setImages(normalizeInitialImages(initialProduct));
+    setIsUploadingImages(false);
+    setUploadBatchTotal(0);
+    setUploadBatchCompleted(0);
+    clearUploadPreviewUrls();
     setIsSuccess(false);
     setErrorMessage("");
     setIsMapPickerOpen(false);
@@ -362,7 +392,7 @@ export default function NewProduct({
     const nextLocation = getInitialLocationPoint(initialProduct);
     setSelectedMapPoint(nextLocation);
     setMapCenter(nextLocation ?? DEFAULT_MAP_CENTER);
-  }, [initialProduct]);
+  }, [clearUploadPreviewUrls, initialProduct]);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -421,6 +451,12 @@ export default function NewProduct({
     "Outros"
   ].includes(formData.category);
   const hasLocationSelected = Boolean(parseCoordinateStrings(formData.latitude, formData.longitude));
+  const uploadBatchProgress = React.useMemo(() => {
+    if (uploadBatchTotal <= 0) {
+      return 0;
+    }
+    return Math.min(100, Math.round((uploadBatchCompleted / uploadBatchTotal) * 100));
+  }, [uploadBatchCompleted, uploadBatchTotal]);
   const draftDefaultsFromForm = React.useMemo(
     () => buildDraftDefaultsFromForm(formData),
     [formData],
@@ -482,6 +518,10 @@ export default function NewProduct({
     }
 
     setErrorMessage("");
+    const nextUploadPreviewUrls = imageFiles.map((file) => URL.createObjectURL(file));
+    setUploadPreviewUrls(nextUploadPreviewUrls);
+    setUploadBatchTotal(imageFiles.length);
+    setUploadBatchCompleted(0);
     setIsUploadingImages(true);
 
     try {
@@ -493,6 +533,7 @@ export default function NewProduct({
           throw new Error(t("Upload concluído sem URL de imagem."));
         }
         uploaded.push(imageUrl);
+        setUploadBatchCompleted(uploaded.length);
       }
 
       if (uploaded.length > 0) {
@@ -504,6 +545,9 @@ export default function NewProduct({
       setErrorMessage(message);
     } finally {
       setIsUploadingImages(false);
+      setUploadBatchTotal(0);
+      setUploadBatchCompleted(0);
+      clearUploadPreviewUrls();
     }
   };
 
@@ -848,6 +892,94 @@ export default function NewProduct({
                   </span>
                 </button>
               </div>
+
+              {isUploadingImages && uploadBatchTotal > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-4 border border-stone-200 rounded-sm bg-stone-50/80 px-4 py-4"
+                >
+                  <div className="flex items-center gap-4">
+                    <motion.img
+                      src={loadingLogoSrc}
+                      alt={t("Enviando fotos...")}
+                      className="h-10 w-10 select-none object-contain"
+                      initial={{ opacity: 0.65, scale: 0.96 }}
+                      animate={{ opacity: [0.65, 1, 0.65], scale: [0.96, 1.04, 0.96] }}
+                      transition={{
+                        duration: 1.2,
+                        ease: "easeInOut",
+                        repeat: Number.POSITIVE_INFINITY,
+                      }}
+                      draggable={false}
+                    />
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-[0.18em] font-bold text-stone-600">
+                        {t("Enviando fotos...")}
+                      </p>
+                      <p className="text-[11px] text-stone-500">
+                        {t("Fotos concluídas: {done}/{total}", {
+                          done: uploadBatchCompleted,
+                          total: uploadBatchTotal,
+                        })}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="h-1.5 rounded-full bg-stone-200 overflow-hidden">
+                    <motion.div
+                      className="h-full bg-stone-800"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${uploadBatchProgress}%` }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                    {uploadPreviewUrls.map((previewUrl, index) => {
+                      const isUploaded = index < uploadBatchCompleted;
+                      const isCurrent = index === uploadBatchCompleted;
+
+                      return (
+                        <div
+                          key={`${previewUrl}-${index}`}
+                          className="relative aspect-square overflow-hidden rounded-sm border border-stone-200 bg-stone-100"
+                        >
+                          <img
+                            src={previewUrl}
+                            alt={t("Pré-visualização")}
+                            className={`h-full w-full object-cover transition-opacity ${
+                              isUploaded ? "opacity-100" : "opacity-75"
+                            }`}
+                          />
+                          <div
+                            className={`absolute inset-0 transition-colors ${
+                              isUploaded
+                                ? "bg-emerald-500/20"
+                                : isCurrent
+                                  ? "bg-stone-900/20"
+                                  : "bg-stone-900/35"
+                            }`}
+                          />
+
+                          {isUploaded && (
+                            <div className="absolute top-1 right-1 h-5 w-5 rounded-full bg-white/90 flex items-center justify-center text-emerald-600">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                            </div>
+                          )}
+
+                          {!isUploaded && isCurrent && (
+                            <div className="absolute top-1 right-1 h-5 w-5 rounded-full bg-white/90 flex items-center justify-center">
+                              <div className="w-3 h-3 border-2 border-stone-300 border-t-stone-700 rounded-full animate-spin" />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+
               <p className="text-xs text-stone-500">
                 {t("Fotos enviadas: {count}/{max}", {
                   count: String(images.length),

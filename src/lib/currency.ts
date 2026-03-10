@@ -15,6 +15,10 @@ export function getNegotiablePriceLabel(locale: "pt-BR" | "it-IT" = "it-IT"): st
   return locale === "pt-BR" ? "A negociar" : "Da negoziare";
 }
 
+export function getCompactNegotiablePriceLabel(locale: "pt-BR" | "it-IT" = "it-IT"): string {
+  return locale === "pt-BR" ? "Neg." : "Tratt.";
+}
+
 export function parsePriceToNumber(rawValue: string): number | null {
   const value = String(rawValue ?? "").trim();
   if (!value) {
@@ -101,6 +105,18 @@ export function formatEuroFromUnknown(
   }
 
   return formatEuro(parsed, locale);
+}
+
+export function formatCompactPriceFromUnknown(
+  rawValue: string | number | undefined,
+  locale: "pt-BR" | "it-IT" = "it-IT",
+  options?: { priceNegotiable?: boolean },
+): string {
+  if (options?.priceNegotiable || isNegotiablePrice(rawValue)) {
+    return getCompactNegotiablePriceLabel(locale);
+  }
+
+  return formatEuroFromUnknown(rawValue, locale);
 }
 
 export function normalizeEuroInput(

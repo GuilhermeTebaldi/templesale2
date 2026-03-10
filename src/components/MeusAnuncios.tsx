@@ -3,7 +3,7 @@ import { motion } from "motion/react";
 import { X, Package, Edit2, Trash2, ExternalLink } from "lucide-react";
 import { type Product } from "./ProductCard";
 import { useI18n } from "../i18n/provider";
-import { formatEuroFromUnknown } from "../lib/currency";
+import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 
 interface MeusAnunciosProps {
@@ -87,7 +87,9 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
                       <div className="flex justify-between items-start">
                         <h3 className="font-serif italic text-lg text-stone-800">{product.name}</h3>
                         <span className="text-sm font-mono text-stone-900">
-                          {formatEuroFromUnknown(product.price, locale)}
+                          {formatCompactPriceFromUnknown(product.price, locale, {
+                            priceNegotiable: product.priceNegotiable,
+                          })}
                         </span>
                       </div>
                       <p className="text-[10px] uppercase tracking-widest text-stone-400 mt-1">
