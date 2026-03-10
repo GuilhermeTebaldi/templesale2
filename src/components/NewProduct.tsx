@@ -119,7 +119,12 @@ function toGeoPoint(latitude: number, longitude: number): GeoPoint | null {
 }
 
 function parseCoordinateStrings(latitude: string, longitude: string): GeoPoint | null {
-  return toGeoPoint(Number(latitude), Number(longitude));
+  const normalizedLatitude = String(latitude ?? "").trim().replace(",", ".");
+  const normalizedLongitude = String(longitude ?? "").trim().replace(",", ".");
+  if (!normalizedLatitude || !normalizedLongitude) {
+    return null;
+  }
+  return toGeoPoint(Number(normalizedLatitude), Number(normalizedLongitude));
 }
 
 function getInitialLocationPoint(product: Product | null | undefined): GeoPoint | null {
@@ -339,6 +344,7 @@ export default function NewProduct({
   const [isSavingDraftDefaults, setIsSavingDraftDefaults] = React.useState(false);
   const [isLoadingDraftDefaults, setIsLoadingDraftDefaults] = React.useState(false);
   const [draftSaveFeedback, setDraftSaveFeedback] = React.useState<DraftSaveFeedback | null>(null);
+  const hasAutoUncheckedDraftSaveRef = React.useRef(false);
 
   React.useEffect(() => {
     setFormData(buildInitialFormState(initialProduct));
@@ -427,7 +433,12 @@ export default function NewProduct({
   }, [savedDraftDefaults, draftDefaultsFromForm]);
 
   React.useEffect(() => {
-    if (isDraftSaveChecked && hasDraftDefaultsPendingSave) {
+    if (!hasDraftDefaultsPendingSave) {
+      hasAutoUncheckedDraftSaveRef.current = false;
+      return;
+    }
+    if (isDraftSaveChecked && !hasAutoUncheckedDraftSaveRef.current) {
+      hasAutoUncheckedDraftSaveRef.current = true;
       setIsDraftSaveChecked(false);
     }
   }, [hasDraftDefaultsPendingSave, isDraftSaveChecked]);
