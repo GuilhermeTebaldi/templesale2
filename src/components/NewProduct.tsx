@@ -23,7 +23,6 @@ import {
   parsePriceToNumber,
 } from "../lib/currency";
 import { normalizeProductDetailsRecord } from "../lib/product-details";
-import loadingLogoSrc from "../../logo-cropped-1772137553672.png";
 
 interface NewProductProps {
   onClose: () => void;
@@ -760,14 +759,9 @@ export default function NewProduct({
     setErrorMessage("");
     requestCurrentLocation(
       (nextPoint) => {
-        setFormData((prev) => ({
-          ...prev,
-          latitude: nextPoint.latitude.toFixed(6),
-          longitude: nextPoint.longitude.toFixed(6),
-        }));
+        const savedLocation = parseCoordinateStrings(formData.latitude, formData.longitude);
         setMapCenter(nextPoint);
-        setSelectedMapPoint(nextPoint);
-        setLocationSource("current");
+        setSelectedMapPoint(savedLocation ?? nextPoint);
         setIsMapPickerOpen(true);
       },
       (message) => {
@@ -790,6 +784,11 @@ export default function NewProduct({
   };
 
   const handleCloseMapPicker = () => {
+    const savedLocation = parseCoordinateStrings(formData.latitude, formData.longitude);
+    setSelectedMapPoint(savedLocation);
+    if (savedLocation) {
+      setMapCenter(savedLocation);
+    }
     setIsMapPickerOpen(false);
   };
 
@@ -801,8 +800,9 @@ export default function NewProduct({
       latitude: point.latitude.toFixed(6),
       longitude: point.longitude.toFixed(6),
     }));
+    setMapCenter(point);
     setLocationSource("map");
-    handleCloseMapPicker();
+    setIsMapPickerOpen(false);
   };
 
   return (
@@ -897,33 +897,18 @@ export default function NewProduct({
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="space-y-4 border border-stone-200 rounded-sm bg-stone-50/80 px-4 py-4"
+                  className="fixed left-1/2 top-[calc(50%+4.5rem)] -translate-x-1/2 z-[100000] w-[min(94vw,34rem)] max-h-[42vh] overflow-y-auto space-y-3 border border-stone-200 rounded-xl bg-white/95 backdrop-blur-md px-4 py-3 shadow-2xl shadow-stone-900/10 pointer-events-none"
                 >
-                  <div className="flex items-center gap-4">
-                    <motion.img
-                      src={loadingLogoSrc}
-                      alt={t("Enviando fotos...")}
-                      className="h-10 w-10 select-none object-contain"
-                      initial={{ opacity: 0.65, scale: 0.96 }}
-                      animate={{ opacity: [0.65, 1, 0.65], scale: [0.96, 1.04, 0.96] }}
-                      transition={{
-                        duration: 1.2,
-                        ease: "easeInOut",
-                        repeat: Number.POSITIVE_INFINITY,
-                      }}
-                      draggable={false}
-                    />
-                    <div className="space-y-1">
-                      <p className="text-xs uppercase tracking-[0.18em] font-bold text-stone-600">
-                        {t("Enviando fotos...")}
-                      </p>
-                      <p className="text-[11px] text-stone-500">
-                        {t("Fotos concluídas: {done}/{total}", {
-                          done: uploadBatchCompleted,
-                          total: uploadBatchTotal,
-                        })}
-                      </p>
-                    </div>
+                  <div className="space-y-1">
+                    <p className="text-xs uppercase tracking-[0.18em] font-bold text-stone-700">
+                      {t("Enviando fotos...")}
+                    </p>
+                    <p className="text-[11px] text-stone-500">
+                      {t("Fotos concluídas: {done}/{total}", {
+                        done: uploadBatchCompleted,
+                        total: uploadBatchTotal,
+                      })}
+                    </p>
                   </div>
 
                   <div className="h-1.5 rounded-full bg-stone-200 overflow-hidden">
@@ -935,7 +920,7 @@ export default function NewProduct({
                     />
                   </div>
 
-                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                  <div className="grid grid-cols-5 sm:grid-cols-6 gap-1.5">
                     {uploadPreviewUrls.map((previewUrl, index) => {
                       const isUploaded = index < uploadBatchCompleted;
                       const isCurrent = index === uploadBatchCompleted;
