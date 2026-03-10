@@ -1,6 +1,5 @@
 import React from "react";
 import { toPng } from "html-to-image";
-import html2canvas from "html2canvas";
 import {
   ArrowLeft,
   Download,
@@ -32,6 +31,55 @@ type FrameTheme = {
 };
 
 const FRAME_IMAGE_FALLBACK = "https://picsum.photos/seed/templesale-frame/800/800";
+const FRAME_SITE_LABEL = "templesale.com";
+
+type CanvasFrameTheme = {
+  categoryColor: string;
+  titleColor: string;
+  footerColor: string;
+  gradientTop: string;
+  gradientMiddle: string;
+  gradientBottom: string;
+  priceBackground: string;
+  priceBorder: string;
+  priceText: string;
+};
+
+const CANVAS_FRAME_THEMES: Record<FrameThemeKey, CanvasFrameTheme> = {
+  luxury: {
+    categoryColor: "#fcd34d",
+    titleColor: "#f5f5f4",
+    footerColor: "rgba(231,229,228,0.95)",
+    gradientTop: "rgba(0,0,0,0.02)",
+    gradientMiddle: "rgba(0,0,0,0.35)",
+    gradientBottom: "rgba(0,0,0,0.9)",
+    priceBackground: "rgba(0,0,0,0.35)",
+    priceBorder: "rgba(251,191,36,0.5)",
+    priceText: "#fcd34d",
+  },
+  minimal: {
+    categoryColor: "#57534e",
+    titleColor: "#1c1917",
+    footerColor: "#57534e",
+    gradientTop: "rgba(255,255,255,0.02)",
+    gradientMiddle: "rgba(255,255,255,0.45)",
+    gradientBottom: "rgba(255,255,255,0.95)",
+    priceBackground: "rgba(255,255,255,1)",
+    priceBorder: "rgba(214,211,209,1)",
+    priceText: "#292524",
+  },
+  modern: {
+    categoryColor: "#67e8f9",
+    titleColor: "#ffffff",
+    footerColor: "rgba(224,247,250,0.95)",
+    gradientTop: "rgba(9,9,11,0.02)",
+    gradientMiddle: "rgba(9,9,11,0.35)",
+    gradientBottom: "rgba(9,9,11,0.95)",
+    priceBackground: "rgba(24,24,27,0.8)",
+    priceBorder: "rgba(34,211,238,0.5)",
+    priceText: "#67e8f9",
+  },
+};
 
 const FRAME_THEMES: Record<FrameThemeKey, FrameTheme> = {
   luxury: {
@@ -150,6 +198,228 @@ async function waitForRenderableImages(container: HTMLElement): Promise<void> {
     return;
   }
   await Promise.all(images.map((image) => waitForImageElement(image)));
+}
+
+async function loadImageForCanvas(url: string): Promise<HTMLImageElement | null> {
+  const normalizedUrl = normalizeImageUrl(url);
+  if (!normalizedUrl) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.referrerPolicy = "no-referrer";
+
+    const timeoutId = window.setTimeout(() => {
+      cleanup();
+      resolve(null);
+    }, 12000);
+
+    const onLoad = () => {
+      cleanup();
+      resolve(image);
+    };
+
+    const onError = () => {
+      cleanup();
+      resolve(null);
+    };
+
+    const cleanup = () => {
+      window.clearTimeout(timeoutId);
+      image.onload = null;
+      image.onerror = null;
+    };
+
+    image.onload = onLoad;
+    image.onerror = onError;
+    image.src = normalizedUrl;
+  });
+}
+
+function drawImageCover(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  width: number,
+  height: number,
+): void {
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  if (!sourceWidth || !sourceHeight) {
+    return;
+  }
+
+  const scale = Math.max(width / sourceWidth, height / sourceHeight);
+  const cropWidth = width / scale;
+  const cropHeight = height / scale;
+  const offsetX = (sourceWidth - cropWidth) / 2;
+  const offsetY = (sourceHeight - cropHeight) / 2;
+  context.drawImage(image, offsetX, offsetY, cropWidth, cropHeight, 0, 0, width, height);
+}
+
+function drawRoundedRectangle(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+): void {
+  const safeRadius = Math.max(0, Math.min(radius, height / 2, width / 2));
+  context.beginPath();
+  context.moveTo(x + safeRadius, y);
+  context.lineTo(x + width - safeRadius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+  context.lineTo(x + width, y + height - safeRadius);
+  context.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+  context.lineTo(x + safeRadius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+  context.lineTo(x, y + safeRadius);
+  context.quadraticCurveTo(x, y, x + safeRadius, y);
+  context.closePath();
+}
+
+function wrapCanvasText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines: number,
+): string[] {
+  const normalized = String(text ?? "").trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const words = normalized.split(/\s+/);
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+    const candidateWidth = context.measureText(candidate).width;
+    if (candidateWidth <= maxWidth) {
+      currentLine = candidate;
+      continue;
+    }
+
+    if (currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      lines.push(word);
+      currentLine = "";
+    }
+
+    if (lines.length === maxLines) {
+      break;
+    }
+  }
+
+  if (currentLine && lines.length < maxLines) {
+    lines.push(currentLine);
+  }
+
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+  }
+
+  if (lines.length === maxLines && words.length > 0) {
+    const lastIndex = maxLines - 1;
+    let lastLine = lines[lastIndex] ?? "";
+    while (lastLine.length > 0 && context.measureText(`${lastLine}...`).width > maxWidth) {
+      lastLine = lastLine.slice(0, -1).trimEnd();
+    }
+    lines[lastIndex] = lastLine ? `${lastLine}...` : "...";
+  }
+
+  return lines;
+}
+
+async function exportFrameWithCanvasFallback(params: {
+  imageUrl: string;
+  frameTitle: string;
+  frameCategory: string;
+  framePrice: string;
+  frameTheme: FrameThemeKey;
+}): Promise<string> {
+  const canvas = document.createElement("canvas");
+  const size = 1080;
+  canvas.width = size;
+  canvas.height = size;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Canvas non disponibile.");
+  }
+
+  const loadedImage = await loadImageForCanvas(params.imageUrl);
+  if (loadedImage) {
+    drawImageCover(context, loadedImage, size, size);
+  } else {
+    context.fillStyle = "#1c1917";
+    context.fillRect(0, 0, size, size);
+  }
+
+  const theme = CANVAS_FRAME_THEMES[params.frameTheme];
+  const gradient = context.createLinearGradient(0, size * 0.2, 0, size);
+  gradient.addColorStop(0, theme.gradientTop);
+  gradient.addColorStop(0.62, theme.gradientMiddle);
+  gradient.addColorStop(1, theme.gradientBottom);
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, size, size);
+
+  const category = String(params.frameCategory ?? "").trim() || "Categoria";
+  const title = String(params.frameTitle ?? "").trim() || "Nome prodotto";
+  const price = String(params.framePrice ?? "").trim();
+  const showPrice = shouldShowPrice(price);
+
+  const padding = 76;
+  const footerY = size - padding;
+
+  context.textAlign = "left";
+  context.textBaseline = "alphabetic";
+
+  context.font = "600 28px Inter, Arial, sans-serif";
+  context.fillStyle = theme.categoryColor;
+  context.fillText(category.toUpperCase(), padding, footerY - 210);
+
+  const titleFont = params.frameTheme === "luxury" ? "italic 600 72px serif" : "600 68px Inter, Arial, sans-serif";
+  context.font = titleFont;
+  context.fillStyle = theme.titleColor;
+  const titleLines = wrapCanvasText(context, title, size - padding * 2, 3);
+  const titleLineHeight = 78;
+  const titleStartY = footerY - 130 - titleLineHeight * Math.max(titleLines.length - 1, 0);
+  titleLines.forEach((line, index) => {
+    context.fillText(line, padding, titleStartY + index * titleLineHeight);
+  });
+
+  if (showPrice) {
+    context.font = "700 40px Inter, Arial, sans-serif";
+    const priceText = price;
+    const textWidth = context.measureText(priceText).width;
+    const pillHeight = 72;
+    const pillWidth = textWidth + 56;
+    const pillX = padding;
+    const pillY = footerY - 68;
+
+    drawRoundedRectangle(context, pillX, pillY - pillHeight + 12, pillWidth, pillHeight, 36);
+    context.fillStyle = theme.priceBackground;
+    context.fill();
+    context.lineWidth = 2;
+    context.strokeStyle = theme.priceBorder;
+    context.stroke();
+
+    context.fillStyle = theme.priceText;
+    context.fillText(priceText, pillX + 28, pillY);
+  }
+
+  context.font = "600 24px Inter, Arial, sans-serif";
+  context.fillStyle = theme.footerColor;
+  const footerTextWidth = context.measureText(FRAME_SITE_LABEL).width;
+  context.fillText(FRAME_SITE_LABEL, size - padding - footerTextWidth, footerY);
+
+  return canvas.toDataURL("image/png");
 }
 
 function shouldShowPrice(value: string): boolean {
@@ -283,18 +553,17 @@ export default function FrameStudio() {
           cacheBust: true,
           pixelRatio: 2,
           backgroundColor: "#ffffff",
+          includeQueryParams: true,
         });
       } catch (htmlToImageError) {
         console.warn("[FrameStudio] html-to-image export failed, trying fallback.", htmlToImageError);
-        const canvas = await html2canvas(node, {
-          backgroundColor: "#ffffff",
-          scale: 2,
-          useCORS: true,
-          allowTaint: false,
-          logging: false,
-          imageTimeout: 15000,
+        dataUrl = await exportFrameWithCanvasFallback({
+          imageUrl: selectedImageUrl,
+          frameTitle,
+          frameCategory,
+          framePrice,
+          frameTheme,
         });
-        dataUrl = canvas.toDataURL("image/png");
       }
 
       if (!dataUrl) {
@@ -311,7 +580,7 @@ export default function FrameStudio() {
     } finally {
       setIsExporting(false);
     }
-  }, [frameTitle, selectedImageUrl]);
+  }, [frameCategory, framePrice, frameTheme, frameTitle, selectedImageUrl]);
 
   return (
     <div className="min-h-screen bg-[#f8f7f4] text-stone-900">
