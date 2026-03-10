@@ -19,7 +19,6 @@ import LeafletMapPicker from "./LeafletMapPicker";
 import { useI18n } from "../i18n/provider";
 import { CATEGORY_VALUES, getCategoryLabel } from "../i18n/categories";
 import {
-  getNegotiablePriceStorageValue,
   isNegotiablePrice,
   parsePriceToNumber,
 } from "../lib/currency";
@@ -180,7 +179,7 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
     };
   }
 
-  const hasNegotiablePrice = isNegotiablePrice(product.price ?? "");
+  const hasNegotiablePrice = Boolean(product.priceNegotiable) || isNegotiablePrice(product.price ?? "");
 
   return {
     name: product.name ?? "",
@@ -512,12 +511,31 @@ export default function NewProduct({
       return;
     }
 
+    const defaultsToSave = (() => {
+      const baseDefaults = buildDraftDefaultsFromForm(formData);
+      const locationPoint =
+        selectedMapPoint ?? parseCoordinateStrings(formData.latitude, formData.longitude);
+      if (!locationPoint) {
+        return baseDefaults;
+      }
+      return {
+        ...baseDefaults,
+        latitude: locationPoint.latitude.toFixed(6),
+        longitude: locationPoint.longitude.toFixed(6),
+      };
+    })();
+
     setDraftSaveFeedback(null);
     setIsSavingDraftDefaults(true);
 
     try {
-      const savedDefaults = await api.updateNewProductDraftDefaults(draftDefaultsFromForm);
+      const savedDefaults = await api.updateNewProductDraftDefaults(defaultsToSave);
       setSavedDraftDefaults(savedDefaults);
+      setFormData((current) => ({
+        ...current,
+        latitude: savedDefaults.latitude,
+        longitude: savedDefaults.longitude,
+      }));
       setIsDraftSaveChecked(true);
       setDraftSaveFeedback({
         type: "success",
@@ -596,7 +614,7 @@ export default function NewProduct({
         ),
       );
       const normalizedPrice = formData.isPriceNegotiable
-        ? getNegotiablePriceStorageValue()
+        ? "0.00"
         : parsedPrice !== null
           ? parsedPrice.toFixed(2)
           : "";
@@ -604,6 +622,7 @@ export default function NewProduct({
         name: normalizedName,
         category: normalizedCategory,
         price: normalizedPrice,
+        priceNegotiable: formData.isPriceNegotiable,
         quantity: parsedQuantity,
         latitude,
         longitude,

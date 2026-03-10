@@ -11,6 +11,7 @@ export interface Product {
   name: string;
   category: string;
   price: string;
+  priceNegotiable?: boolean;
   quantity?: number;
   image: string;
   images?: string[];

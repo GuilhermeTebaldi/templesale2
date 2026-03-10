@@ -3,12 +3,17 @@ import {
   normalizeProductDetailKey,
   normalizeProductDetailsRecord,
 } from "./product-details";
+import {
+  NEGOTIABLE_PRICE_STORAGE_VALUE,
+  isNegotiablePriceValue,
+} from "./negotiable-price";
 
 export interface ProductDto {
   id: number;
   name: string;
   category: string;
   price: string;
+  priceNegotiable?: boolean;
   quantity?: number;
   image: string;
   images?: string[];
@@ -71,6 +76,7 @@ export interface CreateProductInput {
   name: string;
   category: string;
   price: string;
+  priceNegotiable?: boolean;
   quantity: number;
   image?: string;
   images?: string[];
@@ -500,6 +506,28 @@ function toOptionalNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function toOptionalBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value !== 0;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return undefined;
+    }
+    if (["1", "true", "t", "yes", "y", "sim", "on"].includes(normalized)) {
+      return true;
+    }
+    if (["0", "false", "f", "no", "n", "nao", "não", "off"].includes(normalized)) {
+      return false;
+    }
+  }
+  return undefined;
+}
+
 function toNonNegativeInteger(value: unknown): number | undefined {
   const parsed = toOptionalNumber(value);
   if (parsed === undefined) {
@@ -578,12 +606,21 @@ function normalizeProductItem(value: unknown): ProductDto | null {
     firstDefined(parsed, ["image", "image_url"]),
   );
   const image = images[0] ?? "";
+  const rawPriceValue = firstDefined(parsed, ["price"]);
+  const isPriceNegotiable =
+    toOptionalBoolean(
+      firstDefined(parsed, ["priceNegotiable", "price_negotiable", "isPriceNegotiable"]),
+    ) ?? isNegotiablePriceValue(rawPriceValue);
+  const normalizedPrice = isPriceNegotiable
+    ? NEGOTIABLE_PRICE_STORAGE_VALUE
+    : toStringValue(rawPriceValue);
 
   const product: ProductDto = {
     id,
     name: toStringValue(firstDefined(parsed, ["name", "title"])),
     category: toStringValue(firstDefined(parsed, ["category"])),
-    price: toStringValue(firstDefined(parsed, ["price"])),
+    price: normalizedPrice,
+    priceNegotiable: isPriceNegotiable,
     image,
     images,
   };

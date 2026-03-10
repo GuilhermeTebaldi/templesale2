@@ -18,6 +18,7 @@ type ProductRecord = {
   name: string;
   category: string;
   price: string;
+  priceNegotiable?: boolean;
   quantity?: number;
   image: string;
   images: string[];
@@ -36,6 +37,7 @@ type ProductRow = {
   name: string;
   category: string;
   price: string;
+  price_negotiable: number | boolean;
   quantity: number;
   image: string;
   images: string;
@@ -176,6 +178,7 @@ type NormalizedProductInput = {
   name: string;
   category: string;
   price: string;
+  priceNegotiable: boolean;
   quantity: number;
   image: string;
   images: string;
@@ -614,6 +617,7 @@ const PRODUCT_SELECT_FIELDS = `
   COALESCE(NULLIF(TRIM(COALESCE(p.name, '')), ''), NULLIF(TRIM(COALESCE(p.title, '')), ''), 'Produto sem título') AS name,
   p.category,
   p.price,
+  COALESCE(p.price_negotiable, FALSE) AS price_negotiable,
   COALESCE(p.quantity, 1) AS quantity,
   COALESCE(NULLIF(TRIM(COALESCE(p.image, '')), ''), NULLIF(TRIM(COALESCE(p.image_url, '')), ''), '') AS image,
   CASE
@@ -720,12 +724,33 @@ function toRequiredNonNegativeInteger(value: unknown, fallback = 0): number {
   return integerValue;
 }
 
+function toBooleanValue(value: unknown, fallback = false): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value !== 0;
+  }
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (["1", "true", "t", "yes", "y", "sim", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "f", "no", "n", "nao", "não", "off"].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
+
 function normalizeProductRow(row: Record<string, unknown>): ProductRow {
   return {
     id: toRequiredNumber(row.id),
     name: String(row.name ?? ""),
     category: String(row.category ?? ""),
     price: String(row.price ?? ""),
+    price_negotiable: toBooleanValue(row.price_negotiable, false),
     quantity: toRequiredNonNegativeInteger(row.quantity, 1),
     image: String(row.image ?? DEFAULT_IMAGE),
     images: String(row.images ?? "[]"),
@@ -928,6 +953,7 @@ function initializeSqliteDatabase() {
       name TEXT NOT NULL,
       category TEXT NOT NULL,
       price TEXT NOT NULL,
+      price_negotiable INTEGER NOT NULL DEFAULT 0,
       quantity INTEGER NOT NULL DEFAULT 1,
       image TEXT NOT NULL,
       images TEXT NOT NULL DEFAULT '[]',
@@ -1042,7 +1068,27 @@ function initializeSqliteDatabase() {
   if (!productColumns.some((column) => column.name === "quantity")) {
     db.exec("ALTER TABLE products ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1");
   }
+  if (!productColumns.some((column) => column.name === "price_negotiable")) {
+    db.exec("ALTER TABLE products ADD COLUMN price_negotiable INTEGER NOT NULL DEFAULT 0");
+  }
   db.exec("UPDATE products SET quantity = 1 WHERE quantity IS NULL OR quantity < 0");
+  db.exec(
+    `
+      UPDATE products
+      SET price_negotiable = 1, price = '0'
+      WHERE
+        COALESCE(price_negotiable, 0) = 0
+        AND LOWER(TRIM(COALESCE(price, ''))) IN (
+          'negotiable',
+          'a negociar',
+          'da negoziare',
+          'preco negociavel',
+          'preço negociável',
+          'prezzo negoziabile',
+          'price negotiable'
+        )
+    `,
+  );
 
   const userColumns = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
   if (!userColumns.some((column) => column.name === "avatar_url")) {
@@ -1116,6 +1162,7 @@ async function initializePostgresDatabase() {
         name TEXT NOT NULL,
         category TEXT NOT NULL,
         price TEXT NOT NULL,
+        price_negotiable BOOLEAN NOT NULL DEFAULT FALSE,
         quantity INTEGER NOT NULL DEFAULT 1,
         image TEXT NOT NULL,
         images TEXT NOT NULL DEFAULT '[]',
@@ -1179,6 +1226,7 @@ async function initializePostgresDatabase() {
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS title TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS category TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS price TEXT",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS price_negotiable BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS quantity INTEGER",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
@@ -1220,6 +1268,21 @@ async function initializePostgresDatabase() {
     "UPDATE products SET title = COALESCE(NULLIF(BTRIM(title), ''), NULLIF(BTRIM(name), ''), 'Produto sem título') WHERE title IS NULL OR BTRIM(title) = ''",
     "UPDATE products SET image_url = COALESCE(NULLIF(BTRIM(image_url), ''), NULLIF(BTRIM(image), ''), '') WHERE image_url IS NULL OR BTRIM(image_url) = ''",
     "UPDATE products SET image_urls = COALESCE(NULLIF(BTRIM(image_urls), ''), images, '[]') WHERE image_urls IS NULL OR BTRIM(image_urls) = ''",
+    `
+      UPDATE products
+      SET price_negotiable = TRUE, price = '0'
+      WHERE
+        COALESCE(price_negotiable, FALSE) = FALSE
+        AND LOWER(BTRIM(COALESCE(price::text, ''))) IN (
+          'negotiable',
+          'a negociar',
+          'da negoziare',
+          'preco negociavel',
+          'preço negociável',
+          'prezzo negoziabile',
+          'price negotiable'
+        )
+    `,
     "UPDATE products SET quantity = 1 WHERE quantity IS NULL OR quantity < 0",
     "UPDATE products SET lat = COALESCE(lat, latitude) WHERE lat IS NULL",
     "UPDATE products SET lng = COALESCE(lng, longitude) WHERE lng IS NULL",
@@ -1727,6 +1790,7 @@ async function createProductRecord(
           name,
           category,
           price,
+          price_negotiable,
           quantity,
           image,
           images,
@@ -1740,7 +1804,7 @@ async function createProductRecord(
           lat,
           lng
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         RETURNING id
       `,
       [
@@ -1748,6 +1812,7 @@ async function createProductRecord(
         normalized.name,
         normalized.category,
         normalized.price,
+        normalized.priceNegotiable,
         normalized.quantity,
         normalized.image,
         normalized.images,
@@ -1772,6 +1837,7 @@ async function createProductRecord(
           name,
           category,
           price,
+          price_negotiable,
           quantity,
           image,
           images,
@@ -1785,6 +1851,7 @@ async function createProductRecord(
           @name,
           @category,
           @price,
+          @price_negotiable,
           @quantity,
           @image,
           @images,
@@ -1798,6 +1865,7 @@ async function createProductRecord(
     )
     .run({
       ...normalized,
+      price_negotiable: normalized.priceNegotiable ? 1 : 0,
       user_id: userId,
     });
   return Number(result.lastInsertRowid);
@@ -1813,24 +1881,26 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
           name = $2,
           category = $3,
           price = $4,
-          quantity = $5,
-          image = $6,
-          images = $7,
-          image_url = $8,
-          image_urls = $9,
-          description = $10,
-          details = $11,
-          latitude = $12,
-          longitude = $13,
-          lat = $14,
-          lng = $15
-        WHERE id = $16
+          price_negotiable = $5,
+          quantity = $6,
+          image = $7,
+          images = $8,
+          image_url = $9,
+          image_urls = $10,
+          description = $11,
+          details = $12,
+          latitude = $13,
+          longitude = $14,
+          lat = $15,
+          lng = $16
+        WHERE id = $17
       `,
       [
         normalized.name,
         normalized.name,
         normalized.category,
         normalized.price,
+        normalized.priceNegotiable,
         normalized.quantity,
         normalized.image,
         normalized.images,
@@ -1856,6 +1926,7 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
           name = @name,
           category = @category,
           price = @price,
+          price_negotiable = @price_negotiable,
           quantity = @quantity,
           image = @image,
           images = @images,
@@ -1869,6 +1940,7 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
     .run({
       id,
       ...normalized,
+      price_negotiable: normalized.priceNegotiable ? 1 : 0,
     });
 }
 
@@ -2532,7 +2604,10 @@ function rowToProduct(row: ProductRow): ProductRecord {
     id: row.id,
     name: row.name,
     category: row.category,
-    price: row.price,
+    price: toBooleanValue(row.price_negotiable, false)
+      ? NEGOTIABLE_PRICE_STORAGE_VALUE
+      : String(row.price ?? ""),
+    priceNegotiable: toBooleanValue(row.price_negotiable, false),
     quantity: row.quantity,
     image: row.image,
     images: images.length > 0 ? images : [row.image || DEFAULT_IMAGE],
@@ -2743,18 +2818,33 @@ function parseIncomingPriceToNumber(rawValue: unknown): number | null {
   return Number.isFinite(fallback) ? fallback : null;
 }
 
-function normalizeIncomingPrice(rawValue: unknown): string {
-  if (isNegotiablePriceValue(rawValue)) {
-    return NEGOTIABLE_PRICE_STORAGE_VALUE;
+type NormalizedIncomingPrice = {
+  price: string;
+  priceNegotiable: boolean;
+};
+
+function normalizeIncomingPrice(rawPrice: unknown, rawPriceNegotiable: unknown): NormalizedIncomingPrice {
+  const isNegotiable =
+    toBooleanValue(rawPriceNegotiable, false) || isNegotiablePriceValue(rawPrice);
+  if (isNegotiable) {
+    return {
+      price: "0.00",
+      priceNegotiable: true,
+    };
   }
-  const parsed = parseIncomingPriceToNumber(rawValue);
+
+  const parsed = parseIncomingPriceToNumber(rawPrice);
   if (parsed === null) {
     throw new Error("Preço é obrigatório.");
   }
   if (parsed <= 0) {
     throw new Error("Preço deve ser maior que zero.");
   }
-  return parsed.toFixed(2);
+
+  return {
+    price: parsed.toFixed(2),
+    priceNegotiable: false,
+  };
 }
 
 function normalizeIncomingQuantity(rawValue: unknown): number {
@@ -2784,7 +2874,10 @@ function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
   const body = payload as Record<string, unknown>;
   const name = String(body.name ?? "").trim();
   const category = String(body.category ?? "").trim();
-  const price = normalizeIncomingPrice(body.price);
+  const normalizedPrice = normalizeIncomingPrice(
+    body.price,
+    body.priceNegotiable ?? body.price_negotiable,
+  );
   const quantity = normalizeIncomingQuantity(body.quantity);
   const rawImage = String(body.image ?? "").trim();
   const images = normalizeImages(body.images, rawImage || DEFAULT_IMAGE);
@@ -2819,7 +2912,8 @@ function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
   return {
     name,
     category,
-    price,
+    price: normalizedPrice.price,
+    priceNegotiable: normalizedPrice.priceNegotiable,
     quantity,
     image,
     images: JSON.stringify(images),
