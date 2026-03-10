@@ -10,7 +10,11 @@ interface ProductMapProps {
   products: Product[];
   onClose: () => void;
   initialFocusProductId?: number;
+  initialCategory?: string;
+  openResultsByDefault?: boolean;
+  autoFocusPanelSearch?: boolean;
   onOpenProduct?: (product: Product) => void;
+  onAddToCart?: (product: Product) => void;
 }
 
 type LocatedProduct = Product & {
@@ -19,6 +23,35 @@ type LocatedProduct = Product & {
 };
 
 type GeoPoint = [number, number];
+
+function normalizeSearchText(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function matchesProductSearch(
+  product: Product,
+  normalizedQuery: string,
+  locale: "pt-BR" | "it-IT",
+): boolean {
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  const searchableFields = [
+    product.name,
+    product.category,
+    getCategoryLabel(product.category, locale),
+    product.description ?? "",
+  ];
+  return searchableFields
+    .map((field) => normalizeSearchText(field))
+    .some((normalizedField) => normalizedField.includes(normalizedQuery));
+}
 
 function parseCoordinate(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -403,30 +436,37 @@ export default function ProductMap({
   }, [productsWithLocation]);
 
   const filteredProducts = React.useMemo(() => {
-    const normalized = searchQuery.trim().toLowerCase();
+    const normalized = normalizeSearchText(searchQuery);
     if (!normalized) {
       return productsWithLocation;
     }
 
-    return productsWithLocation.filter(
-      (product) =>
-        product.name.toLowerCase().includes(normalized) ||
-        product.category.toLowerCase().includes(normalized),
+    return productsWithLocation.filter((product) =>
+      matchesProductSearch(product, normalized, locale),
     );
-  }, [productsWithLocation, searchQuery]);
+  }, [locale, productsWithLocation, searchQuery]);
 
   const filteredPanelProducts = React.useMemo(() => {
-    const normalized = panelSearchQuery.trim().toLowerCase();
+    const normalized = normalizeSearchText(panelSearchQuery);
     if (!normalized) {
       return selectedProducts;
     }
 
-    return selectedProducts.filter(
-      (product) =>
-        product.name.toLowerCase().includes(normalized) ||
-        product.category.toLowerCase().includes(normalized),
+    return selectedProducts.filter((product) =>
+      matchesProductSearch(product, normalized, locale),
     );
-  }, [panelSearchQuery, selectedProducts]);
+  }, [locale, panelSearchQuery, selectedProducts]);
+
+  const normalizedTopSearchQuery = React.useMemo(
+    () => normalizeSearchText(searchQuery),
+    [searchQuery],
+  );
+  const topSearchResults = React.useMemo(() => {
+    if (!normalizedTopSearchQuery) {
+      return [];
+    }
+    return filteredProducts.slice(0, 8);
+  }, [filteredProducts, normalizedTopSearchQuery]);
 
   const clearMarkers = React.useCallback(() => {
     markersRef.current.forEach((marker) => {
@@ -459,6 +499,14 @@ export default function ProductMap({
     setShowResults(false);
     setPanelSearchQuery("");
   }, [clearDrawingPolygon, clearSelectionPolygon]);
+
+  const handleSearchResultSelect = React.useCallback(
+    (product: LocatedProduct) => {
+      mapRef.current?.setView([product.latitude, product.longitude], 15);
+      onOpenProduct?.(product);
+    },
+    [onOpenProduct],
+  );
 
   const handleStartDrawingMode = () => {
     if (!hasProductsWithLocation) {
@@ -969,6 +1017,54 @@ export default function ProductMap({
                 onChange={(event) => setSearchQuery(event.target.value)}
                 className="w-full pl-10 pr-4 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"
               />
+              {normalizedTopSearchQuery && (
+                <div className="absolute top-[calc(100%+8px)] left-0 right-0 bg-stone-50/98 backdrop-blur-md border border-stone-200 rounded-xl shadow-2xl overflow-hidden">
+                  <div className="px-3 py-2 border-b border-stone-200 bg-stone-100/80 flex items-center justify-between gap-3">
+                    <span className="text-[10px] uppercase tracking-[0.14em] font-bold text-stone-500">
+                      {t("Resultados da busca")}
+                    </span>
+                    <span className="text-[10px] text-stone-400">
+                      {t("{count} resultado(s)", { count: filteredProducts.length })}
+                    </span>
+                  </div>
+
+                  {topSearchResults.length === 0 ? (
+                    <p className="px-3 py-4 text-xs text-stone-500">
+                      {t("Sem resultados para esta busca.")}
+                    </p>
+                  ) : (
+                    <div className="max-h-72 overflow-y-auto">
+                      {topSearchResults.map((product) => (
+                        <button
+                          key={product.id}
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleSearchResultSelect(product);
+                          }}
+                          className="w-full px-3 py-2.5 flex items-center gap-3 text-left border-b last:border-b-0 border-stone-100 hover:bg-white/90 transition-colors"
+                        >
+                          <img
+                            src={product.image}
+                            alt={product.name}
+                            className="w-10 h-10 rounded-md object-cover bg-stone-200 shrink-0"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-stone-800 truncate">
+                              {product.name}
+                            </p>
+                            <p className="text-[10px] text-stone-500 truncate">
+                              {getCategoryLabel(product.category, locale)} •{" "}
+                              {formatEuroFromUnknown(product.price, locale)}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

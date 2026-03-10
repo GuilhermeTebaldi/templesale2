@@ -8,6 +8,10 @@ import path from "node:path";
 import { Pool } from "pg";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
+import {
+  NEGOTIABLE_PRICE_STORAGE_VALUE,
+  isNegotiablePriceValue,
+} from "./src/lib/negotiable-price";
 
 type ProductRecord = {
   id: number;
@@ -2685,6 +2689,9 @@ function parseIncomingPriceToNumber(rawValue: unknown): number | null {
   if (!value) {
     return null;
   }
+  if (isNegotiablePriceValue(value)) {
+    return null;
+  }
 
   const cleaned = value.replace(/[^\d,.-]/g, "");
   if (!cleaned) {
@@ -2737,6 +2744,9 @@ function parseIncomingPriceToNumber(rawValue: unknown): number | null {
 }
 
 function normalizeIncomingPrice(rawValue: unknown): string {
+  if (isNegotiablePriceValue(rawValue)) {
+    return NEGOTIABLE_PRICE_STORAGE_VALUE;
+  }
   const parsed = parseIncomingPriceToNumber(rawValue);
   if (parsed === null) {
     throw new Error("Preço é obrigatório.");

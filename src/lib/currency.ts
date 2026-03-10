@@ -1,6 +1,26 @@
+import {
+  NEGOTIABLE_PRICE_STORAGE_VALUE,
+  isNegotiablePriceValue,
+} from "./negotiable-price";
+
+export function isNegotiablePrice(rawValue: string | number | undefined): boolean {
+  return isNegotiablePriceValue(rawValue);
+}
+
+export function getNegotiablePriceStorageValue(): string {
+  return NEGOTIABLE_PRICE_STORAGE_VALUE;
+}
+
+export function getNegotiablePriceLabel(locale: "pt-BR" | "it-IT" = "it-IT"): string {
+  return locale === "pt-BR" ? "A negociar" : "Da negoziare";
+}
+
 export function parsePriceToNumber(rawValue: string): number | null {
   const value = String(rawValue ?? "").trim();
   if (!value) {
+    return null;
+  }
+  if (isNegotiablePrice(value)) {
     return null;
   }
 
@@ -70,6 +90,9 @@ export function formatEuroFromUnknown(
 ): string {
   if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
     return formatEuro(rawValue, locale);
+  }
+  if (isNegotiablePrice(rawValue)) {
+    return getNegotiablePriceLabel(locale);
   }
 
   const parsed = parsePriceToNumber(String(rawValue ?? ""));

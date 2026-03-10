@@ -18,7 +18,11 @@ import { type Product } from "./ProductCard";
 import LeafletMapPicker from "./LeafletMapPicker";
 import { useI18n } from "../i18n/provider";
 import { CATEGORY_VALUES, getCategoryLabel } from "../i18n/categories";
-import { parsePriceToNumber } from "../lib/currency";
+import {
+  getNegotiablePriceStorageValue,
+  isNegotiablePrice,
+  parsePriceToNumber,
+} from "../lib/currency";
 import { normalizeProductDetailsRecord } from "../lib/product-details";
 
 interface NewProductProps {
@@ -44,6 +48,7 @@ type FormState = {
   name: string;
   category: string;
   price: string;
+  isPriceNegotiable: boolean;
   quantity: string;
   latitude: string;
   longitude: string;
@@ -166,6 +171,7 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
       name: "",
       category: "Imóveis",
       price: "",
+      isPriceNegotiable: false,
       quantity: "1",
       latitude: "",
       longitude: "",
@@ -174,10 +180,13 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
     };
   }
 
+  const hasNegotiablePrice = isNegotiablePrice(product.price ?? "");
+
   return {
     name: product.name ?? "",
     category: product.category ?? "Imóveis",
-    price: normalizePriceValue(product.price ?? ""),
+    price: hasNegotiablePrice ? "" : normalizePriceValue(product.price ?? ""),
+    isPriceNegotiable: hasNegotiablePrice,
     quantity: (() => {
       const parsed = Number(product.quantity);
       if (!Number.isFinite(parsed)) {
@@ -557,7 +566,7 @@ export default function NewProduct({
       setErrorMessage(t("Longitude deve estar entre -180 e 180."));
       return;
     }
-    if (parsedPrice === null || parsedPrice <= 0) {
+    if (!formData.isPriceNegotiable && (parsedPrice === null || parsedPrice <= 0)) {
       setErrorMessage(t("Informe um preço válido em euro."));
       return;
     }
@@ -586,10 +595,15 @@ export default function NewProduct({
             entry[1].trim() !== "",
         ),
       );
+      const normalizedPrice = formData.isPriceNegotiable
+        ? getNegotiablePriceStorageValue()
+        : parsedPrice !== null
+          ? parsedPrice.toFixed(2)
+          : "";
       const newProduct: CreateProductInput = {
         name: normalizedName,
         category: normalizedCategory,
-        price: parsedPrice.toFixed(2),
+        price: normalizedPrice,
         quantity: parsedQuantity,
         latitude,
         longitude,
@@ -843,14 +857,20 @@ export default function NewProduct({
               <div className="space-y-2">
                 <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Preço")}</label>
                 <input 
-                  required
+                  required={!formData.isPriceNegotiable}
                   type="text"
                   inputMode="decimal"
                   autoComplete="off"
-                  placeholder="0,00"
-                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-mono"
+                  disabled={formData.isPriceNegotiable}
+                  placeholder={formData.isPriceNegotiable ? t("Preço será definido na negociação") : "0,00"}
+                  className={`w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors ${
+                    formData.isPriceNegotiable ? "text-stone-400 italic" : "font-mono"
+                  }`}
                   value={formData.price}
                   onFocus={(e) => {
+                    if (formData.isPriceNegotiable) {
+                      return;
+                    }
                     setFormData((current) => ({
                       ...current,
                       price: toEditablePriceValue(current.price),
@@ -858,6 +878,9 @@ export default function NewProduct({
                     e.currentTarget.select();
                   }}
                   onBlur={(e) => {
+                    if (formData.isPriceNegotiable) {
+                      return;
+                    }
                     const normalized = normalizePriceValue(e.target.value);
                     setFormData((current) => ({
                       ...current,
@@ -865,6 +888,9 @@ export default function NewProduct({
                     }));
                   }}
                   onChange={(e) => {
+                    if (formData.isPriceNegotiable) {
+                      return;
+                    }
                     const nextValue = sanitizePriceDraft(e.target.value);
                     setFormData((current) => ({
                       ...current,
@@ -872,6 +898,21 @@ export default function NewProduct({
                     }));
                   }}
                 />
+                <label className="flex items-center gap-2 text-xs text-stone-500">
+                  <input
+                    type="checkbox"
+                    checked={formData.isPriceNegotiable}
+                    onChange={(event) => {
+                      const shouldSetNegotiable = event.target.checked;
+                      setFormData((current) => ({
+                        ...current,
+                        isPriceNegotiable: shouldSetNegotiable,
+                        price: shouldSetNegotiable ? "" : current.price,
+                      }));
+                    }}
+                  />
+                  <span>{t("Publicar como a negociar (não mostrar preço)")}</span>
+                </label>
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">

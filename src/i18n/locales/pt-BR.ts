@@ -65,4 +65,10 @@ export const ptBRTranslations: Record<string, string> = {
     "Mostrando outros anúncios para você explorar rapidamente.",
   "Ainda não existem outros anúncios disponíveis.":
     "Ainda não existem outros anúncios disponíveis.",
+  "Publicar como a negociar (não mostrar preço)":
+    "Publicar como a negociar (não mostrar preço)",
+  "Preço será definido na negociação": "Preço será definido na negociação",
+  "Resultados da busca": "Resultados da busca",
+  "{count} resultado(s)": "{count} resultado(s)",
+  "Sem resultados para esta busca.": "Sem resultados para esta busca.",
 };

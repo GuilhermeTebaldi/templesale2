@@ -302,6 +302,12 @@ export const itITTranslations: Record<string, string> = {
   "Latitude deve estar entre -90 e 90.": "La latitudine deve essere compresa tra -90 e 90.",
   "Longitude deve estar entre -180 e 180.": "La longitudine deve essere compresa tra -180 e 180.",
   "Informe um preço válido em euro.": "Inserisci un prezzo valido in euro.",
+  "Publicar como a negociar (não mostrar preço)":
+    "Pubblica come da negoziare (non mostrare il prezzo)",
+  "Preço será definido na negociação": "Il prezzo sarà definito in trattativa",
+  "Resultados da busca": "Risultati della ricerca",
+  "{count} resultado(s)": "{count} risultato/i",
+  "Sem resultados para esta busca.": "Nessun risultato per questa ricerca.",
   "Falha ao atualizar o anúncio.": "Errore durante l'aggiornamento dell'annuncio.",
   "Falha ao publicar o anúncio.": "Errore durante la pubblicazione dell'annuncio.",
   "Geolocalização não suportada neste navegador.": "Geolocalizzazione non supportata in questo browser.",

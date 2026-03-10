@@ -20,7 +20,7 @@ import ProductMap from "./ProductMap";
 import { buildWhatsappUrl, formatWhatsappDisplay } from "../lib/whatsapp";
 import { api, type ProductCommentDto, type SessionUser } from "../lib/api";
 import { useI18n } from "../i18n/provider";
-import { formatEuroFromUnknown } from "../lib/currency";
+import { formatEuroFromUnknown, isNegotiablePrice } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 import { resolveProductImages } from "../lib/product-images";
 import { normalizeProductDetailsRecord } from "../lib/product-details";
@@ -136,6 +136,7 @@ export default function ProductDetails({
   );
   const detailsEntries =
     filteredDetailEntries.length > 0 ? filteredDetailEntries : allDetailEntries;
+  const isProductPriceNegotiable = isNegotiablePrice(product.price);
   const hasCoordinates =
     typeof product.latitude === "number" &&
     Number.isFinite(product.latitude) &&
@@ -663,7 +664,11 @@ export default function ProductDetails({
                 <h1 className="text-4xl lg:text-6xl font-serif italic text-stone-800 mb-4 leading-tight">
                   {product.name}
                 </h1>
-                <p className="text-2xl font-mono text-stone-600">
+                <p
+                  className={`text-2xl text-stone-600 ${
+                    isProductPriceNegotiable ? "font-serif italic" : "font-mono"
+                  }`}
+                >
                   {formatEuroFromUnknown(product.price, locale)}
                 </p>
               </div>
