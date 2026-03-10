@@ -518,7 +518,7 @@ export default function NewProduct({
   };
 
   const handleSaveDraftDefaults = async () => {
-    if (isEditing || !isDraftSaveChecked) {
+    if (!isDraftSaveChecked) {
       return;
     }
 
@@ -1165,64 +1165,62 @@ export default function NewProduct({
               />
             </div>
 
-            {!isEditing && (
-              <div className="space-y-2 border border-stone-200 rounded-sm bg-stone-50/70 px-3 py-2">
-                <div className="flex items-center justify-between gap-3">
-                  <label className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] font-bold text-stone-600">
-                    <input
-                      type="checkbox"
-                      checked={isDraftSaveChecked}
-                      onChange={(e) => {
-                        setIsDraftSaveChecked(e.target.checked);
-                        if (!e.target.checked) {
-                          setDraftSaveFeedback(null);
-                        }
-                      }}
-                      className="w-3 h-3 accent-stone-900"
-                    />
-                    {t("Salvar informações")}
-                  </label>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleSaveDraftDefaults();
+            <div className="space-y-2 border border-stone-200 rounded-sm bg-stone-50/70 px-3 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <label className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] font-bold text-stone-600">
+                  <input
+                    type="checkbox"
+                    checked={isDraftSaveChecked}
+                    onChange={(e) => {
+                      setIsDraftSaveChecked(e.target.checked);
+                      if (!e.target.checked) {
+                        setDraftSaveFeedback(null);
+                      }
                     }}
-                    disabled={
-                      !isDraftSaveChecked ||
-                      isSavingDraftDefaults ||
-                      isLoadingDraftDefaults ||
-                      isPublishing
-                    }
-                    className="px-2.5 py-1 border border-stone-300 text-[10px] uppercase tracking-[0.18em] font-bold text-stone-700 hover:border-stone-700 hover:text-stone-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {isSavingDraftDefaults ? t("Salvando...") : t("Confirmar")}
-                  </button>
-                </div>
+                    className="w-3 h-3 accent-stone-900"
+                  />
+                  {t("Salvar informações")}
+                </label>
 
-                {isLoadingDraftDefaults && (
-                  <p className="text-[11px] text-stone-500">
-                    {t("Carregando informações salvas...")}
-                  </p>
-                )}
-
-                {savedDraftDefaults && hasDraftDefaultsPendingSave && (
-                  <p className="text-[11px] text-amber-600">
-                    {t("Você alterou os dados salvos. Clique em salvar novamente.")}
-                  </p>
-                )}
-
-                {draftSaveFeedback && (
-                  <p
-                    className={`text-[11px] ${
-                      draftSaveFeedback.type === "error" ? "text-red-500" : "text-emerald-600"
-                    }`}
-                  >
-                    {draftSaveFeedback.message}
-                  </p>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleSaveDraftDefaults();
+                  }}
+                  disabled={
+                    !isDraftSaveChecked ||
+                    isSavingDraftDefaults ||
+                    isLoadingDraftDefaults ||
+                    isPublishing
+                  }
+                  className="px-2.5 py-1 border border-stone-300 text-[10px] uppercase tracking-[0.18em] font-bold text-stone-700 hover:border-stone-700 hover:text-stone-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isSavingDraftDefaults ? t("Salvando...") : t("Confirmar")}
+                </button>
               </div>
-            )}
+
+              {isLoadingDraftDefaults && (
+                <p className="text-[11px] text-stone-500">
+                  {t("Carregando informações salvas...")}
+                </p>
+              )}
+
+              {savedDraftDefaults && hasDraftDefaultsPendingSave && (
+                <p className="text-[11px] text-amber-600">
+                  {t("Você alterou os dados salvos. Clique em salvar novamente.")}
+                </p>
+              )}
+
+              {draftSaveFeedback && (
+                <p
+                  className={`text-[11px] ${
+                    draftSaveFeedback.type === "error" ? "text-red-500" : "text-emerald-600"
+                  }`}
+                >
+                  {draftSaveFeedback.message}
+                </p>
+              )}
+            </div>
 
             <button 
               disabled={isPublishing || isUploadingImages}
