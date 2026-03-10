@@ -3256,8 +3256,23 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
 
 function getSessionTokenFromRequest(req: Request): string | null {
   const cookies = parseCookies(req.headers.cookie);
-  const token = cookies[SESSION_COOKIE_NAME];
-  return token ? token.trim() : null;
+  const cookieToken = cookies[SESSION_COOKIE_NAME];
+  if (cookieToken) {
+    return cookieToken.trim();
+  }
+
+  const headerToken = getRequestHeaderTokenValue(req.headers["x-auth-token"]);
+  if (headerToken) {
+    return headerToken;
+  }
+
+  const authorizationHeader = getRequestHeaderTokenValue(req.headers.authorization);
+  if (authorizationHeader.toLowerCase().startsWith("bearer ")) {
+    const token = authorizationHeader.slice(7).trim();
+    return token || null;
+  }
+
+  return null;
 }
 
 function getRequestHeaderTokenValue(value: string | string[] | undefined): string {
@@ -4419,7 +4434,10 @@ async function bootstrap() {
 
       const token = await createSession(createdUser.id);
       setSessionCookie(res, token, isProduction);
-      res.status(201).json(sanitizeUser(createdUser));
+      res.status(201).json({
+        ...sanitizeUser(createdUser),
+        token,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao criar conta.";
       res.status(500).json({ error: message });
@@ -4445,7 +4463,10 @@ async function bootstrap() {
 
       const token = await createSession(user.id);
       setSessionCookie(res, token, isProduction);
-      res.json(sanitizeUser(user));
+      res.json({
+        ...sanitizeUser(user),
+        token,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao realizar login.";
       res.status(500).json({ error: message });
@@ -4457,6 +4478,15 @@ async function bootstrap() {
       const user = await getSessionUser(req);
       if (!user) {
         res.status(401).json({ error: "Sessão não encontrada." });
+        return;
+      }
+
+      const token = getSessionTokenFromRequest(req);
+      if (token) {
+        res.json({
+          ...user,
+          token,
+        });
         return;
       }
 

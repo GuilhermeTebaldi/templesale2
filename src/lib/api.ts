@@ -1246,6 +1246,13 @@ function extractTokenFromAuthPayload(value: unknown): string {
   );
 }
 
+function persistAuthTokenFromPayload(value: unknown): void {
+  const authToken = extractTokenFromAuthPayload(value);
+  if (authToken) {
+    persistAuthToken(authToken);
+  }
+}
+
 type ApiRequestInit = RequestInit & {
   useAdminToken?: boolean;
 };
@@ -1575,10 +1582,7 @@ export const api = {
             body: JSON.stringify(payloadCandidate),
           });
 
-          const authToken = extractTokenFromAuthPayload(raw);
-          if (authToken) {
-            persistAuthToken(authToken);
-          }
+          persistAuthTokenFromPayload(raw);
 
           const user =
             normalizeSessionUserItem(raw) ??
@@ -1617,10 +1621,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    const authToken = extractTokenFromAuthPayload(raw);
-    if (authToken) {
-      persistAuthToken(authToken);
-    }
+    persistAuthTokenFromPayload(raw);
     const user = normalizeSessionUserItem(raw);
     if (!user) {
       throw new Error("Resposta inválida ao autenticar.");
@@ -1629,6 +1630,7 @@ export const api = {
   },
   async getCurrentUser() {
     const raw = await request<unknown>("/api/auth/me");
+    persistAuthTokenFromPayload(raw);
     const user = normalizeSessionUserItem(raw);
     if (!user) {
       throw new Error("Resposta inválida ao recuperar sessão.");
@@ -1703,6 +1705,7 @@ export const api = {
     }
 
     const sessionRaw = await request<unknown>("/api/auth/me");
+    persistAuthTokenFromPayload(sessionRaw);
     const sessionUser = normalizeSessionUserItem(sessionRaw);
     if (sessionUser) {
       return sessionUser;
@@ -1980,6 +1983,7 @@ export const api = {
         request<unknown>("/api/products"),
         request<unknown>("/api/auth/me"),
       ]);
+      persistAuthTokenFromPayload(sessionPayload);
       const currentUser = normalizeSessionUserItem(sessionPayload);
       if (!currentUser) {
         return [];
