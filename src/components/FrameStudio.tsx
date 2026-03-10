@@ -19,7 +19,32 @@ import { resolveProductImages } from "../lib/product-images";
 import { getCategoryLabel } from "../i18n/categories";
 import type { Product } from "./ProductCard";
 
-type FrameThemeKey = "luxury" | "minimal" | "modern";
+type FrameThemeKey =
+  | "luxury"
+  | "minimal"
+  | "modern"
+  | "brutalist"
+  | "editorial"
+  | "organic"
+  | "cyber"
+  | "vintage"
+  | "vibrant"
+  | "monochrome"
+  | "classic_gold"
+  | "wooden"
+  | "marble"
+  | "floral"
+  | "geometric"
+  | "neon_frame"
+  | "paper_cut"
+  | "glass"
+  | "tape"
+  | "shadow_box"
+  | "gallery_rail"
+  | "pillars"
+  | "cinema"
+  | "gradient_side"
+  | "royal_side";
 
 type FrameTheme = {
   cardClass: string;
@@ -33,6 +58,62 @@ type FrameTheme = {
 const FRAME_IMAGE_FALLBACK = "https://picsum.photos/seed/templesale-frame/800/800";
 const FRAME_SITE_LABEL = "templesale.com";
 
+const FRAME_THEME_KEYS: FrameThemeKey[] = [
+  "luxury",
+  "minimal",
+  "modern",
+  "brutalist",
+  "editorial",
+  "organic",
+  "cyber",
+  "vintage",
+  "vibrant",
+  "monochrome",
+  "classic_gold",
+  "wooden",
+  "marble",
+  "floral",
+  "geometric",
+  "neon_frame",
+  "paper_cut",
+  "glass",
+  "tape",
+  "shadow_box",
+  "gallery_rail",
+  "pillars",
+  "cinema",
+  "gradient_side",
+  "royal_side",
+];
+
+const FRAME_THEME_LABELS: Record<FrameThemeKey, string> = {
+  luxury: "Luxury",
+  minimal: "Minimal",
+  modern: "Modern",
+  brutalist: "Brutalist",
+  editorial: "Editorial",
+  organic: "Organic",
+  cyber: "Cyber",
+  vintage: "Vintage",
+  vibrant: "Vibrant",
+  monochrome: "Monochrome",
+  classic_gold: "Classic Gold",
+  wooden: "Wooden",
+  marble: "Marble",
+  floral: "Floral",
+  geometric: "Geometric",
+  neon_frame: "Neon Frame",
+  paper_cut: "Paper Cut",
+  glass: "Glass",
+  tape: "Tape",
+  shadow_box: "Shadow Box",
+  gallery_rail: "Gallery Rail",
+  pillars: "Pillars",
+  cinema: "Cinema",
+  gradient_side: "Gradient Side",
+  royal_side: "Royal Side",
+};
+
 type CanvasFrameTheme = {
   categoryColor: string;
   titleColor: string;
@@ -45,7 +126,7 @@ type CanvasFrameTheme = {
   priceText: string;
 };
 
-const CANVAS_FRAME_THEMES: Record<FrameThemeKey, CanvasFrameTheme> = {
+const CANVAS_THEME_PRESETS: Record<"luxury" | "minimal" | "modern" | "warm" | "neon", CanvasFrameTheme> = {
   luxury: {
     categoryColor: "#fcd34d",
     titleColor: "#f5f5f4",
@@ -79,6 +160,56 @@ const CANVAS_FRAME_THEMES: Record<FrameThemeKey, CanvasFrameTheme> = {
     priceBorder: "rgba(34,211,238,0.5)",
     priceText: "#67e8f9",
   },
+  warm: {
+    categoryColor: "#fde68a",
+    titleColor: "#fafaf9",
+    footerColor: "rgba(245,245,244,0.9)",
+    gradientTop: "rgba(41,37,36,0.05)",
+    gradientMiddle: "rgba(28,25,23,0.38)",
+    gradientBottom: "rgba(17,24,39,0.88)",
+    priceBackground: "rgba(28,25,23,0.6)",
+    priceBorder: "rgba(253,230,138,0.55)",
+    priceText: "#fde68a",
+  },
+  neon: {
+    categoryColor: "#c084fc",
+    titleColor: "#f5f3ff",
+    footerColor: "rgba(233,213,255,0.95)",
+    gradientTop: "rgba(0,0,0,0.02)",
+    gradientMiddle: "rgba(17,24,39,0.34)",
+    gradientBottom: "rgba(2,6,23,0.94)",
+    priceBackground: "rgba(17,24,39,0.82)",
+    priceBorder: "rgba(192,132,252,0.6)",
+    priceText: "#d8b4fe",
+  },
+};
+
+const CANVAS_THEME_BY_FRAME: Record<FrameThemeKey, keyof typeof CANVAS_THEME_PRESETS> = {
+  luxury: "luxury",
+  minimal: "minimal",
+  modern: "modern",
+  brutalist: "minimal",
+  editorial: "warm",
+  organic: "minimal",
+  cyber: "neon",
+  vintage: "warm",
+  vibrant: "warm",
+  monochrome: "modern",
+  classic_gold: "warm",
+  wooden: "warm",
+  marble: "minimal",
+  floral: "minimal",
+  geometric: "warm",
+  neon_frame: "neon",
+  paper_cut: "minimal",
+  glass: "minimal",
+  tape: "minimal",
+  shadow_box: "modern",
+  gallery_rail: "modern",
+  pillars: "warm",
+  cinema: "modern",
+  gradient_side: "modern",
+  royal_side: "warm",
 };
 
 const FRAME_THEMES: Record<FrameThemeKey, FrameTheme> = {
@@ -109,7 +240,234 @@ const FRAME_THEMES: Record<FrameThemeKey, FrameTheme> = {
       "inline-flex items-center rounded-full border border-cyan-400/50 bg-zinc-900/80 px-4 py-2 text-xl font-semibold text-cyan-300",
     footerClass: "text-[11px] uppercase tracking-[0.2em] text-cyan-100/90",
   },
+  brutalist: {
+    cardClass: "bg-white text-black border-4 border-black",
+    overlayClass: "bg-gradient-to-t from-white/95 via-white/30 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.22em] text-black font-black",
+    titleClass: "text-3xl leading-tight font-black uppercase tracking-tight text-black",
+    pricePillClass:
+      "inline-flex items-center rounded-sm border-2 border-black bg-white px-4 py-2 text-xl font-black text-black",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-black/80 font-bold",
+  },
+  editorial: {
+    cardClass: "bg-[#FDFBF7] text-[#2D1B1B] border border-[#2D1B1B]/20",
+    overlayClass: "bg-gradient-to-t from-[#2D1B1B]/25 via-[#2D1B1B]/10 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-[#8B0000] font-semibold",
+    titleClass: "text-3xl leading-tight italic font-serif text-[#2D1B1B]",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-[#8B0000]/35 bg-white/85 px-4 py-2 text-xl font-semibold text-[#8B0000]",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-[#2D1B1B]/80",
+  },
+  organic: {
+    cardClass: "bg-[#E8EAE3] text-[#2C3639] border border-[#4A5D4E]/30 rounded-[1.2rem]",
+    overlayClass: "bg-gradient-to-t from-[#E8EAE3]/95 via-[#E8EAE3]/45 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.2em] text-[#2C3639] font-semibold",
+    titleClass: "text-3xl leading-tight font-medium text-[#2C3639]",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-[#4A5D4E]/40 bg-[#E8EAE3]/90 px-4 py-2 text-xl font-semibold text-[#2C3639]",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-[#4A5D4E]",
+  },
+  cyber: {
+    cardClass:
+      "bg-[#050510] text-[#00F5FF] border border-[#00F5FF]/40 shadow-[inset_0_0_50px_rgba(0,245,255,0.12)]",
+    overlayClass: "bg-gradient-to-t from-black via-black/45 to-transparent",
+    categoryClass:
+      "text-[11px] uppercase tracking-[0.24em] text-[#00F5FF] font-semibold drop-shadow-[0_0_8px_rgba(0,245,255,0.55)]",
+    titleClass: "text-3xl leading-tight font-mono font-semibold text-[#d9fbff]",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-[#00F5FF]/55 bg-[#03111a]/85 px-4 py-2 text-xl font-semibold text-[#67e8f9]",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-[#9debf3]",
+  },
+  vintage: {
+    cardClass: "bg-[#F4EBD0] text-[#122620] border border-[#122620]/20",
+    overlayClass: "bg-gradient-to-t from-[#F4EBD0]/95 via-[#F4EBD0]/45 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-[#B68D40] font-semibold",
+    titleClass: "text-3xl leading-tight font-serif text-[#122620]",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-[#122620]/30 bg-[#F4EBD0]/90 px-4 py-2 text-xl font-semibold text-[#122620]",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-[#122620]/80",
+  },
+  vibrant: {
+    cardClass: "bg-[#FF5F1F] text-black border border-black/20",
+    overlayClass: "bg-gradient-to-t from-white/95 via-white/45 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-[#FF5F1F] font-black",
+    titleClass: "text-3xl leading-tight font-black text-black",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-black/40 bg-white px-4 py-2 text-xl font-black text-black",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-black/80 font-bold",
+  },
+  monochrome: {
+    cardClass: "bg-black text-white border border-white/35",
+    overlayClass: "bg-gradient-to-t from-black via-black/70 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.3em] text-white font-light",
+    titleClass: "text-3xl leading-tight font-light tracking-wide text-white",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-white/55 bg-black/70 px-4 py-2 text-xl font-semibold text-white",
+    footerClass: "text-[11px] uppercase tracking-[0.24em] text-white/90",
+  },
+  classic_gold: {
+    cardClass:
+      "bg-stone-100 text-stone-900 border-[8px] border-double border-amber-600 shadow-[inset_0_0_0_4px_rgba(180,130,0,0.2)]",
+    overlayClass: "bg-gradient-to-t from-white/95 via-white/35 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-amber-700 font-semibold",
+    titleClass: "text-3xl leading-tight font-serif text-stone-900",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-amber-700/45 bg-white/90 px-4 py-2 text-xl font-semibold text-amber-700",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-amber-900/80",
+  },
+  wooden: {
+    cardClass:
+      "bg-[#3D2B1F] text-stone-100 border-[10px] border-[#5D4037] shadow-[inset_0_0_15px_rgba(0,0,0,0.5)]",
+    overlayClass: "bg-gradient-to-t from-[#2b1f17]/92 via-[#3D2B1F]/40 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-amber-200 font-semibold",
+    titleClass: "text-3xl leading-tight font-serif text-stone-100",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-amber-300/45 bg-[#2b1f17]/80 px-4 py-2 text-xl font-semibold text-amber-200",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-amber-100/90",
+  },
+  marble: {
+    cardClass:
+      "bg-stone-50 text-stone-700 border-[12px] border-stone-200 shadow-[inset_0_0_10px_rgba(0,0,0,0.05)]",
+    overlayClass: "bg-gradient-to-t from-white/92 via-white/45 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-stone-500 font-semibold",
+    titleClass: "text-3xl leading-tight font-serif tracking-wide text-stone-700",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-stone-300 bg-white/95 px-4 py-2 text-xl font-semibold text-stone-700",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-stone-500",
+  },
+  floral: {
+    cardClass:
+      "bg-[#FFF9F9] text-[#7f1d1d] border-[6px] border-pink-100 shadow-[inset_0_0_20px_rgba(255,182,193,0.12)]",
+    overlayClass: "bg-gradient-to-t from-white/94 via-pink-50/40 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-pink-500 font-semibold",
+    titleClass: "text-3xl leading-tight font-serif italic text-[#7f1d1d]",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-pink-300/65 bg-white/90 px-4 py-2 text-xl font-semibold text-pink-600",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-pink-700/80",
+  },
+  geometric: {
+    cardClass: "bg-[#1A1A1A] text-black border-l-[12px] border-r-[12px] border-[#FFD700]",
+    overlayClass: "bg-gradient-to-t from-[#FFD700] via-[#FFD700]/65 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-black font-black",
+    titleClass: "text-3xl leading-tight font-black uppercase text-black",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-black/45 bg-[#FFD700] px-4 py-2 text-xl font-black text-black",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-black/85 font-bold",
+  },
+  neon_frame: {
+    cardClass:
+      "bg-black text-purple-200 border-2 border-purple-500 shadow-[inset_0_0_20px_rgba(168,85,247,0.45),0_0_20px_rgba(168,85,247,0.35)]",
+    overlayClass: "bg-gradient-to-t from-black via-black/45 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-purple-400 font-semibold",
+    titleClass: "text-3xl leading-tight font-mono font-semibold text-purple-100",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-purple-400/60 bg-purple-950/60 px-4 py-2 text-xl font-semibold text-purple-300",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-purple-200",
+  },
+  paper_cut: {
+    cardClass:
+      "bg-stone-300 text-stone-800 border-[8px] border-stone-100 shadow-[inset_0_0_20px_rgba(0,0,0,0.1)]",
+    overlayClass: "bg-gradient-to-t from-white/95 via-white/45 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.22em] text-blue-600 font-semibold",
+    titleClass: "text-3xl leading-tight font-bold text-stone-800",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-stone-300 bg-white/90 px-4 py-2 text-xl font-semibold text-blue-700",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-stone-700",
+  },
+  glass: {
+    cardClass: "bg-gradient-to-br from-blue-50 to-purple-50 text-white border-[10px] border-white/35 shadow-xl",
+    overlayClass: "bg-gradient-to-t from-black/55 via-black/20 to-transparent backdrop-blur-[2px]",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-white/90 font-semibold drop-shadow",
+    titleClass: "text-3xl leading-tight font-light text-white drop-shadow",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-white/60 bg-white/20 px-4 py-2 text-xl font-semibold text-white backdrop-blur",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-white/90",
+  },
+  tape: {
+    cardClass: "bg-stone-100 text-stone-900 border border-stone-300",
+    overlayClass: "bg-gradient-to-t from-[#FDFD96]/92 via-[#FDFD96]/52 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.22em] text-stone-900 font-mono font-semibold",
+    titleClass: "text-3xl leading-tight font-mono text-stone-900",
+    pricePillClass:
+      "inline-flex items-center rounded-md border border-stone-500/45 bg-[#FDFD96] px-4 py-2 text-xl font-semibold text-stone-900",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-stone-900/80 font-mono",
+  },
+  shadow_box: {
+    cardClass:
+      "bg-stone-800 text-white border-[4px] border-stone-700 shadow-[inset_0_0_40px_rgba(0,0,0,0.6)]",
+    overlayClass: "bg-gradient-to-t from-stone-900 via-stone-900/45 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-stone-300 font-semibold",
+    titleClass: "text-3xl leading-tight font-serif text-white",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-stone-400/50 bg-stone-900/65 px-4 py-2 text-xl font-semibold text-stone-200",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-stone-300/90",
+  },
+  gallery_rail: {
+    cardClass: "bg-white text-white border-l-[2px] border-r-[2px] border-stone-800",
+    overlayClass: "bg-gradient-to-t from-stone-900 via-stone-900/40 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-stone-300 font-semibold",
+    titleClass: "text-3xl leading-tight font-serif text-white",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-stone-300/40 bg-stone-900/75 px-4 py-2 text-xl font-semibold text-stone-200",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-stone-200/90",
+  },
+  pillars: {
+    cardClass: "bg-stone-50 text-white border-l-[40px] border-r-[40px] border-stone-900 shadow-2xl",
+    overlayClass: "bg-gradient-to-t from-stone-900/95 via-stone-900/52 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-stone-400 font-semibold",
+    titleClass: "text-3xl leading-tight font-serif tracking-wide text-white",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-stone-400/45 bg-stone-900/80 px-4 py-2 text-xl font-semibold text-stone-200",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-stone-300/90",
+  },
+  cinema: {
+    cardClass: "bg-black text-white border-l-[60px] border-r-[60px] border-black",
+    overlayClass: "bg-gradient-to-t from-black/95 via-black/62 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-white font-mono",
+    titleClass: "text-3xl leading-tight font-mono text-white",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-white/45 bg-black/75 px-4 py-2 text-xl font-semibold text-white",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-white/85 font-mono",
+  },
+  gradient_side: {
+    cardClass:
+      "bg-white text-stone-900 border-l-[20px] border-r-[20px] border-transparent [background-image:linear-gradient(to_right,#6366f1,#ffffff,#a855f7)] [background-origin:border-box] [background-clip:padding-box,border-box]",
+    overlayClass: "bg-gradient-to-t from-white/95 via-white/48 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-indigo-600 font-semibold",
+    titleClass: "text-3xl leading-tight font-bold text-stone-900",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-indigo-300/65 bg-white px-4 py-2 text-xl font-semibold text-indigo-700",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-indigo-700/85",
+  },
+  royal_side: {
+    cardClass:
+      "bg-[#0A0A0A] text-white border-l-[30px] border-r-[30px] border-[#1A1A1A] shadow-[inset_0_0_20px_rgba(255,191,0,0.1)]",
+    overlayClass: "bg-gradient-to-t from-black via-black/62 to-transparent",
+    categoryClass: "text-[11px] uppercase tracking-[0.24em] text-amber-500 font-semibold",
+    titleClass: "text-3xl leading-tight font-serif italic text-white",
+    pricePillClass:
+      "inline-flex items-center rounded-full border border-amber-500/50 bg-black/70 px-4 py-2 text-xl font-semibold text-amber-400",
+    footerClass: "text-[11px] uppercase tracking-[0.2em] text-amber-200/90",
+  },
 };
+
+const SERIF_CANVAS_TITLE_THEMES = new Set<FrameThemeKey>([
+  "luxury",
+  "editorial",
+  "vintage",
+  "classic_gold",
+  "wooden",
+  "marble",
+  "floral",
+  "gallery_rail",
+  "pillars",
+  "royal_side",
+]);
+
+function resolveCanvasTheme(themeKey: FrameThemeKey): CanvasFrameTheme {
+  const presetKey = CANVAS_THEME_BY_FRAME[themeKey] ?? "luxury";
+  return CANVAS_THEME_PRESETS[presetKey];
+}
 
 function normalizeSearch(value: string): string {
   return String(value ?? "")
@@ -160,6 +518,22 @@ function normalizeImageUrl(value: string): string {
   }
 
   return normalized;
+}
+
+function isCrossOriginImageUrl(url: string): boolean {
+  const normalized = normalizeImageUrl(url);
+  if (!normalized || normalized.startsWith("data:") || normalized.startsWith("blob:")) {
+    return false;
+  }
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    const parsed = new URL(normalized, window.location.origin);
+    return parsed.origin !== window.location.origin;
+  } catch {
+    return true;
+  }
 }
 
 async function waitForImageElement(image: HTMLImageElement): Promise<void> {
@@ -361,7 +735,7 @@ async function exportFrameWithCanvasFallback(params: {
     context.fillRect(0, 0, size, size);
   }
 
-  const theme = CANVAS_FRAME_THEMES[params.frameTheme];
+  const theme = resolveCanvasTheme(params.frameTheme);
   const gradient = context.createLinearGradient(0, size * 0.2, 0, size);
   gradient.addColorStop(0, theme.gradientTop);
   gradient.addColorStop(0.62, theme.gradientMiddle);
@@ -384,7 +758,9 @@ async function exportFrameWithCanvasFallback(params: {
   context.fillStyle = theme.categoryColor;
   context.fillText(category.toUpperCase(), padding, footerY - 210);
 
-  const titleFont = params.frameTheme === "luxury" ? "italic 600 72px serif" : "600 68px Inter, Arial, sans-serif";
+  const titleFont = SERIF_CANVAS_TITLE_THEMES.has(params.frameTheme)
+    ? "italic 600 72px serif"
+    : "600 68px Inter, Arial, sans-serif";
   context.font = titleFont;
   context.fillStyle = theme.titleColor;
   const titleLines = wrapCanvasText(context, title, size - padding * 2, 3);
@@ -548,15 +924,8 @@ export default function FrameStudio() {
       await waitForRenderableImages(node);
 
       let dataUrl = "";
-      try {
-        dataUrl = await toPng(node, {
-          cacheBust: true,
-          pixelRatio: 2,
-          backgroundColor: "#ffffff",
-          includeQueryParams: true,
-        });
-      } catch (htmlToImageError) {
-        console.warn("[FrameStudio] html-to-image export failed, trying fallback.", htmlToImageError);
+      const useCanvasFirst = isCrossOriginImageUrl(selectedImageUrl);
+      if (useCanvasFirst) {
         dataUrl = await exportFrameWithCanvasFallback({
           imageUrl: selectedImageUrl,
           frameTitle,
@@ -564,6 +933,24 @@ export default function FrameStudio() {
           framePrice,
           frameTheme,
         });
+      } else {
+        try {
+          dataUrl = await toPng(node, {
+            cacheBust: true,
+            pixelRatio: 2,
+            backgroundColor: "#ffffff",
+            includeQueryParams: true,
+          });
+        } catch (htmlToImageError) {
+          console.warn("[FrameStudio] html-to-image export failed, trying fallback.", htmlToImageError);
+          dataUrl = await exportFrameWithCanvasFallback({
+            imageUrl: selectedImageUrl,
+            frameTitle,
+            frameCategory,
+            framePrice,
+            frameTheme,
+          });
+        }
       }
 
       if (!dataUrl) {
@@ -787,19 +1174,19 @@ export default function FrameStudio() {
                   <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">
                     Tema
                   </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {(Object.keys(FRAME_THEMES) as FrameThemeKey[]).map((themeKey) => (
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {FRAME_THEME_KEYS.map((themeKey) => (
                       <button
                         key={themeKey}
                         type="button"
                         onClick={() => setFrameTheme(themeKey)}
-                        className={`rounded-sm border px-3 py-1.5 text-xs uppercase tracking-[0.12em] ${
+                        className={`rounded-sm border px-2 py-1.5 text-[10px] uppercase tracking-[0.08em] ${
                           frameTheme === themeKey
                             ? "border-stone-900 bg-stone-900 text-white"
                             : "border-stone-300 text-stone-700 hover:border-stone-700"
                         }`}
                       >
-                        {themeKey}
+                        {FRAME_THEME_LABELS[themeKey]}
                       </button>
                     ))}
                   </div>
