@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   AlertTriangle,
+  Users,
 } from "lucide-react";
 import {
   getSecurityCategoryLabel,
@@ -39,7 +40,7 @@ type AdminSessionV2 = {
   token: string;
 };
 
-type AdminViewV2 = "users" | "security";
+type AdminViewV2 = "users" | "visitors" | "security";
 
 type SecurityEventFilter = "all" | SecurityCheckStatus;
 
@@ -62,6 +63,41 @@ type AdminSecurityEventV2 = {
 type AdminSecurityEventsResponseV2 = {
   events: AdminSecurityEventV2[];
   totalTracked: number;
+};
+
+type AdminVisitorsSummaryV2 = {
+  totalVisits: number;
+  uniqueVisitors: number;
+  externalVisits: number;
+  externalUniqueVisitors: number;
+  selfVisits: number;
+  selfUniqueVisitors: number;
+};
+
+type AdminVisitorV2 = {
+  id: number;
+  visitorKey: string;
+  label: string;
+  isSelf: boolean;
+  visits: number;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  ip: string;
+  entryPath: string;
+  referrer: string;
+  referrerHost: string;
+  country: string;
+  region: string;
+  city: string;
+  userAgent: string;
+};
+
+type AdminVisitorsResponseV2 = {
+  day: string;
+  generatedAt: number;
+  selfVisitorKey: string;
+  summary: AdminVisitorsSummaryV2;
+  visitors: AdminVisitorV2[];
 };
 
 class HttpError extends Error {
@@ -323,6 +359,112 @@ function toNumber(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function createEmptyVisitorsSummary(): AdminVisitorsSummaryV2 {
+  return {
+    totalVisits: 0,
+    uniqueVisitors: 0,
+    externalVisits: 0,
+    externalUniqueVisitors: 0,
+    selfVisits: 0,
+    selfUniqueVisitors: 0,
+  };
+}
+
+function getTodayDateKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function normalizeDateKey(value: unknown): string {
+  const normalized = String(value ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return normalized;
+  }
+  return getTodayDateKey();
+}
+
+function normalizeVisitorsSummary(payload: unknown): AdminVisitorsSummaryV2 {
+  const record = asRecord(payload);
+  if (!record) {
+    return createEmptyVisitorsSummary();
+  }
+
+  return {
+    totalVisits: Math.max(0, toNumber(record.totalVisits ?? record.total_visits)),
+    uniqueVisitors: Math.max(0, toNumber(record.uniqueVisitors ?? record.unique_visitors)),
+    externalVisits: Math.max(0, toNumber(record.externalVisits ?? record.external_visits)),
+    externalUniqueVisitors: Math.max(
+      0,
+      toNumber(record.externalUniqueVisitors ?? record.external_unique_visitors),
+    ),
+    selfVisits: Math.max(0, toNumber(record.selfVisits ?? record.self_visits)),
+    selfUniqueVisitors: Math.max(
+      0,
+      toNumber(record.selfUniqueVisitors ?? record.self_unique_visitors),
+    ),
+  };
+}
+
+function normalizeAdminVisitor(item: unknown): AdminVisitorV2 | null {
+  const record = asRecord(item);
+  if (!record) {
+    return null;
+  }
+
+  const id = toNumber(record.id);
+  if (id <= 0) {
+    return null;
+  }
+
+  const label = String(record.label ?? "").trim();
+  const fallbackLabel = toBoolean(record.isSelf ?? record.is_self) ? "Eu" : "Usuário";
+
+  return {
+    id,
+    visitorKey: String(record.visitorKey ?? record.visitor_key ?? "").trim(),
+    label: label || fallbackLabel,
+    isSelf: toBoolean(record.isSelf ?? record.is_self),
+    visits: Math.max(0, toNumber(record.visits)),
+    firstSeenAt: Math.max(0, toNumber(record.firstSeenAt ?? record.first_seen_at)),
+    lastSeenAt: Math.max(0, toNumber(record.lastSeenAt ?? record.last_seen_at)),
+    ip: String(record.ip ?? "").trim() || "unknown",
+    entryPath: String(record.entryPath ?? record.entry_path ?? "").trim() || "/",
+    referrer: String(record.referrer ?? "").trim(),
+    referrerHost: String(record.referrerHost ?? record.referrer_host ?? "").trim(),
+    country: String(record.country ?? "").trim(),
+    region: String(record.region ?? "").trim(),
+    city: String(record.city ?? "").trim(),
+    userAgent: String(record.userAgent ?? record.user_agent ?? "").trim() || "-",
+  };
+}
+
+function normalizeVisitorsPayload(payload: unknown): AdminVisitorsResponseV2 {
+  const record = asRecord(payload);
+  if (!record) {
+    return {
+      day: getTodayDateKey(),
+      generatedAt: Date.now(),
+      selfVisitorKey: "",
+      summary: createEmptyVisitorsSummary(),
+      visitors: [],
+    };
+  }
+
+  const rawVisitors = Array.isArray(record.visitors) ? record.visitors : [];
+  const visitors = rawVisitors
+    .map((item) => normalizeAdminVisitor(item))
+    .filter((item): item is AdminVisitorV2 => item !== null);
+
+  const generatedAt = toNumber(record.generatedAt ?? record.generated_at);
+
+  return {
+    day: normalizeDateKey(record.day),
+    generatedAt: generatedAt > 0 ? generatedAt : Date.now(),
+    selfVisitorKey: String(record.selfVisitorKey ?? record.self_visitor_key ?? "").trim(),
+    summary: normalizeVisitorsSummary(record.summary),
+    visitors,
+  };
+}
+
 function normalizeSecurityLevel(value: unknown): SecurityCheckStatus {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "alert" || normalized === "fail") {
@@ -419,6 +561,42 @@ function formatDateTime(value: number): string {
     minute: "2-digit",
     second: "2-digit",
   }).format(new Date(value));
+}
+
+function formatDayDate(value: string): string {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(parsed);
+}
+
+function formatVisitorLocation(visitor: AdminVisitorV2): string {
+  const parts = [visitor.city, visitor.region, visitor.country]
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) {
+    return "-";
+  }
+  return parts.join(", ");
+}
+
+function formatVisitorSource(visitor: AdminVisitorV2): string {
+  if (visitor.referrerHost) {
+    return visitor.referrerHost;
+  }
+  if (visitor.referrer) {
+    return visitor.referrer;
+  }
+  return "Acesso direto";
 }
 
 function getSecurityStatusStyles(status: SecurityCheckStatus): string {
@@ -678,6 +856,18 @@ async function adminGetUsers(token: string, query = ""): Promise<AdminUserV2[]> 
   return normalizeAdminUserList(response);
 }
 
+async function adminGetVisitors(
+  token: string,
+  day: string,
+): Promise<AdminVisitorsResponseV2> {
+  const params = new URLSearchParams();
+  params.set("date", normalizeDateKey(day));
+  const response = await adminRequest<unknown>(`/api/admin/visitors?${params.toString()}`, {
+    token,
+  });
+  return normalizeVisitorsPayload(response);
+}
+
 async function adminToggleUserBan(
   token: string,
   userId: number,
@@ -825,6 +1015,14 @@ export default function AdminPanelV2() {
   const [authError, setAuthError] = React.useState("");
   const [isAuthSubmitting, setIsAuthSubmitting] = React.useState(false);
   const [users, setUsers] = React.useState<AdminUserV2[]>([]);
+  const [visitorDay, setVisitorDay] = React.useState(getTodayDateKey());
+  const [visitors, setVisitors] = React.useState<AdminVisitorV2[]>([]);
+  const [visitorsSummary, setVisitorsSummary] = React.useState<AdminVisitorsSummaryV2>(
+    createEmptyVisitorsSummary(),
+  );
+  const [visitorsUpdatedAt, setVisitorsUpdatedAt] = React.useState<number | null>(null);
+  const [isLoadingVisitors, setIsLoadingVisitors] = React.useState(false);
+  const [visitorsError, setVisitorsError] = React.useState("");
   const [query, setQuery] = React.useState("");
   const [isLoadingUsers, setIsLoadingUsers] = React.useState(false);
   const [usersError, setUsersError] = React.useState("");
@@ -863,6 +1061,34 @@ export default function AdminPanelV2() {
         setUsersError(message);
       } finally {
         setIsLoadingUsers(false);
+      }
+    },
+    [],
+  );
+
+  const loadVisitors = React.useCallback(
+    async (token: string, day: string, options?: { silent?: boolean }) => {
+      const silent = Boolean(options?.silent);
+      if (!silent) {
+        setIsLoadingVisitors(true);
+      }
+      setVisitorsError("");
+
+      try {
+        const payload = await adminGetVisitors(token, day);
+        setVisitors(payload.visitors);
+        setVisitorsSummary(payload.summary);
+        setVisitorsUpdatedAt(payload.generatedAt);
+        setVisitorDay(payload.day);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Falha ao carregar visitantes.";
+        setVisitors([]);
+        setVisitorsSummary(createEmptyVisitorsSummary());
+        setVisitorsError(message);
+      } finally {
+        if (!silent) {
+          setIsLoadingVisitors(false);
+        }
       }
     },
     [],
@@ -914,6 +1140,7 @@ export default function AdminPanelV2() {
         setSessionEmail(currentEmail);
         setEmail(currentEmail);
         await loadUsers(storedToken);
+        await loadVisitors(storedToken, getTodayDateKey(), { silent: true });
         await loadSecurityEvents(storedToken, { silent: true });
       } catch (error) {
         if (!cancelled) {
@@ -921,6 +1148,10 @@ export default function AdminPanelV2() {
           setAuthToken("");
           setSessionEmail(null);
           setUsers([]);
+          setVisitors([]);
+          setVisitorsSummary(createEmptyVisitorsSummary());
+          setVisitorsUpdatedAt(null);
+          setVisitorsError("");
           if (!isUnauthorizedApiError(error)) {
             const message =
               error instanceof Error ? error.message : "Falha ao restaurar sessão de admin.";
@@ -939,7 +1170,7 @@ export default function AdminPanelV2() {
     return () => {
       cancelled = true;
     };
-  }, [loadSecurityEvents, loadUsers]);
+  }, [loadSecurityEvents, loadUsers, loadVisitors]);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -960,6 +1191,7 @@ export default function AdminPanelV2() {
       setEmail(session.email);
       persistSession(session);
       await loadUsers(session.token);
+      await loadVisitors(session.token, getTodayDateKey(), { silent: true });
       await loadSecurityEvents(session.token, { silent: true });
     } catch (error) {
       const message =
@@ -967,6 +1199,10 @@ export default function AdminPanelV2() {
       setAuthError(message);
       setSessionEmail(null);
       setUsers([]);
+      setVisitors([]);
+      setVisitorsSummary(createEmptyVisitorsSummary());
+      setVisitorsUpdatedAt(null);
+      setVisitorsError("");
       clearSessionStorage();
     } finally {
       setIsAuthSubmitting(false);
@@ -983,6 +1219,12 @@ export default function AdminPanelV2() {
       setAuthToken("");
       setSessionEmail(null);
       setUsers([]);
+      setVisitorDay(getTodayDateKey());
+      setVisitors([]);
+      setVisitorsSummary(createEmptyVisitorsSummary());
+      setVisitorsUpdatedAt(null);
+      setIsLoadingVisitors(false);
+      setVisitorsError("");
       setUsersError("");
       setAuthError("");
       setQuery("");
@@ -1097,6 +1339,10 @@ export default function AdminPanelV2() {
         return;
       }
       await loadSecurityEvents(authToken);
+      return;
+    }
+    if (activeView === "visitors") {
+      await loadVisitors(authToken, visitorDay);
       return;
     }
     await loadUsers(authToken, query);
@@ -1263,6 +1509,13 @@ export default function AdminPanelV2() {
     sessionEmail,
   ]);
 
+  React.useEffect(() => {
+    if (!sessionEmail || !authToken || activeView !== "visitors") {
+      return;
+    }
+    void loadVisitors(authToken, visitorDay);
+  }, [activeView, authToken, loadVisitors, sessionEmail, visitorDay]);
+
   if (isBootstrapping) {
     return (
       <div className="min-h-screen bg-[#fdfcfb] flex items-center justify-center">
@@ -1393,6 +1646,18 @@ export default function AdminPanelV2() {
             </button>
             <button
               type="button"
+              onClick={() => setActiveView("visitors")}
+              className={`inline-flex items-center gap-2 px-3 py-2 text-xs uppercase tracking-[0.14em] border transition-colors ${
+                activeView === "visitors"
+                  ? "border-stone-900 bg-stone-900 text-white"
+                  : "border-stone-300 text-stone-700 hover:border-stone-800"
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              Visitantes
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveView("security")}
               className={`inline-flex items-center gap-2 px-3 py-2 text-xs uppercase tracking-[0.14em] border transition-colors ${
                 activeView === "security"
@@ -1500,8 +1765,137 @@ export default function AdminPanelV2() {
               </div>
             )}
           </>
-        ) : (
-          <section className="space-y-4">
+          ) : activeView === "visitors" ? (
+            <section className="space-y-4">
+              <article className="border border-stone-200 bg-white p-4 sm:p-5 space-y-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <Users className="w-4 h-4 text-stone-700 mt-0.5" />
+                    <div>
+                      <h2 className="text-sm font-semibold text-stone-900">Visitantes do TempleSale</h2>
+                      <p className="text-xs text-stone-500 mt-1">
+                        Registro diário de acessos no site (por IP + navegador), com marcação de
+                        <strong> Eu</strong> para o seu acesso atual.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] uppercase tracking-[0.12em] text-stone-500">
+                      Dia (UTC)
+                    </label>
+                    <input
+                      type="date"
+                      value={visitorDay}
+                      onChange={(event) => setVisitorDay(normalizeDateKey(event.target.value))}
+                      className="border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-stone-900"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-3 text-xs text-stone-500">
+                  <span>
+                    Dia selecionado: <strong>{formatDayDate(visitorDay)}</strong>
+                  </span>
+                  {visitorsUpdatedAt !== null && (
+                    <span>Atualizado em: {formatDateTime(visitorsUpdatedAt)}</span>
+                  )}
+                </div>
+              </article>
+
+              {visitorsError && (
+                <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {visitorsError}
+                </div>
+              )}
+
+              <article className="border border-stone-200 bg-white p-4 sm:p-5">
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+                  <div className="border border-stone-200 bg-stone-50 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">Visitas no dia</p>
+                    <p className="text-sm font-semibold text-stone-900">{visitorsSummary.externalVisits}</p>
+                    <p className="text-[10px] text-stone-500">sem você</p>
+                  </div>
+                  <div className="border border-stone-200 bg-stone-50 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">Visitantes únicos</p>
+                    <p className="text-sm font-semibold text-stone-900">
+                      {visitorsSummary.externalUniqueVisitors}
+                    </p>
+                    <p className="text-[10px] text-stone-500">sem você</p>
+                  </div>
+                  <div className="border border-emerald-200 bg-emerald-50 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">Seu acesso</p>
+                    <p className="text-sm font-semibold text-emerald-800">{visitorsSummary.selfVisits}</p>
+                    <p className="text-[10px] text-emerald-700">marcado como Eu</p>
+                  </div>
+                  <div className="border border-blue-200 bg-blue-50 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">Total bruto</p>
+                    <p className="text-sm font-semibold text-blue-800">{visitorsSummary.totalVisits}</p>
+                    <p className="text-[10px] text-blue-700">inclui Eu</p>
+                  </div>
+                  <div className="border border-blue-200 bg-blue-50 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">Únicos total</p>
+                    <p className="text-sm font-semibold text-blue-800">{visitorsSummary.uniqueVisitors}</p>
+                    <p className="text-[10px] text-blue-700">inclui Eu</p>
+                  </div>
+                </div>
+              </article>
+
+              {isLoadingVisitors ? (
+                <div className="py-16 text-center text-sm text-stone-500">Carregando visitantes...</div>
+              ) : visitors.length === 0 ? (
+                <div className="py-16 text-center text-sm text-stone-500">
+                  Nenhum visitante registrado neste dia.
+                </div>
+              ) : (
+                <article className="border border-stone-200 bg-white p-4 sm:p-5">
+                  <div className="max-h-[520px] overflow-y-auto pr-1 space-y-2">
+                    {visitors.map((visitor) => (
+                      <article
+                        key={`${visitor.visitorKey || visitor.id}-${visitor.lastSeenAt}`}
+                        className={`border px-3 py-3 ${
+                          visitor.isSelf
+                            ? "border-emerald-200 bg-emerald-50/60"
+                            : "border-stone-200 bg-white"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`inline-flex items-center border px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] ${
+                              visitor.isSelf
+                                ? "border-emerald-300 text-emerald-700"
+                                : "border-stone-300 text-stone-700"
+                            }`}
+                          >
+                            {visitor.label}
+                          </span>
+                          <span className="text-xs text-stone-600">
+                            Entradas no dia: <strong>{visitor.visits}</strong>
+                          </span>
+                          <span className="text-xs text-stone-500">
+                            Primeiro acesso: {formatDateTime(visitor.firstSeenAt)}
+                          </span>
+                          <span className="text-xs text-stone-500">
+                            Último acesso: {formatDateTime(visitor.lastSeenAt)}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-stone-600 break-all">
+                          IP: <strong>{visitor.ip}</strong> | Página:{" "}
+                          <span className="font-mono">{visitor.entryPath}</span>
+                        </p>
+                        <p className="mt-1 text-xs text-stone-600 break-all">
+                          Origem: <strong>{formatVisitorSource(visitor)}</strong> | Localização:{" "}
+                          <strong>{formatVisitorLocation(visitor)}</strong>
+                        </p>
+                        <p className="mt-1 text-[11px] text-stone-500 break-all">
+                          Navegador/aplicativo: {visitor.userAgent}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                </article>
+              )}
+            </section>
+          ) : (
+            <section className="space-y-4">
             <article className="border border-stone-200 bg-white p-4 sm:p-5 space-y-4">
               <div className="flex items-start gap-3">
                 <Shield className="w-4 h-4 text-stone-700 mt-0.5" />

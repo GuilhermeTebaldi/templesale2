@@ -156,6 +156,37 @@ type AdminUserRecord = {
   createdAt?: string;
 };
 
+type DailyVisitorRow = {
+  id: number;
+  visit_date: string;
+  visitor_key: string;
+  ip: string | null;
+  user_agent: string | null;
+  entry_path: string | null;
+  referrer: string | null;
+  referrer_host: string | null;
+  country: string | null;
+  region: string | null;
+  city: string | null;
+  first_seen_at: number;
+  last_seen_at: number;
+  visits: number;
+};
+
+type DailyVisitorUpsertInput = {
+  visitDate: string;
+  visitorKey: string;
+  ip: string;
+  userAgent: string;
+  entryPath: string;
+  referrer: string;
+  referrerHost: string;
+  country: string;
+  region: string;
+  city: string;
+  seenAt: number;
+};
+
 type SecurityMonitorLevel = "info" | "warn" | "alert";
 
 type SecurityMonitorEvent = {
@@ -431,6 +462,23 @@ const SECURITY_MONITOR_MAX_EVENTS = 800;
 const SECURITY_MONITOR_DEFAULT_LIMIT = 120;
 const SECURITY_MONITOR_MAX_LIMIT = 500;
 const AGENT_SITE_ID_REGEX = /^[a-z0-9_-]{3,64}$/i;
+const VISITOR_DATE_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const VISITOR_ASSET_PATH_REGEX =
+  /\.(?:css|js|mjs|map|json|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|txt|xml|pdf|webmanifest)$/i;
+const VISITOR_TEXT_LIMITS = {
+  ip: 100,
+  userAgent: 260,
+  path: 220,
+  referrer: 420,
+  host: 160,
+  country: 40,
+  region: 80,
+  city: 120,
+} as const;
+const VISITOR_DAY_FETCH_LIMIT = 2000;
+const VISITOR_VISIT_INCREMENT_MIN_INTERVAL_MS = 30_000;
+const VISITOR_FINGERPRINT_SALT =
+  String(process.env.VISITOR_FINGERPRINT_SALT ?? "").trim() || "templesale-visitor-v1";
 const securityMonitorEvents: SecurityMonitorEvent[] = [];
 const agentProtectionBySiteId = new globalThis.Map<string, boolean>();
 let securityMonitorEventSequence = 0;
@@ -940,6 +988,233 @@ function normalizeAdminUserRecord(row: Record<string, unknown>): AdminUserRecord
   };
 }
 
+function toEpochMilliseconds(value: unknown, fallback = Date.now()): number {
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue) && numericValue > 0) {
+    if (numericValue >= 10_000_000_000) {
+      return Math.floor(numericValue);
+    }
+    return Math.floor(numericValue * 1000);
+  }
+
+  if (value instanceof Date) {
+    const fromDate = value.getTime();
+    if (Number.isFinite(fromDate) && fromDate > 0) {
+      return Math.floor(fromDate);
+    }
+  }
+
+  const asText = String(value ?? "").trim();
+  if (asText) {
+    const parsed = Date.parse(asText);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.floor(parsed);
+    }
+  }
+
+  return Math.max(1, Math.floor(fallback));
+}
+
+function normalizeDailyVisitorRow(row: Record<string, unknown>): DailyVisitorRow {
+  return {
+    id: toRequiredNonNegativeInteger(row.id, 0),
+    visit_date: String(row.visit_date ?? "").trim(),
+    visitor_key: String(row.visitor_key ?? "").trim(),
+    ip: toNullableString(row.ip),
+    user_agent: toNullableString(row.user_agent),
+    entry_path: toNullableString(row.entry_path),
+    referrer: toNullableString(row.referrer),
+    referrer_host: toNullableString(row.referrer_host),
+    country: toNullableString(row.country),
+    region: toNullableString(row.region),
+    city: toNullableString(row.city),
+    first_seen_at: toEpochMilliseconds(row.first_seen_at, Date.now()),
+    last_seen_at: toEpochMilliseconds(row.last_seen_at, Date.now()),
+    visits: toRequiredNonNegativeInteger(row.visits, 0),
+  };
+}
+
+function normalizeVisitorTrackingText(value: unknown, maxLength: number): string {
+  const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return normalized.slice(0, Math.max(1, maxLength));
+}
+
+function resolveVisitorDateKeyFromTimestamp(timestampMs: number): string {
+  const date = new Date(timestampMs);
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toISOString().slice(0, 10);
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeVisitorDateKey(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!VISITOR_DATE_KEY_REGEX.test(raw)) {
+    return resolveVisitorDateKeyFromTimestamp(Date.now());
+  }
+
+  const parsed = Date.parse(`${raw}T00:00:00.000Z`);
+  if (!Number.isFinite(parsed)) {
+    return resolveVisitorDateKeyFromTimestamp(Date.now());
+  }
+  return raw;
+}
+
+function normalizeIpForVisitorTracking(value: string): string {
+  const normalized = normalizeVisitorTrackingText(value, VISITOR_TEXT_LIMITS.ip);
+  if (!normalized) {
+    return "unknown";
+  }
+
+  const withoutIpv6Prefix = normalized.startsWith("::ffff:")
+    ? normalized.slice("::ffff:".length)
+    : normalized;
+  const ipv4PortMatch = withoutIpv6Prefix.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
+  if (ipv4PortMatch?.[1]) {
+    return ipv4PortMatch[1];
+  }
+
+  return withoutIpv6Prefix;
+}
+
+function buildVisitorFingerprintKey(ip: string, userAgent: string): string {
+  const normalizedIp = normalizeIpForVisitorTracking(ip);
+  const normalizedUserAgent = normalizeVisitorTrackingText(userAgent, VISITOR_TEXT_LIMITS.userAgent);
+  return crypto
+    .createHash("sha256")
+    .update(`${VISITOR_FINGERPRINT_SALT}|${normalizedIp}|${normalizedUserAgent}`)
+    .digest("hex");
+}
+
+function extractReferrerHost(referrer: string): string {
+  if (!referrer) {
+    return "";
+  }
+
+  try {
+    return new URL(referrer).host.trim().toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function resolveVisitorGeoHeaders(req: Request): { country: string; region: string; city: string } {
+  const pickHeader = (candidates: Array<string | string[] | undefined>, maxLength: number): string => {
+    for (const candidate of candidates) {
+      const normalized = normalizeVisitorTrackingText(
+        getRequestHeaderTokenValue(candidate),
+        maxLength,
+      );
+      if (!normalized) {
+        continue;
+      }
+      return normalized;
+    }
+    return "";
+  };
+
+  return {
+    country: pickHeader(
+      [
+        req.headers["x-vercel-ip-country"],
+        req.headers["cf-ipcountry"],
+        req.headers["cloudfront-viewer-country"],
+        req.headers["x-country-code"],
+      ],
+      VISITOR_TEXT_LIMITS.country,
+    ),
+    region: pickHeader(
+      [
+        req.headers["x-vercel-ip-country-region"],
+        req.headers["x-vercel-ip-region"],
+        req.headers["cf-region"],
+      ],
+      VISITOR_TEXT_LIMITS.region,
+    ),
+    city: pickHeader(
+      [req.headers["x-vercel-ip-city"], req.headers["cf-ipcity"]],
+      VISITOR_TEXT_LIMITS.city,
+    ),
+  };
+}
+
+function shouldTrackDailyVisitorRequest(req: Request, normalizedPath: string): boolean {
+  if (IS_DEV_REMOTE_READ_ONLY) {
+    return false;
+  }
+
+  const method = String(req.method ?? "").trim().toUpperCase();
+  if (method !== "GET") {
+    return false;
+  }
+
+  if (!normalizedPath || normalizedPath.startsWith("/api")) {
+    return false;
+  }
+
+  if (
+    normalizedPath.startsWith("/assets/") ||
+    normalizedPath.startsWith("/@vite") ||
+    normalizedPath.startsWith("/@fs/") ||
+    normalizedPath.startsWith("/node_modules/") ||
+    normalizedPath.startsWith("/.well-known/")
+  ) {
+    return false;
+  }
+
+  if (VISITOR_ASSET_PATH_REGEX.test(normalizedPath)) {
+    return false;
+  }
+
+  const accept = String(req.headers.accept ?? "").toLowerCase();
+  const secFetchMode = String(req.headers["sec-fetch-mode"] ?? "").toLowerCase();
+  const secFetchDest = String(req.headers["sec-fetch-dest"] ?? "").toLowerCase();
+  const acceptsHtml = accept.includes("text/html");
+  const isDocumentNavigation = secFetchMode === "navigate" || secFetchDest === "document";
+
+  return acceptsHtml || isDocumentNavigation;
+}
+
+function buildDailyVisitorUpsertInput(req: Request, normalizedPath: string): DailyVisitorUpsertInput {
+  const seenAt = Date.now();
+  const ip = normalizeIpForVisitorTracking(getRequestIp(req));
+  const userAgent = normalizeVisitorTrackingText(
+    req.headers["user-agent"] ?? "",
+    VISITOR_TEXT_LIMITS.userAgent,
+  );
+  const referrer = normalizeVisitorTrackingText(
+    req.headers.referer ?? req.headers.referrer ?? "",
+    VISITOR_TEXT_LIMITS.referrer,
+  );
+  const referrerHost = normalizeVisitorTrackingText(
+    extractReferrerHost(referrer),
+    VISITOR_TEXT_LIMITS.host,
+  );
+  const entryPath =
+    normalizeVisitorTrackingText(normalizedPath || "/", VISITOR_TEXT_LIMITS.path) || "/";
+  const geo = resolveVisitorGeoHeaders(req);
+
+  return {
+    visitDate: resolveVisitorDateKeyFromTimestamp(seenAt),
+    visitorKey: buildVisitorFingerprintKey(ip, userAgent),
+    ip,
+    userAgent,
+    entryPath,
+    referrer,
+    referrerHost,
+    country: geo.country,
+    region: geo.region,
+    city: geo.city,
+    seenAt,
+  };
+}
+
 function initializeSqliteDatabase() {
   if (sqliteDb) {
     return;
@@ -1030,6 +1305,23 @@ function initializeSqliteDatabase() {
       CHECK (rating IS NULL OR (rating >= 1 AND rating <= 5))
     );
 
+    CREATE TABLE IF NOT EXISTS site_daily_visitors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      visit_date TEXT NOT NULL,
+      visitor_key TEXT NOT NULL,
+      ip TEXT NOT NULL DEFAULT '',
+      user_agent TEXT NOT NULL DEFAULT '',
+      entry_path TEXT NOT NULL DEFAULT '/',
+      referrer TEXT NOT NULL DEFAULT '',
+      referrer_host TEXT NOT NULL DEFAULT '',
+      country TEXT NOT NULL DEFAULT '',
+      region TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      first_seen_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+      last_seen_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+      visits INTEGER NOT NULL DEFAULT 1
+    );
+
     CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id);
@@ -1041,6 +1333,10 @@ function initializeSqliteDatabase() {
       ON product_comments(product_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_product_comments_parent
       ON product_comments(parent_comment_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_site_daily_visitors_date_key
+      ON site_daily_visitors(visit_date, visitor_key);
+    CREATE INDEX IF NOT EXISTS idx_site_daily_visitors_date_last_seen
+      ON site_daily_visitors(visit_date, last_seen_at DESC);
   `);
 
   const productColumns = db.prepare("PRAGMA table_info(products)").all() as Array<{ name: string }>;
@@ -1122,7 +1418,60 @@ function initializeSqliteDatabase() {
     db.exec("ALTER TABLE users ADD COLUMN new_product_defaults TEXT NOT NULL DEFAULT '{}'");
   }
 
+  const visitorColumns = db.prepare("PRAGMA table_info(site_daily_visitors)").all() as Array<{
+    name: string;
+  }>;
+  if (!visitorColumns.some((column) => column.name === "visit_date")) {
+    db.exec("ALTER TABLE site_daily_visitors ADD COLUMN visit_date TEXT NOT NULL DEFAULT ''");
+  }
+  if (!visitorColumns.some((column) => column.name === "visitor_key")) {
+    db.exec("ALTER TABLE site_daily_visitors ADD COLUMN visitor_key TEXT NOT NULL DEFAULT ''");
+  }
+  if (!visitorColumns.some((column) => column.name === "ip")) {
+    db.exec("ALTER TABLE site_daily_visitors ADD COLUMN ip TEXT NOT NULL DEFAULT ''");
+  }
+  if (!visitorColumns.some((column) => column.name === "user_agent")) {
+    db.exec("ALTER TABLE site_daily_visitors ADD COLUMN user_agent TEXT NOT NULL DEFAULT ''");
+  }
+  if (!visitorColumns.some((column) => column.name === "entry_path")) {
+    db.exec("ALTER TABLE site_daily_visitors ADD COLUMN entry_path TEXT NOT NULL DEFAULT '/'");
+  }
+  if (!visitorColumns.some((column) => column.name === "referrer")) {
+    db.exec("ALTER TABLE site_daily_visitors ADD COLUMN referrer TEXT NOT NULL DEFAULT ''");
+  }
+  if (!visitorColumns.some((column) => column.name === "referrer_host")) {
+    db.exec("ALTER TABLE site_daily_visitors ADD COLUMN referrer_host TEXT NOT NULL DEFAULT ''");
+  }
+  if (!visitorColumns.some((column) => column.name === "country")) {
+    db.exec("ALTER TABLE site_daily_visitors ADD COLUMN country TEXT NOT NULL DEFAULT ''");
+  }
+  if (!visitorColumns.some((column) => column.name === "region")) {
+    db.exec("ALTER TABLE site_daily_visitors ADD COLUMN region TEXT NOT NULL DEFAULT ''");
+  }
+  if (!visitorColumns.some((column) => column.name === "city")) {
+    db.exec("ALTER TABLE site_daily_visitors ADD COLUMN city TEXT NOT NULL DEFAULT ''");
+  }
+  if (!visitorColumns.some((column) => column.name === "first_seen_at")) {
+    db.exec(
+      "ALTER TABLE site_daily_visitors ADD COLUMN first_seen_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)",
+    );
+  }
+  if (!visitorColumns.some((column) => column.name === "last_seen_at")) {
+    db.exec(
+      "ALTER TABLE site_daily_visitors ADD COLUMN last_seen_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)",
+    );
+  }
+  if (!visitorColumns.some((column) => column.name === "visits")) {
+    db.exec("ALTER TABLE site_daily_visitors ADD COLUMN visits INTEGER NOT NULL DEFAULT 1");
+  }
+
   db.exec("CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)");
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_site_daily_visitors_date_key ON site_daily_visitors(visit_date, visitor_key)",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_site_daily_visitors_date_last_seen ON site_daily_visitors(visit_date, last_seen_at DESC)",
+  );
   sqliteDb = db;
 }
 
@@ -1217,6 +1566,24 @@ async function initializePostgresDatabase() {
           CHECK (rating IS NULL OR (rating >= 1 AND rating <= 5))
       )
     `,
+    `
+      CREATE TABLE IF NOT EXISTS site_daily_visitors (
+        id BIGSERIAL PRIMARY KEY,
+        visit_date TEXT NOT NULL,
+        visitor_key TEXT NOT NULL,
+        ip TEXT NOT NULL DEFAULT '',
+        user_agent TEXT NOT NULL DEFAULT '',
+        entry_path TEXT NOT NULL DEFAULT '/',
+        referrer TEXT NOT NULL DEFAULT '',
+        referrer_host TEXT NOT NULL DEFAULT '',
+        country TEXT NOT NULL DEFAULT '',
+        region TEXT NOT NULL DEFAULT '',
+        city TEXT NOT NULL DEFAULT '',
+        first_seen_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT * 1000),
+        last_seen_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT * 1000),
+        visits INTEGER NOT NULL DEFAULT 1
+      )
+    `,
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT",
@@ -1268,6 +1635,19 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT'",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS new_product_defaults TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS visit_date TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS visitor_key TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS ip TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS user_agent TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS entry_path TEXT NOT NULL DEFAULT '/'",
+    "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS referrer TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS referrer_host TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS region TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS first_seen_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT * 1000)",
+    "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS last_seen_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT * 1000)",
+    "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS visits INTEGER NOT NULL DEFAULT 1",
     "UPDATE products SET title = COALESCE(NULLIF(BTRIM(title), ''), NULLIF(BTRIM(name), ''), 'Produto sem título') WHERE title IS NULL OR BTRIM(title) = ''",
     "UPDATE products SET image_url = COALESCE(NULLIF(BTRIM(image_url), ''), NULLIF(BTRIM(image), ''), '') WHERE image_url IS NULL OR BTRIM(image_url) = ''",
     "UPDATE products SET image_urls = COALESCE(NULLIF(BTRIM(image_urls), ''), images, '[]') WHERE image_urls IS NULL OR BTRIM(image_urls) = ''",
@@ -1309,6 +1689,8 @@ async function initializePostgresDatabase() {
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_product_likes_user_product_unique ON product_likes(user_id, product_id)",
     "CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_site_daily_visitors_date_key ON site_daily_visitors(visit_date, visitor_key)",
+    "CREATE INDEX IF NOT EXISTS idx_site_daily_visitors_date_last_seen ON site_daily_visitors(visit_date, last_seen_at DESC)",
   ];
 
   for (const statement of migrationStatements) {
@@ -1449,6 +1831,240 @@ async function selectAdminUsersRows(): Promise<AdminUserRecord[]> {
     )
     .all() as Array<Record<string, unknown>>;
   return rows.map(normalizeAdminUserRecord);
+}
+
+async function upsertDailyVisitorRecord(input: DailyVisitorUpsertInput): Promise<void> {
+  if (IS_DEV_REMOTE_READ_ONLY) {
+    return;
+  }
+
+  if (pgPool) {
+    await pgPool.query(
+      `
+        INSERT INTO site_daily_visitors (
+          visit_date,
+          visitor_key,
+          ip,
+          user_agent,
+          entry_path,
+          referrer,
+          referrer_host,
+          country,
+          region,
+          city,
+          first_seen_at,
+          last_seen_at,
+          visits
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, 1
+        )
+        ON CONFLICT (visit_date, visitor_key)
+        DO UPDATE SET
+          last_seen_at = EXCLUDED.last_seen_at,
+          visits = CASE
+            WHEN site_daily_visitors.last_seen_at <=
+              (EXCLUDED.last_seen_at - $12)
+            THEN site_daily_visitors.visits + 1
+            ELSE site_daily_visitors.visits
+          END,
+          ip = CASE WHEN EXCLUDED.ip <> '' THEN EXCLUDED.ip ELSE site_daily_visitors.ip END,
+          user_agent = CASE
+            WHEN EXCLUDED.user_agent <> '' THEN EXCLUDED.user_agent
+            ELSE site_daily_visitors.user_agent
+          END,
+          entry_path = CASE
+            WHEN EXCLUDED.entry_path <> '' THEN EXCLUDED.entry_path
+            ELSE site_daily_visitors.entry_path
+          END,
+          referrer = CASE
+            WHEN EXCLUDED.referrer <> '' THEN EXCLUDED.referrer
+            ELSE site_daily_visitors.referrer
+          END,
+          referrer_host = CASE
+            WHEN EXCLUDED.referrer_host <> '' THEN EXCLUDED.referrer_host
+            ELSE site_daily_visitors.referrer_host
+          END,
+          country = CASE
+            WHEN EXCLUDED.country <> '' THEN EXCLUDED.country
+            ELSE site_daily_visitors.country
+          END,
+          region = CASE
+            WHEN EXCLUDED.region <> '' THEN EXCLUDED.region
+            ELSE site_daily_visitors.region
+          END,
+          city = CASE
+            WHEN EXCLUDED.city <> '' THEN EXCLUDED.city
+            ELSE site_daily_visitors.city
+          END
+      `,
+      [
+        input.visitDate,
+        input.visitorKey,
+        input.ip,
+        input.userAgent,
+        input.entryPath,
+        input.referrer,
+        input.referrerHost,
+        input.country,
+        input.region,
+        input.city,
+        input.seenAt,
+        VISITOR_VISIT_INCREMENT_MIN_INTERVAL_MS,
+      ],
+    );
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        INSERT INTO site_daily_visitors (
+          visit_date,
+          visitor_key,
+          ip,
+          user_agent,
+          entry_path,
+          referrer,
+          referrer_host,
+          country,
+          region,
+          city,
+          first_seen_at,
+          last_seen_at,
+          visits
+        )
+        VALUES (
+          @visit_date,
+          @visitor_key,
+          @ip,
+          @user_agent,
+          @entry_path,
+          @referrer,
+          @referrer_host,
+          @country,
+          @region,
+          @city,
+          @seen_at,
+          @seen_at,
+          1
+        )
+        ON CONFLICT(visit_date, visitor_key)
+        DO UPDATE SET
+          last_seen_at = excluded.last_seen_at,
+          visits = CASE
+            WHEN site_daily_visitors.last_seen_at <=
+              (excluded.last_seen_at - @increment_min_interval_ms)
+            THEN site_daily_visitors.visits + 1
+            ELSE site_daily_visitors.visits
+          END,
+          ip = CASE WHEN excluded.ip <> '' THEN excluded.ip ELSE site_daily_visitors.ip END,
+          user_agent = CASE
+            WHEN excluded.user_agent <> '' THEN excluded.user_agent
+            ELSE site_daily_visitors.user_agent
+          END,
+          entry_path = CASE
+            WHEN excluded.entry_path <> '' THEN excluded.entry_path
+            ELSE site_daily_visitors.entry_path
+          END,
+          referrer = CASE
+            WHEN excluded.referrer <> '' THEN excluded.referrer
+            ELSE site_daily_visitors.referrer
+          END,
+          referrer_host = CASE
+            WHEN excluded.referrer_host <> '' THEN excluded.referrer_host
+            ELSE site_daily_visitors.referrer_host
+          END,
+          country = CASE
+            WHEN excluded.country <> '' THEN excluded.country
+            ELSE site_daily_visitors.country
+          END,
+          region = CASE
+            WHEN excluded.region <> '' THEN excluded.region
+            ELSE site_daily_visitors.region
+          END,
+          city = CASE
+            WHEN excluded.city <> '' THEN excluded.city
+            ELSE site_daily_visitors.city
+          END
+      `,
+    )
+    .run({
+      visit_date: input.visitDate,
+      visitor_key: input.visitorKey,
+      ip: input.ip,
+      user_agent: input.userAgent,
+      entry_path: input.entryPath,
+      referrer: input.referrer,
+      referrer_host: input.referrerHost,
+      country: input.country,
+      region: input.region,
+      city: input.city,
+      seen_at: input.seenAt,
+      increment_min_interval_ms: VISITOR_VISIT_INCREMENT_MIN_INTERVAL_MS,
+    });
+}
+
+async function selectDailyVisitorsByDateRows(
+  visitDate: string,
+  limit = VISITOR_DAY_FETCH_LIMIT,
+): Promise<DailyVisitorRow[]> {
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), VISITOR_DAY_FETCH_LIMIT);
+
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          id,
+          visit_date,
+          visitor_key,
+          ip,
+          user_agent,
+          entry_path,
+          referrer,
+          referrer_host,
+          country,
+          region,
+          city,
+          first_seen_at,
+          last_seen_at,
+          visits
+        FROM site_daily_visitors
+        WHERE visit_date = $1
+        ORDER BY last_seen_at DESC, id DESC
+        LIMIT $2
+      `,
+      [visitDate, safeLimit],
+    );
+    return result.rows.map(normalizeDailyVisitorRow);
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          id,
+          visit_date,
+          visitor_key,
+          ip,
+          user_agent,
+          entry_path,
+          referrer,
+          referrer_host,
+          country,
+          region,
+          city,
+          first_seen_at,
+          last_seen_at,
+          visits
+        FROM site_daily_visitors
+        WHERE visit_date = ?
+        ORDER BY last_seen_at DESC, id DESC
+        LIMIT ?
+      `,
+    )
+    .all(visitDate, safeLimit) as Array<Record<string, unknown>>;
+  return rows.map(normalizeDailyVisitorRow);
 }
 
 async function selectProductByIdRow(productId: number): Promise<ProductRow | undefined> {
@@ -3879,6 +4495,28 @@ async function bootstrap() {
     next();
   });
   app.use((req, res, next) => {
+    const normalizedPath = normalizeSecurityMonitorPath(String(req.originalUrl ?? req.url ?? ""));
+    if (!shouldTrackDailyVisitorRequest(req, normalizedPath)) {
+      next();
+      return;
+    }
+
+    const visitorInput = buildDailyVisitorUpsertInput(req, normalizedPath);
+    res.on("finish", () => {
+      const status = Number(res.statusCode || 0);
+      if (status < 200 || status >= 400) {
+        return;
+      }
+
+      void upsertDailyVisitorRecord(visitorInput).catch((error) => {
+        const message = error instanceof Error ? error.message : "unknown";
+        console.error("Visitor tracking write failed:", message);
+      });
+    });
+
+    next();
+  });
+  app.use((req, res, next) => {
     const startedAt = Date.now();
     const rawUrl = String(req.originalUrl ?? req.url ?? "");
     const normalizedPath = normalizeSecurityMonitorPath(rawUrl);
@@ -3886,6 +4524,7 @@ async function bootstrap() {
     const isSecurityMonitorRoute =
       normalizedPath === "/api/admin/security-test/events" ||
       normalizedPath === "/api/admin/security-tests/events" ||
+      normalizedPath === "/api/visitor/ping" ||
       normalizedPath === "/api/agent/report" ||
       normalizedPath.startsWith("/api/agent/script/") ||
       normalizedPath.startsWith("/api/agent/status/");
@@ -3962,6 +4601,38 @@ async function bootstrap() {
           ? "configured"
           : "missing_env",
     });
+  });
+
+  app.post("/api/visitor/ping", async (req, res) => {
+    try {
+      const body =
+        req.body && typeof req.body === "object" && !Array.isArray(req.body)
+          ? (req.body as Record<string, unknown>)
+          : {};
+      const rawPath = body.path ?? body.pathname ?? req.query.path ?? req.headers["x-page-path"] ?? "/";
+      const normalizedPath = normalizeSecurityMonitorPath(String(rawPath ?? "/"));
+      const safePath =
+        !normalizedPath || normalizedPath.startsWith("/api") ? "/" : normalizedPath;
+      const input = buildDailyVisitorUpsertInput(req, safePath);
+
+      const bodyReferrer = normalizeVisitorTrackingText(
+        body.referrer ?? body.referer ?? "",
+        VISITOR_TEXT_LIMITS.referrer,
+      );
+      if (bodyReferrer) {
+        input.referrer = bodyReferrer;
+        input.referrerHost = normalizeVisitorTrackingText(
+          extractReferrerHost(bodyReferrer),
+          VISITOR_TEXT_LIMITS.host,
+        );
+      }
+
+      await upsertDailyVisitorRecord(input);
+      res.status(202).json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao registrar visitante.";
+      res.status(500).json({ error: message });
+    }
   });
 
   app.get("/.well-known/security.txt", (_req, res) => {
@@ -4386,6 +5057,89 @@ async function bootstrap() {
   app.get("/api/admin/security-tests/events", handleAdminSecurityEventsList);
   app.delete("/api/admin/security-test/events", handleAdminSecurityEventsClear);
   app.delete("/api/admin/security-tests/events", handleAdminSecurityEventsClear);
+
+  app.get("/api/admin/visitors", async (req, res) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    try {
+      const day = normalizeVisitorDateKey(req.query.date);
+      const selfVisitorKey = buildVisitorFingerprintKey(
+        normalizeIpForVisitorTracking(getRequestIp(req)),
+        normalizeVisitorTrackingText(req.headers["user-agent"] ?? "", VISITOR_TEXT_LIMITS.userAgent),
+      );
+      const rows = await selectDailyVisitorsByDateRows(day, VISITOR_DAY_FETCH_LIMIT);
+
+      let totalVisits = 0;
+      let uniqueVisitors = 0;
+      let externalVisits = 0;
+      let externalUniqueVisitors = 0;
+      let selfVisits = 0;
+      let selfUniqueVisitors = 0;
+      let externalLabelSequence = 0;
+
+      const visitors = rows.map((row) => {
+        const isSelf = row.visitor_key === selfVisitorKey;
+        const visits = toRequiredNonNegativeInteger(row.visits, 0);
+        uniqueVisitors += 1;
+        totalVisits += visits;
+
+        if (isSelf) {
+          selfVisits += visits;
+          selfUniqueVisitors += 1;
+        } else {
+          externalVisits += visits;
+          externalUniqueVisitors += 1;
+          externalLabelSequence += 1;
+        }
+
+        const label = isSelf ? "Eu" : `Usuário ${externalLabelSequence}`;
+
+        return {
+          id: row.id,
+          visitorKey: row.visitor_key,
+          label,
+          isSelf,
+          visits,
+          firstSeenAt: row.first_seen_at,
+          lastSeenAt: row.last_seen_at,
+          ip: normalizeIpForVisitorTracking(row.ip ?? ""),
+          entryPath:
+            normalizeVisitorTrackingText(row.entry_path ?? "/", VISITOR_TEXT_LIMITS.path) || "/",
+          referrer: normalizeVisitorTrackingText(row.referrer ?? "", VISITOR_TEXT_LIMITS.referrer),
+          referrerHost: normalizeVisitorTrackingText(
+            row.referrer_host ?? "",
+            VISITOR_TEXT_LIMITS.host,
+          ),
+          country: normalizeVisitorTrackingText(row.country ?? "", VISITOR_TEXT_LIMITS.country),
+          region: normalizeVisitorTrackingText(row.region ?? "", VISITOR_TEXT_LIMITS.region),
+          city: normalizeVisitorTrackingText(row.city ?? "", VISITOR_TEXT_LIMITS.city),
+          userAgent:
+            normalizeVisitorTrackingText(row.user_agent ?? "", VISITOR_TEXT_LIMITS.userAgent) || "-",
+        };
+      });
+
+      res.json({
+        day,
+        timezone: "UTC",
+        generatedAt: Date.now(),
+        selfVisitorKey,
+        summary: {
+          totalVisits,
+          uniqueVisitors,
+          externalVisits,
+          externalUniqueVisitors,
+          selfVisits,
+          selfUniqueVisitors,
+        },
+        visitors,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao carregar visitantes.";
+      res.status(500).json({ error: message });
+    }
+  });
 
   app.get("/api/admin/users", async (req, res) => {
     if (!requireAdmin(req, res)) {
