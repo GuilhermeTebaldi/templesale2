@@ -90,6 +90,10 @@ type AdminVisitorV2 = {
   region: string;
   city: string;
   userAgent: string;
+  deviceType: string;
+  deviceModel: string;
+  deviceOsName: string;
+  deviceOsVersion: string;
 };
 
 type AdminVisitorsResponseV2 = {
@@ -117,7 +121,7 @@ const ADMIN_TOKEN_STORAGE_KEY = "templesale_admin_token_v2";
 const ADMIN_EMAIL_STORAGE_KEY = "templesale_admin_email_v2";
 const SECURITY_EVENTS_LIMIT = 120;
 const SECURITY_EVENTS_POLL_INTERVAL_MS = 3500;
-const VISITORS_POLL_INTERVAL_MS = 5000;
+const VISITORS_POLL_INTERVAL_MS = 2000;
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "")
   .trim()
   .replace(/\/+$/, "");
@@ -435,6 +439,11 @@ function normalizeAdminVisitor(item: unknown): AdminVisitorV2 | null {
     region: String(record.region ?? "").trim(),
     city: String(record.city ?? "").trim(),
     userAgent: String(record.userAgent ?? record.user_agent ?? "").trim() || "-",
+    deviceType: String(record.deviceType ?? record.device_type ?? "").trim() || "-",
+    deviceModel: String(record.deviceModel ?? record.device_model ?? "").trim() || "-",
+    deviceOsName: String(record.deviceOsName ?? record.device_os_name ?? "").trim() || "-",
+    deviceOsVersion:
+      String(record.deviceOsVersion ?? record.device_os_version ?? "").trim() || "-",
   };
 }
 
@@ -608,6 +617,29 @@ function formatDailyVisitCount(visits: number): string {
   return `${safeVisits}x hoje`;
 }
 
+function formatVisitorDevice(visitor: AdminVisitorV2): string {
+  const type = visitor.deviceType !== "-" ? visitor.deviceType : "desconhecido";
+  const model = visitor.deviceModel !== "-" ? visitor.deviceModel : "desconhecido";
+  const osName = visitor.deviceOsName !== "-" ? visitor.deviceOsName : "SO desconhecido";
+  const osVersion = visitor.deviceOsVersion !== "-" ? visitor.deviceOsVersion : "";
+  return `${type} | ${model} | ${osName}${osVersion ? ` ${osVersion}` : ""}`;
+}
+
+function formatVisitorStayDuration(firstSeenAt: number, lastSeenAt: number): string {
+  const elapsedSeconds = Math.max(0, Math.floor((lastSeenAt - firstSeenAt) / 1000));
+  const hours = Math.floor(elapsedSeconds / 3600);
+  const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+  const seconds = elapsedSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
+}
+
 function getSecurityStatusStyles(status: SecurityCheckStatus): string {
   if (status === "pass") {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
@@ -746,6 +778,7 @@ async function adminRequest<T>(
   const response = await fetch(buildApiUrl(path), {
     method,
     credentials: "include",
+    cache: "no-store",
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -1552,15 +1585,37 @@ export default function AdminPanelV2() {
       }, VISITORS_POLL_INTERVAL_MS);
     };
 
-    timer = setTimeout(() => {
-      void poll();
-    }, VISITORS_POLL_INTERVAL_MS);
+    void poll();
 
     return () => {
       cancelled = true;
       if (timer !== null) {
         clearTimeout(timer);
       }
+    };
+  }, [activeView, authToken, isVisitorsLiveEnabled, loadVisitors, sessionEmail, visitorDay]);
+
+  React.useEffect(() => {
+    if (!sessionEmail || !authToken || activeView !== "visitors" || !isVisitorsLiveEnabled) {
+      return;
+    }
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return;
+    }
+
+    const refreshOnVisible = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      void loadVisitors(authToken, visitorDay, { silent: true });
+    };
+
+    window.addEventListener("focus", refreshOnVisible);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+
+    return () => {
+      window.removeEventListener("focus", refreshOnVisible);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
     };
   }, [activeView, authToken, isVisitorsLiveEnabled, loadVisitors, sessionEmail, visitorDay]);
 
@@ -1962,7 +2017,7 @@ export default function AdminPanelV2() {
                           </span>
                           <span className="inline-flex items-center border border-stone-300 px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] text-stone-700">
                             {formatDailyVisitCount(visitor.visits)}
-                        </span>
+                          </span>
                           <span className="text-xs text-stone-600">
                             Entradas no dia: <strong>{visitor.visits}</strong> (
                             <strong>{formatDailyVisitCount(visitor.visits)}</strong>, cada abertura
@@ -1976,7 +2031,13 @@ export default function AdminPanelV2() {
                             Último acesso do dia: {formatDateTime(visitor.lastSeenAt)} (hora da
                             entrada mais recente)
                           </span>
-                      </div>
+                          <span className="text-xs text-stone-500">
+                            Tempo no site hoje (aprox.):{" "}
+                            <strong>
+                              {formatVisitorStayDuration(visitor.firstSeenAt, visitor.lastSeenAt)}
+                            </strong>
+                          </span>
+                        </div>
                       <p className="mt-2 text-xs text-stone-600 break-all">
                         IP detectado: <strong>{visitor.ip}</strong> (endereço de rede usado no
                         acesso; pode ser IP de operadora/proxy)
@@ -1993,6 +2054,10 @@ export default function AdminPanelV2() {
                       <p className="mt-1 text-xs text-stone-600 break-all">
                         Localização estimada pelo IP: <strong>{formatVisitorLocation(visitor)}</strong>{" "}
                         (cidade/estado/país aproximados)
+                      </p>
+                      <p className="mt-1 text-xs text-stone-600 break-all">
+                        Aparelho detectado: <strong>{formatVisitorDevice(visitor)}</strong> (tipo,
+                        modelo e versão do sistema)
                       </p>
                       <p className="mt-1 text-[11px] text-stone-500 break-all">
                         Navegador ou aplicativo usado no acesso: {visitor.userAgent}

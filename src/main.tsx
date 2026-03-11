@@ -7,7 +7,7 @@ import GlobalLoadingOverlay from "./components/GlobalLoadingOverlay";
 import "./index.css";
 import { I18nProvider } from "./i18n/provider";
 
-const VISITOR_PING_HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000;
+const VISITOR_PING_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 const VISITOR_PING_API_BASE = String(import.meta.env.VITE_API_BASE_URL ?? "")
   .trim()
   .replace(/\/+$/, "");
@@ -47,7 +47,7 @@ function sendVisitorPing(source: "entry" | "heartbeat" | "pagehide") {
     headers: { "Content-Type": "application/json" },
     body,
     keepalive: true,
-    credentials: "omit",
+    credentials: "include",
     cache: "no-store",
   }).catch(() => {
     // Ignore network errors: tracking must not block app rendering.

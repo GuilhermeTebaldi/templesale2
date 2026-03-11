@@ -185,6 +185,14 @@ type DailyVisitorUpsertInput = {
   region: string;
   city: string;
   seenAt: number;
+  countAsVisit: boolean;
+};
+
+type VisitorDeviceProfile = {
+  deviceType: string;
+  deviceModel: string;
+  osName: string;
+  osVersion: string;
 };
 
 type SecurityMonitorLevel = "info" | "warn" | "alert";
@@ -476,9 +484,12 @@ const VISITOR_TEXT_LIMITS = {
   city: 120,
 } as const;
 const VISITOR_DAY_FETCH_LIMIT = 2000;
-const VISITOR_VISIT_INCREMENT_MIN_INTERVAL_MS = 1_000;
+const VISITOR_VISIT_INCREMENT_MIN_INTERVAL_MS = 15_000;
 const VISITOR_FINGERPRINT_SALT =
   String(process.env.VISITOR_FINGERPRINT_SALT ?? "").trim() || "templesale-visitor-v1";
+const VISITOR_TRACKING_COOKIE_NAME = "templesale_vid";
+const VISITOR_TRACKING_COOKIE_MAX_AGE_SECONDS = 180 * 24 * 60 * 60;
+const VISITOR_TRACKING_COOKIE_TOKEN_REGEX = /^[a-z0-9_-]{16,120}$/i;
 const securityMonitorEvents: SecurityMonitorEvent[] = [];
 const agentProtectionBySiteId = new globalThis.Map<string, boolean>();
 let securityMonitorEventSequence = 0;
@@ -1083,12 +1094,198 @@ function normalizeIpForVisitorTracking(value: string): string {
   return withoutIpv6Prefix;
 }
 
-function buildVisitorFingerprintKey(ip: string, userAgent: string): string {
-  const normalizedIp = normalizeIpForVisitorTracking(ip);
+function normalizeVisitorVersionToken(value: string): string {
+  const normalized = String(value ?? "")
+    .replace(/_/g, ".")
+    .replace(/[^0-9.]/g, "")
+    .replace(/\.+/g, ".")
+    .replace(/^\.+|\.+$/g, "");
+  if (!normalized) {
+    return "";
+  }
+
+  const parts = normalized.split(".").filter(Boolean);
+  if (parts.length === 0) {
+    return "";
+  }
+
+  if (parts.length === 1) {
+    return parts[0] || "";
+  }
+  return `${parts[0]}.${parts[1]}`;
+}
+
+function resolveVisitorOperatingSystem(userAgent: string): { osName: string; osVersion: string } {
+  const normalized = userAgent.toLowerCase();
+
+  const iosMatch = userAgent.match(/(?:cpu (?:iphone )?os|ios)\s+([0-9_\.]+)/i);
+  if (iosMatch?.[1]) {
+    return {
+      osName: "iOS",
+      osVersion: normalizeVisitorVersionToken(iosMatch[1]),
+    };
+  }
+
+  const androidMatch = userAgent.match(/Android\s+([0-9.]+)/i);
+  if (androidMatch?.[1]) {
+    return {
+      osName: "Android",
+      osVersion: normalizeVisitorVersionToken(androidMatch[1]),
+    };
+  }
+
+  const macMatch = userAgent.match(/Mac OS X\s+([0-9_\.]+)/i);
+  if (macMatch?.[1]) {
+    return {
+      osName: "macOS",
+      osVersion: normalizeVisitorVersionToken(macMatch[1]),
+    };
+  }
+
+  const windowsMatch = userAgent.match(/Windows NT\s+([0-9.]+)/i);
+  if (windowsMatch?.[1]) {
+    return {
+      osName: "Windows",
+      osVersion: normalizeVisitorVersionToken(windowsMatch[1]),
+    };
+  }
+
+  if (normalized.includes("linux")) {
+    return {
+      osName: "Linux",
+      osVersion: "",
+    };
+  }
+
+  return {
+    osName: "unknown",
+    osVersion: "",
+  };
+}
+
+function resolveVisitorDeviceType(userAgent: string): string {
+  const normalized = userAgent.toLowerCase();
+  if (
+    normalized.includes("bot") ||
+    normalized.includes("crawler") ||
+    normalized.includes("spider") ||
+    normalized.includes("vercel-screenshot")
+  ) {
+    return "bot";
+  }
+  if (
+    normalized.includes("ipad") ||
+    normalized.includes("tablet") ||
+    (normalized.includes("android") && !normalized.includes("mobile"))
+  ) {
+    return "tablet";
+  }
+  if (
+    normalized.includes("iphone") ||
+    normalized.includes("ipod") ||
+    normalized.includes("android") ||
+    normalized.includes("mobile")
+  ) {
+    return "mobile";
+  }
+  if (
+    normalized.includes("macintosh") ||
+    normalized.includes("windows") ||
+    normalized.includes("linux") ||
+    normalized.includes("x11")
+  ) {
+    return "desktop";
+  }
+  return "unknown";
+}
+
+function resolveVisitorDeviceModel(userAgent: string): string {
+  if (/iPhone/i.test(userAgent)) {
+    return "iPhone";
+  }
+  if (/iPad/i.test(userAgent)) {
+    return "iPad";
+  }
+
+  const androidMatch = userAgent.match(/Android[^;)]*;\s*([^) ;]{1,60})/i);
+  if (androidMatch?.[1]) {
+    const candidate = androidMatch[1]
+      .replace(/build\/.*/i, "")
+      .replace(/[^a-z0-9._-]/gi, "")
+      .trim();
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  if (/Macintosh/i.test(userAgent)) {
+    return "Mac";
+  }
+  if (/Windows/i.test(userAgent)) {
+    return "PC";
+  }
+  if (/Linux/i.test(userAgent)) {
+    return "Linux";
+  }
+  if (/vercel-screenshot/i.test(userAgent)) {
+    return "vercel-screenshot";
+  }
+  return "unknown";
+}
+
+function buildVisitorDeviceProfile(userAgent: string): VisitorDeviceProfile {
   const normalizedUserAgent = normalizeVisitorTrackingText(userAgent, VISITOR_TEXT_LIMITS.userAgent);
+  const os = resolveVisitorOperatingSystem(normalizedUserAgent);
+  return {
+    deviceType: resolveVisitorDeviceType(normalizedUserAgent),
+    deviceModel: resolveVisitorDeviceModel(normalizedUserAgent),
+    osName: os.osName || "unknown",
+    osVersion: os.osVersion,
+  };
+}
+
+function normalizeVisitorTrackingCookieToken(value: unknown): string {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return "";
+  }
+  if (!VISITOR_TRACKING_COOKIE_TOKEN_REGEX.test(normalized)) {
+    return "";
+  }
+  return normalized;
+}
+
+function createVisitorTrackingCookieToken(): string {
+  return crypto.randomBytes(18).toString("base64url");
+}
+
+function buildVisitorFingerprintKey(input: {
+  ip: string;
+  userAgent: string;
+  visitorToken?: string;
+}): string {
+  const visitorToken = normalizeVisitorTrackingCookieToken(input.visitorToken ?? "");
+  if (visitorToken) {
+    return crypto
+      .createHash("sha256")
+      .update(`${VISITOR_FINGERPRINT_SALT}|cookie|${visitorToken}`)
+      .digest("hex");
+  }
+
+  const normalizedIp = normalizeIpForVisitorTracking(input.ip);
+  const deviceProfile = buildVisitorDeviceProfile(input.userAgent);
+  const profileToken = [
+    deviceProfile.deviceType,
+    deviceProfile.deviceModel,
+    deviceProfile.osName,
+    deviceProfile.osVersion || "0",
+  ]
+    .map((part) => part.trim().toLowerCase())
+    .join("|");
+
   return crypto
     .createHash("sha256")
-    .update(`${VISITOR_FINGERPRINT_SALT}|${normalizedIp}|${normalizedUserAgent}`)
+    .update(`${VISITOR_FINGERPRINT_SALT}|device|${normalizedIp}|${profileToken}`)
     .digest("hex");
 }
 
@@ -1181,7 +1378,15 @@ function shouldTrackDailyVisitorRequest(req: Request, normalizedPath: string): b
   return acceptsHtml || isDocumentNavigation;
 }
 
-function buildDailyVisitorUpsertInput(req: Request, normalizedPath: string): DailyVisitorUpsertInput {
+function buildDailyVisitorUpsertInput(
+  req: Request,
+  normalizedPath: string,
+  options?: {
+    res?: Response;
+    isProduction?: boolean;
+    countAsVisit?: boolean;
+  },
+): DailyVisitorUpsertInput {
   const seenAt = Date.now();
   const ip = normalizeIpForVisitorTracking(getRequestIp(req));
   const userAgent = normalizeVisitorTrackingText(
@@ -1199,10 +1404,19 @@ function buildDailyVisitorUpsertInput(req: Request, normalizedPath: string): Dai
   const entryPath =
     normalizeVisitorTrackingText(normalizedPath || "/", VISITOR_TEXT_LIMITS.path) || "/";
   const geo = resolveVisitorGeoHeaders(req);
+  const visitorToken = resolveVisitorTrackingCookieToken(
+    req,
+    options?.res,
+    Boolean(options?.isProduction),
+  );
 
   return {
     visitDate: resolveVisitorDateKeyFromTimestamp(seenAt),
-    visitorKey: buildVisitorFingerprintKey(ip, userAgent),
+    visitorKey: buildVisitorFingerprintKey({
+      ip,
+      userAgent,
+      visitorToken,
+    }),
     ip,
     userAgent,
     entryPath,
@@ -1212,6 +1426,7 @@ function buildDailyVisitorUpsertInput(req: Request, normalizedPath: string): Dai
     region: geo.region,
     city: geo.city,
     seenAt,
+    countAsVisit: options?.countAsVisit !== false,
   };
 }
 
@@ -1837,6 +2052,8 @@ async function upsertDailyVisitorRecord(input: DailyVisitorUpsertInput): Promise
   if (IS_DEV_REMOTE_READ_ONLY) {
     return;
   }
+  const initialVisits = input.countAsVisit ? 1 : 0;
+  const countAsVisitFlag = input.countAsVisit ? 1 : 0;
 
   if (pgPool) {
     await pgPool.query(
@@ -1857,14 +2074,15 @@ async function upsertDailyVisitorRecord(input: DailyVisitorUpsertInput): Promise
           visits
         )
         VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, 1
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12
         )
         ON CONFLICT (visit_date, visitor_key)
         DO UPDATE SET
           last_seen_at = EXCLUDED.last_seen_at,
           visits = CASE
-            WHEN site_daily_visitors.last_seen_at <=
-              (EXCLUDED.last_seen_at - $12)
+            WHEN $13 = 1
+              AND site_daily_visitors.last_seen_at <=
+                (EXCLUDED.last_seen_at - $14)
             THEN site_daily_visitors.visits + 1
             ELSE site_daily_visitors.visits
           END,
@@ -1910,6 +2128,8 @@ async function upsertDailyVisitorRecord(input: DailyVisitorUpsertInput): Promise
         input.region,
         input.city,
         input.seenAt,
+        initialVisits,
+        countAsVisitFlag,
         VISITOR_VISIT_INCREMENT_MIN_INTERVAL_MS,
       ],
     );
@@ -1947,14 +2167,15 @@ async function upsertDailyVisitorRecord(input: DailyVisitorUpsertInput): Promise
           @city,
           @seen_at,
           @seen_at,
-          1
+          @initial_visits
         )
         ON CONFLICT(visit_date, visitor_key)
         DO UPDATE SET
           last_seen_at = excluded.last_seen_at,
           visits = CASE
-            WHEN site_daily_visitors.last_seen_at <=
-              (excluded.last_seen_at - @increment_min_interval_ms)
+            WHEN @count_as_visit = 1
+              AND site_daily_visitors.last_seen_at <=
+                (excluded.last_seen_at - @increment_min_interval_ms)
             THEN site_daily_visitors.visits + 1
             ELSE site_daily_visitors.visits
           END,
@@ -2001,6 +2222,8 @@ async function upsertDailyVisitorRecord(input: DailyVisitorUpsertInput): Promise
       region: input.region,
       city: input.city,
       seen_at: input.seenAt,
+      initial_visits: initialVisits,
+      count_as_visit: countAsVisitFlag,
       increment_min_interval_ms: VISITOR_VISIT_INCREMENT_MIN_INTERVAL_MS,
     });
 }
@@ -3967,6 +4190,42 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
   return parsed;
 }
 
+function visitorTrackingCookieOptions(isProduction: boolean) {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: isProduction,
+    path: "/",
+    maxAge: VISITOR_TRACKING_COOKIE_MAX_AGE_SECONDS * 1000,
+  };
+}
+
+function setVisitorTrackingCookie(res: Response, token: string, isProduction: boolean) {
+  res.cookie(VISITOR_TRACKING_COOKIE_NAME, token, visitorTrackingCookieOptions(isProduction));
+}
+
+function getVisitorTrackingCookieTokenFromRequest(req: Request): string {
+  const cookies = parseCookies(req.headers.cookie);
+  return normalizeVisitorTrackingCookieToken(cookies[VISITOR_TRACKING_COOKIE_NAME]);
+}
+
+function resolveVisitorTrackingCookieToken(
+  req: Request,
+  res: Response | undefined,
+  isProduction: boolean,
+): string {
+  const existingToken = getVisitorTrackingCookieTokenFromRequest(req);
+  if (existingToken) {
+    return existingToken;
+  }
+
+  const newToken = createVisitorTrackingCookieToken();
+  if (res) {
+    setVisitorTrackingCookie(res, newToken, isProduction);
+  }
+  return newToken;
+}
+
 function getSessionTokenFromRequest(req: Request): string | null {
   const cookies = parseCookies(req.headers.cookie);
   const cookieToken = cookies[SESSION_COOKIE_NAME];
@@ -4501,7 +4760,10 @@ async function bootstrap() {
       return;
     }
 
-    const visitorInput = buildDailyVisitorUpsertInput(req, normalizedPath);
+    const visitorInput = buildDailyVisitorUpsertInput(req, normalizedPath, {
+      res,
+      isProduction,
+    });
     res.on("finish", () => {
       const status = Number(res.statusCode || 0);
       if (status < 200 || status >= 400) {
@@ -4613,7 +4875,13 @@ async function bootstrap() {
       const normalizedPath = normalizeSecurityMonitorPath(String(rawPath ?? "/"));
       const safePath =
         !normalizedPath || normalizedPath.startsWith("/api") ? "/" : normalizedPath;
-      const input = buildDailyVisitorUpsertInput(req, safePath);
+      const source = String(body.source ?? "").trim().toLowerCase();
+      const shouldCountAsVisit = source === "entry";
+      const input = buildDailyVisitorUpsertInput(req, safePath, {
+        res,
+        isProduction,
+        countAsVisit: shouldCountAsVisit,
+      });
 
       const bodyReferrer = normalizeVisitorTrackingText(
         body.referrer ?? body.referer ?? "",
@@ -5065,10 +5333,15 @@ async function bootstrap() {
 
     try {
       const day = normalizeVisitorDateKey(req.query.date);
-      const selfVisitorKey = buildVisitorFingerprintKey(
-        normalizeIpForVisitorTracking(getRequestIp(req)),
-        normalizeVisitorTrackingText(req.headers["user-agent"] ?? "", VISITOR_TEXT_LIMITS.userAgent),
-      );
+      const selfVisitorToken = getVisitorTrackingCookieTokenFromRequest(req);
+      const selfVisitorKey = buildVisitorFingerprintKey({
+        ip: normalizeIpForVisitorTracking(getRequestIp(req)),
+        userAgent: normalizeVisitorTrackingText(
+          req.headers["user-agent"] ?? "",
+          VISITOR_TEXT_LIMITS.userAgent,
+        ),
+        visitorToken: selfVisitorToken,
+      });
       const rows = await selectDailyVisitorsByDateRows(day, VISITOR_DAY_FETCH_LIMIT);
 
       let totalVisits = 0;
@@ -5082,6 +5355,9 @@ async function bootstrap() {
       const visitors = rows.map((row) => {
         const isSelf = row.visitor_key === selfVisitorKey;
         const visits = toRequiredNonNegativeInteger(row.visits, 0);
+        const normalizedUserAgent =
+          normalizeVisitorTrackingText(row.user_agent ?? "", VISITOR_TEXT_LIMITS.userAgent) || "-";
+        const deviceProfile = buildVisitorDeviceProfile(normalizedUserAgent);
         uniqueVisitors += 1;
         totalVisits += visits;
 
@@ -5115,8 +5391,11 @@ async function bootstrap() {
           country: normalizeVisitorTrackingText(row.country ?? "", VISITOR_TEXT_LIMITS.country),
           region: normalizeVisitorTrackingText(row.region ?? "", VISITOR_TEXT_LIMITS.region),
           city: normalizeVisitorTrackingText(row.city ?? "", VISITOR_TEXT_LIMITS.city),
-          userAgent:
-            normalizeVisitorTrackingText(row.user_agent ?? "", VISITOR_TEXT_LIMITS.userAgent) || "-",
+          userAgent: normalizedUserAgent,
+          deviceType: deviceProfile.deviceType,
+          deviceModel: deviceProfile.deviceModel,
+          deviceOsName: deviceProfile.osName,
+          deviceOsVersion: deviceProfile.osVersion,
         };
       });
 
