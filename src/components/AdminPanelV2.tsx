@@ -600,6 +600,14 @@ function formatVisitorSource(visitor: AdminVisitorV2): string {
   return "Acesso direto";
 }
 
+function formatDailyVisitCount(visits: number): string {
+  const safeVisits = Math.max(0, Math.floor(visits));
+  if (safeVisits === 1) {
+    return "1x hoje";
+  }
+  return `${safeVisits}x hoje`;
+}
+
 function getSecurityStatusStyles(status: SecurityCheckStatus): string {
   if (status === "pass") {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
@@ -1951,10 +1959,14 @@ export default function AdminPanelV2() {
                             }`}
                           >
                             {visitor.label}
+                          </span>
+                          <span className="inline-flex items-center border border-stone-300 px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] text-stone-700">
+                            {formatDailyVisitCount(visitor.visits)}
                         </span>
                           <span className="text-xs text-stone-600">
-                            Entradas no dia: <strong>{visitor.visits}</strong> (cada abertura do
-                            site por esse visitante conta 1)
+                            Entradas no dia: <strong>{visitor.visits}</strong> (
+                            <strong>{formatDailyVisitCount(visitor.visits)}</strong>, cada abertura
+                            do site por esse visitante conta 1)
                           </span>
                           <span className="text-xs text-stone-500">
                             Primeiro acesso do dia: {formatDateTime(visitor.firstSeenAt)} (hora em
