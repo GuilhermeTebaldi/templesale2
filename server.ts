@@ -490,6 +490,7 @@ const VISITOR_FINGERPRINT_SALT =
 const VISITOR_TRACKING_COOKIE_NAME = "templesale_vid";
 const VISITOR_TRACKING_COOKIE_MAX_AGE_SECONDS = 180 * 24 * 60 * 60;
 const VISITOR_TRACKING_COOKIE_TOKEN_REGEX = /^[a-z0-9_-]{16,120}$/i;
+const ADMIN_SELF_DEVICE_SIGNATURES_FETCH_LIMIT = 200;
 const securityMonitorEvents: SecurityMonitorEvent[] = [];
 const agentProtectionBySiteId = new globalThis.Map<string, boolean>();
 let securityMonitorEventSequence = 0;
@@ -1244,6 +1245,33 @@ function buildVisitorDeviceProfile(userAgent: string): VisitorDeviceProfile {
   };
 }
 
+function isReliableVisitorDeviceProfile(profile: VisitorDeviceProfile): boolean {
+  if (profile.deviceType === "unknown" || profile.deviceType === "bot") {
+    return false;
+  }
+  if (profile.deviceModel === "unknown") {
+    return false;
+  }
+  if (profile.osName === "unknown") {
+    return false;
+  }
+  return true;
+}
+
+function buildVisitorDeviceProfileSignatureKey(profile: VisitorDeviceProfile): string {
+  if (!isReliableVisitorDeviceProfile(profile)) {
+    return "";
+  }
+  return [
+    profile.deviceType,
+    profile.deviceModel,
+    profile.osName,
+    profile.osVersion || "0",
+  ]
+    .map((part) => part.trim().toLowerCase())
+    .join("|");
+}
+
 function normalizeVisitorTrackingCookieToken(value: unknown): string {
   const normalized = String(value ?? "").trim();
   if (!normalized) {
@@ -1537,6 +1565,19 @@ function initializeSqliteDatabase() {
       visits INTEGER NOT NULL DEFAULT 1
     );
 
+    CREATE TABLE IF NOT EXISTS admin_visitor_self_signatures (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      admin_email TEXT NOT NULL,
+      signature_key TEXT NOT NULL,
+      device_type TEXT NOT NULL DEFAULT '',
+      device_model TEXT NOT NULL DEFAULT '',
+      os_name TEXT NOT NULL DEFAULT '',
+      os_version TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+      last_seen_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+      UNIQUE(admin_email, signature_key)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id);
@@ -1552,6 +1593,10 @@ function initializeSqliteDatabase() {
       ON site_daily_visitors(visit_date, visitor_key);
     CREATE INDEX IF NOT EXISTS idx_site_daily_visitors_date_last_seen
       ON site_daily_visitors(visit_date, last_seen_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_self_signatures_unique
+      ON admin_visitor_self_signatures(admin_email, signature_key);
+    CREATE INDEX IF NOT EXISTS idx_admin_self_signatures_email_last_seen
+      ON admin_visitor_self_signatures(admin_email, last_seen_at DESC);
   `);
 
   const productColumns = db.prepare("PRAGMA table_info(products)").all() as Array<{ name: string }>;
@@ -1680,12 +1725,60 @@ function initializeSqliteDatabase() {
     db.exec("ALTER TABLE site_daily_visitors ADD COLUMN visits INTEGER NOT NULL DEFAULT 1");
   }
 
+  const selfSignatureColumns = db
+    .prepare("PRAGMA table_info(admin_visitor_self_signatures)")
+    .all() as Array<{ name: string }>;
+  if (!selfSignatureColumns.some((column) => column.name === "admin_email")) {
+    db.exec(
+      "ALTER TABLE admin_visitor_self_signatures ADD COLUMN admin_email TEXT NOT NULL DEFAULT ''",
+    );
+  }
+  if (!selfSignatureColumns.some((column) => column.name === "signature_key")) {
+    db.exec(
+      "ALTER TABLE admin_visitor_self_signatures ADD COLUMN signature_key TEXT NOT NULL DEFAULT ''",
+    );
+  }
+  if (!selfSignatureColumns.some((column) => column.name === "device_type")) {
+    db.exec(
+      "ALTER TABLE admin_visitor_self_signatures ADD COLUMN device_type TEXT NOT NULL DEFAULT ''",
+    );
+  }
+  if (!selfSignatureColumns.some((column) => column.name === "device_model")) {
+    db.exec(
+      "ALTER TABLE admin_visitor_self_signatures ADD COLUMN device_model TEXT NOT NULL DEFAULT ''",
+    );
+  }
+  if (!selfSignatureColumns.some((column) => column.name === "os_name")) {
+    db.exec("ALTER TABLE admin_visitor_self_signatures ADD COLUMN os_name TEXT NOT NULL DEFAULT ''");
+  }
+  if (!selfSignatureColumns.some((column) => column.name === "os_version")) {
+    db.exec(
+      "ALTER TABLE admin_visitor_self_signatures ADD COLUMN os_version TEXT NOT NULL DEFAULT ''",
+    );
+  }
+  if (!selfSignatureColumns.some((column) => column.name === "created_at")) {
+    db.exec(
+      "ALTER TABLE admin_visitor_self_signatures ADD COLUMN created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)",
+    );
+  }
+  if (!selfSignatureColumns.some((column) => column.name === "last_seen_at")) {
+    db.exec(
+      "ALTER TABLE admin_visitor_self_signatures ADD COLUMN last_seen_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)",
+    );
+  }
+
   db.exec("CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)");
   db.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_site_daily_visitors_date_key ON site_daily_visitors(visit_date, visitor_key)",
   );
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_site_daily_visitors_date_last_seen ON site_daily_visitors(visit_date, last_seen_at DESC)",
+  );
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_self_signatures_unique ON admin_visitor_self_signatures(admin_email, signature_key)",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_admin_self_signatures_email_last_seen ON admin_visitor_self_signatures(admin_email, last_seen_at DESC)",
   );
   sqliteDb = db;
 }
@@ -1799,6 +1892,19 @@ async function initializePostgresDatabase() {
         visits INTEGER NOT NULL DEFAULT 1
       )
     `,
+    `
+      CREATE TABLE IF NOT EXISTS admin_visitor_self_signatures (
+        id BIGSERIAL PRIMARY KEY,
+        admin_email TEXT NOT NULL,
+        signature_key TEXT NOT NULL,
+        device_type TEXT NOT NULL DEFAULT '',
+        device_model TEXT NOT NULL DEFAULT '',
+        os_name TEXT NOT NULL DEFAULT '',
+        os_version TEXT NOT NULL DEFAULT '',
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT * 1000),
+        last_seen_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT * 1000)
+      )
+    `,
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT",
@@ -1863,6 +1969,14 @@ async function initializePostgresDatabase() {
     "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS first_seen_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT * 1000)",
     "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS last_seen_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT * 1000)",
     "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS visits INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE admin_visitor_self_signatures ADD COLUMN IF NOT EXISTS admin_email TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE admin_visitor_self_signatures ADD COLUMN IF NOT EXISTS signature_key TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE admin_visitor_self_signatures ADD COLUMN IF NOT EXISTS device_type TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE admin_visitor_self_signatures ADD COLUMN IF NOT EXISTS device_model TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE admin_visitor_self_signatures ADD COLUMN IF NOT EXISTS os_name TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE admin_visitor_self_signatures ADD COLUMN IF NOT EXISTS os_version TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE admin_visitor_self_signatures ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT * 1000)",
+    "ALTER TABLE admin_visitor_self_signatures ADD COLUMN IF NOT EXISTS last_seen_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT * 1000)",
     "UPDATE products SET title = COALESCE(NULLIF(BTRIM(title), ''), NULLIF(BTRIM(name), ''), 'Produto sem título') WHERE title IS NULL OR BTRIM(title) = ''",
     "UPDATE products SET image_url = COALESCE(NULLIF(BTRIM(image_url), ''), NULLIF(BTRIM(image), ''), '') WHERE image_url IS NULL OR BTRIM(image_url) = ''",
     "UPDATE products SET image_urls = COALESCE(NULLIF(BTRIM(image_urls), ''), images, '[]') WHERE image_urls IS NULL OR BTRIM(image_urls) = ''",
@@ -1906,6 +2020,8 @@ async function initializePostgresDatabase() {
     "CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_site_daily_visitors_date_key ON site_daily_visitors(visit_date, visitor_key)",
     "CREATE INDEX IF NOT EXISTS idx_site_daily_visitors_date_last_seen ON site_daily_visitors(visit_date, last_seen_at DESC)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_self_signatures_unique ON admin_visitor_self_signatures(admin_email, signature_key)",
+    "CREATE INDEX IF NOT EXISTS idx_admin_self_signatures_email_last_seen ON admin_visitor_self_signatures(admin_email, last_seen_at DESC)",
   ];
 
   for (const statement of migrationStatements) {
@@ -2288,6 +2404,152 @@ async function selectDailyVisitorsByDateRows(
     )
     .all(visitDate, safeLimit) as Array<Record<string, unknown>>;
   return rows.map(normalizeDailyVisitorRow);
+}
+
+async function upsertAdminSelfDeviceSignature(
+  adminEmail: string,
+  profile: VisitorDeviceProfile,
+): Promise<void> {
+  const normalizedEmail = String(adminEmail ?? "").trim().toLowerCase();
+  if (!normalizedEmail) {
+    return;
+  }
+
+  const signatureKey = buildVisitorDeviceProfileSignatureKey(profile);
+  if (!signatureKey) {
+    return;
+  }
+
+  const normalizedDeviceType = normalizeVisitorTrackingText(profile.deviceType, 30);
+  const normalizedDeviceModel = normalizeVisitorTrackingText(profile.deviceModel, 80);
+  const normalizedOsName = normalizeVisitorTrackingText(profile.osName, 40);
+  const normalizedOsVersion = normalizeVisitorTrackingText(profile.osVersion, 24);
+  const seenAt = Date.now();
+
+  if (pgPool) {
+    await pgPool.query(
+      `
+        INSERT INTO admin_visitor_self_signatures (
+          admin_email,
+          signature_key,
+          device_type,
+          device_model,
+          os_name,
+          os_version,
+          created_at,
+          last_seen_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+        ON CONFLICT (admin_email, signature_key)
+        DO UPDATE SET
+          device_type = EXCLUDED.device_type,
+          device_model = EXCLUDED.device_model,
+          os_name = EXCLUDED.os_name,
+          os_version = EXCLUDED.os_version,
+          last_seen_at = EXCLUDED.last_seen_at
+      `,
+      [
+        normalizedEmail,
+        signatureKey,
+        normalizedDeviceType,
+        normalizedDeviceModel,
+        normalizedOsName,
+        normalizedOsVersion,
+        seenAt,
+      ],
+    );
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        INSERT INTO admin_visitor_self_signatures (
+          admin_email,
+          signature_key,
+          device_type,
+          device_model,
+          os_name,
+          os_version,
+          created_at,
+          last_seen_at
+        )
+        VALUES (
+          @admin_email,
+          @signature_key,
+          @device_type,
+          @device_model,
+          @os_name,
+          @os_version,
+          @seen_at,
+          @seen_at
+        )
+        ON CONFLICT(admin_email, signature_key)
+        DO UPDATE SET
+          device_type = excluded.device_type,
+          device_model = excluded.device_model,
+          os_name = excluded.os_name,
+          os_version = excluded.os_version,
+          last_seen_at = excluded.last_seen_at
+      `,
+    )
+    .run({
+      admin_email: normalizedEmail,
+      signature_key: signatureKey,
+      device_type: normalizedDeviceType,
+      device_model: normalizedDeviceModel,
+      os_name: normalizedOsName,
+      os_version: normalizedOsVersion,
+      seen_at: seenAt,
+    });
+}
+
+async function selectAdminSelfDeviceSignatureKeys(adminEmail: string): Promise<Set<string>> {
+  const normalizedEmail = String(adminEmail ?? "").trim().toLowerCase();
+  if (!normalizedEmail) {
+    return new Set<string>();
+  }
+
+  let rows: Array<Record<string, unknown>> = [];
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          signature_key
+        FROM admin_visitor_self_signatures
+        WHERE admin_email = $1
+        ORDER BY last_seen_at DESC, id DESC
+        LIMIT $2
+      `,
+      [normalizedEmail, ADMIN_SELF_DEVICE_SIGNATURES_FETCH_LIMIT],
+    );
+    rows = result.rows;
+  } else {
+    rows = requireSqliteDb()
+      .prepare(
+        `
+          SELECT
+            signature_key
+          FROM admin_visitor_self_signatures
+          WHERE admin_email = ?
+          ORDER BY last_seen_at DESC, id DESC
+          LIMIT ?
+        `,
+      )
+      .all(normalizedEmail, ADMIN_SELF_DEVICE_SIGNATURES_FETCH_LIMIT) as Array<
+      Record<string, unknown>
+    >;
+  }
+
+  const signatures = new Set<string>();
+  for (const row of rows) {
+    const signature = normalizeVisitorTrackingText(row.signature_key ?? "", 200).toLowerCase();
+    if (!signature) {
+      continue;
+    }
+    signatures.add(signature);
+  }
+  return signatures;
 }
 
 async function selectProductByIdRow(productId: number): Promise<ProductRow | undefined> {
@@ -5327,21 +5589,40 @@ async function bootstrap() {
   app.delete("/api/admin/security-tests/events", handleAdminSecurityEventsClear);
 
   app.get("/api/admin/visitors", async (req, res) => {
-    if (!requireAdmin(req, res)) {
+    const adminSession = requireAdmin(req, res);
+    if (!adminSession) {
       return;
     }
 
     try {
       const day = normalizeVisitorDateKey(req.query.date);
+      const selfIp = normalizeIpForVisitorTracking(getRequestIp(req));
+      const selfUserAgent = normalizeVisitorTrackingText(
+        req.headers["user-agent"] ?? "",
+        VISITOR_TEXT_LIMITS.userAgent,
+      );
+      const selfDeviceProfile = buildVisitorDeviceProfile(selfUserAgent);
+      const selfDeviceProfileSignature = buildVisitorDeviceProfileSignatureKey(
+        selfDeviceProfile,
+      ).toLowerCase();
       const selfVisitorToken = getVisitorTrackingCookieTokenFromRequest(req);
       const selfVisitorKey = buildVisitorFingerprintKey({
-        ip: normalizeIpForVisitorTracking(getRequestIp(req)),
-        userAgent: normalizeVisitorTrackingText(
-          req.headers["user-agent"] ?? "",
-          VISITOR_TEXT_LIMITS.userAgent,
-        ),
+        ip: selfIp,
+        userAgent: selfUserAgent,
         visitorToken: selfVisitorToken,
       });
+      let selfSignatureKeys = new Set<string>();
+      try {
+        await upsertAdminSelfDeviceSignature(adminSession.email, selfDeviceProfile);
+        selfSignatureKeys = await selectAdminSelfDeviceSignatureKeys(adminSession.email);
+      } catch (signatureError) {
+        const signatureMessage =
+          signatureError instanceof Error ? signatureError.message : "unknown";
+        console.error("Admin self-signature sync failed:", signatureMessage);
+      }
+      if (selfDeviceProfileSignature) {
+        selfSignatureKeys.add(selfDeviceProfileSignature);
+      }
       const rows = await selectDailyVisitorsByDateRows(day, VISITOR_DAY_FETCH_LIMIT);
 
       let totalVisits = 0;
@@ -5351,13 +5632,31 @@ async function bootstrap() {
       let selfVisits = 0;
       let selfUniqueVisitors = 0;
       let externalLabelSequence = 0;
+      const pendingSelfProfiles = new Map<string, VisitorDeviceProfile>();
 
       const visitors = rows.map((row) => {
-        const isSelf = row.visitor_key === selfVisitorKey;
         const visits = toRequiredNonNegativeInteger(row.visits, 0);
+        const normalizedIp = normalizeIpForVisitorTracking(row.ip ?? "");
         const normalizedUserAgent =
           normalizeVisitorTrackingText(row.user_agent ?? "", VISITOR_TEXT_LIMITS.userAgent) || "-";
         const deviceProfile = buildVisitorDeviceProfile(normalizedUserAgent);
+        const rowDeviceProfileSignature = buildVisitorDeviceProfileSignatureKey(deviceProfile).toLowerCase();
+        const isSelfByKey = row.visitor_key === selfVisitorKey;
+        const isSelfBySavedDeviceProfile = rowDeviceProfileSignature
+          ? selfSignatureKeys.has(rowDeviceProfileSignature)
+          : false;
+        const isSelfByCurrentDeviceIp =
+          Boolean(rowDeviceProfileSignature) &&
+          Boolean(selfDeviceProfileSignature) &&
+          rowDeviceProfileSignature === selfDeviceProfileSignature &&
+          normalizedIp === selfIp;
+        const isSelf = isSelfByKey || isSelfBySavedDeviceProfile || isSelfByCurrentDeviceIp;
+
+        if (isSelf && rowDeviceProfileSignature && !selfSignatureKeys.has(rowDeviceProfileSignature)) {
+          selfSignatureKeys.add(rowDeviceProfileSignature);
+          pendingSelfProfiles.set(rowDeviceProfileSignature, deviceProfile);
+        }
+
         uniqueVisitors += 1;
         totalVisits += visits;
 
@@ -5380,7 +5679,7 @@ async function bootstrap() {
           visits,
           firstSeenAt: row.first_seen_at,
           lastSeenAt: row.last_seen_at,
-          ip: normalizeIpForVisitorTracking(row.ip ?? ""),
+          ip: normalizedIp,
           entryPath:
             normalizeVisitorTrackingText(row.entry_path ?? "/", VISITOR_TEXT_LIMITS.path) || "/",
           referrer: normalizeVisitorTrackingText(row.referrer ?? "", VISITOR_TEXT_LIMITS.referrer),
@@ -5398,6 +5697,16 @@ async function bootstrap() {
           deviceOsVersion: deviceProfile.osVersion,
         };
       });
+
+      for (const profile of pendingSelfProfiles.values()) {
+        try {
+          await upsertAdminSelfDeviceSignature(adminSession.email, profile);
+        } catch (signatureError) {
+          const signatureMessage =
+            signatureError instanceof Error ? signatureError.message : "unknown";
+          console.error("Admin self-signature persist failed:", signatureMessage);
+        }
+      }
 
       res.json({
         day,
