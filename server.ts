@@ -476,7 +476,7 @@ const VISITOR_TEXT_LIMITS = {
   city: 120,
 } as const;
 const VISITOR_DAY_FETCH_LIMIT = 2000;
-const VISITOR_VISIT_INCREMENT_MIN_INTERVAL_MS = 30_000;
+const VISITOR_VISIT_INCREMENT_MIN_INTERVAL_MS = 1_000;
 const VISITOR_FINGERPRINT_SALT =
   String(process.env.VISITOR_FINGERPRINT_SALT ?? "").trim() || "templesale-visitor-v1";
 const securityMonitorEvents: SecurityMonitorEvent[] = [];

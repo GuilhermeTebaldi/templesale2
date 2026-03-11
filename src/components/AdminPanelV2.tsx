@@ -117,6 +117,7 @@ const ADMIN_TOKEN_STORAGE_KEY = "templesale_admin_token_v2";
 const ADMIN_EMAIL_STORAGE_KEY = "templesale_admin_email_v2";
 const SECURITY_EVENTS_LIMIT = 120;
 const SECURITY_EVENTS_POLL_INTERVAL_MS = 3500;
+const VISITORS_POLL_INTERVAL_MS = 5000;
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "")
   .trim()
   .replace(/\/+$/, "");
@@ -1023,6 +1024,7 @@ export default function AdminPanelV2() {
   const [visitorsUpdatedAt, setVisitorsUpdatedAt] = React.useState<number | null>(null);
   const [isLoadingVisitors, setIsLoadingVisitors] = React.useState(false);
   const [visitorsError, setVisitorsError] = React.useState("");
+  const [isVisitorsLiveEnabled, setIsVisitorsLiveEnabled] = React.useState(true);
   const [query, setQuery] = React.useState("");
   const [isLoadingUsers, setIsLoadingUsers] = React.useState(false);
   const [usersError, setUsersError] = React.useState("");
@@ -1152,6 +1154,7 @@ export default function AdminPanelV2() {
           setVisitorsSummary(createEmptyVisitorsSummary());
           setVisitorsUpdatedAt(null);
           setVisitorsError("");
+          setIsVisitorsLiveEnabled(true);
           if (!isUnauthorizedApiError(error)) {
             const message =
               error instanceof Error ? error.message : "Falha ao restaurar sessão de admin.";
@@ -1203,6 +1206,7 @@ export default function AdminPanelV2() {
       setVisitorsSummary(createEmptyVisitorsSummary());
       setVisitorsUpdatedAt(null);
       setVisitorsError("");
+      setIsVisitorsLiveEnabled(true);
       clearSessionStorage();
     } finally {
       setIsAuthSubmitting(false);
@@ -1225,6 +1229,7 @@ export default function AdminPanelV2() {
       setVisitorsUpdatedAt(null);
       setIsLoadingVisitors(false);
       setVisitorsError("");
+      setIsVisitorsLiveEnabled(true);
       setUsersError("");
       setAuthError("");
       setQuery("");
@@ -1516,6 +1521,41 @@ export default function AdminPanelV2() {
     void loadVisitors(authToken, visitorDay);
   }, [activeView, authToken, loadVisitors, sessionEmail, visitorDay]);
 
+  React.useEffect(() => {
+    if (!sessionEmail || !authToken || activeView !== "visitors" || !isVisitorsLiveEnabled) {
+      return;
+    }
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      if (cancelled) {
+        return;
+      }
+
+      await loadVisitors(authToken, visitorDay, { silent: true });
+      if (cancelled) {
+        return;
+      }
+
+      timer = setTimeout(() => {
+        void poll();
+      }, VISITORS_POLL_INTERVAL_MS);
+    };
+
+    timer = setTimeout(() => {
+      void poll();
+    }, VISITORS_POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+    };
+  }, [activeView, authToken, isVisitorsLiveEnabled, loadVisitors, sessionEmail, visitorDay]);
+
   if (isBootstrapping) {
     return (
       <div className="min-h-screen bg-[#fdfcfb] flex items-center justify-center">
@@ -1783,12 +1823,34 @@ export default function AdminPanelV2() {
                     <label className="text-[11px] uppercase tracking-[0.12em] text-stone-500">
                       Dia (UTC)
                     </label>
-                    <input
-                      type="date"
-                      value={visitorDay}
-                      onChange={(event) => setVisitorDay(normalizeDateKey(event.target.value))}
-                      className="border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-stone-900"
-                    />
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="date"
+                        value={visitorDay}
+                        onChange={(event) => setVisitorDay(normalizeDateKey(event.target.value))}
+                        className="border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-stone-900"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void loadVisitors(authToken, visitorDay)}
+                        disabled={isLoadingVisitors}
+                        className="inline-flex items-center justify-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-800 disabled:opacity-60"
+                      >
+                        {isLoadingVisitors ? (
+                          <LoaderCircle className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        )}
+                        Atualizar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsVisitorsLiveEnabled((current) => !current)}
+                        className="inline-flex items-center justify-center border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-800"
+                      >
+                        {isVisitorsLiveEnabled ? "Pausar ao vivo" : "Retomar ao vivo"}
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-3 text-xs text-stone-500">
@@ -1798,6 +1860,10 @@ export default function AdminPanelV2() {
                   {visitorsUpdatedAt !== null && (
                     <span>Atualizado em: {formatDateTime(visitorsUpdatedAt)}</span>
                   )}
+                  <span>
+                    Atualização automática:{" "}
+                    <strong>{isVisitorsLiveEnabled ? "ligada" : "pausada"}</strong>
+                  </span>
                 </div>
               </article>
 
