@@ -1247,24 +1247,33 @@ export default function App() {
     setIsMapOpen(true);
   }, [activeCategory]);
 
-  const scrollToTopSmooth = React.useCallback(() => {
-    if (typeof window === "undefined") {
+  const scrollPageToTop = React.useCallback(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") {
       return;
     }
 
-    try {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch {
-      window.scrollTo(0, 0);
-    }
+    const applyScrollTop = () => {
+      try {
+        window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      } catch {
+        window.scrollTo(0, 0);
+      }
+
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    };
+
+    applyScrollTop();
+    window.requestAnimationFrame(applyScrollTop);
+    window.setTimeout(applyScrollTop, 60);
   }, []);
 
   const handleCategorySelect = React.useCallback(
     (categoryKey: string) => {
       setActiveCategory(categoryKey);
-      scrollToTopSmooth();
+      scrollPageToTop();
     },
-    [scrollToTopSmooth],
+    [scrollPageToTop],
   );
 
   const availableCategoryFilters = React.useMemo(() => {
@@ -1872,7 +1881,7 @@ export default function App() {
                       <button
                         key={category.key}
                         onClick={() => {
-                          setActiveCategory(category.key);
+                          handleCategorySelect(category.key);
                           setSearchQuery("");
                           openMapWithSearch(category.key);
                         }}

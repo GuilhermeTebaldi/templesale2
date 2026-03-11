@@ -126,6 +126,20 @@ export default function ProductDetails({
   const [replyDraftByCommentId, setReplyDraftByCommentId] = React.useState<Record<number, string>>({});
   const [submittingReplyByCommentId, setSubmittingReplyByCommentId] = React.useState<Record<number, boolean>>({});
   const detailsScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const scrollDetailsToTop = React.useCallback((behavior: ScrollBehavior = "auto") => {
+    const container = detailsScrollRef.current;
+    if (container) {
+      if (typeof container.scrollTo === "function") {
+        container.scrollTo({ top: 0, behavior });
+      } else {
+        container.scrollTop = 0;
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior });
+    }
+  }, []);
 
   if (!product) return null;
 
@@ -271,20 +285,9 @@ export default function ProductDetails({
   }, [product.id, availableQuantity]);
 
   React.useEffect(() => {
-    const container = detailsScrollRef.current;
-    if (!container) {
-      return;
-    }
-
     const frameId =
       typeof window !== "undefined"
-        ? window.requestAnimationFrame(() => {
-            if (typeof container.scrollTo === "function") {
-              container.scrollTo({ top: 0, behavior: "smooth" });
-              return;
-            }
-            container.scrollTop = 0;
-          })
+        ? window.requestAnimationFrame(() => scrollDetailsToTop("auto"))
         : null;
 
     return () => {
@@ -292,7 +295,7 @@ export default function ProductDetails({
         window.cancelAnimationFrame(frameId);
       }
     };
-  }, [product.id]);
+  }, [product.id, scrollDetailsToTop]);
 
   React.useEffect(() => {
     const localDigits = String(product.sellerWhatsappNumber ?? "").replace(/\D/g, "");
@@ -556,6 +559,7 @@ export default function ProductDetails({
 
   return (
       <motion.div
+        key={product.id}
         ref={detailsScrollRef}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -1067,7 +1071,11 @@ export default function ProductDetails({
                   <button
                     key={relatedProduct.id}
                     type="button"
-                    onClick={() => onOpenProduct?.(relatedProduct)}
+                    onClick={(event) => {
+                      event.currentTarget.blur();
+                      scrollDetailsToTop("auto");
+                      onOpenProduct?.(relatedProduct);
+                    }}
                     className="text-left border border-stone-200 bg-white hover:border-stone-400 transition-colors rounded-sm overflow-hidden group"
                   >
                     <div className="aspect-[3/4] bg-stone-100 overflow-hidden">
