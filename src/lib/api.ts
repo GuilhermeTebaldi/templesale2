@@ -114,7 +114,7 @@ export interface SessionUser {
   name: string;
   email: string;
   avatarUrl?: string;
-  preferredLocale?: "it-IT" | "pt-BR";
+  preferredLocale?: "it-IT" | "pt-BR" | "ar-SA";
   country?: string;
   state?: string;
   city?: string;
@@ -561,8 +561,8 @@ function normalizeCountryIso(value: unknown): string | undefined {
   return undefined;
 }
 
-function normalizeLocaleValue(value: unknown): "it-IT" | "pt-BR" | undefined {
-  if (value === "it-IT" || value === "pt-BR") {
+function normalizeLocaleValue(value: unknown): "it-IT" | "pt-BR" | "ar-SA" | undefined {
+  if (value === "it-IT" || value === "pt-BR" || value === "ar-SA") {
     return value;
   }
   return undefined;
@@ -1791,7 +1791,7 @@ export const api = {
 
     throw new Error("Resposta inválida ao atualizar foto de perfil.");
   },
-  async updatePreferredLocale(locale: "it-IT" | "pt-BR") {
+  async updatePreferredLocale(locale: "it-IT" | "pt-BR" | "ar-SA") {
     const payload = { locale };
     try {
       const raw = await request<unknown>("/api/profile/locale", {

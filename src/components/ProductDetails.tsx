@@ -63,7 +63,7 @@ const PRODUCT_COMMENT_MAX_BODY_LENGTH = 1200;
 
 function formatCommentDate(createdAt: number, locale: string): string {
   const safeDate = new Date(Math.max(0, Number(createdAt) || 0) * 1000);
-  const safeLocale = locale === "it-IT" ? "it-IT" : "pt-BR";
+  const safeLocale = locale === "it-IT" || locale === "ar-SA" ? locale : "pt-BR";
   return safeDate.toLocaleDateString(safeLocale, {
     day: "2-digit",
     month: "short",

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Search, Pencil, Trash2, Package, X } from "lucide-react";
 import { type Product } from "./ProductCard";
 import { useI18n } from "../i18n/provider";
+import { type AppLocale } from "../i18n";
 import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 
@@ -36,7 +37,7 @@ function normalizeSearchText(value: unknown): string {
 function matchesProductSearch(
   product: Product,
   normalizedQuery: string,
-  locale: "pt-BR" | "it-IT",
+  locale: AppLocale,
 ): boolean {
   if (!normalizedQuery) {
     return true;

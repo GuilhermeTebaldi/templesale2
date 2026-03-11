@@ -3,6 +3,8 @@ import {
   isNegotiablePriceValue,
 } from "./negotiable-price";
 
+type SupportedCurrencyLocale = "pt-BR" | "it-IT" | "ar-SA";
+
 export function isNegotiablePrice(rawValue: string | number | undefined): boolean {
   return isNegotiablePriceValue(rawValue);
 }
@@ -11,12 +13,24 @@ export function getNegotiablePriceStorageValue(): string {
   return NEGOTIABLE_PRICE_STORAGE_VALUE;
 }
 
-export function getNegotiablePriceLabel(locale: "pt-BR" | "it-IT" = "it-IT"): string {
-  return locale === "pt-BR" ? "A negociar" : "Da negoziare";
+export function getNegotiablePriceLabel(locale: SupportedCurrencyLocale = "it-IT"): string {
+  if (locale === "pt-BR") {
+    return "A negociar";
+  }
+  if (locale === "ar-SA") {
+    return "قابل للتفاوض";
+  }
+  return "Da negoziare";
 }
 
-export function getCompactNegotiablePriceLabel(locale: "pt-BR" | "it-IT" = "it-IT"): string {
-  return locale === "pt-BR" ? "Neg." : "Tratt.";
+export function getCompactNegotiablePriceLabel(locale: SupportedCurrencyLocale = "it-IT"): string {
+  if (locale === "pt-BR") {
+    return "Neg.";
+  }
+  if (locale === "ar-SA") {
+    return "تفاوض";
+  }
+  return "Tratt.";
 }
 
 export function parsePriceToNumber(rawValue: string): number | null {
@@ -78,7 +92,7 @@ export function parsePriceToNumber(rawValue: string): number | null {
   return Number.isFinite(fallback) ? fallback : null;
 }
 
-export function formatEuro(value: number, locale: "pt-BR" | "it-IT" = "it-IT"): string {
+export function formatEuro(value: number, locale: SupportedCurrencyLocale = "it-IT"): string {
   const safeValue = Number.isFinite(value) ? value : 0;
   return new Intl.NumberFormat(locale, {
     style: "currency",
@@ -90,7 +104,7 @@ export function formatEuro(value: number, locale: "pt-BR" | "it-IT" = "it-IT"): 
 
 export function formatEuroFromUnknown(
   rawValue: string | number | undefined,
-  locale: "pt-BR" | "it-IT" = "it-IT",
+  locale: SupportedCurrencyLocale = "it-IT",
 ): string {
   if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
     return formatEuro(rawValue, locale);
@@ -109,7 +123,7 @@ export function formatEuroFromUnknown(
 
 export function formatCompactPriceFromUnknown(
   rawValue: string | number | undefined,
-  locale: "pt-BR" | "it-IT" = "it-IT",
+  locale: SupportedCurrencyLocale = "it-IT",
   options?: { priceNegotiable?: boolean },
 ): string {
   if (options?.priceNegotiable || isNegotiablePrice(rawValue)) {
@@ -121,7 +135,7 @@ export function formatCompactPriceFromUnknown(
 
 export function normalizeEuroInput(
   rawValue: string,
-  locale: "pt-BR" | "it-IT" = "it-IT",
+  locale: SupportedCurrencyLocale = "it-IT",
 ): string {
   const parsed = parsePriceToNumber(rawValue);
   if (parsed === null) {

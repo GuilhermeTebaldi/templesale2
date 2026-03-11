@@ -51,9 +51,36 @@ const itCategoryLabels: Record<CategoryKey, string> = {
   "Outros": "Altro",
 };
 
+const arCategoryLabels: Record<CategoryKey, string> = {
+  "Imóveis": "العقارات",
+  "Terreno": "أراضٍ",
+  "Aluguel": "إيجار",
+  "Veículos": "مركبات",
+  "Eletrônicos e Celulares": "إلكترونيات وهواتف",
+  "Informática e Games": "حواسيب وألعاب",
+  "Casa, Móveis e Decoração": "المنزل والأثاث والديكور",
+  "Eletrodomésticos": "أجهزة منزلية",
+  "Moda e Acessórios": "موضة وإكسسوارات",
+  "Beleza e Saúde": "الجمال والصحة",
+  "Bebês e Crianças": "الأطفال والرضّع",
+  "Esportes e Lazer": "الرياضة والترفيه",
+  "Hobbies e Colecionáveis": "الهوايات والمقتنيات",
+  "Antiguidades": "التحف",
+  "Livros, Papelaria e Cursos": "كتب وقرطاسية ودورات",
+  "Instrumentos Musicais": "آلات موسيقية",
+  "Ferramentas e Construção": "أدوات وبناء",
+  "Jardim e Pet": "الحديقة والحيوانات الأليفة",
+  "Serviços": "خدمات",
+  "Empregos": "وظائف",
+  "Outros": "أخرى",
+};
+
 export function getCategoryLabel(value: string, locale: AppLocale): string {
   if (locale === "it-IT") {
     return itCategoryLabels[value as CategoryKey] ?? value;
+  }
+  if (locale === "ar-SA") {
+    return arCategoryLabels[value as CategoryKey] ?? value;
   }
   return value;
 }

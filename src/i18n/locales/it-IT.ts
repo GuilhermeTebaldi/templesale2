@@ -1,6 +1,7 @@
 export const itITTranslations: Record<string, string> = {
   "Português (Brasil)": "Portoghese (Brasile)",
   "Italiano (Italia)": "Italiano (Italia)",
+  "العربية (السعودية)": "Arabo (Arabia Saudita)",
   "Painel": "Pannello",
   "Dashboard": "Pannello",
   "Membro cadastrado": "Membro registrato",

@@ -1,6 +1,7 @@
 export const ptBRTranslations: Record<string, string> = {
   "Português (Brasil)": "Português (Brasil)",
   "Italiano (Italia)": "Italiano (Italia)",
+  "العربية (السعودية)": "Árabe (Arábia Saudita)",
   "Alguém": "Alguém",
   "seu anúncio": "seu anúncio",
   "Nova curtida": "Nova curtida",
