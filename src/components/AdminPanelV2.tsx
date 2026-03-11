@@ -1814,8 +1814,9 @@ export default function AdminPanelV2() {
                     <div>
                       <h2 className="text-sm font-semibold text-stone-900">Visitantes do TempleSale</h2>
                       <p className="text-xs text-stone-500 mt-1">
-                        Registro diário de acessos no site (por IP + navegador), com marcação de
-                        <strong> Eu</strong> para o seu acesso atual.
+                        Aqui você vê todas as entradas do site no dia, mesmo sem login e mesmo se a
+                        pessoa ficou só alguns segundos. Esses dados ficam salvos no backend 24h e
+                        quando o acesso é seu mostramos como <strong>Eu</strong>.
                       </p>
                     </div>
                   </div>
@@ -1876,31 +1877,49 @@ export default function AdminPanelV2() {
               <article className="border border-stone-200 bg-white p-4 sm:p-5">
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
                   <div className="border border-stone-200 bg-stone-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">Visitas no dia</p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">
+                      Entradas de outras pessoas
+                    </p>
                     <p className="text-sm font-semibold text-stone-900">{visitorsSummary.externalVisits}</p>
-                    <p className="text-[10px] text-stone-500">sem você</p>
+                    <p className="text-[10px] text-stone-500">
+                      total de acessos no dia, sem contar você
+                    </p>
                   </div>
                   <div className="border border-stone-200 bg-stone-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">Visitantes únicos</p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">
+                      Pessoas diferentes de fora
+                    </p>
                     <p className="text-sm font-semibold text-stone-900">
                       {visitorsSummary.externalUniqueVisitors}
                     </p>
-                    <p className="text-[10px] text-stone-500">sem você</p>
+                    <p className="text-[10px] text-stone-500">
+                      quantidade de visitantes únicos, sem contar você
+                    </p>
                   </div>
                   <div className="border border-emerald-200 bg-emerald-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">Seu acesso</p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">
+                      Seus acessos hoje
+                    </p>
                     <p className="text-sm font-semibold text-emerald-800">{visitorsSummary.selfVisits}</p>
-                    <p className="text-[10px] text-emerald-700">marcado como Eu</p>
+                    <p className="text-[10px] text-emerald-700">seu acesso fica identificado como Eu</p>
                   </div>
                   <div className="border border-blue-200 bg-blue-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">Total bruto</p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">
+                      Total de entradas do dia
+                    </p>
                     <p className="text-sm font-semibold text-blue-800">{visitorsSummary.totalVisits}</p>
-                    <p className="text-[10px] text-blue-700">inclui Eu</p>
+                    <p className="text-[10px] text-blue-700">
+                      soma geral: outras pessoas + você
+                    </p>
                   </div>
                   <div className="border border-blue-200 bg-blue-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">Únicos total</p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">
+                      Total de visitantes únicos
+                    </p>
                     <p className="text-sm font-semibold text-blue-800">{visitorsSummary.uniqueVisitors}</p>
-                    <p className="text-[10px] text-blue-700">inclui Eu</p>
+                    <p className="text-[10px] text-blue-700">
+                      quantidade de pessoas diferentes no dia
+                    </p>
                   </div>
                 </div>
               </article>
@@ -1932,30 +1951,42 @@ export default function AdminPanelV2() {
                             }`}
                           >
                             {visitor.label}
-                          </span>
+                        </span>
                           <span className="text-xs text-stone-600">
-                            Entradas no dia: <strong>{visitor.visits}</strong>
+                            Entradas no dia: <strong>{visitor.visits}</strong> (cada abertura do
+                            site por esse visitante conta 1)
                           </span>
                           <span className="text-xs text-stone-500">
-                            Primeiro acesso: {formatDateTime(visitor.firstSeenAt)}
+                            Primeiro acesso do dia: {formatDateTime(visitor.firstSeenAt)} (hora em
+                            que apareceu a primeira entrada)
                           </span>
                           <span className="text-xs text-stone-500">
-                            Último acesso: {formatDateTime(visitor.lastSeenAt)}
+                            Último acesso do dia: {formatDateTime(visitor.lastSeenAt)} (hora da
+                            entrada mais recente)
                           </span>
-                        </div>
-                        <p className="mt-2 text-xs text-stone-600 break-all">
-                          IP: <strong>{visitor.ip}</strong> | Página:{" "}
-                          <span className="font-mono">{visitor.entryPath}</span>
-                        </p>
-                        <p className="mt-1 text-xs text-stone-600 break-all">
-                          Origem: <strong>{formatVisitorSource(visitor)}</strong> | Localização:{" "}
-                          <strong>{formatVisitorLocation(visitor)}</strong>
-                        </p>
-                        <p className="mt-1 text-[11px] text-stone-500 break-all">
-                          Navegador/aplicativo: {visitor.userAgent}
-                        </p>
-                      </article>
-                    ))}
+                      </div>
+                      <p className="mt-2 text-xs text-stone-600 break-all">
+                        IP detectado: <strong>{visitor.ip}</strong> (endereço de rede usado no
+                        acesso; pode ser IP de operadora/proxy)
+                      </p>
+                      <p className="mt-1 text-xs text-stone-600 break-all">
+                        Página de entrada registrada:{" "}
+                        <span className="font-mono">{visitor.entryPath}</span>
+                        {" "} (qual página foi aberta no momento do registro)
+                      </p>
+                      <p className="mt-1 text-xs text-stone-600 break-all">
+                        Origem do clique: <strong>{formatVisitorSource(visitor)}</strong> (site/app
+                        de onde veio antes de entrar no TempleSale)
+                      </p>
+                      <p className="mt-1 text-xs text-stone-600 break-all">
+                        Localização estimada pelo IP: <strong>{formatVisitorLocation(visitor)}</strong>{" "}
+                        (cidade/estado/país aproximados)
+                      </p>
+                      <p className="mt-1 text-[11px] text-stone-500 break-all">
+                        Navegador ou aplicativo usado no acesso: {visitor.userAgent}
+                      </p>
+                    </article>
+                  ))}
                   </div>
                 </article>
               )}
