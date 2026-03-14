@@ -93,6 +93,33 @@ function getAllowedDetailKeys(category: string): Set<string> | null {
   return null;
 }
 
+function normalizeProductSlug(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+}
+
+function buildProductShareUrl(product: Product): string {
+  const normalizedSlug = normalizeProductSlug(product.slug);
+  if (normalizedSlug) {
+    const encodedSlug = encodeURIComponent(normalizedSlug);
+    if (typeof window === "undefined") {
+      return `https://www.templesale.com/${encodedSlug}`;
+    }
+    return `${window.location.origin}/${encodedSlug}`;
+  }
+
+  if (typeof window === "undefined") {
+    return `https://www.templesale.com/?product=${product.id}`;
+  }
+
+  const url = new URL(window.location.href);
+  url.searchParams.set("product", String(product.id));
+  return url.toString();
+}
+
 export default function ProductDetails({
   product,
   products = [],
@@ -395,14 +422,7 @@ export default function ProductDetails({
   };
 
   const handleShare = async () => {
-    const shareUrl = (() => {
-      if (typeof window === "undefined") {
-        return `https://www.templesale.com/?product=${product.id}`;
-      }
-      const url = new URL(window.location.href);
-      url.searchParams.set("product", String(product.id));
-      return url.toString();
-    })();
+    const shareUrl = buildProductShareUrl(product);
 
     const sharePayload = {
       title: product.name,

@@ -15,6 +15,7 @@ import {
 
 type ProductRecord = {
   id: number;
+  slug?: string;
   name: string;
   category: string;
   price: string;
@@ -34,6 +35,7 @@ type ProductRecord = {
 
 type ProductRow = {
   id: number;
+  slug: string | null;
   name: string;
   category: string;
   price: string;
@@ -466,6 +468,9 @@ const NEW_PRODUCT_DRAFT_MAX_DETAILS = 24;
 const PRODUCT_COMMENT_MIN_RATING = 1;
 const PRODUCT_COMMENT_MAX_RATING = 5;
 const PRODUCT_COMMENT_MAX_BODY_LENGTH = 1200;
+const PRODUCT_SLUG_FALLBACK_BASE = "prodotto";
+const PRODUCT_SLUG_MAX_TOTAL_LENGTH = 96;
+const RESERVED_PRODUCT_ROUTE_SEGMENTS = new Set(["api", "admin", "moldura"]);
 const SECURITY_MONITOR_MAX_EVENTS = 800;
 const SECURITY_MONITOR_DEFAULT_LIMIT = 120;
 const SECURITY_MONITOR_MAX_LIMIT = 500;
@@ -677,6 +682,7 @@ function buildAgentRuntimeScript(siteId: string, apiBase: string): string {
 
 const PRODUCT_SELECT_FIELDS = `
   p.id,
+  NULLIF(TRIM(COALESCE(p.slug, '')), '') AS slug,
   COALESCE(NULLIF(TRIM(COALESCE(p.name, '')), ''), NULLIF(TRIM(COALESCE(p.title, '')), ''), 'Produto sem título') AS name,
   p.category,
   p.price,
@@ -807,9 +813,52 @@ function toBooleanValue(value: unknown, fallback = false): boolean {
   return fallback;
 }
 
+function normalizeProductSlugSegment(value: unknown): string {
+  const normalized = String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "")
+    .replace(/-{2,}/g, "-");
+  return normalized;
+}
+
+function sanitizeProductSlugForStorage(rawSlug: unknown): string {
+  const normalized = normalizeProductSlugSegment(rawSlug);
+  if (!normalized) {
+    return "";
+  }
+  if (RESERVED_PRODUCT_ROUTE_SEGMENTS.has(normalized)) {
+    return `${PRODUCT_SLUG_FALLBACK_BASE}-${normalized}`;
+  }
+  return normalized;
+}
+
+function buildProductSlug(name: string, productId: number): string {
+  const normalizedId = toRequiredNonNegativeInteger(productId, 0);
+  if (normalizedId <= 0) {
+    throw new Error("ID inválido para gerar slug de produto.");
+  }
+
+  const normalizedBase = sanitizeProductSlugForStorage(name) || PRODUCT_SLUG_FALLBACK_BASE;
+  const suffix = String(normalizedId);
+  const maxBaseLength = Math.max(
+    PRODUCT_SLUG_FALLBACK_BASE.length,
+    PRODUCT_SLUG_MAX_TOTAL_LENGTH - suffix.length - 1,
+  );
+  let truncatedBase = normalizedBase.slice(0, maxBaseLength).replace(/-+$/, "");
+  if (!truncatedBase) {
+    truncatedBase = PRODUCT_SLUG_FALLBACK_BASE;
+  }
+  return `${truncatedBase}-${suffix}`;
+}
+
 function normalizeProductRow(row: Record<string, unknown>): ProductRow {
   return {
     id: toRequiredNumber(row.id),
+    slug: toNullableString(row.slug),
     name: String(row.name ?? ""),
     category: String(row.category ?? ""),
     price: String(row.price ?? ""),
@@ -1471,6 +1520,7 @@ function initializeSqliteDatabase() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS products (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT,
       name TEXT NOT NULL,
       category TEXT NOT NULL,
       price TEXT NOT NULL,
@@ -1629,6 +1679,9 @@ function initializeSqliteDatabase() {
   }
   if (!productColumns.some((column) => column.name === "price_negotiable")) {
     db.exec("ALTER TABLE products ADD COLUMN price_negotiable INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!productColumns.some((column) => column.name === "slug")) {
+    db.exec("ALTER TABLE products ADD COLUMN slug TEXT");
   }
   db.exec("UPDATE products SET quantity = 1 WHERE quantity IS NULL OR quantity < 0");
   db.exec(
@@ -1819,6 +1872,7 @@ async function initializePostgresDatabase() {
     `
       CREATE TABLE IF NOT EXISTS products (
         id BIGSERIAL PRIMARY KEY,
+        slug TEXT,
         name TEXT NOT NULL,
         category TEXT NOT NULL,
         price TEXT NOT NULL,
@@ -1925,6 +1979,7 @@ async function initializePostgresDatabase() {
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_urls TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS details TEXT DEFAULT '{}'",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS slug TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION",
@@ -2047,6 +2102,148 @@ async function initializePostgresDatabase() {
 
 async function initializeDatabase() {
   await initializePostgresDatabase();
+  if (IS_DEV_REMOTE_READ_ONLY) {
+    return;
+  }
+  try {
+    await backfillMissingProductSlugs();
+  } catch (error) {
+    console.error("Failed to backfill product slugs:", error);
+  }
+}
+
+async function selectProductsForSlugBackfillRows(): Promise<Array<{
+  id: number;
+  name: string;
+  slug: string | null;
+}>> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          p.id,
+          COALESCE(
+            NULLIF(BTRIM(COALESCE(p.name, '')), ''),
+            NULLIF(BTRIM(COALESCE(p.title, '')), ''),
+            '${PRODUCT_SLUG_FALLBACK_BASE}'
+          ) AS name,
+          NULLIF(BTRIM(COALESCE(p.slug, '')), '') AS slug
+        FROM products p
+      `,
+    );
+    return result.rows.map((row) => ({
+      id: toRequiredNumber(row.id),
+      name: String(row.name ?? PRODUCT_SLUG_FALLBACK_BASE),
+      slug: toNullableString(row.slug),
+    }));
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          p.id,
+          COALESCE(
+            NULLIF(TRIM(COALESCE(p.name, '')), ''),
+            NULLIF(TRIM(COALESCE(p.title, '')), ''),
+            '${PRODUCT_SLUG_FALLBACK_BASE}'
+          ) AS name,
+          NULLIF(TRIM(COALESCE(p.slug, '')), '') AS slug
+        FROM products p
+      `,
+    )
+    .all() as Array<Record<string, unknown>>;
+
+  return rows.map((row) => ({
+    id: toRequiredNumber(row.id),
+    name: String(row.name ?? PRODUCT_SLUG_FALLBACK_BASE),
+    slug: toNullableString(row.slug),
+  }));
+}
+
+async function selectProductSlugByIdRecord(productId: number): Promise<string | null> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT NULLIF(BTRIM(COALESCE(slug, '')), '') AS slug
+        FROM products
+        WHERE id = $1
+      `,
+      [productId],
+    );
+    return toNullableString(result.rows[0]?.slug);
+  }
+
+  const row = requireSqliteDb()
+    .prepare(
+      `
+        SELECT NULLIF(TRIM(COALESCE(slug, '')), '') AS slug
+        FROM products
+        WHERE id = ?
+      `,
+    )
+    .get(productId) as Record<string, unknown> | undefined;
+
+  return toNullableString(row?.slug);
+}
+
+async function updateProductSlugRecord(productId: number, slug: string): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(
+      `
+        UPDATE products
+        SET slug = $1
+        WHERE id = $2
+      `,
+      [slug, productId],
+    );
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        UPDATE products
+        SET slug = @slug
+        WHERE id = @id
+      `,
+    )
+    .run({
+      id: productId,
+      slug,
+    });
+}
+
+async function ensureProductSlugRecord(
+  productId: number,
+  productName: string,
+  knownSlug?: string | null,
+): Promise<string> {
+  const existingSlug =
+    knownSlug !== undefined
+      ? toNullableString(knownSlug)
+      : await selectProductSlugByIdRecord(productId);
+  if (existingSlug && existingSlug.trim()) {
+    return existingSlug.trim();
+  }
+
+  const nextSlug = buildProductSlug(productName, productId);
+  await updateProductSlugRecord(productId, nextSlug);
+  return nextSlug;
+}
+
+async function backfillMissingProductSlugs(): Promise<void> {
+  const rows = await selectProductsForSlugBackfillRows();
+  for (const row of rows) {
+    try {
+      await ensureProductSlugRecord(row.id, row.name, row.slug);
+    } catch (error) {
+      console.error("Failed to ensure slug for product:", {
+        productId: row.id,
+        error,
+      });
+    }
+  }
 }
 
 async function selectAllProductsRows(): Promise<ProductRow[]> {
@@ -2931,7 +3128,16 @@ async function createProductRecord(
         normalized.longitude,
       ],
     );
-    return toRequiredNumber(result.rows[0]?.id);
+    const createdId = toRequiredNumber(result.rows[0]?.id);
+    try {
+      await ensureProductSlugRecord(createdId, normalized.name, null);
+    } catch (error) {
+      console.error("Failed to ensure slug for created product:", {
+        productId: createdId,
+        error,
+      });
+    }
+    return createdId;
   }
 
   const result = requireSqliteDb()
@@ -2972,7 +3178,16 @@ async function createProductRecord(
       price_negotiable: normalized.priceNegotiable ? 1 : 0,
       user_id: userId,
     });
-  return Number(result.lastInsertRowid);
+  const createdId = Number(result.lastInsertRowid);
+  try {
+    await ensureProductSlugRecord(createdId, normalized.name, null);
+  } catch (error) {
+    console.error("Failed to ensure slug for created product:", {
+      productId: createdId,
+      error,
+    });
+  }
+  return createdId;
 }
 
 async function updateProductRecord(id: number, normalized: NormalizedProductInput): Promise<void> {
@@ -3019,6 +3234,14 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
         id,
       ],
     );
+    try {
+      await ensureProductSlugRecord(id, normalized.name);
+    } catch (error) {
+      console.error("Failed to ensure slug for updated product:", {
+        productId: id,
+        error,
+      });
+    }
     return;
   }
 
@@ -3046,6 +3269,14 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
       ...normalized,
       price_negotiable: normalized.priceNegotiable ? 1 : 0,
     });
+  try {
+    await ensureProductSlugRecord(id, normalized.name);
+  } catch (error) {
+    console.error("Failed to ensure slug for updated product:", {
+      productId: id,
+      error,
+    });
+  }
 }
 
 async function deleteProductRecord(id: number): Promise<void> {
@@ -3718,6 +3949,10 @@ function rowToProduct(row: ProductRow): ProductRecord {
     description: row.description ?? "",
     details,
   };
+
+  if (row.slug) {
+    product.slug = row.slug;
+  }
 
   if (row.user_id !== null) {
     product.ownerId = row.user_id;

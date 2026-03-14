@@ -10,6 +10,7 @@ import {
 
 export interface ProductDto {
   id: number;
+  slug?: string;
   name: string;
   category: string;
   price: string;
@@ -572,6 +573,14 @@ function normalizePhoneDigits(value: unknown): string {
   return toStringValue(value).replace(/\D/g, "");
 }
 
+function normalizeProductSlugValue(value: unknown): string {
+  return toStringValue(value)
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+}
+
 function normalizeProductImages(rawImages: unknown, rawImage: unknown): string[] {
   const images = toStringArray(rawImages);
   const fallbackImage = toStringValue(rawImage);
@@ -624,6 +633,11 @@ function normalizeProductItem(value: unknown): ProductDto | null {
     image,
     images,
   };
+
+  const slug = normalizeProductSlugValue(firstDefined(parsed, ["slug", "productSlug", "product_slug"]));
+  if (slug) {
+    product.slug = slug;
+  }
 
   const quantity =
     toNonNegativeInteger(firstDefined(parsed, ["quantity", "stock", "stockQuantity"])) ?? 1;

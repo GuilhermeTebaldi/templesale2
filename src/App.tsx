@@ -83,6 +83,30 @@ function getProductStockQuantity(product: Product): number {
   return normalized >= 0 ? normalized : 0;
 }
 
+function normalizeProductSlug(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+}
+
+function resolveProductSlugFromPathname(pathname: string): string {
+  const segments = String(pathname ?? "")
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+  if (segments.length !== 1) {
+    return "";
+  }
+
+  try {
+    return normalizeProductSlug(decodeURIComponent(segments[0]));
+  } catch {
+    return normalizeProductSlug(segments[0]);
+  }
+}
+
 function parseCartStorage(raw: string): Record<number, number> {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -965,6 +989,18 @@ export default function App() {
     }
     if (products.length === 0 || typeof window === "undefined") {
       return;
+    }
+
+    const slugFromPathname = resolveProductSlugFromPathname(window.location.pathname);
+    if (slugFromPathname) {
+      const sharedBySlug = products.find(
+        (item) => normalizeProductSlug(item.slug) === slugFromPathname,
+      );
+      if (sharedBySlug) {
+        setSelectedProduct(sharedBySlug);
+        hasResolvedProductFromUrl.current = true;
+        return;
+      }
     }
 
     const searchParams = new URLSearchParams(window.location.search);

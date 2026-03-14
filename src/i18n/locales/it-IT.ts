@@ -320,5 +320,10 @@ export const itITTranslations: Record<string, string> = {
   "Não foi possível capturar a localização atual.": "Non è stato possibile acquisire la posizione attuale.",
   "{message} Você ainda pode escolher manualmente no mapa.": "{message} Puoi comunque scegliere manualmente sulla mappa.",
   "Leaflet não carregado.": "Leaflet non caricato.",
-  "Falha ao carregar Leaflet.": "Errore durante il caricamento di Leaflet."
+  "Falha ao carregar Leaflet.": "Errore durante il caricamento di Leaflet.",
+  "Copie o link do produto": "Copia il link del prodotto",
+  "Link copiado para a área de transferência.": "Link copiato negli appunti.",
+  "Link pronto para compartilhar.": "Link pronto per la condivisione.",
+  "Não foi possível compartilhar agora.": "Impossibile condividere in questo momento.",
+  "Produto compartilhado.": "Prodotto condiviso."
 };
