@@ -137,6 +137,12 @@ export const itITTranslations: Record<string, string> = {
   "Enviando fotos...": "Invio foto...",
   "Fotos concluídas: {done}/{total}": "Foto completate: {done}/{total}",
   "Fotos enviadas: {count}/{max}": "Foto caricate: {count}/{max}",
+  "A primeira foto será usada como capa do anúncio.":
+    "La prima foto sarà usata come copertina dell'annuncio.",
+  "Capa": "Copertina",
+  "Mover foto para a esquerda": "Sposta foto a sinistra",
+  "Definir como capa": "Imposta come copertina",
+  "Mover foto para a direita": "Sposta foto a destra",
   "Nome do produto": "Nome del prodotto",
   "Categoria": "Categoria",
   "Preço": "Prezzo",

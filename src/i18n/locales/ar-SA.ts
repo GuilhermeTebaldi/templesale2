@@ -137,6 +137,12 @@ export const arSATranslations: Record<string, string> = {
   "Enviando fotos...": "جارٍ إرسال الصور...",
   "Fotos concluídas: {done}/{total}": "الصور المكتملة: {done}/{total}",
   "Fotos enviadas: {count}/{max}": "الصور المرسلة: {count}/{max}",
+  "A primeira foto será usada como capa do anúncio.":
+    "سيتم استخدام الصورة الأولى كغلاف للإعلان.",
+  "Capa": "الغلاف",
+  "Mover foto para a esquerda": "تحريك الصورة إلى اليسار",
+  "Definir como capa": "تعيين كغلاف",
+  "Mover foto para a direita": "تحريك الصورة إلى اليمين",
   "Nome do produto": "اسم المنتج",
   "Categoria": "الفئة",
   "Preço": "السعر",

@@ -5,9 +5,11 @@ import {
   Plus,
   Trash2,
   CheckCircle2,
+  ArrowLeft,
   ArrowRight,
   Navigation,
   MapPin,
+  Star,
 } from "lucide-react";
 import {
   api,
@@ -489,6 +491,37 @@ export default function NewProduct({
     setImages((current) => current.filter((_, i) => i !== index));
   };
 
+  const reorderImages = React.useCallback((sourceIndex: number, targetIndex: number) => {
+    setImages((current) => {
+      if (
+        sourceIndex === targetIndex ||
+        sourceIndex < 0 ||
+        targetIndex < 0 ||
+        sourceIndex >= current.length ||
+        targetIndex >= current.length
+      ) {
+        return current;
+      }
+
+      const next = [...current];
+      const [movedImage] = next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, movedImage);
+      return next;
+    });
+  }, []);
+
+  const handleMoveImageLeft = (index: number) => {
+    reorderImages(index, index - 1);
+  };
+
+  const handleMoveImageRight = (index: number) => {
+    reorderImages(index, index + 1);
+  };
+
+  const handleSetImageAsCover = (index: number) => {
+    reorderImages(index, 0);
+  };
+
   const handleTriggerImagePicker = () => {
     fileInputRef.current?.click();
   };
@@ -862,6 +895,9 @@ export default function NewProduct({
                 {images.map((img, index) => (
                   <div key={index} className="relative aspect-3/4 bg-stone-100 rounded-sm overflow-hidden group">
                     <img src={img} alt={t("Pré-visualização")} className="w-full h-full object-cover" />
+                    <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded-full bg-black/70 text-white text-[9px] uppercase tracking-[0.12em]">
+                      {index === 0 ? t("Capa") : index + 1}
+                    </div>
                     <button 
                       type="button"
                       onClick={() => handleRemoveImage(index)}
@@ -870,6 +906,35 @@ export default function NewProduct({
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
+                    <div className="absolute left-1.5 right-1.5 bottom-1.5 flex items-center justify-between gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleMoveImageLeft(index)}
+                        disabled={index === 0}
+                        className="h-7 w-7 flex items-center justify-center rounded-full bg-white/85 text-stone-700 backdrop-blur-sm transition-colors hover:bg-white disabled:opacity-35 disabled:cursor-not-allowed"
+                        aria-label={t("Mover foto para a esquerda")}
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetImageAsCover(index)}
+                        disabled={index === 0}
+                        className="h-7 w-7 flex items-center justify-center rounded-full bg-white/85 text-amber-600 backdrop-blur-sm transition-colors hover:bg-white disabled:opacity-35 disabled:cursor-not-allowed"
+                        aria-label={t("Definir como capa")}
+                      >
+                        <Star className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMoveImageRight(index)}
+                        disabled={index === images.length - 1}
+                        className="h-7 w-7 flex items-center justify-center rounded-full bg-white/85 text-stone-700 backdrop-blur-sm transition-colors hover:bg-white disabled:opacity-35 disabled:cursor-not-allowed"
+                        aria-label={t("Mover foto para a direita")}
+                      >
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
                 <button 
@@ -971,6 +1036,11 @@ export default function NewProduct({
                   max: String(MAX_PRODUCT_IMAGES),
                 })}
               </p>
+              {images.length > 1 && (
+                <p className="text-xs text-stone-500">
+                  {t("A primeira foto será usada como capa do anúncio.")}
+                </p>
+              )}
             </div>
 
             {/* Details Section */}

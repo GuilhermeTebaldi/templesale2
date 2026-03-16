@@ -72,6 +72,12 @@ export const ptBRTranslations: Record<string, string> = {
   "Enviando fotos...": "Enviando fotos...",
   "Fotos concluídas: {done}/{total}": "Fotos concluídas: {done}/{total}",
   "Fotos enviadas: {count}/{max}": "Fotos enviadas: {count}/{max}",
+  "A primeira foto será usada como capa do anúncio.":
+    "A primeira foto será usada como capa do anúncio.",
+  "Capa": "Capa",
+  "Mover foto para a esquerda": "Mover foto para a esquerda",
+  "Definir como capa": "Definir como capa",
+  "Mover foto para a direita": "Mover foto para a direita",
   "Limite atingido": "Limite atingido",
   "Enviando...": "Enviando...",
   "Resultados da busca": "Resultados da busca",
