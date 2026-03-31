@@ -1,6 +1,9 @@
 const NETWORK_LOADING_SHOW_DELAY_MS = 350;
 
 type Listener = () => void;
+type TrackedRequestInit = RequestInit & {
+  skipGlobalLoadingOverlay?: boolean;
+};
 
 const listeners = new Set<Listener>();
 let activeRequests = 0;
@@ -77,8 +80,13 @@ export function beginNetworkActivity(): () => void {
 
 export async function trackedFetch(
   input: RequestInfo | URL,
-  init?: RequestInit,
+  init?: TrackedRequestInit,
 ): Promise<Response> {
+  if (init?.skipGlobalLoadingOverlay) {
+    const { skipGlobalLoadingOverlay: _skipGlobalLoadingOverlay, ...fetchInit } = init;
+    return fetch(input, fetchInit);
+  }
+
   const endNetworkActivity = beginNetworkActivity();
   try {
     return await fetch(input, init);

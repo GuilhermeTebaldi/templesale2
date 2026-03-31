@@ -1428,6 +1428,7 @@ async function uploadImageFileToEndpoint(
     credentials: "include",
     headers,
     body: file,
+    skipGlobalLoadingOverlay: true,
   });
 
   const contentType = response.headers.get("content-type") || "";
