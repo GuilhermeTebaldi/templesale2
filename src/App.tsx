@@ -1384,6 +1384,38 @@ export default function App() {
       });
   }, [products, activeCategory, searchQuery]);
 
+  const randomProductsByCategory = React.useMemo(() => {
+    const productsByCategory = new globalThis.Map<string, Product[]>();
+
+    products.forEach((product) => {
+      const category = String(product.category ?? "").trim();
+      if (!category) {
+        return;
+      }
+
+      const current = productsByCategory.get(category);
+      if (current) {
+        current.push(product);
+        return;
+      }
+      productsByCategory.set(category, [product]);
+    });
+
+    const picked = Array.from(productsByCategory.values())
+      .map((items) => {
+        if (items.length === 0) {
+          return null;
+        }
+        const randomIndex = Math.floor(Math.random() * items.length);
+        return items[randomIndex] ?? null;
+      })
+      .filter((item): item is Product => item !== null);
+
+    return picked.sort((left, right) =>
+      getCategoryLabel(left.category, locale).localeCompare(getCategoryLabel(right.category, locale), locale),
+    );
+  }, [products, locale]);
+
   return (
     <div className="min-h-[100dvh] flex flex-col">
       <AnimatePresence>
@@ -2256,8 +2288,33 @@ export default function App() {
           </div>
         </section>
 
+        {randomProductsByCategory.length > 0 && (
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-5">
+            <div className="overflow-x-auto no-scrollbar">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-max">
+                {randomProductsByCategory.map((product) => (
+                  <button
+                    key={`top-category-${product.category}-${product.id}`}
+                    onClick={() => openProductDetails(product)}
+                    title={getCategoryLabel(product.category, locale)}
+                    className="shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-sm overflow-hidden border border-stone-200 bg-stone-100 hover:border-stone-400 transition-colors"
+                    aria-label={t("Abrir detalhes de {name}", { name: product.name })}
+                  >
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Product Grid */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-20">
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-12 sm:pb-20">
           {isLoadingProducts ? (
             <div className="py-20 text-center text-stone-400 text-xs uppercase tracking-[0.2em]">
               {t("Carregando produtos...")}
