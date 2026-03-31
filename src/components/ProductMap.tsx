@@ -1,11 +1,12 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, Pencil, Trash2, Package, X } from "lucide-react";
+import { Search, Pencil, Trash2, Package, X, ExternalLink } from "lucide-react";
 import { type Product } from "./ProductCard";
 import { useI18n } from "../i18n/provider";
 import { type AppLocale } from "../i18n";
 import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
+import { api } from "../lib/api";
 
 interface ProductMapProps {
   products: Product[];
@@ -16,6 +17,7 @@ interface ProductMapProps {
   autoFocusPanelSearch?: boolean;
   onOpenProduct?: (product: Product) => void;
   onAddToCart?: (product: Product) => void;
+  googleMapsUrl?: string;
 }
 
 type LocatedProduct = Product & {
@@ -32,6 +34,49 @@ function normalizeSearchText(value: unknown): string {
     .toLowerCase()
     .trim()
     .replace(/\s+/g, " ");
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildGoogleMapsSearchUrl(latitude: number, longitude: number): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${latitude},${longitude}`)}`;
+}
+
+function buildFocusedBalloonMarkerHtml(
+  label: string,
+  googleMapsHref: string,
+  googleMapsLabel: string,
+): string {
+  const safeLabel = escapeHtml(String(label ?? "").trim() || "Produto");
+  const safeGoogleMapsHref = escapeHtml(googleMapsHref);
+  const safeGoogleMapsLabel = escapeHtml(googleMapsLabel);
+  return `
+    <div style="position:relative;width:230px;height:96px;display:flex;justify-content:center;pointer-events:auto;">
+      <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:220px;padding:8px 10px 9px;background:#ffffff;border:1.5px solid #111111;border-radius:15px;color:#111111;line-height:1.2;box-shadow:0 10px 20px rgba(0,0,0,0.2);pointer-events:auto;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+          <span style="display:inline-block;width:7px;height:7px;border-radius:9999px;background:#2e7d32;"></span>
+          <span style="font-size:9px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#444444;">
+            TempleSale
+          </span>
+        </div>
+        <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          ${safeLabel}
+        </div>
+        <a href="${safeGoogleMapsHref}" target="_blank" rel="noopener noreferrer" style="margin-top:8px;display:flex;align-items:center;justify-content:center;width:100%;padding:5px 8px;background:#f5f5f5;border:1.5px solid #111111;border-radius:10px;color:#111111;font-size:10px;font-weight:700;text-decoration:none;letter-spacing:0.03em;pointer-events:auto;">
+          ${safeGoogleMapsLabel}
+        </a>
+      </div>
+      <div style="position:absolute;top:74px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:11px solid transparent;border-right:11px solid transparent;border-top:18px solid #111111;"></div>
+      <div style="position:absolute;top:73px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-top:17px solid #ffffff;"></div>
+    </div>
+  `;
 }
 
 function matchesProductSearch(
@@ -187,6 +232,7 @@ type LeafletGlobal = {
   map: (container: HTMLElement, options?: unknown) => LeafletMapInstance;
   tileLayer: (url: string, options?: unknown) => LeafletTileLayerInstance;
   marker: (coords: [number, number], options?: unknown) => LeafletMarkerInstance;
+  divIcon: (options?: unknown) => unknown;
   circleMarker: (
     coords: [number, number],
     options?: unknown,
@@ -234,14 +280,13 @@ const DEFAULT_MARKER_STYLE = {
   fillColor: "#fbc02d",
   fillOpacity: 0.85,
 };
-const FOCUSED_MARKER_STYLE = {
-  radius: 9,
+const FOCUSED_POINT_MARKER_STYLE = {
+  radius: 8,
   color: "#1b5e20",
   weight: 2,
   fillColor: "#43a047",
   fillOpacity: 0.95,
 };
-
 let leafletAssetsPromise: Promise<LeafletGlobal> | null = null;
 
 function getLeafletFromWindow(): LeafletGlobal | undefined {
@@ -341,6 +386,7 @@ export default function ProductMap({
   onClose,
   initialFocusProductId,
   onOpenProduct,
+  googleMapsUrl,
 }: ProductMapProps) {
   const { t, locale } = useI18n();
   const productsWithLocation = React.useMemo(
@@ -360,6 +406,8 @@ export default function ProductMap({
   const [searchQuery, setSearchQuery] = React.useState("");
   const [panelSearchQuery, setPanelSearchQuery] = React.useState("");
   const [mapReadyVersion, setMapReadyVersion] = React.useState(0);
+  const [sellerLocationByOwnerId, setSellerLocationByOwnerId] = React.useState<Record<number, string>>({});
+  const hideFloatingMapControlsOnMobile = showResults;
 
   const overlayRef = React.useRef<HTMLDivElement | null>(null);
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
@@ -377,6 +425,8 @@ export default function ProductMap({
   const tileFallbackTimerRef = React.useRef<number | null>(null);
   const activeTileLoadRef = React.useRef(0);
   const hasLoadedAnyTileRef = React.useRef(false);
+  const pendingSellerCityOwnerIdsRef = React.useRef<Set<number>>(new Set());
+  const attemptedSellerCityOwnerIdsRef = React.useRef<Set<number>>(new Set());
 
   React.useEffect(() => {
     isDrawingRef.current = isDrawing;
@@ -918,16 +968,40 @@ export default function ProductMap({
       return aIsFocused - bIsFocused;
     });
 
-    markersRef.current = orderedProducts.map((product) => {
-      const markerStyle =
-        product.id === initialFocusProductId
-          ? FOCUSED_MARKER_STYLE
-          : DEFAULT_MARKER_STYLE;
-      const marker = L.circleMarker([product.latitude, product.longitude], markerStyle);
-      marker.addTo(map);
-      return marker;
+    markersRef.current = orderedProducts.flatMap((product) => {
+      const isFocusedProduct = product.id === initialFocusProductId;
+      if (!isFocusedProduct) {
+        const defaultMarker = L.circleMarker(
+          [product.latitude, product.longitude],
+          DEFAULT_MARKER_STYLE,
+        );
+        defaultMarker.addTo(map);
+        return [defaultMarker];
+      }
+
+      const focusedPointMarker = L.circleMarker(
+        [product.latitude, product.longitude],
+        FOCUSED_POINT_MARKER_STYLE,
+      );
+      focusedPointMarker.addTo(map);
+
+      const focusedBalloonMarker = L.marker([product.latitude, product.longitude], {
+        icon: L.divIcon({
+          className: "templesale-focused-balloon-marker",
+          html: buildFocusedBalloonMarkerHtml(
+            product.name,
+            buildGoogleMapsSearchUrl(product.latitude, product.longitude),
+            t("Abrir no Google Maps"),
+          ),
+          iconSize: [230, 96],
+          iconAnchor: [115, 96],
+        }),
+      });
+      focusedBalloonMarker.addTo(map);
+
+      return [focusedPointMarker, focusedBalloonMarker];
     });
-  }, [clearMarkers, filteredProducts, initialFocusProductId, mapReadyVersion]);
+  }, [clearMarkers, filteredProducts, initialFocusProductId, mapReadyVersion, t]);
 
   React.useEffect(() => {
     if (!showResults || currentPolygon.length < 3) {
@@ -979,6 +1053,88 @@ export default function ProductMap({
     setIsDrawing(false);
   }, [clearSelection, hasProductsWithLocation]);
 
+  React.useEffect(() => {
+    if (!showResults) {
+      return;
+    }
+
+    const ownerIdsToResolve = filteredPanelProducts.reduce<number[]>(
+      (accumulator, product) => {
+        const ownerId = Number(product.ownerId);
+        if (!Number.isInteger(ownerId) || ownerId <= 0) {
+          return accumulator;
+        }
+        if (product.city?.trim()) {
+          return accumulator;
+        }
+        if (sellerLocationByOwnerId[ownerId]?.trim()) {
+          return accumulator;
+        }
+        if (pendingSellerCityOwnerIdsRef.current.has(ownerId)) {
+          return accumulator;
+        }
+        if (attemptedSellerCityOwnerIdsRef.current.has(ownerId)) {
+          return accumulator;
+        }
+        if (accumulator.includes(ownerId)) {
+          return accumulator;
+        }
+        accumulator.push(ownerId);
+        return accumulator;
+      },
+      [],
+    );
+
+    if (ownerIdsToResolve.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    ownerIdsToResolve.forEach((ownerId) => {
+      pendingSellerCityOwnerIdsRef.current.add(ownerId);
+      attemptedSellerCityOwnerIdsRef.current.add(ownerId);
+
+      void api
+        .getPublicUserById(ownerId)
+        .then((user) => {
+          if (cancelled) {
+            return;
+          }
+          const locationParts = [
+            String(user.city ?? "").trim(),
+            String(user.neighborhood ?? "").trim(),
+            String(user.state ?? "").trim(),
+            String(user.country ?? "").trim(),
+          ].filter((value) => Boolean(value));
+          const normalizedLocation =
+            locationParts.join(", ") || String(user.street ?? "").trim();
+          if (!normalizedLocation) {
+            return;
+          }
+          setSellerLocationByOwnerId((current) => {
+            if (current[ownerId] === normalizedLocation) {
+              return current;
+            }
+            return {
+              ...current,
+              [ownerId]: normalizedLocation,
+            };
+          });
+        })
+        .catch(() => {
+          // no-op: fallback visual já cobre ausência da cidade
+        })
+        .finally(() => {
+          pendingSellerCityOwnerIdsRef.current.delete(ownerId);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [filteredPanelProducts, sellerLocationByOwnerId, showResults]);
+
   return (
     <motion.div
       ref={overlayRef}
@@ -988,7 +1144,11 @@ export default function ProductMap({
       className="fixed inset-0 z-170 bg-[#fdfcfb] overflow-hidden"
     >
       <div className="relative w-full h-full font-sans text-stone-900">
-        <div className="absolute top-4 left-4 right-4 z-[3000] flex flex-col sm:flex-row items-start sm:items-center gap-4 pointer-events-none">
+        <div
+          className={`absolute top-4 left-4 right-4 z-[3000] ${
+            hideFloatingMapControlsOnMobile ? "hidden sm:flex" : "flex"
+          } flex-col sm:flex-row items-start sm:items-center gap-4 pointer-events-none`}
+        >
           <div className="relative z-30 bg-stone-50/95 backdrop-blur-md border border-stone-200 rounded-2xl p-4 shadow-xl pointer-events-auto flex items-center gap-4 w-full sm:w-auto">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-stone-800 rounded-xl flex items-center justify-center text-stone-100">
@@ -1100,6 +1260,24 @@ export default function ProductMap({
             >
               <Trash2 size={18} />
             </button>
+            {googleMapsUrl && (
+              <>
+                <div className="w-px h-6 bg-stone-200 mx-1" />
+                <a
+                  href={googleMapsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2.5 py-2.5 rounded-xl text-stone-600 hover:bg-stone-100 transition-all duration-200 flex items-center gap-1.5"
+                  title={t("Abrir no Google Maps")}
+                  aria-label={t("Abrir no Google Maps")}
+                >
+                  <ExternalLink size={15} />
+                  <span className="text-[9px] uppercase tracking-[0.06em] font-semibold leading-tight">
+                    {t("Abrir no Google Maps")}
+                  </span>
+                </a>
+              </>
+            )}
             <div className="w-px h-6 bg-stone-200 mx-1" />
             <button
               type="button"
@@ -1147,13 +1325,13 @@ export default function ProductMap({
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
               className="absolute top-0 right-0 h-full w-full sm:w-105 bg-stone-50/98 backdrop-blur-xl border-l border-stone-200 z-[2500] shadow-2xl flex flex-col"
             >
-              <div className="p-6 border-b border-stone-100 bg-stone-100/80">
-                <div className="flex items-center justify-between mb-4 gap-3">
+              <div className="p-4 sm:p-6 border-b border-stone-100 bg-stone-100/90">
+                <div className="flex items-center justify-between mb-3 sm:mb-4 gap-3">
                   <div>
-                    <h2 className="text-lg font-semibold text-stone-800">
+                    <h2 className="text-base sm:text-lg font-semibold text-stone-800">
                       {t("Produtos encontrados")}
                     </h2>
-                    <p className="text-xs text-stone-500">
+                    <p className="text-[11px] sm:text-xs text-stone-500">
                       {t("{count} itens na área selecionada", {
                         count: selectedProducts.length,
                       })}
@@ -1259,8 +1437,13 @@ export default function ProductMap({
                                 priceNegotiable: product.priceNegotiable,
                               })}
                             </span>
-                            <span className="text-[10px] sm:text-xs font-semibold text-stone-400 text-left sm:text-right">
-                              {product.latitude.toFixed(5)}, {product.longitude.toFixed(5)}
+                            <span className="text-[10px] sm:text-xs font-semibold text-stone-400 text-left sm:text-right truncate">
+                              {product.city?.trim() ||
+                                (Number.isInteger(product.ownerId)
+                                  ? sellerLocationByOwnerId[Number(product.ownerId)]?.trim()
+                                  : "") ||
+                                `${product.latitude.toFixed(5)}, ${product.longitude.toFixed(5)}` ||
+                                t("Localização indisponível")}
                             </span>
                           </div>
                         </div>

@@ -85,6 +85,7 @@ export const itITTranslations: Record<string, string> = {
   "Tem certeza que deseja excluir este anúncio?": "Sei sicuro di voler eliminare questo annuncio?",
   "Localização": "Posizione",
   "Abrir no mapa": "Apri nella mappa",
+  "Abrir no Google Maps": "Apri su Google Maps",
   "Não informado": "Non disponibile",
   "Quantidade": "Quantità",
   "Falar com vendedor": "Parla con il venditore",

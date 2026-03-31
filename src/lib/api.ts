@@ -1322,16 +1322,17 @@ function persistAuthTokenFromPayload(value: unknown): void {
 
 type ApiRequestInit = RequestInit & {
   useAdminToken?: boolean;
+  skipAuthToken?: boolean;
 };
 
 async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
-  const { useAdminToken = false, ...fetchInit } = init ?? {};
+  const { useAdminToken = false, skipAuthToken = false, ...fetchInit } = init ?? {};
   const headers = new Headers(fetchInit.headers ?? {});
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
-  const token = useAdminToken ? readAdminToken() : readAuthToken();
+  const token = useAdminToken ? readAdminToken() : skipAuthToken ? "" : readAuthToken();
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
@@ -2031,7 +2032,9 @@ export const api = {
     return normalizeProductCommentList(response);
   },
   async getPublicUserById(id: number) {
-    const payload = await request<unknown>(`/api/users/${id}`);
+    const payload = await request<unknown>(`/api/users/${id}`, {
+      skipAuthToken: true,
+    });
     const normalized = normalizeSessionUserItem(payload);
     if (!normalized) {
       throw new Error("Resposta inválida ao carregar vendedor.");

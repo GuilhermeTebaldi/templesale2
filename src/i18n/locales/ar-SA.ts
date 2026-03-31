@@ -85,6 +85,7 @@ export const arSATranslations: Record<string, string> = {
   "Tem certeza que deseja excluir este anúncio?": "هل أنت متأكد أنك تريد حذف هذا الإعلان؟",
   "Localização": "الموقع",
   "Abrir no mapa": "فتح على الخريطة",
+  "Abrir no Google Maps": "فتح في خرائط Google",
   "Não informado": "غير متوفر",
   "Quantidade": "الكمية",
   "Falar com vendedor": "تحدث مع البائع",
