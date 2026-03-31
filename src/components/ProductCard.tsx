@@ -62,10 +62,10 @@ export default function ProductCard({
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      className="group relative flex flex-col cursor-pointer"
+      className="group relative flex flex-col cursor-pointer overflow-hidden rounded-md border border-stone-200 bg-white transition-shadow hover:shadow-md"
       onClick={onClick}
     >
-      <div className="relative aspect-3/4 overflow-hidden bg-stone-100 rounded-sm">
+      <div className="relative aspect-square overflow-hidden bg-[#f3f3f3]">
         <AnimatePresence mode="wait">
           <motion.img
             key={currentImageIndex}
@@ -75,7 +75,7 @@ export default function ProductCard({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.4 }}
-            className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+            className="h-full w-full object-contain p-2 sm:p-3"
             referrerPolicy="no-referrer"
           />
         </AnimatePresence>
@@ -127,13 +127,13 @@ export default function ProductCard({
             />
           </button>
         </div>
-        <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4 translate-y-0 md:translate-y-full transition-transform duration-300 md:group-hover:translate-y-0 bg-linear-to-t from-black/20 to-transparent">
+        <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4 translate-y-full opacity-0 pointer-events-none transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-hover:pointer-events-auto bg-linear-to-t from-black/20 to-transparent">
           <button 
             onClick={(e) => {
               e.stopPropagation();
               onAddToCart?.();
             }}
-            className="mx-auto w-auto max-w-full px-3 py-1.5 md:w-full md:px-4 md:py-2 bg-white text-black text-[10px] md:text-xs font-medium uppercase tracking-[0.12em] md:tracking-widest flex items-center justify-center gap-1.5 md:gap-2 hover:bg-stone-100 transition-colors"
+            className="mx-auto w-auto max-w-full px-3 py-1.5 md:w-full md:px-4 md:py-2 bg-yellow-400 text-black text-[10px] md:text-xs font-medium uppercase tracking-[0.12em] md:tracking-widest flex items-center justify-center gap-1.5 md:gap-2 hover:bg-yellow-500 transition-colors"
           >
             <ShoppingBag className="w-2.5 h-2.5 md:w-3 md:h-3" />
             {t("Adicionar ao carrinho")}
@@ -141,15 +141,15 @@ export default function ProductCard({
         </div>
       </div>
       
-      <div className="mt-3 sm:mt-4 flex flex-col gap-2 sm:gap-1.5">
-        <span className="inline-flex w-fit max-w-full truncate items-center rounded-sm border border-stone-200/80 bg-stone-50 px-2 py-1 text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-600 shadow-[0_4px_10px_rgba(0,0,0,0.1)] sm:border-transparent sm:bg-transparent sm:px-0 sm:py-0 sm:tracking-[0.2em] sm:text-stone-500 sm:shadow-none">
+      <div className="px-3 py-3 sm:px-3.5 sm:py-3.5 flex flex-col gap-1.5">
+        <span className="inline-flex w-fit max-w-full truncate items-center text-[11px] text-stone-500">
           {getCategoryLabel(product.category, locale)}
         </span>
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 sm:gap-3">
-          <h3 className="text-[15px] sm:text-[17px] font-medium text-stone-900 leading-[1.35] tracking-[0.01em] [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] overflow-hidden">
+        <div className="flex flex-col gap-1.5">
+          <h3 className="text-[18px] sm:text-[20px] font-semibold text-stone-900 leading-[1.25] [display:-webkit-box] [-webkit-line-clamp:3] [-webkit-box-orient:vertical] overflow-hidden">
             {product.name}
           </h3>
-          <span className="text-[13px] sm:text-sm font-medium text-stone-800 tracking-[0.01em] whitespace-nowrap sm:mt-0.5">
+          <span className="text-[24px] sm:text-[28px] font-semibold text-stone-900 leading-none">
             {formatCompactPriceFromUnknown(product.price, locale, {
               priceNegotiable: product.priceNegotiable,
             })}
