@@ -90,10 +90,6 @@ type AdminVisitorV2 = {
   region: string;
   city: string;
   userAgent: string;
-  deviceType: string;
-  deviceModel: string;
-  deviceOsName: string;
-  deviceOsVersion: string;
 };
 
 type AdminVisitorsResponseV2 = {
@@ -121,7 +117,6 @@ const ADMIN_TOKEN_STORAGE_KEY = "templesale_admin_token_v2";
 const ADMIN_EMAIL_STORAGE_KEY = "templesale_admin_email_v2";
 const SECURITY_EVENTS_LIMIT = 120;
 const SECURITY_EVENTS_POLL_INTERVAL_MS = 3500;
-const VISITORS_POLL_INTERVAL_MS = 2000;
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "")
   .trim()
   .replace(/\/+$/, "");
@@ -439,11 +434,6 @@ function normalizeAdminVisitor(item: unknown): AdminVisitorV2 | null {
     region: String(record.region ?? "").trim(),
     city: String(record.city ?? "").trim(),
     userAgent: String(record.userAgent ?? record.user_agent ?? "").trim() || "-",
-    deviceType: String(record.deviceType ?? record.device_type ?? "").trim() || "-",
-    deviceModel: String(record.deviceModel ?? record.device_model ?? "").trim() || "-",
-    deviceOsName: String(record.deviceOsName ?? record.device_os_name ?? "").trim() || "-",
-    deviceOsVersion:
-      String(record.deviceOsVersion ?? record.device_os_version ?? "").trim() || "-",
   };
 }
 
@@ -609,37 +599,6 @@ function formatVisitorSource(visitor: AdminVisitorV2): string {
   return "Acesso direto";
 }
 
-function formatDailyVisitCount(visits: number): string {
-  const safeVisits = Math.max(0, Math.floor(visits));
-  if (safeVisits === 1) {
-    return "1x hoje";
-  }
-  return `${safeVisits}x hoje`;
-}
-
-function formatVisitorDevice(visitor: AdminVisitorV2): string {
-  const type = visitor.deviceType !== "-" ? visitor.deviceType : "desconhecido";
-  const model = visitor.deviceModel !== "-" ? visitor.deviceModel : "desconhecido";
-  const osName = visitor.deviceOsName !== "-" ? visitor.deviceOsName : "SO desconhecido";
-  const osVersion = visitor.deviceOsVersion !== "-" ? visitor.deviceOsVersion : "";
-  return `${type} | ${model} | ${osName}${osVersion ? ` ${osVersion}` : ""}`;
-}
-
-function formatVisitorStayDuration(firstSeenAt: number, lastSeenAt: number): string {
-  const elapsedSeconds = Math.max(0, Math.floor((lastSeenAt - firstSeenAt) / 1000));
-  const hours = Math.floor(elapsedSeconds / 3600);
-  const minutes = Math.floor((elapsedSeconds % 3600) / 60);
-  const seconds = elapsedSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
-  return `${seconds}s`;
-}
-
 function getSecurityStatusStyles(status: SecurityCheckStatus): string {
   if (status === "pass") {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
@@ -778,7 +737,6 @@ async function adminRequest<T>(
   const response = await fetch(buildApiUrl(path), {
     method,
     credentials: "include",
-    cache: "no-store",
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -1065,7 +1023,6 @@ export default function AdminPanelV2() {
   const [visitorsUpdatedAt, setVisitorsUpdatedAt] = React.useState<number | null>(null);
   const [isLoadingVisitors, setIsLoadingVisitors] = React.useState(false);
   const [visitorsError, setVisitorsError] = React.useState("");
-  const [isVisitorsLiveEnabled, setIsVisitorsLiveEnabled] = React.useState(true);
   const [query, setQuery] = React.useState("");
   const [isLoadingUsers, setIsLoadingUsers] = React.useState(false);
   const [usersError, setUsersError] = React.useState("");
@@ -1195,7 +1152,6 @@ export default function AdminPanelV2() {
           setVisitorsSummary(createEmptyVisitorsSummary());
           setVisitorsUpdatedAt(null);
           setVisitorsError("");
-          setIsVisitorsLiveEnabled(true);
           if (!isUnauthorizedApiError(error)) {
             const message =
               error instanceof Error ? error.message : "Falha ao restaurar sessão de admin.";
@@ -1247,7 +1203,6 @@ export default function AdminPanelV2() {
       setVisitorsSummary(createEmptyVisitorsSummary());
       setVisitorsUpdatedAt(null);
       setVisitorsError("");
-      setIsVisitorsLiveEnabled(true);
       clearSessionStorage();
     } finally {
       setIsAuthSubmitting(false);
@@ -1270,7 +1225,6 @@ export default function AdminPanelV2() {
       setVisitorsUpdatedAt(null);
       setIsLoadingVisitors(false);
       setVisitorsError("");
-      setIsVisitorsLiveEnabled(true);
       setUsersError("");
       setAuthError("");
       setQuery("");
@@ -1562,63 +1516,6 @@ export default function AdminPanelV2() {
     void loadVisitors(authToken, visitorDay);
   }, [activeView, authToken, loadVisitors, sessionEmail, visitorDay]);
 
-  React.useEffect(() => {
-    if (!sessionEmail || !authToken || activeView !== "visitors" || !isVisitorsLiveEnabled) {
-      return;
-    }
-
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const poll = async () => {
-      if (cancelled) {
-        return;
-      }
-
-      await loadVisitors(authToken, visitorDay, { silent: true });
-      if (cancelled) {
-        return;
-      }
-
-      timer = setTimeout(() => {
-        void poll();
-      }, VISITORS_POLL_INTERVAL_MS);
-    };
-
-    void poll();
-
-    return () => {
-      cancelled = true;
-      if (timer !== null) {
-        clearTimeout(timer);
-      }
-    };
-  }, [activeView, authToken, isVisitorsLiveEnabled, loadVisitors, sessionEmail, visitorDay]);
-
-  React.useEffect(() => {
-    if (!sessionEmail || !authToken || activeView !== "visitors" || !isVisitorsLiveEnabled) {
-      return;
-    }
-    if (typeof window === "undefined" || typeof document === "undefined") {
-      return;
-    }
-
-    const refreshOnVisible = () => {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-      void loadVisitors(authToken, visitorDay, { silent: true });
-    };
-
-    window.addEventListener("focus", refreshOnVisible);
-    document.addEventListener("visibilitychange", refreshOnVisible);
-
-    return () => {
-      window.removeEventListener("focus", refreshOnVisible);
-      document.removeEventListener("visibilitychange", refreshOnVisible);
-    };
-  }, [activeView, authToken, isVisitorsLiveEnabled, loadVisitors, sessionEmail, visitorDay]);
-
   if (isBootstrapping) {
     return (
       <div className="min-h-screen bg-[#fdfcfb] flex items-center justify-center">
@@ -1877,9 +1774,8 @@ export default function AdminPanelV2() {
                     <div>
                       <h2 className="text-sm font-semibold text-stone-900">Visitantes do TempleSale</h2>
                       <p className="text-xs text-stone-500 mt-1">
-                        Aqui você vê todas as entradas do site no dia, mesmo sem login e mesmo se a
-                        pessoa ficou só alguns segundos. Esses dados ficam salvos no backend 24h e
-                        quando o acesso é seu mostramos como <strong>Eu</strong>.
+                        Registro diário de acessos no site (por IP + navegador), com marcação de
+                        <strong> Eu</strong> para o seu acesso atual.
                       </p>
                     </div>
                   </div>
@@ -1887,34 +1783,12 @@ export default function AdminPanelV2() {
                     <label className="text-[11px] uppercase tracking-[0.12em] text-stone-500">
                       Dia (UTC)
                     </label>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="date"
-                        value={visitorDay}
-                        onChange={(event) => setVisitorDay(normalizeDateKey(event.target.value))}
-                        className="border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-stone-900"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void loadVisitors(authToken, visitorDay)}
-                        disabled={isLoadingVisitors}
-                        className="inline-flex items-center justify-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-800 disabled:opacity-60"
-                      >
-                        {isLoadingVisitors ? (
-                          <LoaderCircle className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="w-3.5 h-3.5" />
-                        )}
-                        Atualizar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsVisitorsLiveEnabled((current) => !current)}
-                        className="inline-flex items-center justify-center border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-800"
-                      >
-                        {isVisitorsLiveEnabled ? "Pausar ao vivo" : "Retomar ao vivo"}
-                      </button>
-                    </div>
+                    <input
+                      type="date"
+                      value={visitorDay}
+                      onChange={(event) => setVisitorDay(normalizeDateKey(event.target.value))}
+                      className="border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-stone-900"
+                    />
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-3 text-xs text-stone-500">
@@ -1924,10 +1798,6 @@ export default function AdminPanelV2() {
                   {visitorsUpdatedAt !== null && (
                     <span>Atualizado em: {formatDateTime(visitorsUpdatedAt)}</span>
                   )}
-                  <span>
-                    Atualização automática:{" "}
-                    <strong>{isVisitorsLiveEnabled ? "ligada" : "pausada"}</strong>
-                  </span>
                 </div>
               </article>
 
@@ -1940,49 +1810,31 @@ export default function AdminPanelV2() {
               <article className="border border-stone-200 bg-white p-4 sm:p-5">
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
                   <div className="border border-stone-200 bg-stone-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">
-                      Entradas de outras pessoas
-                    </p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">Visitas no dia</p>
                     <p className="text-sm font-semibold text-stone-900">{visitorsSummary.externalVisits}</p>
-                    <p className="text-[10px] text-stone-500">
-                      total de acessos no dia, sem contar você
-                    </p>
+                    <p className="text-[10px] text-stone-500">sem você</p>
                   </div>
                   <div className="border border-stone-200 bg-stone-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">
-                      Pessoas diferentes de fora
-                    </p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">Visitantes únicos</p>
                     <p className="text-sm font-semibold text-stone-900">
                       {visitorsSummary.externalUniqueVisitors}
                     </p>
-                    <p className="text-[10px] text-stone-500">
-                      quantidade de visitantes únicos, sem contar você
-                    </p>
+                    <p className="text-[10px] text-stone-500">sem você</p>
                   </div>
                   <div className="border border-emerald-200 bg-emerald-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">
-                      Seus acessos hoje
-                    </p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">Seu acesso</p>
                     <p className="text-sm font-semibold text-emerald-800">{visitorsSummary.selfVisits}</p>
-                    <p className="text-[10px] text-emerald-700">seu acesso fica identificado como Eu</p>
+                    <p className="text-[10px] text-emerald-700">marcado como Eu</p>
                   </div>
                   <div className="border border-blue-200 bg-blue-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">
-                      Total de entradas do dia
-                    </p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">Total bruto</p>
                     <p className="text-sm font-semibold text-blue-800">{visitorsSummary.totalVisits}</p>
-                    <p className="text-[10px] text-blue-700">
-                      soma geral: outras pessoas + você
-                    </p>
+                    <p className="text-[10px] text-blue-700">inclui Eu</p>
                   </div>
                   <div className="border border-blue-200 bg-blue-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">
-                      Total de visitantes únicos
-                    </p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">Únicos total</p>
                     <p className="text-sm font-semibold text-blue-800">{visitorsSummary.uniqueVisitors}</p>
-                    <p className="text-[10px] text-blue-700">
-                      quantidade de pessoas diferentes no dia
-                    </p>
+                    <p className="text-[10px] text-blue-700">inclui Eu</p>
                   </div>
                 </div>
               </article>
@@ -1995,7 +1847,7 @@ export default function AdminPanelV2() {
                 </div>
               ) : (
                 <article className="border border-stone-200 bg-white p-4 sm:p-5">
-                  <div className="max-h-[520px] overflow-y-auto pr-1 space-y-2">
+                  <div className="max-h-130 overflow-y-auto pr-1 space-y-2">
                     {visitors.map((visitor) => (
                       <article
                         key={`${visitor.visitorKey || visitor.id}-${visitor.lastSeenAt}`}
@@ -2015,55 +1867,29 @@ export default function AdminPanelV2() {
                           >
                             {visitor.label}
                           </span>
-                          <span className="inline-flex items-center border border-stone-300 px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] text-stone-700">
-                            {formatDailyVisitCount(visitor.visits)}
-                          </span>
                           <span className="text-xs text-stone-600">
-                            Entradas no dia: <strong>{visitor.visits}</strong> (
-                            <strong>{formatDailyVisitCount(visitor.visits)}</strong>, cada abertura
-                            do site por esse visitante conta 1)
+                            Entradas no dia: <strong>{visitor.visits}</strong>
                           </span>
                           <span className="text-xs text-stone-500">
-                            Primeiro acesso do dia: {formatDateTime(visitor.firstSeenAt)} (hora em
-                            que apareceu a primeira entrada)
+                            Primeiro acesso: {formatDateTime(visitor.firstSeenAt)}
                           </span>
                           <span className="text-xs text-stone-500">
-                            Último acesso do dia: {formatDateTime(visitor.lastSeenAt)} (hora da
-                            entrada mais recente)
-                          </span>
-                          <span className="text-xs text-stone-500">
-                            Tempo no site hoje (aprox.):{" "}
-                            <strong>
-                              {formatVisitorStayDuration(visitor.firstSeenAt, visitor.lastSeenAt)}
-                            </strong>
+                            Último acesso: {formatDateTime(visitor.lastSeenAt)}
                           </span>
                         </div>
-                      <p className="mt-2 text-xs text-stone-600 break-all">
-                        IP detectado: <strong>{visitor.ip}</strong> (endereço de rede usado no
-                        acesso; pode ser IP de operadora/proxy)
-                      </p>
-                      <p className="mt-1 text-xs text-stone-600 break-all">
-                        Página de entrada registrada:{" "}
-                        <span className="font-mono">{visitor.entryPath}</span>
-                        {" "} (qual página foi aberta no momento do registro)
-                      </p>
-                      <p className="mt-1 text-xs text-stone-600 break-all">
-                        Origem do clique: <strong>{formatVisitorSource(visitor)}</strong> (site/app
-                        de onde veio antes de entrar no TempleSale)
-                      </p>
-                      <p className="mt-1 text-xs text-stone-600 break-all">
-                        Localização estimada pelo IP: <strong>{formatVisitorLocation(visitor)}</strong>{" "}
-                        (cidade/estado/país aproximados)
-                      </p>
-                      <p className="mt-1 text-xs text-stone-600 break-all">
-                        Aparelho detectado: <strong>{formatVisitorDevice(visitor)}</strong> (tipo,
-                        modelo e versão do sistema)
-                      </p>
-                      <p className="mt-1 text-[11px] text-stone-500 break-all">
-                        Navegador ou aplicativo usado no acesso: {visitor.userAgent}
-                      </p>
-                    </article>
-                  ))}
+                        <p className="mt-2 text-xs text-stone-600 break-all">
+                          IP: <strong>{visitor.ip}</strong> | Página:{" "}
+                          <span className="font-mono">{visitor.entryPath}</span>
+                        </p>
+                        <p className="mt-1 text-xs text-stone-600 break-all">
+                          Origem: <strong>{formatVisitorSource(visitor)}</strong> | Localização:{" "}
+                          <strong>{formatVisitorLocation(visitor)}</strong>
+                        </p>
+                        <p className="mt-1 text-[11px] text-stone-500 break-all">
+                          Navegador/aplicativo: {visitor.userAgent}
+                        </p>
+                      </article>
+                    ))}
                   </div>
                 </article>
               )}

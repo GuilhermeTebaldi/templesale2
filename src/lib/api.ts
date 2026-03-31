@@ -13,6 +13,7 @@ export interface ProductDto {
   slug?: string;
   name: string;
   category: string;
+  clickCount?: number;
   price: string;
   priceNegotiable?: boolean;
   quantity?: number;
@@ -348,6 +349,18 @@ function isUnauthorizedApiError(error: unknown): boolean {
   return normalized.includes("401") || normalized.includes("não autorizado") || normalized.includes("unauthorized");
 }
 
+function isReadOnlyWriteError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const normalized = error.message.toLowerCase();
+  return (
+    normalized.includes("somente leitura") ||
+    normalized.includes("read-only") ||
+    (normalized.includes("escritas") && normalized.includes("bloquead"))
+  );
+}
+
 function isAdminLoginPayloadFormatError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
@@ -628,6 +641,9 @@ function normalizeProductItem(value: unknown): ProductDto | null {
     id,
     name: toStringValue(firstDefined(parsed, ["name", "title"])),
     category: toStringValue(firstDefined(parsed, ["category"])),
+    clickCount:
+      toNonNegativeInteger(firstDefined(parsed, ["clickCount", "click_count", "views", "view_count"])) ??
+      0,
     price: normalizedPrice,
     priceNegotiable: isPriceNegotiable,
     image,
@@ -2094,6 +2110,16 @@ export const api = {
       method: "POST",
     }).catch((error) => {
       if (isMissingApiRouteError(error)) {
+        return { success: true };
+      }
+      throw error;
+    });
+  },
+  trackProductClick(id: number) {
+    return request<{ success: boolean; clickCount?: number }>(`/api/products/${id}/click`, {
+      method: "POST",
+    }).catch((error) => {
+      if (isMissingApiRouteError(error) || isReadOnlyWriteError(error)) {
         return { success: true };
       }
       throw error;

@@ -976,6 +976,10 @@ export default function App() {
 
   const openProductDetails = React.useCallback((product: Product) => {
     setSelectedProduct(product);
+
+    void api.trackProductClick(product.id).catch((error) => {
+      console.error("Error tracking product click:", error);
+    });
   }, []);
 
   const handleProductDetailsClose = React.useCallback(() => {
@@ -1358,15 +1362,26 @@ export default function App() {
   }, [availableCategoryFilters, activeCategory]);
 
   const filteredProducts = React.useMemo(() => {
-    return products.filter((product) => {
-      const matchesCategory =
-        activeCategory === "All" || product.category === activeCategory;
-      const matchesSearch =
-        searchQuery === "" ||
-        product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.category.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesCategory && matchesSearch;
-    });
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+
+    return products
+      .filter((product) => {
+        const matchesCategory =
+          activeCategory === "All" || product.category === activeCategory;
+        const matchesSearch =
+          normalizedSearch === "" ||
+          product.name.toLowerCase().includes(normalizedSearch) ||
+          product.category.toLowerCase().includes(normalizedSearch);
+        return matchesCategory && matchesSearch;
+      })
+      .sort((left, right) => {
+        const clickDiff =
+          Math.max(0, Number(right.clickCount ?? 0)) - Math.max(0, Number(left.clickCount ?? 0));
+        if (clickDiff !== 0) {
+          return clickDiff;
+        }
+        return right.id - left.id;
+      });
   }, [products, activeCategory, searchQuery]);
 
   return (
@@ -2180,28 +2195,20 @@ export default function App() {
 
       <main className="grow pt-20">
         {/* Hero Section */}
-        <section className="relative h-[80vh] overflow-hidden">
+        <section className="relative h-28 sm:h-36 overflow-hidden">
           <img
             src={HOME_HERO_FALLBACK_IMAGE}
             alt={t("Imagem de destaque")}
             className="absolute inset-0 w-full h-full object-cover"
             referrerPolicy="no-referrer"
           />
-          <div className="absolute inset-0 bg-black/20" />
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-white px-6 text-center">
-            <motion.span
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8 }}
-              className="text-xs uppercase tracking-[0.4em] mb-6"
-            >
-              {heroCollectionLabel}
-            </motion.span>
+          <div className="absolute inset-0 bg-black/30" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-white px-4 sm:px-6 text-center gap-2">
             <motion.h2
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.2 }}
-              className="text-5xl md:text-8xl font-serif italic mb-8 max-w-4xl leading-tight"
+              className="text-2xl sm:text-4xl font-serif italic leading-tight"
             >
               {t("Santuario da venda.")}
             </motion.h2>
@@ -2210,10 +2217,10 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.8, delay: 0.4 }}
               onClick={() => openMapWithSearch(activeCategory)}
-              className="group flex items-center gap-3 px-8 py-4 bg-white text-black text-xs uppercase tracking-[0.2em] font-medium hover:bg-stone-100 transition-all"
+              className="group flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-white text-black text-[9px] sm:text-[10px] uppercase tracking-[0.16em] font-medium hover:bg-stone-100 transition-all rounded-sm"
             >
               {t("Explorar coleção")}
-              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+              <ArrowRight className="w-3 h-3 transition-transform group-hover:translate-x-1" />
             </motion.button>
           </div>
         </section>

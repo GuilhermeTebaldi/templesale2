@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "motion/react";
-import { X, Package, Edit2, Trash2, ExternalLink } from "lucide-react";
+import { X, Package, Edit2, Trash2, ExternalLink, Search } from "lucide-react";
 import { type Product } from "./ProductCard";
 import { useI18n } from "../i18n/provider";
 import { formatCompactPriceFromUnknown } from "../lib/currency";
@@ -17,6 +17,23 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
   const { t, locale } = useI18n();
   const [deletingId, setDeletingId] = React.useState<number | null>(null);
   const [errorMessage, setErrorMessage] = React.useState("");
+  const [searchQuery, setSearchQuery] = React.useState("");
+
+  const filteredProducts = React.useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+    if (!normalizedSearch) {
+      return products;
+    }
+
+    return products.filter((product) => {
+      const localizedCategory = getCategoryLabel(product.category, locale).toLowerCase();
+      return (
+        product.name.toLowerCase().includes(normalizedSearch) ||
+        product.category.toLowerCase().includes(normalizedSearch) ||
+        localizedCategory.includes(normalizedSearch)
+      );
+    });
+  }, [products, locale, searchQuery]);
 
   const handleDelete = async (id: number) => {
     if (deletingId === id) {
@@ -72,56 +89,75 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
             </div>
           ) : (
             <div className="grid gap-6">
-              {products.map((product) => (
-                <motion.div 
-                  key={product.id}
-                  layout
-                  className="flex gap-6 p-4 bg-white border border-stone-100 rounded-sm hover:shadow-md transition-shadow group"
-                >
-                  <div className="w-24 h-32 bg-stone-100 overflow-hidden shrink-0">
-                    <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
-                  </div>
-                  
-                  <div className="grow flex flex-col justify-between py-1">
-                    <div>
-                      <div className="flex justify-between items-start">
-                        <h3 className="font-serif italic text-lg text-stone-800">{product.name}</h3>
-                        <span className="text-sm font-mono text-stone-900">
-                          {formatCompactPriceFromUnknown(product.price, locale, {
-                            priceNegotiable: product.priceNegotiable,
-                          })}
-                        </span>
-                      </div>
-                      <p className="text-[10px] uppercase tracking-widest text-stone-400 mt-1">
-                        {getCategoryLabel(product.category, locale)}
-                      </p>
-                    </div>
+              <div className="flex items-center gap-3 border border-stone-200 bg-white px-4 py-3 rounded-sm">
+                <Search className="w-4 h-4 text-stone-400" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder={t("Buscar produtos ou categorias...")}
+                  className="grow bg-transparent outline-none text-sm text-stone-700 placeholder:text-stone-400"
+                />
+              </div>
 
-                    <div className="flex gap-4 mt-4">
-                      <button 
-                        onClick={() => onEdit(product)}
-                        className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-stone-400 hover:text-stone-800 transition-colors"
-                      >
-                        <Edit2 className="w-3 h-3" />
-                        {t("Editar")}
-                      </button>
-                      <button 
-                        disabled={deletingId === product.id}
-                        onClick={() => {
-                          void handleDelete(product.id);
-                        }}
-                        className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-stone-400 hover:text-red-500 disabled:text-stone-300 transition-colors"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        {deletingId === product.id ? t("Excluindo...") : t("Excluir")}
-                      </button>
-                      <button className="ml-auto text-stone-300 hover:text-stone-800 transition-colors">
-                        <ExternalLink className="w-4 h-4" />
-                      </button>
+              {filteredProducts.length === 0 ? (
+                <div className="text-center py-16">
+                  <p className="text-stone-400 uppercase tracking-widest text-xs">
+                    {t("Nenhum produto encontrado")}
+                  </p>
+                </div>
+              ) : (
+                filteredProducts.map((product) => (
+                  <motion.div 
+                    key={product.id}
+                    layout
+                    className="flex gap-6 p-4 bg-white border border-stone-100 rounded-sm hover:shadow-md transition-shadow group"
+                  >
+                    <div className="w-24 h-32 bg-stone-100 overflow-hidden shrink-0">
+                      <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
                     </div>
-                  </div>
-                </motion.div>
-              ))}
+                    
+                    <div className="grow flex flex-col justify-between py-1">
+                      <div>
+                        <div className="flex justify-between items-start">
+                          <h3 className="font-serif italic text-lg text-stone-800">{product.name}</h3>
+                          <span className="text-sm font-mono text-stone-900">
+                            {formatCompactPriceFromUnknown(product.price, locale, {
+                              priceNegotiable: product.priceNegotiable,
+                            })}
+                          </span>
+                        </div>
+                        <p className="text-[10px] uppercase tracking-widest text-stone-400 mt-1">
+                          {getCategoryLabel(product.category, locale)}
+                        </p>
+                      </div>
+
+                      <div className="flex gap-4 mt-4">
+                        <button 
+                          onClick={() => onEdit(product)}
+                          className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-stone-400 hover:text-stone-800 transition-colors"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          {t("Editar")}
+                        </button>
+                        <button 
+                          disabled={deletingId === product.id}
+                          onClick={() => {
+                            void handleDelete(product.id);
+                          }}
+                          className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-stone-400 hover:text-red-500 disabled:text-stone-300 transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          {deletingId === product.id ? t("Excluindo...") : t("Excluir")}
+                        </button>
+                        <button className="ml-auto text-stone-300 hover:text-stone-800 transition-colors">
+                          <ExternalLink className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))
+              )}
             </div>
           )}
         </div>

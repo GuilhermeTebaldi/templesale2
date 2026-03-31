@@ -11,6 +11,7 @@ export interface Product {
   slug?: string;
   name: string;
   category: string;
+  clickCount?: number;
   price: string;
   priceNegotiable?: boolean;
   quantity?: number;
@@ -140,15 +141,15 @@ export default function ProductCard({
         </div>
       </div>
       
-      <div className="mt-4 flex flex-col gap-1">
-        <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400 font-medium">
+      <div className="mt-3 sm:mt-4 flex flex-col gap-2 sm:gap-1.5">
+        <span className="inline-flex w-fit max-w-full truncate items-center rounded-sm border border-stone-200/80 bg-stone-50 px-2 py-1 text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-600 shadow-[0_4px_10px_rgba(0,0,0,0.1)] sm:border-transparent sm:bg-transparent sm:px-0 sm:py-0 sm:tracking-[0.2em] sm:text-stone-500 sm:shadow-none">
           {getCategoryLabel(product.category, locale)}
         </span>
-        <div className="flex justify-between items-start">
-          <h3 className="font-serif italic text-lg text-stone-800 leading-tight">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 sm:gap-3">
+          <h3 className="text-[15px] sm:text-[17px] font-medium text-stone-900 leading-[1.35] tracking-[0.01em] [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] overflow-hidden">
             {product.name}
           </h3>
-          <span className="font-mono text-sm text-stone-600">
+          <span className="text-[13px] sm:text-sm font-medium text-stone-800 tracking-[0.01em] whitespace-nowrap sm:mt-0.5">
             {formatCompactPriceFromUnknown(product.price, locale, {
               priceNegotiable: product.priceNegotiable,
             })}

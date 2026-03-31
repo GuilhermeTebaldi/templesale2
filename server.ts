@@ -18,6 +18,7 @@ type ProductRecord = {
   slug?: string;
   name: string;
   category: string;
+  clickCount?: number;
   price: string;
   priceNegotiable?: boolean;
   quantity?: number;
@@ -38,6 +39,7 @@ type ProductRow = {
   slug: string | null;
   name: string;
   category: string;
+  click_count: number;
   price: string;
   price_negotiable: number | boolean;
   quantity: number;
@@ -685,6 +687,7 @@ const PRODUCT_SELECT_FIELDS = `
   NULLIF(TRIM(COALESCE(p.slug, '')), '') AS slug,
   COALESCE(NULLIF(TRIM(COALESCE(p.name, '')), ''), NULLIF(TRIM(COALESCE(p.title, '')), ''), 'Produto sem título') AS name,
   p.category,
+  COALESCE(p.click_count, 0) AS click_count,
   p.price,
   COALESCE(p.price_negotiable, FALSE) AS price_negotiable,
   COALESCE(p.quantity, 1) AS quantity,
@@ -861,6 +864,7 @@ function normalizeProductRow(row: Record<string, unknown>): ProductRow {
     slug: toNullableString(row.slug),
     name: String(row.name ?? ""),
     category: String(row.category ?? ""),
+    click_count: toRequiredNonNegativeInteger(row.click_count, 0),
     price: String(row.price ?? ""),
     price_negotiable: toBooleanValue(row.price_negotiable, false),
     quantity: toRequiredNonNegativeInteger(row.quantity, 1),
@@ -1523,6 +1527,7 @@ function initializeSqliteDatabase() {
       slug TEXT,
       name TEXT NOT NULL,
       category TEXT NOT NULL,
+      click_count INTEGER NOT NULL DEFAULT 0,
       price TEXT NOT NULL,
       price_negotiable INTEGER NOT NULL DEFAULT 0,
       quantity INTEGER NOT NULL DEFAULT 1,
@@ -1680,9 +1685,13 @@ function initializeSqliteDatabase() {
   if (!productColumns.some((column) => column.name === "price_negotiable")) {
     db.exec("ALTER TABLE products ADD COLUMN price_negotiable INTEGER NOT NULL DEFAULT 0");
   }
+  if (!productColumns.some((column) => column.name === "click_count")) {
+    db.exec("ALTER TABLE products ADD COLUMN click_count INTEGER NOT NULL DEFAULT 0");
+  }
   if (!productColumns.some((column) => column.name === "slug")) {
     db.exec("ALTER TABLE products ADD COLUMN slug TEXT");
   }
+  db.exec("UPDATE products SET click_count = 0 WHERE click_count IS NULL OR click_count < 0");
   db.exec("UPDATE products SET quantity = 1 WHERE quantity IS NULL OR quantity < 0");
   db.exec(
     `
@@ -1875,6 +1884,7 @@ async function initializePostgresDatabase() {
         slug TEXT,
         name TEXT NOT NULL,
         category TEXT NOT NULL,
+        click_count INTEGER NOT NULL DEFAULT 0,
         price TEXT NOT NULL,
         price_negotiable BOOLEAN NOT NULL DEFAULT FALSE,
         quantity INTEGER NOT NULL DEFAULT 1,
@@ -1970,6 +1980,7 @@ async function initializePostgresDatabase() {
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS name TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS title TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS category TEXT",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS click_count INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS price TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS price_negotiable BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS quantity INTEGER",
@@ -2051,6 +2062,7 @@ async function initializePostgresDatabase() {
         )
     `,
     "UPDATE products SET quantity = 1 WHERE quantity IS NULL OR quantity < 0",
+    "UPDATE products SET click_count = 0 WHERE click_count IS NULL OR click_count < 0",
     "UPDATE products SET lat = COALESCE(lat, latitude) WHERE lat IS NULL",
     "UPDATE products SET lng = COALESCE(lng, longitude) WHERE lng IS NULL",
     "ALTER TABLE products ALTER COLUMN quantity SET DEFAULT 1",
@@ -2775,6 +2787,50 @@ async function selectProductByIdRow(productId: number): Promise<ProductRow | und
     )
     .get(productId) as Record<string, unknown> | undefined;
   return row ? normalizeProductRow(row) : undefined;
+}
+
+async function incrementProductClickCountRecord(productId: number): Promise<number | undefined> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        UPDATE products
+        SET click_count = COALESCE(click_count, 0) + 1
+        WHERE id = $1
+        RETURNING COALESCE(click_count, 0) AS click_count
+      `,
+      [productId],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return undefined;
+    }
+    return toRequiredNonNegativeInteger(row.click_count, 0);
+  }
+
+  const db = requireSqliteDb();
+  const updateResult = db
+    .prepare(
+      `
+        UPDATE products
+        SET click_count = COALESCE(click_count, 0) + 1
+        WHERE id = ?
+      `,
+    )
+    .run(productId);
+  if (updateResult.changes === 0) {
+    return undefined;
+  }
+
+  const row = db
+    .prepare(
+      `
+        SELECT COALESCE(click_count, 0) AS click_count
+        FROM products
+        WHERE id = ?
+      `,
+    )
+    .get(productId) as Record<string, unknown> | undefined;
+  return toRequiredNonNegativeInteger(row?.click_count, 0);
 }
 
 async function selectProductCommentByIdRow(commentId: number): Promise<ProductCommentRow | undefined> {
@@ -3939,6 +3995,7 @@ function rowToProduct(row: ProductRow): ProductRecord {
     id: row.id,
     name: row.name,
     category: row.category,
+    clickCount: toRequiredNonNegativeInteger(row.click_count, 0),
     price: toBooleanValue(row.price_negotiable, false)
       ? NEGOTIABLE_PRICE_STORAGE_VALUE
       : String(row.price ?? ""),
@@ -6337,6 +6394,29 @@ async function bootstrap() {
       res.json(rowToProduct(product));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao carregar produto.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/products/:id/click", async (req, res) => {
+    const productId = Number(req.params.id);
+    if (!Number.isInteger(productId) || productId <= 0) {
+      res.status(400).json({ error: "ID de produto inválido." });
+      return;
+    }
+
+    try {
+      const clickCount = await incrementProductClickCountRecord(productId);
+      if (clickCount === undefined) {
+        res.status(404).json({ error: "Produto não encontrado." });
+        return;
+      }
+      res.json({
+        success: true,
+        clickCount,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao registrar clique no produto.";
       res.status(500).json({ error: message });
     }
   });
