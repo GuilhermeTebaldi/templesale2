@@ -107,6 +107,14 @@ function resolveProductSlugFromPathname(pathname: string): string {
   }
 }
 
+function buildProductPath(product: Product): string {
+  const normalizedSlug = normalizeProductSlug(product.slug);
+  if (normalizedSlug) {
+    return `/${encodeURIComponent(normalizedSlug)}`;
+  }
+  return `/?product=${product.id}`;
+}
+
 function parseCartStorage(raw: string): Record<number, number> {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -975,6 +983,16 @@ export default function App() {
   );
 
   const openProductDetails = React.useCallback((product: Product) => {
+    if (typeof window !== "undefined") {
+      const nextPath = buildProductPath(product);
+      const currentLocation = `${window.location.pathname}${window.location.search}`;
+      const targetLocation = new URL(nextPath, window.location.origin);
+      const nextLocation = `${targetLocation.pathname}${targetLocation.search}`;
+      if (currentLocation !== nextLocation) {
+        window.history.pushState({ productId: product.id }, "", nextLocation);
+      }
+    }
+
     setSelectedProduct(product);
 
     void api.trackProductClick(product.id).catch((error) => {
@@ -984,6 +1002,13 @@ export default function App() {
 
   const handleProductDetailsClose = React.useCallback(() => {
     setSelectedProduct(null);
+
+    if (typeof window !== "undefined") {
+      const currentLocation = `${window.location.pathname}${window.location.search}`;
+      if (currentLocation !== "/") {
+        window.history.replaceState({}, "", "/");
+      }
+    }
   }, []);
 
   const hasResolvedProductFromUrl = React.useRef(false);
@@ -1026,6 +1051,43 @@ export default function App() {
     }
 
     hasResolvedProductFromUrl.current = true;
+  }, [products]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const syncSelectedProductFromUrl = () => {
+      const slugFromPathname = resolveProductSlugFromPathname(window.location.pathname);
+      if (slugFromPathname) {
+        const sharedBySlug = products.find(
+          (item) => normalizeProductSlug(item.slug) === slugFromPathname,
+        );
+        setSelectedProduct(sharedBySlug ?? null);
+        return;
+      }
+
+      const searchParams = new URLSearchParams(window.location.search);
+      const rawProductId = searchParams.get("product");
+      const productId = Number(rawProductId);
+      if (Number.isInteger(productId) && productId > 0) {
+        const sharedProduct = products.find((item) => item.id === productId);
+        setSelectedProduct(sharedProduct ?? null);
+        return;
+      }
+
+      setSelectedProduct(null);
+    };
+
+    const handlePopState = () => {
+      syncSelectedProductFromUrl();
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
   }, [products]);
 
   const handleToggleLike = async (product: Product) => {
