@@ -75,7 +75,7 @@ export default function ProductCard({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.4 }}
-            className="h-full w-full object-contain p-2 sm:p-3"
+            className="h-full w-full object-contain p-0.5 sm:p-1 scale-[1.03]"
             referrerPolicy="no-referrer"
           />
         </AnimatePresence>
