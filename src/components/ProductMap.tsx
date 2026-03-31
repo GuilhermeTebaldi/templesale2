@@ -989,7 +989,7 @@ export default function ProductMap({
     >
       <div className="relative w-full h-full font-sans text-stone-900">
         <div className="absolute top-4 left-4 right-4 z-[3000] flex flex-col sm:flex-row items-start sm:items-center gap-4 pointer-events-none">
-          <div className="bg-stone-50/95 backdrop-blur-md border border-stone-200 rounded-2xl p-4 shadow-xl pointer-events-auto flex items-center gap-4 w-full sm:w-auto">
+          <div className="relative z-30 bg-stone-50/95 backdrop-blur-md border border-stone-200 rounded-2xl p-4 shadow-xl pointer-events-auto flex items-center gap-4 w-full sm:w-auto">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-stone-800 rounded-xl flex items-center justify-center text-stone-100">
                 <Package size={20} />
@@ -1019,7 +1019,7 @@ export default function ProductMap({
                 className="w-full pl-10 pr-4 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"
               />
               {normalizedTopSearchQuery && (
-                <div className="absolute top-[calc(100%+8px)] left-0 right-0 bg-stone-50/98 backdrop-blur-md border border-stone-200 rounded-xl shadow-2xl overflow-hidden">
+                <div className="absolute z-40 top-[calc(100%+8px)] left-0 right-0 bg-stone-50/98 backdrop-blur-md border border-stone-200 rounded-xl shadow-2xl overflow-hidden">
                   <div className="px-3 py-2 border-b border-stone-200 bg-stone-100/80 flex items-center justify-between gap-3">
                     <span className="text-[10px] uppercase tracking-[0.14em] font-bold text-stone-500">
                       {t("Resultados da busca")}
@@ -1071,7 +1071,7 @@ export default function ProductMap({
             </div>
           </div>
 
-          <div className="bg-stone-50/95 backdrop-blur-md border border-stone-200 rounded-2xl p-1 shadow-xl flex items-center gap-1 pointer-events-auto">
+          <div className="relative z-20 bg-stone-50/95 backdrop-blur-md border border-stone-200 rounded-2xl p-1 shadow-xl flex items-center gap-1 pointer-events-auto">
             <button
               type="button"
               onClick={() => {
