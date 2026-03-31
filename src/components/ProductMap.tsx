@@ -988,7 +988,7 @@ export default function ProductMap({
       className="fixed inset-0 z-170 bg-[#fdfcfb] overflow-hidden"
     >
       <div className="relative w-full h-full font-sans text-stone-900">
-        <div className="absolute top-4 left-4 right-4 z-1000 flex flex-col sm:flex-row items-start sm:items-center gap-4 pointer-events-none">
+        <div className="absolute top-4 left-4 right-4 z-[3000] flex flex-col sm:flex-row items-start sm:items-center gap-4 pointer-events-none">
           <div className="bg-stone-50/95 backdrop-blur-md border border-stone-200 rounded-2xl p-4 shadow-xl pointer-events-auto flex items-center gap-4 w-full sm:w-auto">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-stone-800 rounded-xl flex items-center justify-center text-stone-100">
@@ -1145,7 +1145,7 @@ export default function ProductMap({
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="absolute top-0 right-0 h-full w-full sm:w-105 bg-stone-50/98 backdrop-blur-xl border-l border-stone-200 z-2000 shadow-2xl flex flex-col"
+              className="absolute top-0 right-0 h-full w-full sm:w-105 bg-stone-50/98 backdrop-blur-xl border-l border-stone-200 z-[2500] shadow-2xl flex flex-col"
             >
               <div className="p-6 border-b border-stone-100 bg-stone-100/80">
                 <div className="flex items-center justify-between mb-4 gap-3">
