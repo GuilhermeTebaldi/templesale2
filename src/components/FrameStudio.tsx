@@ -754,10 +754,6 @@ async function exportFrameWithCanvasFallback(params: {
   context.textAlign = "left";
   context.textBaseline = "alphabetic";
 
-  context.font = "600 28px Inter, Arial, sans-serif";
-  context.fillStyle = theme.categoryColor;
-  context.fillText(category.toUpperCase(), padding, footerY - 210);
-
   const titleFont = SERIF_CANVAS_TITLE_THEMES.has(params.frameTheme)
     ? "italic 600 72px serif"
     : "600 68px Inter, Arial, sans-serif";
@@ -765,10 +761,31 @@ async function exportFrameWithCanvasFallback(params: {
   context.fillStyle = theme.titleColor;
   const titleLines = wrapCanvasText(context, title, size - padding * 2, 3);
   const titleLineHeight = 78;
-  const titleStartY = footerY - 130 - titleLineHeight * Math.max(titleLines.length - 1, 0);
+  const titleBottomY = showPrice ? footerY - 150 : footerY - 84;
+  const minTitleStartY = padding + 128;
+  const titleStartY = Math.max(
+    minTitleStartY,
+    titleBottomY - titleLineHeight * Math.max(titleLines.length - 1, 0),
+  );
   titleLines.forEach((line, index) => {
     context.fillText(line, padding, titleStartY + index * titleLineHeight);
   });
+
+  context.font = "600 28px Inter, Arial, sans-serif";
+  const categoryText = category.toUpperCase();
+  const categoryGap = 58;
+  const minCategoryY = padding + 54;
+  const categoryY = Math.max(minCategoryY, titleStartY - categoryGap);
+  context.shadowColor = "rgba(0,0,0,0.42)";
+  context.shadowBlur = 8;
+  context.shadowOffsetX = 0;
+  context.shadowOffsetY = 1;
+  context.fillStyle = theme.categoryColor;
+  context.fillText(categoryText, padding, categoryY);
+  context.shadowColor = "transparent";
+  context.shadowBlur = 0;
+  context.shadowOffsetX = 0;
+  context.shadowOffsetY = 0;
 
   if (showPrice) {
     context.font = "700 40px Inter, Arial, sans-serif";
@@ -1243,11 +1260,13 @@ export default function FrameStudio() {
 
               <div className={`absolute inset-0 ${currentTheme.overlayClass}`} />
               <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8">
-                <div className="space-y-3">
-                  <span className={currentTheme.categoryClass}>
+                <div className="flex flex-col gap-4">
+                  <span
+                    className={`${currentTheme.categoryClass} inline-flex w-fit items-center leading-none [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]`}
+                  >
                     {frameCategory || "Categoria"}
                   </span>
-                  <h3 className={currentTheme.titleClass}>
+                  <h3 className={`${currentTheme.titleClass} mt-0`}>
                     {frameTitle || "Nome prodotto"}
                   </h3>
                   <div className="flex items-end justify-between gap-3">
