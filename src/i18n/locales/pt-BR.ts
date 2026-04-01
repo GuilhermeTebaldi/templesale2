@@ -84,4 +84,7 @@ export const ptBRTranslations: Record<string, string> = {
   "Resultados da busca": "Resultados da busca",
   "{count} resultado(s)": "{count} resultado(s)",
   "Sem resultados para esta busca.": "Sem resultados para esta busca.",
+  "Email cadastrado": "Email cadastrado",
+  "Sem email cadastrado": "Sem email cadastrado",
+  "Este email nao pode ser alterado.": "Este email nao pode ser alterado.",
 };

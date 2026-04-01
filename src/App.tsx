@@ -285,6 +285,7 @@ export default function App() {
     return normalizedName.length >= 2 && normalizedWhatsapp.length >= 6;
   }, [currentUser]);
   const memberName = currentUser?.name || t("Membro cadastrado");
+  const memberEmail = String(currentUser?.email ?? "").trim();
   const memberAvatar =
     String(currentUser?.avatarUrl ?? "").trim() ||
     "https://picsum.photos/seed/avatar/200/200";
@@ -1540,7 +1541,12 @@ export default function App() {
         className="fixed top-0 right-0 bottom-0 w-[85vw] max-w-sm z-80 bg-[#fdfcfb] shadow-2xl flex flex-col"
       >
         <div className="p-8 flex justify-between items-center border-b border-stone-100">
-          <h2 className="text-xl font-serif tracking-widest uppercase">{t("Painel")}</h2>
+          <div className="min-w-0 pr-3">
+            <h2 className="text-xl font-serif tracking-widest uppercase">{t("Painel")}</h2>
+            {memberEmail && (
+              <p className="mt-1 truncate text-[11px] font-medium text-stone-500">{memberEmail}</p>
+            )}
+          </div>
           <button
             onClick={() => {
               setIsUserOpen(false);
