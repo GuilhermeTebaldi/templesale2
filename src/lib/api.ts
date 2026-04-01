@@ -3,6 +3,7 @@ import {
   normalizeProductDetailKey,
   normalizeProductDetailsRecord,
 } from "./product-details";
+import { getCompatibleImageUrl } from "./product-images";
 import {
   NEGOTIABLE_PRICE_STORAGE_VALUE,
   isNegotiablePriceValue,
@@ -193,6 +194,9 @@ type ApiEnvelope = {
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "")
   .trim()
   .replace(/\/+$/, "");
+const RETRYABLE_HTTP_STATUSES = new Set([502, 503, 504]);
+const RETRYABLE_HTTP_METHODS = new Set(["GET", "HEAD"]);
+const RETRYABLE_FETCH_ATTEMPTS = 3;
 const AUTH_TOKEN_STORAGE_KEY = "templesale_auth_token";
 const ADMIN_AUTH_TOKEN_STORAGE_KEY = "templesale_admin_token";
 const ADMIN_SESSION_EMAIL_STORAGE_KEY = "templesale_admin_email";
@@ -600,10 +604,15 @@ function normalizeProductImages(rawImages: unknown, rawImage: unknown): string[]
   if (fallbackImage && !images.includes(fallbackImage)) {
     images.unshift(fallbackImage);
   }
-  if (images.length > 0) {
-    return images;
+  const compatibleImages = images
+    .map((image) => getCompatibleImageUrl(image))
+    .filter((image) => image.length > 0);
+  const deduped = Array.from(new Set(compatibleImages));
+  if (deduped.length > 0) {
+    return deduped;
   }
-  return fallbackImage ? [fallbackImage] : [];
+  const compatibleFallback = getCompatibleImageUrl(fallbackImage);
+  return compatibleFallback ? [compatibleFallback] : [];
 }
 
 function normalizeProductItem(value: unknown): ProductDto | null {
@@ -1325,6 +1334,39 @@ type ApiRequestInit = RequestInit & {
   skipAuthToken?: boolean;
 };
 
+function waitForRetryDelay(attempt: number): Promise<void> {
+  const safeAttempt = Math.max(0, attempt);
+  const baseDelay = 250 * Math.pow(2, safeAttempt);
+  const jitter = Math.floor(Math.random() * 120);
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, baseDelay + jitter);
+  });
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  return String((error as { name?: unknown }).name ?? "") === "AbortError";
+}
+
+function isTransientNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  if (isAbortError(error)) {
+    return false;
+  }
+  const normalized = error.message.toLowerCase();
+  return (
+    normalized.includes("failed to fetch") ||
+    normalized.includes("networkerror") ||
+    normalized.includes("network request failed") ||
+    normalized.includes("network connection was lost") ||
+    normalized.includes("load failed")
+  );
+}
+
 async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
   const { useAdminToken = false, skipAuthToken = false, ...fetchInit } = init ?? {};
   const headers = new Headers(fetchInit.headers ?? {});
@@ -1342,73 +1384,102 @@ async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
     headers.set("X-Admin-Auth", token);
   }
 
-  const response = await trackedFetch(buildApiUrl(url), {
-    credentials: "include",
-    ...fetchInit,
-    headers,
-  });
+  const method = String(fetchInit.method ?? "GET").trim().toUpperCase() || "GET";
+  const canRetry = RETRYABLE_HTTP_METHODS.has(method);
+  const maxAttempts = canRetry ? RETRYABLE_FETCH_ATTEMPTS : 1;
 
-  const contentType = response.headers.get("content-type") || "";
-  const isJson = contentType.includes("application/json");
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const response = await trackedFetch(buildApiUrl(url), {
+        credentials: "include",
+        ...fetchInit,
+        headers,
+      });
 
-  if (!response.ok) {
-    if (response.status === 401) {
-      if (useAdminToken) {
-        clearAdminToken();
-        clearAdminSessionEmail();
-      } else {
-        clearAuthToken();
-      }
-    }
+      const contentType = response.headers.get("content-type") || "";
+      const isJson = contentType.includes("application/json");
 
-    let message = `${response.status} ${response.statusText}`;
-    if (isJson) {
-      try {
-        const payload = (await response.json()) as unknown;
-        const apiError = extractApiError(payload);
-        if (apiError) {
-          message = apiError;
+      if (!response.ok) {
+        if (response.status === 401) {
+          if (useAdminToken) {
+            clearAdminToken();
+            clearAdminSessionEmail();
+          } else {
+            clearAuthToken();
+          }
         }
-      } catch {
-        // Keep default HTTP message when JSON parsing fails.
+
+        const shouldRetryResponse =
+          canRetry &&
+          RETRYABLE_HTTP_STATUSES.has(response.status) &&
+          attempt + 1 < maxAttempts;
+        if (shouldRetryResponse) {
+          await waitForRetryDelay(attempt);
+          continue;
+        }
+
+        let message = `${response.status} ${response.statusText}`;
+        if (isJson) {
+          try {
+            const payload = (await response.json()) as unknown;
+            const apiError = extractApiError(payload);
+            if (apiError) {
+              message = apiError;
+            }
+          } catch {
+            // Keep default HTTP message when JSON parsing fails.
+          }
+        } else {
+          const text = await response.text();
+          if (text.trim().startsWith("<!doctype")) {
+            message =
+              "A API não respondeu corretamente. Reinicie com: pkill -f \"tsx server.ts\" && npm run dev";
+          }
+        }
+        throw new Error(message);
       }
-    } else {
-      const text = await response.text();
-      if (text.trim().startsWith("<!doctype")) {
-        message =
-          "A API não respondeu corretamente. Reinicie com: pkill -f \"tsx server.ts\" && npm run dev";
+
+      if (response.status === 204) {
+        return undefined as T;
       }
+
+      if (!isJson) {
+        const text = await response.text();
+        if (text.trim().startsWith("<!doctype")) {
+          throw new Error(
+            "API desatualizada no dev server. Reinicie com: pkill -f \"tsx server.ts\" && npm run dev",
+          );
+        }
+        throw new Error("Resposta inválida da API.");
+      }
+
+      const payload = (await response.json()) as unknown;
+      const envelope = asEnvelope(payload);
+      if (envelope) {
+        if (envelope.success === false) {
+          const message = extractApiError(payload) ?? "Falha na API.";
+          throw new Error(message);
+        }
+        if ("data" in envelope && envelope.data !== undefined) {
+          return envelope.data as T;
+        }
+      }
+
+      return payload as T;
+    } catch (error) {
+      const shouldRetryNetworkError =
+        canRetry &&
+        isTransientNetworkError(error) &&
+        attempt + 1 < maxAttempts;
+      if (shouldRetryNetworkError) {
+        await waitForRetryDelay(attempt);
+        continue;
+      }
+      throw error;
     }
-    throw new Error(message);
   }
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  if (!isJson) {
-    const text = await response.text();
-    if (text.trim().startsWith("<!doctype")) {
-      throw new Error(
-        "API desatualizada no dev server. Reinicie com: pkill -f \"tsx server.ts\" && npm run dev",
-      );
-    }
-    throw new Error("Resposta inválida da API.");
-  }
-
-  const payload = (await response.json()) as unknown;
-  const envelope = asEnvelope(payload);
-  if (envelope) {
-    if (envelope.success === false) {
-      const message = extractApiError(payload) ?? "Falha na API.";
-      throw new Error(message);
-    }
-    if ("data" in envelope && envelope.data !== undefined) {
-      return envelope.data as T;
-    }
-  }
-
-  return payload as T;
+  throw new Error("Falha temporária na API.");
 }
 
 async function uploadImageFileToEndpoint(

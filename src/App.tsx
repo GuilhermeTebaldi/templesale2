@@ -348,19 +348,33 @@ export default function App() {
   React.useEffect(() => {
     let cancelled = false;
 
-    const fetchProducts = async () => {
+    const fetchProducts = async (attempt = 0): Promise<void> => {
       try {
         const data = await api.getProducts();
         if (!cancelled) {
           setProducts(asArray<Product>(data));
+          setIsLoadingProducts(false);
         }
       } catch (err) {
+        const maxRetries = 4;
+        if (!cancelled && attempt < maxRetries) {
+          const delayMs = Math.min(1000 * Math.pow(2, attempt), 8000);
+          console.warn(
+            `[products] Tentativa ${attempt + 1} falhou. Nova tentativa em ${delayMs}ms.`,
+            err,
+          );
+          await new Promise<void>((resolve) => {
+            globalThis.setTimeout(resolve, delayMs);
+          });
+          if (!cancelled) {
+            await fetchProducts(attempt + 1);
+          }
+          return;
+        }
+
         console.error("Error fetching products:", err);
         if (!cancelled) {
           setProducts([]);
-        }
-      } finally {
-        if (!cancelled) {
           setIsLoadingProducts(false);
         }
       }
@@ -379,8 +393,8 @@ export default function App() {
       }
     };
 
-    fetchProducts();
-    restoreSession();
+    void fetchProducts();
+    void restoreSession();
 
     return () => {
       cancelled = true;
