@@ -32,6 +32,7 @@ const CATEGORIES = [
   "Bebês e Crianças",
   "Esportes e Lazer",
   "Hobbies e Colecionáveis",
+  "Vintage",
   "Antiguidades",
   "Livros, Papelaria e Cursos",
   "Instrumentos Musicais",
@@ -2144,12 +2145,14 @@ export default function App() {
          
           </div>
 
-          <h1
-            className="text-sm sm:text-2xl font-serif tracking-[0.08em] sm:tracking-[0.15em] uppercase text-center grow px-2 whitespace-nowrap notranslate"
+          <button
+            type="button"
+            onClick={scrollPageToTop}
+            className="text-sm sm:text-2xl font-serif tracking-[0.08em] sm:tracking-[0.15em] uppercase text-center grow px-2 whitespace-nowrap notranslate bg-transparent cursor-pointer"
             translate="no"
           >
             {BRAND_NAME}
-          </h1>
+          </button>
 
           <div className="flex items-center justify-end gap-1 sm:gap-4 w-auto sm:w-1/3 shrink-0">
             <button 

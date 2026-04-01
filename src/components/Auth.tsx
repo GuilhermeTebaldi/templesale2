@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "motion/react";
-import { X, ArrowRight, Mail, Lock, User } from "lucide-react";
+import { X, ArrowRight, Mail, Lock, User, Eye, EyeOff } from "lucide-react";
 import { useI18n } from "../i18n/provider";
 
 export type AuthMode = "login" | "register";
@@ -23,6 +23,7 @@ export default function Auth({ onSubmit, onClose, defaultMode = "register" }: Au
   const [mode, setMode] = React.useState<AuthMode>(defaultMode);
   const [errorMessage, setErrorMessage] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [isPasswordVisible, setIsPasswordVisible] = React.useState(false);
   const [formData, setFormData] = React.useState({
     email: "",
     password: "",
@@ -128,12 +129,24 @@ export default function Auth({ onSubmit, onClose, defaultMode = "register" }: Au
               <Lock className="absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-300" />
                 <input 
                   required
-                  type="password"
+                  type={isPasswordVisible ? "text" : "password"}
                   placeholder="••••••••"
-                  className="w-full bg-transparent border-b border-stone-200 py-3 pl-8 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
+                  className="w-full bg-transparent border-b border-stone-200 py-3 pl-8 pr-10 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
                   value={formData.password}
                   onChange={(e) => setFormData({...formData, password: e.target.value})}
                 />
+                <button
+                  type="button"
+                  onClick={() => setIsPasswordVisible((current) => !current)}
+                  className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-700 transition-colors"
+                  aria-label={isPasswordVisible ? t("Ocultar senha") : t("Ver senha")}
+                >
+                  {isPasswordVisible ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
               </div>
             </div>
 

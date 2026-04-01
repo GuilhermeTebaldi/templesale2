@@ -87,4 +87,6 @@ export const ptBRTranslations: Record<string, string> = {
   "Email cadastrado": "Email cadastrado",
   "Sem email cadastrado": "Sem email cadastrado",
   "Este email nao pode ser alterado.": "Este email nao pode ser alterado.",
+  "Ver senha": "Ver senha",
+  "Ocultar senha": "Ocultar senha",
 };
