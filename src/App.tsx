@@ -44,7 +44,7 @@ const CATEGORIES = [
 ];
 const BRAND_NAME = "TempleSale";
 const HOME_HERO_FALLBACK_IMAGE =
-  "https://i.pinimg.com/736x/d8/6a/96/d86a960149b06d59f2e8f4c992633874.jpg";
+  "https://i.pinimg.com/1200x/47/38/db/4738dbf78874192b8e38d5eadf13717f.jpg";
 const INSTAGRAM_PROFILE_URL =
   "https://www.instagram.com/templesale_?igsh=MWVndTY4Z3d6aHV0MA%3D%3D&utm_source=qr";
 const PARTNER_PROMO_URL = "https://www.puntoescort.com/";
