@@ -49,6 +49,7 @@ export const arSATranslations: Record<string, string> = {
   "Bem-vindo a plataforma de vendas TempleSale.": "مرحبًا بك في منصة البيع TempleSale.",
   "Collection {day} / {month} / {year}": "مجموعة {day} / {month} / {year}",
   "Santuario da venda.": "معبد البيع.",
+  "Arena de vendas.": "ساحة المبيعات.",
   "Explorar coleção": "استكشاف المجموعة",
   "Todos": "الكل",
   "Nenhum produto real publicado ainda.": "لم يتم نشر أي منتج فعلي بعد.",

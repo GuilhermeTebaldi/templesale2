@@ -49,6 +49,7 @@ export const itITTranslations: Record<string, string> = {
   "Bem-vindo a plataforma de vendas TempleSale.": "Benvenuto nella piattaforma di vendite TempleSale.",
   "Collection {day} / {month} / {year}": "Collezione {day} / {month} / {year}",
   "Santuario da venda.": "Santuario della vendita.",
+  "Arena de vendas.": "Arena delle vendite.",
   "Explorar coleção": "Esplora collezione",
   "Todos": "Tutti",
   "Nenhum produto real publicado ainda.": "Nessun prodotto reale pubblicato al momento.",
