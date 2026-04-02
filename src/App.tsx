@@ -2327,7 +2327,7 @@ export default function App() {
               transition={{ duration: 0.8, delay: 0.2 }}
               className="text-2xl sm:text-4xl font-serif italic leading-tight"
             >
-              {t("Santuario da venda.")}
+              {t("Anfiteatro da venda.")}
             </motion.h2>
             <motion.button
               initial={{ opacity: 0, scale: 0.9 }}

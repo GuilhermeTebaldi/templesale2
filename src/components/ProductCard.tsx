@@ -146,7 +146,7 @@ export default function ProductCard({
           {getCategoryLabel(product.category, locale)}
         </span>
         <div className="flex flex-col gap-1.5">
-          <h3 className="text-[18px] sm:text-[20px] font-semibold text-stone-900 leading-[1.25] [display:-webkit-box] [-webkit-line-clamp:3] [-webkit-box-orient:vertical] overflow-hidden">
+          <h3 className="text-[18px] sm:text-[20px] font-semibold text-stone-900 leading-tight [display:-webkit-box] [-webkit-line-clamp:3] [-webkit-box-orient:vertical] overflow-hidden">
             {product.name}
           </h3>
           <span className="text-[24px] sm:text-[28px] font-semibold text-stone-900 leading-none">
