@@ -295,7 +295,6 @@ export default function App() {
   const avatarPickerPanelRef = React.useRef<HTMLDivElement | null>(null);
   const notificationsButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const notificationsPanelRef = React.useRef<HTMLDivElement | null>(null);
-  const homeSearchSectionRef = React.useRef<HTMLElement | null>(null);
   const homeSearchInputRef = React.useRef<HTMLInputElement | null>(null);
   const hydratedCartStorageKeyRef = React.useRef<string | null>(null);
   const hydratedCartUnseenStorageKeyRef = React.useRef<string | null>(null);
@@ -1367,22 +1366,6 @@ export default function App() {
     setIsMapOpen(true);
   }, [activeCategory]);
 
-  const openHomeSearch = React.useCallback(() => {
-    setIsMenuOpen(false);
-    setIsFilterMenuOpen(false);
-
-    if (typeof window !== "undefined") {
-      homeSearchSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-      window.setTimeout(() => {
-        homeSearchInputRef.current?.focus();
-        homeSearchInputRef.current?.select();
-      }, 160);
-    }
-  }, []);
-
   const scrollPageToTop = React.useCallback(() => {
     if (typeof window === "undefined" || typeof document === "undefined") {
       return;
@@ -2187,12 +2170,6 @@ export default function App() {
           </button>
 
           <div className="flex items-center justify-end gap-1 sm:gap-4 w-auto sm:w-1/3 shrink-0">
-            <button 
-              onClick={openHomeSearch}
-              className="p-2 hover:bg-stone-50 rounded-full transition-colors"
-            >
-              <Search className="w-5 h-5 text-stone-600" />
-            </button>
             {hasMemberAccess ? (
               <>
                 <div className="relative">
@@ -2360,8 +2337,37 @@ export default function App() {
           </div>
         </section>
 
-        {/* Filter Bar */}
         <section className="sticky top-20 z-40 bg-[#fdfcfb] border-b border-stone-100">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
+              <input
+                ref={homeSearchInputRef}
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={t("Buscar produtos, categorias ou cidade (ex.: casa em Ardea)...")}
+                className="w-full h-11 rounded-xl border border-stone-200 bg-white pl-10 pr-10 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-colors"
+              />
+              {searchQuery.trim().length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    homeSearchInputRef.current?.focus();
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+                  aria-label={t("Limpar busca")}
+                >
+                  <X className="w-4 h-4 mx-auto" />
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Filter Bar */}
+        <section className="bg-[#fdfcfb] border-b border-stone-100">
           <div className="max-w-7xl mx-auto relative">
             {/* Gradient masks for mobile scroll */}
             <div className="absolute inset-y-0 left-0 w-8 bg-linear-to-r from-[#fdfcfb] to-transparent z-10 pointer-events-none md:hidden" />
@@ -2388,36 +2394,6 @@ export default function App() {
                 </button>
               ))}
             </div>
-          </div>
-        </section>
-
-        <section
-          ref={homeSearchSectionRef}
-          className="max-w-7xl mx-auto px-4 sm:px-6 pt-3 sm:pt-4 scroll-mt-24"
-        >
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
-            <input
-              ref={homeSearchInputRef}
-              type="search"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder={t("Buscar produtos, categorias ou cidade (ex.: casa em Ardea)...")}
-              className="w-full h-11 rounded-xl border border-stone-200 bg-white pl-10 pr-10 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-colors"
-            />
-            {searchQuery.trim().length > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery("");
-                  homeSearchInputRef.current?.focus();
-                }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
-                aria-label={t("Limpar busca")}
-              >
-                <X className="w-4 h-4 mx-auto" />
-              </button>
-            )}
           </div>
         </section>
 
