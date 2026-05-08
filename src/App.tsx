@@ -2477,6 +2477,8 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   handleCategorySelect("All");
+                  setSearchQuery("");
+                  setMaxPriceFilter(null);
                   setIsCategoryDropdownOpen(false);
                   setIsPriceDropdownOpen(false);
                 }}
