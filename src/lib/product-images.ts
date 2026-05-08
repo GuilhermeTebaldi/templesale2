@@ -3,22 +3,12 @@ interface ProductImageSource {
   images?: unknown;
 }
 
-const SAFARI_UA_EXCLUSION_REGEX = /Chrome|Chromium|CriOS|Edg|OPR|FxiOS|Firefox|Android/i;
-
-function isSafariBrowser(): boolean {
-  if (typeof navigator === "undefined") {
-    return false;
-  }
-  const userAgent = String(navigator.userAgent ?? "");
-  if (!userAgent) {
-    return false;
-  }
-  const hasSafari = /Safari/i.test(userAgent) && /AppleWebKit/i.test(userAgent);
-  return hasSafari && !SAFARI_UA_EXCLUSION_REGEX.test(userAgent);
-}
-
 function isCloudinaryUrl(url: string): boolean {
   return /(^https?:\/\/)?res\.cloudinary\.com\//i.test(url);
+}
+
+function isCloudinaryDomainUrl(url: string): boolean {
+  return /(^https?:\/\/)?(?:www\.)?cloudinary\.com\//i.test(url);
 }
 
 function isAvifImageUrl(url: string): boolean {
@@ -27,6 +17,51 @@ function isAvifImageUrl(url: string): boolean {
 
 function replaceAvifExtension(url: string, nextExtension: "jpg" | "webp"): string {
   return String(url ?? "").replace(/\.avif(?=($|[?#]))/i, `.${nextExtension}`);
+}
+
+function normalizeHttpsProtocol(url: string): string {
+  const trimmed = String(url ?? "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (trimmed.startsWith("//")) {
+    return `https:${trimmed}`;
+  }
+  if (/^http:\/\//i.test(trimmed)) {
+    return trimmed.replace(/^http:\/\//i, "https://");
+  }
+  if (/^res\.cloudinary\.com\//i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+}
+
+function extractCloudinaryAssetUrlFromShareLink(url: string): string {
+  const normalized = normalizeHttpsProtocol(url);
+  if (!normalized || !isCloudinaryDomainUrl(normalized)) {
+    return normalized;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const queryKeys = ["url", "secure_url", "image_url", "download_url", "download"];
+    for (const key of queryKeys) {
+      const candidate = normalizeHttpsProtocol(parsed.searchParams.get(key) ?? "");
+      if (candidate && isCloudinaryUrl(candidate)) {
+        return candidate;
+      }
+    }
+
+    const stitched = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    const match = stitched.match(/(?:https?:\/\/)?res\.cloudinary\.com\/[^\s"'<>]+/i);
+    if (match?.[0]) {
+      return normalizeHttpsProtocol(match[0]);
+    }
+  } catch {
+    return normalized;
+  }
+
+  return normalized;
 }
 
 function normalizeAndDedupeImageUrls(values: string[]): string[] {
@@ -44,13 +79,15 @@ function normalizeAndDedupeImageUrls(values: string[]): string[] {
 }
 
 export function getCompatibleImageUrl(value: string): string {
-  const normalized = String(value ?? "").trim();
+  const normalized = extractCloudinaryAssetUrlFromShareLink(value);
   if (!normalized) {
     return "";
   }
-  if (isSafariBrowser() && isCloudinaryUrl(normalized) && isAvifImageUrl(normalized)) {
+
+  if (isCloudinaryUrl(normalized) && isAvifImageUrl(normalized)) {
     return replaceAvifExtension(normalized, "jpg");
   }
+
   return normalized;
 }
 
