@@ -245,6 +245,7 @@ export default function App() {
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = React.useState(false);
   const [isAvatarUploading, setIsAvatarUploading] = React.useState(false);
   const [avatarUploadError, setAvatarUploadError] = React.useState("");
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = React.useState(false);
   const cartToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasMemberAccess = Boolean(currentUser);
   const cartStorageKey = React.useMemo(
@@ -296,6 +297,7 @@ export default function App() {
   const notificationsButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const notificationsPanelRef = React.useRef<HTMLDivElement | null>(null);
   const homeSearchInputRef = React.useRef<HTMLInputElement | null>(null);
+  const categoryDropdownRef = React.useRef<HTMLDivElement | null>(null);
   const hydratedCartStorageKeyRef = React.useRef<string | null>(null);
   const hydratedCartUnseenStorageKeyRef = React.useRef<string | null>(null);
   const hydratedReadNotificationsStorageKeyRef = React.useRef<string | null>(null);
@@ -566,6 +568,39 @@ export default function App() {
       document.removeEventListener("keydown", handleEscape);
     };
   }, [isNotificationsOpen]);
+
+  React.useEffect(() => {
+    if (!isCategoryDropdownOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+      if (categoryDropdownRef.current?.contains(target)) {
+        return;
+      }
+      setIsCategoryDropdownOpen(false);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsCategoryDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isCategoryDropdownOpen]);
 
   React.useEffect(() => {
     if (!isAvatarPickerOpen) {
@@ -2368,32 +2403,74 @@ export default function App() {
 
         {/* Filter Bar */}
         <section className="bg-[#fdfcfb] border-b border-stone-100">
-          <div className="max-w-7xl mx-auto relative">
-            {/* Gradient masks for mobile scroll */}
-            <div className="absolute inset-y-0 left-0 w-8 bg-linear-to-r from-[#fdfcfb] to-transparent z-10 pointer-events-none md:hidden" />
-            <div className="absolute inset-y-0 right-0 w-8 bg-linear-to-l from-[#fdfcfb] to-transparent z-10 pointer-events-none md:hidden" />
-            
-            <div className="flex items-center justify-start gap-6 sm:gap-10 overflow-x-auto no-scrollbar px-6 sm:px-10 h-14 sm:h-16 scroll-smooth">
-              {availableCategoryFilters.map((category) => (
-                <button
-                  key={category.key}
-                  onClick={() => handleCategorySelect(category.key)}
-                  className={`text-[10px] uppercase tracking-[0.2em] font-medium transition-all whitespace-nowrap relative py-2 ${
-                    activeCategory === category.key
-                      ? "text-black" 
-                      : "text-stone-400 hover:text-stone-600"
+          <div ref={categoryDropdownRef} className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 sm:py-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  handleCategorySelect("All");
+                  setIsCategoryDropdownOpen(false);
+                }}
+                className={`px-3 py-2 rounded-lg border text-[10px] uppercase tracking-[0.2em] font-semibold transition-colors ${
+                  activeCategory === "All"
+                    ? "border-stone-900 text-stone-900 bg-stone-100"
+                    : "border-stone-300 text-stone-700 hover:border-stone-500"
+                }`}
+              >
+                TUTTI
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsCategoryDropdownOpen((current) => !current)}
+                className="px-3 py-2 rounded-lg border border-stone-300 text-stone-700 hover:border-stone-500 transition-colors inline-flex items-center gap-2"
+                aria-label={t("Filtro")}
+                aria-expanded={isCategoryDropdownOpen}
+              >
+                <span className="text-[10px] uppercase tracking-[0.18em] font-semibold">
+                  {t("Filtro")}
+                </span>
+                <ChevronRight
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                    isCategoryDropdownOpen ? "rotate-90" : ""
                   }`}
-                >
-                  {category.key === "All" ? t("Todos") : getCategoryLabel(category.key, locale)}
-                  {activeCategory === category.key && (
-                    <motion.div 
-                      layoutId="activeCategory"
-                      className="absolute bottom-0 left-0 right-0 h-px bg-black"
-                    />
-                  )}
-                </button>
-              ))}
+                />
+              </button>
             </div>
+
+            <AnimatePresence initial={false}>
+              {isCategoryDropdownOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className="overflow-hidden"
+                >
+                  <div className="pt-2 pb-1 flex flex-wrap gap-2">
+                    {availableCategoryFilters
+                      .filter((category) => category.key !== "All")
+                      .map((category) => (
+                        <button
+                          key={category.key}
+                          type="button"
+                          onClick={() => {
+                            handleCategorySelect(category.key);
+                            setIsCategoryDropdownOpen(false);
+                          }}
+                          className={`px-3 py-2 rounded-lg border text-[10px] uppercase tracking-[0.18em] font-medium transition-colors ${
+                            activeCategory === category.key
+                              ? "border-stone-900 text-stone-900 bg-stone-100"
+                              : "border-stone-200 text-stone-500 hover:text-stone-700 hover:border-stone-400"
+                          }`}
+                        >
+                          {getCategoryLabel(category.key, locale)}
+                        </button>
+                      ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </section>
 
