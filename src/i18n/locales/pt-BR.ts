@@ -21,6 +21,8 @@ export const ptBRTranslations: Record<string, string> = {
   "Buscar produtos, categorias ou cidade (ex.: casa em Ardea)...": "Buscar produtos, categorias ou cidade (ex.: casa em Ardea)...",
   "Filtrar resultados por produto, categoria ou cidade...": "Filtrar resultados por produto, categoria ou cidade...",
   "Limpar busca": "Limpar busca",
+  "Até qual valor (€)": "Até qual valor (€)",
+  "Limpar": "Limpar",
   "Visitar site parceiro PuntoEscort": "Visitar site parceiro PuntoEscort",
   "Logo PuntoEscort": "Logo PuntoEscort",
   "Parceiro em destaque": "Parceiro em destaque",

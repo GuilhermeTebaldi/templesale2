@@ -43,6 +43,8 @@ export const itITTranslations: Record<string, string> = {
   "Expandir painel": "Espandi pannello",
   "Reduzir painel": "Riduci pannello",
   "Limpar busca": "Pulisci ricerca",
+  "Até qual valor (€)": "Prezzo massimo (€)",
+  "Limpar": "Pulisci",
   "notification": "notifica",
   "notifications": "notifiche",
   "Bem-vindo a TempleSale": "Benvenuto su TempleSale",

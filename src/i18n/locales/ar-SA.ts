@@ -43,6 +43,8 @@ export const arSATranslations: Record<string, string> = {
   "Expandir painel": "توسيع اللوحة",
   "Reduzir painel": "تصغير اللوحة",
   "Limpar busca": "مسح البحث",
+  "Até qual valor (€)": "حتى أي سعر (€)",
+  "Limpar": "مسح",
   "notification": "إشعار",
   "notifications": "إشعارات",
   "Bem-vindo a TempleSale": "مرحبًا بك في TempleSale",

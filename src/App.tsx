@@ -16,6 +16,7 @@ import { useI18n } from "./i18n/provider";
 import { localeOptions, type AppLocale } from "./i18n";
 import { formatCollectionDate, formatRelativeTime } from "./i18n/formatters";
 import { getCategoryLabel } from "./i18n/categories";
+import { parsePriceToNumber } from "./lib/currency";
 
 const CATEGORIES = [
   "All",
@@ -246,6 +247,8 @@ export default function App() {
   const [isAvatarUploading, setIsAvatarUploading] = React.useState(false);
   const [avatarUploadError, setAvatarUploadError] = React.useState("");
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = React.useState(false);
+  const [isPriceDropdownOpen, setIsPriceDropdownOpen] = React.useState(false);
+  const [maxPriceFilter, setMaxPriceFilter] = React.useState<number | null>(null);
   const cartToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasMemberAccess = Boolean(currentUser);
   const cartStorageKey = React.useMemo(
@@ -570,7 +573,7 @@ export default function App() {
   }, [isNotificationsOpen]);
 
   React.useEffect(() => {
-    if (!isCategoryDropdownOpen) {
+    if (!isCategoryDropdownOpen && !isPriceDropdownOpen) {
       return;
     }
 
@@ -583,11 +586,13 @@ export default function App() {
         return;
       }
       setIsCategoryDropdownOpen(false);
+      setIsPriceDropdownOpen(false);
     };
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsCategoryDropdownOpen(false);
+        setIsPriceDropdownOpen(false);
       }
     };
 
@@ -600,7 +605,7 @@ export default function App() {
       document.removeEventListener("touchstart", handlePointerDown);
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [isCategoryDropdownOpen]);
+  }, [isCategoryDropdownOpen, isPriceDropdownOpen]);
 
   React.useEffect(() => {
     if (!isAvatarPickerOpen) {
@@ -1475,8 +1480,64 @@ export default function App() {
     }
   }, [availableCategoryFilters, activeCategory]);
 
+  const priceSliderMax = React.useMemo(() => {
+    const rawMaxPrice = products.reduce((highest, product) => {
+      if (product.priceNegotiable) {
+        return highest;
+      }
+      const parsedPrice = parsePriceToNumber(String(product.price ?? ""));
+      if (parsedPrice === null || !Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+        return highest;
+      }
+      return Math.max(highest, parsedPrice);
+    }, 0);
+
+    if (rawMaxPrice <= 0) {
+      return 1000;
+    }
+
+    const roundingBase =
+      rawMaxPrice <= 100 ? 10 : rawMaxPrice <= 1000 ? 50 : rawMaxPrice <= 5000 ? 100 : 500;
+    return Math.ceil(rawMaxPrice / roundingBase) * roundingBase;
+  }, [products]);
+
+  const priceSliderStep = React.useMemo(() => {
+    if (priceSliderMax <= 100) {
+      return 1;
+    }
+    if (priceSliderMax <= 1000) {
+      return 10;
+    }
+    if (priceSliderMax <= 5000) {
+      return 50;
+    }
+    return 100;
+  }, [priceSliderMax]);
+
+  React.useEffect(() => {
+    if (maxPriceFilter === null) {
+      return;
+    }
+    if (maxPriceFilter > priceSliderMax) {
+      setMaxPriceFilter(null);
+    }
+  }, [maxPriceFilter, priceSliderMax]);
+
+  const hasMaxPriceFilter =
+    typeof maxPriceFilter === "number" &&
+    Number.isFinite(maxPriceFilter) &&
+    maxPriceFilter > 0;
+  const effectivePriceSliderValue = hasMaxPriceFilter ? maxPriceFilter : priceSliderMax;
+  const formatSliderEuro = (value: number) =>
+    new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: "EUR",
+      maximumFractionDigits: 0,
+    }).format(Math.max(0, value));
+
   const filteredProducts = React.useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
+    const resolvedMaxPriceFilter = hasMaxPriceFilter ? maxPriceFilter : null;
 
     return products
       .filter((product) => {
@@ -1486,7 +1547,14 @@ export default function App() {
           normalizedSearch === "" ||
           product.name.toLowerCase().includes(normalizedSearch) ||
           product.category.toLowerCase().includes(normalizedSearch);
-        return matchesCategory && matchesSearch;
+        const matchesPrice =
+          resolvedMaxPriceFilter === null ||
+          (!product.priceNegotiable &&
+            (() => {
+              const productPrice = parsePriceToNumber(String(product.price ?? ""));
+              return productPrice !== null && productPrice <= resolvedMaxPriceFilter;
+            })());
+        return matchesCategory && matchesSearch && matchesPrice;
       })
       .sort((left, right) => {
         const clickDiff =
@@ -1496,7 +1564,7 @@ export default function App() {
         }
         return right.id - left.id;
       });
-  }, [products, activeCategory, searchQuery]);
+  }, [products, activeCategory, searchQuery, hasMaxPriceFilter, maxPriceFilter]);
 
   const randomProductsByCategory = React.useMemo(() => {
     const productsByCategory = new globalThis.Map<string, Product[]>();
@@ -2410,6 +2478,7 @@ export default function App() {
                 onClick={() => {
                   handleCategorySelect("All");
                   setIsCategoryDropdownOpen(false);
+                  setIsPriceDropdownOpen(false);
                 }}
                 className={`px-3 py-2 rounded-lg border text-[10px] uppercase tracking-[0.2em] font-semibold transition-colors ${
                   activeCategory === "All"
@@ -2422,7 +2491,10 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={() => setIsCategoryDropdownOpen((current) => !current)}
+                onClick={() => {
+                  setIsCategoryDropdownOpen((current) => !current);
+                  setIsPriceDropdownOpen(false);
+                }}
                 className="px-3 py-2 rounded-lg border border-stone-300 text-stone-700 hover:border-stone-500 transition-colors inline-flex items-center gap-2"
                 aria-label={t("Filtro")}
                 aria-expanded={isCategoryDropdownOpen}
@@ -2433,6 +2505,30 @@ export default function App() {
                 <ChevronRight
                   className={`w-3.5 h-3.5 transition-transform duration-200 ${
                     isCategoryDropdownOpen ? "rotate-90" : ""
+                  }`}
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPriceDropdownOpen((current) => !current);
+                  setIsCategoryDropdownOpen(false);
+                }}
+                className={`px-3 py-2 rounded-lg border transition-colors inline-flex items-center gap-2 ${
+                  hasMaxPriceFilter
+                    ? "border-stone-900 text-stone-900 bg-stone-100"
+                    : "border-stone-300 text-stone-700 hover:border-stone-500"
+                }`}
+                aria-label={t("Preço")}
+                aria-expanded={isPriceDropdownOpen}
+              >
+                <span className="text-[10px] uppercase tracking-[0.18em] font-semibold">
+                  {t("Preço")}
+                </span>
+                <ChevronRight
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                    isPriceDropdownOpen ? "rotate-90" : ""
                   }`}
                 />
               </button>
@@ -2457,6 +2553,7 @@ export default function App() {
                           onClick={() => {
                             handleCategorySelect(category.key);
                             setIsCategoryDropdownOpen(false);
+                            setIsPriceDropdownOpen(false);
                           }}
                           className={`px-3 py-2 rounded-lg border text-[10px] uppercase tracking-[0.18em] font-medium transition-colors ${
                             activeCategory === category.key
@@ -2471,10 +2568,68 @@ export default function App() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            <AnimatePresence initial={false}>
+              {isPriceDropdownOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className="overflow-hidden"
+                >
+                  <div className="pt-2 pb-1">
+                    <div className="w-full sm:max-w-[20rem] rounded-lg border border-stone-200 bg-white px-3 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[10px] uppercase tracking-[0.14em] font-semibold text-stone-600">
+                          {t("Até qual valor (€)")}
+                        </span>
+                        <span className="text-sm text-stone-900">
+                          {formatSliderEuro(effectivePriceSliderValue)}
+                        </span>
+                      </div>
+
+                      <input
+                        type="range"
+                        min={0}
+                        max={priceSliderMax}
+                        step={priceSliderStep}
+                        value={effectivePriceSliderValue}
+                        onChange={(event) => {
+                          const nextValue = Number(event.target.value);
+                          if (!Number.isFinite(nextValue) || nextValue <= 0) {
+                            setMaxPriceFilter(null);
+                            return;
+                          }
+                          setMaxPriceFilter(nextValue);
+                        }}
+                        className="mt-3 h-1.5 w-full cursor-pointer accent-stone-800"
+                        aria-label={t("Até qual valor (€)")}
+                      />
+
+                      <div className="mt-2 flex items-center justify-between text-[11px] text-stone-400">
+                        <span>{formatSliderEuro(0)}</span>
+                        <span>{formatSliderEuro(priceSliderMax)}</span>
+                      </div>
+
+                      {hasMaxPriceFilter && (
+                        <button
+                          type="button"
+                          onClick={() => setMaxPriceFilter(null)}
+                          className="mt-3 h-9 px-3 rounded-lg border border-stone-300 text-[10px] uppercase tracking-[0.14em] font-semibold text-stone-700 hover:border-stone-700 transition-colors"
+                        >
+                          {t("Limpar")}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </section>
 
-        {searchQuery.trim().length === 0 && randomProductsByCategory.length > 0 && (
+        {searchQuery.trim().length === 0 && !hasMaxPriceFilter && randomProductsByCategory.length > 0 && (
           <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-5">
             <div className="overflow-x-auto no-scrollbar">
               <div className="flex items-center gap-2.5 sm:gap-3 min-w-max">
