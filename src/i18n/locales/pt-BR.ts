@@ -73,6 +73,11 @@ export const ptBRTranslations: Record<string, string> = {
   "Preço será definido na negociação": "Preço será definido na negociação",
   "Enviando fotos...": "Enviando fotos...",
   "Fotos concluídas: {done}/{total}": "Fotos concluídas: {done}/{total}",
+  "Cancelar envio": "Cancelar envio",
+  "Cancelando...": "Cancelando...",
+  "Envio de fotos cancelado.": "Envio de fotos cancelado.",
+  "Aguarde o envio das fotos terminar ou cancele o envio para publicar.":
+    "Aguarde o envio das fotos terminar ou cancele o envio para publicar.",
   "Fotos enviadas: {count}/{max}": "Fotos enviadas: {count}/{max}",
   "A primeira foto será usada como capa do anúncio.":
     "A primeira foto será usada como capa do anúncio.",

@@ -143,6 +143,11 @@ export const itITTranslations: Record<string, string> = {
   "Enviando...": "Invio...",
   "Enviando fotos...": "Invio foto...",
   "Fotos concluídas: {done}/{total}": "Foto completate: {done}/{total}",
+  "Cancelar envio": "Annulla invio",
+  "Cancelando...": "Annullamento...",
+  "Envio de fotos cancelado.": "Invio foto annullato.",
+  "Aguarde o envio das fotos terminar ou cancele o envio para publicar.":
+    "Attendi il completamento dell'invio foto oppure annulla l'invio prima di pubblicare.",
   "Fotos enviadas: {count}/{max}": "Foto caricate: {count}/{max}",
   "A primeira foto será usada como capa do anúncio.":
     "La prima foto sarà usata come copertina dell'annuncio.",

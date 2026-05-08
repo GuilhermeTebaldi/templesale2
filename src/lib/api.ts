@@ -168,6 +168,10 @@ export interface UploadImageResponse {
   height?: number;
 }
 
+type UploadImageOptions = {
+  signal?: AbortSignal;
+};
+
 export interface AdminSessionDto {
   email: string;
 }
@@ -1485,6 +1489,7 @@ async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
 async function uploadImageFileToEndpoint(
   file: File,
   endpoint: string,
+  options?: UploadImageOptions,
 ): Promise<UploadImageResponse> {
   const headers = new Headers({
     "Content-Type": file.type || "image/jpeg",
@@ -1500,6 +1505,7 @@ async function uploadImageFileToEndpoint(
     credentials: "include",
     headers,
     body: file,
+    signal: options?.signal,
     skipGlobalLoadingOverlay: true,
   });
 
@@ -1544,6 +1550,7 @@ async function uploadImageFileToEndpoint(
 async function uploadImageFile(
   file: File,
   endpointOrEndpoints: string | string[],
+  options?: UploadImageOptions,
 ): Promise<UploadImageResponse> {
   const endpointList = Array.isArray(endpointOrEndpoints)
     ? endpointOrEndpoints
@@ -1552,7 +1559,7 @@ async function uploadImageFile(
 
   for (const endpoint of endpointList) {
     try {
-      return await uploadImageFileToEndpoint(file, endpoint);
+      return await uploadImageFileToEndpoint(file, endpoint, options);
     } catch (error) {
       lastError = error;
       if (!isMissingApiRouteError(error)) {
@@ -1567,8 +1574,11 @@ async function uploadImageFile(
   throw new Error("Falha ao enviar imagem.");
 }
 
-async function uploadProductImageFile(file: File): Promise<UploadImageResponse> {
-  return uploadImageFile(file, ["/api/uploads/product-image", "/api/uploads/image"]);
+async function uploadProductImageFile(
+  file: File,
+  options?: UploadImageOptions,
+): Promise<UploadImageResponse> {
+  return uploadImageFile(file, ["/api/uploads/product-image", "/api/uploads/image"], options);
 }
 
 async function uploadProfileImageFile(file: File): Promise<UploadImageResponse> {
@@ -2225,8 +2235,8 @@ export const api = {
       method: "DELETE",
     });
   },
-  uploadProductImage(file: File) {
-    return uploadProductImageFile(file);
+  uploadProductImage(file: File, options?: UploadImageOptions) {
+    return uploadProductImageFile(file, options);
   },
   uploadProfileImage(file: File) {
     return uploadProfileImageFile(file);

@@ -143,6 +143,11 @@ export const arSATranslations: Record<string, string> = {
   "Enviando...": "جارٍ الإرسال...",
   "Enviando fotos...": "جارٍ إرسال الصور...",
   "Fotos concluídas: {done}/{total}": "الصور المكتملة: {done}/{total}",
+  "Cancelar envio": "إلغاء الإرسال",
+  "Cancelando...": "جارٍ الإلغاء...",
+  "Envio de fotos cancelado.": "تم إلغاء إرسال الصور.",
+  "Aguarde o envio das fotos terminar ou cancele o envio para publicar.":
+    "انتظر حتى يكتمل إرسال الصور أو ألغِ الإرسال قبل النشر.",
   "Fotos enviadas: {count}/{max}": "الصور المرسلة: {count}/{max}",
   "A primeira foto será usada como capa do anúncio.":
     "سيتم استخدام الصورة الأولى كغلاف للإعلان.",

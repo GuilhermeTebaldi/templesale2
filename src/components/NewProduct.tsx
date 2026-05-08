@@ -333,7 +333,10 @@ export default function NewProduct({
   const [uploadPreviewUrls, setUploadPreviewUrls] = React.useState<string[]>([]);
   const [uploadBatchTotal, setUploadBatchTotal] = React.useState(0);
   const [uploadBatchCompleted, setUploadBatchCompleted] = React.useState(0);
+  const [isCancellingUpload, setIsCancellingUpload] = React.useState(false);
   const uploadPreviewUrlsRef = React.useRef<string[]>([]);
+  const uploadAbortControllerRef = React.useRef<AbortController | null>(null);
+  const uploadCancelRequestedRef = React.useRef(false);
   const [isPublishing, setIsPublishing] = React.useState(false);
   const [isSuccess, setIsSuccess] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState("");
@@ -376,7 +379,11 @@ export default function NewProduct({
   React.useEffect(() => {
     setFormData(buildInitialFormState(initialProduct));
     setImages(normalizeInitialImages(initialProduct));
+    uploadCancelRequestedRef.current = false;
+    uploadAbortControllerRef.current?.abort();
+    uploadAbortControllerRef.current = null;
     setIsUploadingImages(false);
+    setIsCancellingUpload(false);
     setUploadBatchTotal(0);
     setUploadBatchCompleted(0);
     clearUploadPreviewUrls();
@@ -394,6 +401,14 @@ export default function NewProduct({
     setSelectedMapPoint(nextLocation);
     setMapCenter(nextLocation ?? DEFAULT_MAP_CENTER);
   }, [clearUploadPreviewUrls, initialProduct]);
+
+  React.useEffect(() => {
+    return () => {
+      uploadCancelRequestedRef.current = true;
+      uploadAbortControllerRef.current?.abort();
+      uploadAbortControllerRef.current = null;
+    };
+  }, []);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -526,6 +541,15 @@ export default function NewProduct({
     fileInputRef.current?.click();
   };
 
+  const handleCancelImageUpload = React.useCallback(() => {
+    if (!isUploadingImages) {
+      return;
+    }
+    uploadCancelRequestedRef.current = true;
+    setIsCancellingUpload(true);
+    uploadAbortControllerRef.current?.abort();
+  }, [isUploadingImages]);
+
   const handleSelectImages = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles: File[] = event.target.files ? Array.from(event.target.files) : [];
     event.currentTarget.value = "";
@@ -551,32 +575,59 @@ export default function NewProduct({
 
     setErrorMessage("");
     const nextUploadPreviewUrls = imageFiles.map((file) => URL.createObjectURL(file));
+    uploadCancelRequestedRef.current = false;
+    setIsCancellingUpload(false);
     setUploadPreviewUrls(nextUploadPreviewUrls);
     setUploadBatchTotal(imageFiles.length);
     setUploadBatchCompleted(0);
     setIsUploadingImages(true);
 
+    const uploaded: string[] = [];
     try {
-      const uploaded: string[] = [];
       for (const file of imageFiles) {
-        const response = await api.uploadProductImage(file);
+        if (uploadCancelRequestedRef.current) {
+          break;
+        }
+
+        const uploadController = new AbortController();
+        uploadAbortControllerRef.current = uploadController;
+        const response = await api.uploadProductImage(file, {
+          signal: uploadController.signal,
+        });
         const imageUrl = String(response.url ?? "").trim();
         if (!imageUrl) {
           throw new Error(t("Upload concluído sem URL de imagem."));
         }
         uploaded.push(imageUrl);
         setUploadBatchCompleted(uploaded.length);
+        uploadAbortControllerRef.current = null;
       }
 
       if (uploaded.length > 0) {
         setImages((current) => [...current, ...uploaded]);
       }
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : t("Falha ao enviar imagens para o Cloudinary.");
-      setErrorMessage(message);
+      const isAbortError =
+        error instanceof DOMException
+          ? error.name === "AbortError"
+          : error instanceof Error
+            ? error.name === "AbortError"
+            : false;
+      if (uploaded.length > 0) {
+        setImages((current) => [...current, ...uploaded]);
+      }
+      if (uploadCancelRequestedRef.current || isAbortError) {
+        setErrorMessage(t("Envio de fotos cancelado."));
+      } else {
+        const message =
+          error instanceof Error ? error.message : t("Falha ao enviar imagens para o Cloudinary.");
+        setErrorMessage(message);
+      }
     } finally {
+      uploadAbortControllerRef.current = null;
+      uploadCancelRequestedRef.current = false;
       setIsUploadingImages(false);
+      setIsCancellingUpload(false);
       setUploadBatchTotal(0);
       setUploadBatchCompleted(0);
       clearUploadPreviewUrls();
@@ -643,6 +694,12 @@ export default function NewProduct({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
+
+    if (isUploadingImages) {
+      setErrorMessage(t("Aguarde o envio das fotos terminar ou cancele o envio para publicar."));
+      return;
+    }
+
     const normalizedName = formData.name.trim();
     const normalizedCategory = formData.category.trim();
     const normalizedDescription = formData.description.trim();
@@ -859,6 +916,50 @@ export default function NewProduct({
         </button>
       </div>
 
+      <AnimatePresence>
+        {isUploadingImages && uploadBatchTotal > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="sticky top-20 z-20 border-b border-stone-200 bg-white/95 backdrop-blur-sm"
+          >
+            <div className="max-w-3xl mx-auto px-6 py-2.5 flex items-center gap-3">
+              <div className="min-w-0 grow">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-stone-700">
+                    {t("Enviando fotos...")}
+                  </p>
+                  <p className="text-[10px] text-stone-500 shrink-0">
+                    {t("Fotos concluídas: {done}/{total}", {
+                      done: uploadBatchCompleted,
+                      total: uploadBatchTotal,
+                    })}
+                  </p>
+                </div>
+                <div className="mt-1.5 h-1.5 rounded-full bg-stone-200 overflow-hidden">
+                  <motion.div
+                    className="h-full bg-stone-800"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${uploadBatchProgress}%` }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCancelImageUpload}
+                disabled={isCancellingUpload}
+                className="shrink-0 px-2.5 py-1.5 border border-stone-300 text-[10px] uppercase tracking-[0.14em] font-bold text-stone-700 hover:border-stone-700 hover:text-stone-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isCancellingUpload ? t("Cancelando...") : t("Cancelar envio")}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="max-w-3xl mx-auto px-6 py-12 lg:py-20">
         {isSuccess ? (
           <motion.div 
@@ -957,78 +1058,6 @@ export default function NewProduct({
                   </span>
                 </button>
               </div>
-
-              {isUploadingImages && uploadBatchTotal > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="fixed left-1/2 top-[calc(50%+4.5rem)] -translate-x-1/2 z-[100000] w-[min(94vw,34rem)] max-h-[42vh] overflow-y-auto space-y-3 border border-stone-200 rounded-xl bg-white/95 backdrop-blur-md px-4 py-3 shadow-2xl shadow-stone-900/10 pointer-events-none"
-                >
-                  <div className="space-y-1">
-                    <p className="text-xs uppercase tracking-[0.18em] font-bold text-stone-700">
-                      {t("Enviando fotos...")}
-                    </p>
-                    <p className="text-[11px] text-stone-500">
-                      {t("Fotos concluídas: {done}/{total}", {
-                        done: uploadBatchCompleted,
-                        total: uploadBatchTotal,
-                      })}
-                    </p>
-                  </div>
-
-                  <div className="h-1.5 rounded-full bg-stone-200 overflow-hidden">
-                    <motion.div
-                      className="h-full bg-stone-800"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${uploadBatchProgress}%` }}
-                      transition={{ duration: 0.2, ease: "easeOut" }}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-5 sm:grid-cols-6 gap-1.5">
-                    {uploadPreviewUrls.map((previewUrl, index) => {
-                      const isUploaded = index < uploadBatchCompleted;
-                      const isCurrent = index === uploadBatchCompleted;
-
-                      return (
-                        <div
-                          key={`${previewUrl}-${index}`}
-                          className="relative aspect-square overflow-hidden rounded-sm border border-stone-200 bg-stone-100"
-                        >
-                          <img
-                            src={previewUrl}
-                            alt={t("Pré-visualização")}
-                            className={`h-full w-full object-cover transition-opacity ${
-                              isUploaded ? "opacity-100" : "opacity-75"
-                            }`}
-                          />
-                          <div
-                            className={`absolute inset-0 transition-colors ${
-                              isUploaded
-                                ? "bg-emerald-500/20"
-                                : isCurrent
-                                  ? "bg-stone-900/20"
-                                  : "bg-stone-900/35"
-                            }`}
-                          />
-
-                          {isUploaded && (
-                            <div className="absolute top-1 right-1 h-5 w-5 rounded-full bg-white/90 flex items-center justify-center text-emerald-600">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                            </div>
-                          )}
-
-                          {!isUploaded && isCurrent && (
-                            <div className="absolute top-1 right-1 h-5 w-5 rounded-full bg-white/90 flex items-center justify-center">
-                              <div className="w-3 h-3 border-2 border-stone-300 border-t-stone-700 rounded-full animate-spin" />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </motion.div>
-              )}
 
               <p className="text-xs text-stone-500">
                 {t("Fotos enviadas: {count}/{max}", {
@@ -1410,7 +1439,7 @@ export default function NewProduct({
             </div>
 
             <button 
-              disabled={isPublishing || isUploadingImages}
+              disabled={isPublishing}
               type="submit"
               className="w-full bg-stone-900 text-white py-6 text-xs uppercase tracking-[0.3em] font-bold flex items-center justify-center gap-3 hover:bg-black transition-all disabled:bg-stone-400"
             >
