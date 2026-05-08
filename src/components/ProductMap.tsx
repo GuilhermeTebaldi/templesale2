@@ -404,6 +404,7 @@ export default function ProductMap({
   const [selectedProducts, setSelectedProducts] = React.useState<LocatedProduct[]>([]);
   const [showResults, setShowResults] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [isTopSearchResultsOpen, setIsTopSearchResultsOpen] = React.useState(false);
   const [panelSearchQuery, setPanelSearchQuery] = React.useState("");
   const [mapReadyVersion, setMapReadyVersion] = React.useState(0);
   const [sellerLocationByOwnerId, setSellerLocationByOwnerId] = React.useState<Record<number, string>>({});
@@ -427,6 +428,8 @@ export default function ProductMap({
   const hasLoadedAnyTileRef = React.useRef(false);
   const pendingSellerCityOwnerIdsRef = React.useRef<Set<number>>(new Set());
   const attemptedSellerCityOwnerIdsRef = React.useRef<Set<number>>(new Set());
+  const topSearchContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const topSearchInputRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
     isDrawingRef.current = isDrawing;
@@ -518,6 +521,33 @@ export default function ProductMap({
     }
     return filteredProducts.slice(0, 8);
   }, [filteredProducts, normalizedTopSearchQuery]);
+  const shouldShowTopSearchResults =
+    normalizedTopSearchQuery.length > 0 && isTopSearchResultsOpen;
+
+  React.useEffect(() => {
+    if (!isTopSearchResultsOpen) {
+      return;
+    }
+
+    const handleOutsideTopSearchClick = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+      if (topSearchContainerRef.current?.contains(target)) {
+        return;
+      }
+      setIsTopSearchResultsOpen(false);
+    };
+
+    document.addEventListener("mousedown", handleOutsideTopSearchClick);
+    document.addEventListener("touchstart", handleOutsideTopSearchClick);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideTopSearchClick);
+      document.removeEventListener("touchstart", handleOutsideTopSearchClick);
+    };
+  }, [isTopSearchResultsOpen]);
 
   const clearMarkers = React.useCallback(() => {
     markersRef.current.forEach((marker) => {
@@ -549,11 +579,13 @@ export default function ProductMap({
     setSelectedProducts([]);
     setShowResults(false);
     setPanelSearchQuery("");
+    setIsTopSearchResultsOpen(false);
   }, [clearDrawingPolygon, clearSelectionPolygon]);
 
   const handleSearchResultSelect = React.useCallback(
     (product: LocatedProduct) => {
       mapRef.current?.setView([product.latitude, product.longitude], 15);
+      setIsTopSearchResultsOpen(false);
       onOpenProduct?.(product);
     },
     [onOpenProduct],
@@ -720,6 +752,7 @@ export default function ProductMap({
           setSelectedProducts([]);
           setShowResults(false);
           setPanelSearchQuery("");
+          setIsTopSearchResultsOpen(false);
 
           isPointerDownRef.current = true;
           drawPointsRef.current = [[event.latlng.lat, event.latlng.lng]];
@@ -1166,19 +1199,55 @@ export default function ProductMap({
 
             <div className="h-8 w-px bg-stone-200 hidden sm:block" />
 
-            <div className="relative grow sm:w-72">
+            <div ref={topSearchContainerRef} className="relative grow sm:w-72">
               <Search
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400"
                 size={16}
               />
               <input
+                ref={topSearchInputRef}
                 type="text"
                 placeholder={t("Buscar produtos ou categorias...")}
                 value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"
+                onFocus={() => {
+                  if (normalizeSearchText(searchQuery)) {
+                    setIsTopSearchResultsOpen(true);
+                  }
+                }}
+                onClick={() => {
+                  if (normalizeSearchText(searchQuery)) {
+                    setIsTopSearchResultsOpen(true);
+                  }
+                }}
+                onChange={(event) => {
+                  const nextQuery = event.target.value;
+                  setSearchQuery(nextQuery);
+                  setIsTopSearchResultsOpen(normalizeSearchText(nextQuery).length > 0);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setIsTopSearchResultsOpen(false);
+                  }
+                }}
+                className="w-full pl-10 pr-10 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"
               />
               {normalizedTopSearchQuery && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSearchQuery("");
+                    setIsTopSearchResultsOpen(false);
+                    topSearchInputRef.current?.focus();
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+                  aria-label={t("Limpar busca")}
+                  title={t("Limpar busca")}
+                >
+                  <X className="w-4 h-4 mx-auto" />
+                </button>
+              )}
+              {shouldShowTopSearchResults && (
                 <div className="absolute z-40 top-[calc(100%+8px)] left-0 right-0 bg-stone-50/98 backdrop-blur-md border border-stone-200 rounded-xl shadow-2xl overflow-hidden">
                   <div className="px-3 py-2 border-b border-stone-200 bg-stone-100/80 flex items-center justify-between gap-3">
                     <span className="text-[10px] uppercase tracking-[0.14em] font-bold text-stone-500">
@@ -1357,8 +1426,19 @@ export default function ProductMap({
                     placeholder={t("Filtrar resultados...")}
                     value={panelSearchQuery}
                     onChange={(event) => setPanelSearchQuery(event.target.value)}
-                    className="w-full pl-9 pr-4 py-2 bg-white/80 border border-stone-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"
+                    className="w-full pl-9 pr-10 py-2 bg-white/80 border border-stone-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"
                   />
+                  {panelSearchQuery.trim().length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPanelSearchQuery("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+                      aria-label={t("Limpar busca")}
+                      title={t("Limpar busca")}
+                    >
+                      <X className="w-3.5 h-3.5 mx-auto" />
+                    </button>
+                  )}
                 </div>
               </div>
 
