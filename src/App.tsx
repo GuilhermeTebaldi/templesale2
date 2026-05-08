@@ -2144,7 +2144,7 @@ export default function App() {
       </motion.div>
 
       {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-[#fdfcfb]/80 backdrop-blur-md border-b border-stone-100">
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-[#fdfcfb] border-b border-stone-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-8 w-auto sm:w-1/3 shrink-0">
             <button 
