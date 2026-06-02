@@ -5,6 +5,7 @@ export const ptBRTranslations: Record<string, string> = {
   "Alguém": "Alguém",
   "seu anúncio": "seu anúncio",
   "Nova curtida": "Nova curtida",
+  "Salvo": "Salvo",
   "Novo interesse no carrinho": "Novo interesse no carrinho",
   "Novo comentário na publicação": "Novo comentário na publicação",
   "Arena de vendas.": "Arena de vendas.",

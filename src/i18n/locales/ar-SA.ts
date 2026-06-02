@@ -32,6 +32,7 @@ export const arSATranslations: Record<string, string> = {
   "Alguém": "شخص ما",
   "seu anúncio": "إعلانك",
   "Nova curtida": "إعجاب جديد",
+  "Salvo": "محفوظ",
   "Novo interesse no carrinho": "اهتمام جديد في السلة",
   "Novo comentário na publicação": "تعليق جديد على المنشور",
   '{actor} curtiu seu anúncio "{product}".': '{actor} أعجب بإعلانك "{product}".',

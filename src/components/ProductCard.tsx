@@ -1,6 +1,6 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ShoppingBag, Heart, ChevronLeft, ChevronRight } from "lucide-react";
+import { ShoppingBag, Heart, ChevronLeft, ChevronRight, Eye, MapPin } from "lucide-react";
 import { useI18n } from "../i18n/provider";
 import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
@@ -46,7 +46,9 @@ export default function ProductCard({
   const { t, locale } = useI18n();
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
   const images = React.useMemo(() => resolveProductImages(product), [product]);
-  const categoryTextClass = "inline-flex w-fit max-w-full truncate items-center text-[11px] text-stone-500";
+  const normalizedCity = String(product.city ?? "").trim();
+  const normalizedDescription = String(product.description ?? "").trim();
+  const viewCount = Math.max(0, Number(product.clickCount ?? 0));
 
   const nextImage = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -62,11 +64,13 @@ export default function ProductCard({
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -3 }}
       viewport={{ once: true }}
-      className="group relative flex flex-col cursor-pointer overflow-hidden rounded-md border border-stone-200 bg-white transition-shadow hover:shadow-md"
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      className="group relative flex h-full flex-col cursor-pointer overflow-hidden rounded-lg border border-stone-200/80 bg-white shadow-[0_1px_2px_rgba(28,25,23,0.04),0_14px_34px_rgba(28,25,23,0.04)] transition-[border-color,box-shadow,transform] duration-300 hover:border-stone-300 hover:shadow-[0_12px_32px_rgba(28,25,23,0.10)]"
       onClick={onClick}
     >
-      <div className="relative aspect-square overflow-hidden bg-[#f3f3f3]">
+      <div className="relative aspect-square overflow-hidden bg-linear-to-br from-stone-50 via-[#f4f2ef] to-stone-100">
         <AnimatePresence mode="wait">
           <motion.img
             key={currentImageIndex}
@@ -76,10 +80,24 @@ export default function ProductCard({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.4 }}
-            className="h-full w-full object-contain p-0.5 sm:p-1 scale-[1.03]"
+            className="h-full w-full object-contain p-1 sm:p-1.5 scale-[1.03] transition-transform duration-500 ease-out group-hover:scale-[1.07]"
             referrerPolicy="no-referrer"
           />
         </AnimatePresence>
+
+        <div className="absolute left-3 top-3 flex items-center gap-1.5">
+          {viewCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/85 px-2 py-1 text-[9px] font-medium text-stone-600 shadow-sm backdrop-blur-sm">
+              <Eye className="h-3 w-3" />
+              {viewCount}
+            </span>
+          )}
+          {isLiked && (
+            <span className="inline-flex items-center rounded-full bg-red-50/90 px-2 py-1 text-[9px] font-semibold text-red-600 shadow-sm backdrop-blur-sm">
+              {t("Salvo")}
+            </span>
+          )}
+        </div>
 
         {/* Mini Carousel Controls (Visible on Hover) */}
         {images.length > 1 && (
@@ -114,12 +132,12 @@ export default function ProductCard({
         )}
 
         <div className="absolute top-4 right-4 opacity-100 md:opacity-0 transition-opacity duration-300 md:group-hover:opacity-100">
-          <button 
+          <button
             onClick={(e) => {
               e.stopPropagation();
               onToggleLike?.();
             }}
-            className="p-2 bg-white/80 backdrop-blur-sm rounded-full hover:bg-white transition-colors"
+            className="p-2 bg-white/85 backdrop-blur-sm rounded-full shadow-sm hover:bg-white hover:scale-105 transition-all"
           >
             <Heart
               className={`w-4 h-4 transition-colors ${
@@ -128,13 +146,13 @@ export default function ProductCard({
             />
           </button>
         </div>
-        <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4 translate-y-full opacity-0 pointer-events-none transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-hover:pointer-events-auto bg-linear-to-t from-black/20 to-transparent">
+        <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4 translate-y-full opacity-0 pointer-events-none transition-all duration-300 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-hover:pointer-events-auto bg-linear-to-t from-black/25 to-transparent">
           <button 
             onClick={(e) => {
               e.stopPropagation();
               onAddToCart?.();
             }}
-            className="mx-auto w-auto max-w-full px-3 py-1.5 md:w-full md:px-4 md:py-2 bg-yellow-400 text-black text-[10px] md:text-xs font-medium uppercase tracking-[0.12em] md:tracking-widest flex items-center justify-center gap-1.5 md:gap-2 hover:bg-yellow-500 transition-colors"
+            className="mx-auto w-auto max-w-full px-3 py-1.5 md:w-full md:px-4 md:py-2 bg-yellow-400 text-black text-[10px] md:text-xs font-semibold uppercase tracking-[0.12em] md:tracking-widest flex items-center justify-center gap-1.5 md:gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.16)] hover:bg-yellow-300 transition-colors"
           >
             <ShoppingBag className="w-2.5 h-2.5 md:w-3 md:h-3" />
             {t("Adicionar ao carrinho")}
@@ -142,15 +160,26 @@ export default function ProductCard({
         </div>
       </div>
       
-      <div className="px-3 py-3 sm:px-3.5 sm:py-3.5 flex flex-col gap-1.5">
-        <span className={categoryTextClass}>
-          {getCategoryLabel(product.category, locale)}
-        </span>
-        <div className="flex flex-col gap-1.5">
-          <h3 className={categoryTextClass}>
+      <div className="flex min-w-0 grow flex-col gap-2 px-3 py-3 sm:px-4 sm:py-4">
+        <div className="flex items-center justify-between gap-2">
+          <span className="inline-flex min-w-0 max-w-full truncate text-[10px] uppercase tracking-[0.14em] text-stone-400">
+            {getCategoryLabel(product.category, locale)}
+          </span>
+          {normalizedCity && (
+            <span className="hidden sm:inline-flex shrink-0 items-center gap-1 text-[10px] text-stone-400">
+              <MapPin className="h-3 w-3" />
+              {normalizedCity}
+            </span>
+          )}
+        </div>
+        <div className="flex min-w-0 grow flex-col gap-1.5 sm:gap-2">
+          <h3 className="min-h-[3.35rem] break-words text-[13px] font-medium leading-snug text-stone-900 [display:-webkit-box] [-webkit-line-clamp:3] [-webkit-box-orient:vertical] overflow-hidden [overflow-wrap:anywhere] sm:min-h-[2.75rem] sm:text-[15px] sm:[-webkit-line-clamp:2]">
             {product.name}
           </h3>
-          <span className="text-[24px] sm:text-[28px] font-semibold text-stone-900 leading-none">
+          <p className="hidden min-h-[2.25rem] break-words text-[11px] leading-relaxed text-stone-500 [-webkit-line-clamp:2] [-webkit-box-orient:vertical] overflow-hidden sm:[display:-webkit-box]">
+            {normalizedDescription || getCategoryLabel(product.category, locale)}
+          </p>
+          <span className="mt-auto break-words text-[19px] font-semibold leading-tight text-stone-950 sm:text-[24px] sm:leading-none">
             {formatCompactPriceFromUnknown(product.price, locale, {
               priceNegotiable: product.priceNegotiable,
             })}
