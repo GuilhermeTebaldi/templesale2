@@ -15,7 +15,7 @@ import {
   AlertTriangle,
   Star,
 } from "lucide-react";
-import { type Product } from "./ProductCard";
+import { ProgressiveProductImage, type Product } from "./ProductCard";
 import ProductMap from "./ProductMap";
 import { buildWhatsappUrl, formatWhatsappDisplay } from "../lib/whatsapp";
 import { api, type ProductCommentDto, type SessionUser } from "../lib/api";
@@ -1107,11 +1107,11 @@ export default function ProductDetails({
                     }}
                     className="text-left border border-stone-200 bg-white hover:border-stone-400 transition-colors rounded-sm overflow-hidden group"
                   >
-                    <div className="aspect-[3/4] bg-stone-100 overflow-hidden">
-                      <img
+                    <div className="relative aspect-[3/4] bg-stone-100 overflow-hidden">
+                      <ProgressiveProductImage
                         src={resolveProductImages(relatedProduct)[0]}
                         alt={relatedProduct.name}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        className="relative w-full h-full object-cover transition-[opacity,transform] duration-500 group-hover:scale-105"
                       />
                     </div>
                     <div className="p-2 sm:p-3 space-y-0.5">

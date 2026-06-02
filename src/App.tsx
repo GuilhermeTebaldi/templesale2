@@ -1,7 +1,7 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Search, ShoppingBag, Menu, ArrowRight, Instagram, Twitter, Facebook, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, Heart, Plus, Minus, Share2, Bell, Filter, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown, ImagePlus, LoaderCircle } from "lucide-react";
-import ProductCard, { type Product } from "./components/ProductCard";
+import ProductCard, { ProgressiveProductImage, type Product } from "./components/ProductCard";
 import ProductDetails from "./components/ProductDetails";
 import NewProduct from "./components/NewProduct";
 import Auth, { type AuthMode, type AuthSubmitPayload } from "./components/Auth";
@@ -2656,14 +2656,13 @@ export default function App() {
                     key={`top-category-${product.category}-${product.id}`}
                     onClick={() => openProductDetails(product)}
                     title={getCategoryLabel(product.category, locale)}
-                    className="shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-sm overflow-hidden border border-stone-200 bg-stone-100 hover:border-stone-400 transition-colors"
+                    className="relative shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-sm overflow-hidden border border-stone-200 bg-stone-100 hover:border-stone-400 transition-colors"
                     aria-label={t("Abrir detalhes de {name}", { name: product.name })}
                   >
-                    <img
+                    <ProgressiveProductImage
                       src={product.image}
                       alt={product.name}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
+                      className="relative w-full h-full object-cover transition-[opacity,transform] duration-500"
                     />
                   </button>
                 ))}

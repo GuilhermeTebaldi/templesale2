@@ -1,5 +1,5 @@
 import React from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import { ShoppingBag, Heart, ChevronLeft, ChevronRight, Eye, MapPin } from "lucide-react";
 import { useI18n } from "../i18n/provider";
 import { formatCompactPriceFromUnknown } from "../lib/currency";
@@ -34,6 +34,48 @@ interface ProductCardProps {
   isLiked?: boolean;
   onToggleLike?: () => void;
   onAddToCart?: () => void;
+}
+
+interface ProgressiveProductImageProps {
+  src: string;
+  alt: string;
+  className: string;
+  loading?: "eager" | "lazy";
+}
+
+export function ProgressiveProductImage({
+  src,
+  alt,
+  className,
+  loading = "lazy",
+}: ProgressiveProductImageProps) {
+  const [isLoaded, setIsLoaded] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsLoaded(false);
+  }, [src]);
+
+  return (
+    <>
+      <div
+        aria-hidden="true"
+        className={`absolute inset-0 bg-linear-to-br from-stone-100 via-stone-50 to-stone-200 transition-opacity duration-500 ${
+          isLoaded ? "opacity-0" : "opacity-100"
+        }`}
+      />
+      <img
+        src={src}
+        alt={alt}
+        loading={loading}
+        decoding="async"
+        onLoad={() => setIsLoaded(true)}
+        className={`${className} transition-[opacity,transform] duration-500 ${
+          isLoaded ? "opacity-100" : "opacity-0"
+        }`}
+        referrerPolicy="no-referrer"
+      />
+    </>
+  );
 }
 
 export default function ProductCard({
@@ -71,19 +113,11 @@ export default function ProductCard({
       onClick={onClick}
     >
       <div className="relative aspect-square overflow-hidden bg-linear-to-br from-stone-50 via-[#f4f2ef] to-stone-100">
-        <AnimatePresence mode="wait">
-          <motion.img
-            key={currentImageIndex}
-            src={images[currentImageIndex]}
-            alt={product.name}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.4 }}
-            className="h-full w-full object-contain p-1 sm:p-1.5 scale-[1.03] transition-transform duration-500 ease-out group-hover:scale-[1.07]"
-            referrerPolicy="no-referrer"
-          />
-        </AnimatePresence>
+        <ProgressiveProductImage
+          src={images[currentImageIndex]}
+          alt={product.name}
+          className="relative h-full w-full object-contain p-1 sm:p-1.5 scale-[1.03] ease-out group-hover:scale-[1.07]"
+        />
 
         <div className="absolute left-3 top-3 flex items-center gap-1.5">
           {viewCount > 0 && (
