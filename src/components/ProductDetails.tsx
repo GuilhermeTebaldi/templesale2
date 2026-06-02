@@ -172,6 +172,7 @@ export default function ProductDetails({
 
   const images = resolveProductImages(product);
   const description = product.description?.trim() || t("Descrição não informada pelo vendedor.");
+  const relatedProductCategoryTextClass = "text-[8px] sm:text-[9px] uppercase tracking-[0.12em] text-stone-400 line-clamp-1";
   const allowedDetailKeys = getAllowedDetailKeys(product.category);
   const normalizedDetails = normalizeProductDetailsRecord(product.details ?? {});
   const allDetailEntries = Object.entries(normalizedDetails).filter(
@@ -1114,10 +1115,10 @@ export default function ProductDetails({
                       />
                     </div>
                     <div className="p-2 sm:p-3 space-y-0.5">
-                      <p className="text-[8px] sm:text-[9px] uppercase tracking-[0.12em] text-stone-400 line-clamp-1">
+                      <p className={relatedProductCategoryTextClass}>
                         {getCategoryLabel(relatedProduct.category, locale)}
                       </p>
-                      <p className="text-[11px] sm:text-xs font-medium text-stone-800 leading-tight line-clamp-2">
+                      <p className={relatedProductCategoryTextClass}>
                         {relatedProduct.name}
                       </p>
                       <p className="text-[10px] sm:text-xs font-mono text-stone-600">

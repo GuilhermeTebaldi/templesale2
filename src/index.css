@@ -33,6 +33,11 @@
     overflow: hidden;
   }
 
+  input[type="search"]::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
   @media (max-width: 768px) {
     input,
     textarea,

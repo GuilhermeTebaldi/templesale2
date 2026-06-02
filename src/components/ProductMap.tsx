@@ -6,7 +6,7 @@ import { useI18n } from "../i18n/provider";
 import { type AppLocale } from "../i18n";
 import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
-import { api } from "../lib/api";
+import { api, type SessionUser } from "../lib/api";
 
 interface ProductMapProps {
   products: Product[];
@@ -18,6 +18,8 @@ interface ProductMapProps {
   onOpenProduct?: (product: Product) => void;
   onAddToCart?: (product: Product) => void;
   googleMapsUrl?: string;
+  currentUser?: SessionUser | null;
+  onUserLocationSaved?: (user: SessionUser) => void;
 }
 
 type LocatedProduct = Product & {
@@ -262,6 +264,7 @@ const DEFAULT_MAP_CENTER: LeafletLatLng = {
   lat: -23.55052,
   lng: -46.633308,
 };
+const SAVED_MAP_LOCATION_STORAGE_KEY = "templesale_map_user_location";
 const PRIMARY_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const SECONDARY_TILE_URL = "/api/map-tiles/{z}/{x}/{y}.png";
 const TERTIARY_TILE_URL =
@@ -288,6 +291,55 @@ const FOCUSED_POINT_MARKER_STYLE = {
   fillOpacity: 0.95,
 };
 let leafletAssetsPromise: Promise<LeafletGlobal> | null = null;
+
+function isValidMapLocation(value: LeafletLatLng | null | undefined): value is LeafletLatLng {
+  return Boolean(
+    value &&
+      Number.isFinite(value.lat) &&
+      Number.isFinite(value.lng) &&
+      value.lat >= -90 &&
+      value.lat <= 90 &&
+      value.lng >= -180 &&
+      value.lng <= 180,
+  );
+}
+
+function readSavedMapLocation(): LeafletLatLng | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SAVED_MAP_LOCATION_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<LeafletLatLng>;
+    const location = {
+      lat: Number(parsed.lat),
+      lng: Number(parsed.lng),
+    };
+    return isValidMapLocation(location) ? location : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSavedMapLocation(location: LeafletLatLng) {
+  if (typeof window === "undefined" || !isValidMapLocation(location)) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(SAVED_MAP_LOCATION_STORAGE_KEY, JSON.stringify(location));
+  } catch {
+    // Local storage can be unavailable in restricted browser modes.
+  }
+}
+
+function areMapLocationsEqual(left: LeafletLatLng, right: LeafletLatLng): boolean {
+  return Math.abs(left.lat - right.lat) < 0.000001 && Math.abs(left.lng - right.lng) < 0.000001;
+}
 
 function getLeafletFromWindow(): LeafletGlobal | undefined {
   return (window as unknown as { L?: LeafletGlobal }).L;
@@ -386,6 +438,8 @@ export default function ProductMap({
   onClose,
   initialFocusProductId,
   onOpenProduct,
+  currentUser,
+  onUserLocationSaved,
   googleMapsUrl,
 }: ProductMapProps) {
   const { t, locale } = useI18n();
@@ -408,6 +462,13 @@ export default function ProductMap({
   const [panelSearchQuery, setPanelSearchQuery] = React.useState("");
   const [mapReadyVersion, setMapReadyVersion] = React.useState(0);
   const [sellerLocationByOwnerId, setSellerLocationByOwnerId] = React.useState<Record<number, string>>({});
+  const [savedUserLocation, setSavedUserLocation] = React.useState<LeafletLatLng | null>(() => {
+    const userLocation = {
+      lat: Number(currentUser?.locationLatitude),
+      lng: Number(currentUser?.locationLongitude),
+    };
+    return isValidMapLocation(userLocation) ? userLocation : readSavedMapLocation();
+  });
   const hideFloatingMapControlsOnMobile = showResults;
 
   const overlayRef = React.useRef<HTMLDivElement | null>(null);
@@ -430,6 +491,99 @@ export default function ProductMap({
   const attemptedSellerCityOwnerIdsRef = React.useRef<Set<number>>(new Set());
   const topSearchContainerRef = React.useRef<HTMLDivElement | null>(null);
   const topSearchInputRef = React.useRef<HTMLInputElement | null>(null);
+  const lastProfileLocationSyncRef = React.useRef("");
+
+  React.useEffect(() => {
+    const userLocation = {
+      lat: Number(currentUser?.locationLatitude),
+      lng: Number(currentUser?.locationLongitude),
+    };
+
+    if (isValidMapLocation(userLocation)) {
+      writeSavedMapLocation(userLocation);
+      setSavedUserLocation(userLocation);
+    }
+  }, [currentUser?.locationLatitude, currentUser?.locationLongitude]);
+
+  React.useEffect(() => {
+    if (savedUserLocation || typeof navigator === "undefined" || !navigator.geolocation) {
+      return;
+    }
+
+    let cancelled = false;
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (cancelled) {
+          return;
+        }
+
+        const nextLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+
+        if (!isValidMapLocation(nextLocation)) {
+          return;
+        }
+
+        writeSavedMapLocation(nextLocation);
+        setSavedUserLocation(nextLocation);
+        mapRef.current?.setView([nextLocation.lat, nextLocation.lng], 13);
+
+        if (currentUser) {
+          lastProfileLocationSyncRef.current = `${currentUser.id}:${nextLocation.lat.toFixed(6)}:${nextLocation.lng.toFixed(6)}`;
+          void api
+            .updateProfileLocation(nextLocation.lat, nextLocation.lng)
+            .then((updatedUser) => {
+              if (updatedUser) {
+                onUserLocationSaved?.(updatedUser);
+              }
+            })
+            .catch(() => undefined);
+        }
+      },
+      () => undefined,
+      {
+        enableHighAccuracy: false,
+        maximumAge: 24 * 60 * 60 * 1000,
+        timeout: 10000,
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser, onUserLocationSaved, savedUserLocation]);
+
+  React.useEffect(() => {
+    if (!currentUser || !savedUserLocation) {
+      return;
+    }
+
+    const userLocation = {
+      lat: Number(currentUser.locationLatitude),
+      lng: Number(currentUser.locationLongitude),
+    };
+    if (isValidMapLocation(userLocation) && areMapLocationsEqual(userLocation, savedUserLocation)) {
+      return;
+    }
+
+    const syncKey = `${currentUser.id}:${savedUserLocation.lat.toFixed(6)}:${savedUserLocation.lng.toFixed(6)}`;
+    if (lastProfileLocationSyncRef.current === syncKey) {
+      return;
+    }
+    lastProfileLocationSyncRef.current = syncKey;
+
+    void api
+      .updateProfileLocation(savedUserLocation.lat, savedUserLocation.lng)
+      .then((updatedUser) => {
+        if (updatedUser) {
+          onUserLocationSaved?.(updatedUser);
+        }
+      })
+      .catch(() => undefined);
+  }, [currentUser, onUserLocationSaved, savedUserLocation]);
 
   React.useEffect(() => {
     isDrawingRef.current = isDrawing;
@@ -649,15 +803,17 @@ export default function ProductMap({
           : null;
         const mapCenter: [number, number] = focusedProduct
           ? [focusedProduct.latitude, focusedProduct.longitude]
-          : firstProduct
-            ? [firstProduct.latitude, firstProduct.longitude]
-          : [DEFAULT_MAP_CENTER.lat, DEFAULT_MAP_CENTER.lng];
+          : savedUserLocation
+            ? [savedUserLocation.lat, savedUserLocation.lng]
+            : firstProduct
+              ? [firstProduct.latitude, firstProduct.longitude]
+              : [DEFAULT_MAP_CENTER.lat, DEFAULT_MAP_CENTER.lng];
 
         const map = L.map(mapContainerRef.current, {
           zoomControl: false,
           attributionControl: true,
         });
-        map.setView(mapCenter, focusedProduct ? 15 : firstProduct ? 13 : 12);
+        map.setView(mapCenter, focusedProduct ? 15 : savedUserLocation || firstProduct ? 13 : 12);
         setMapInteractionForDrawing(map, isDrawingRef.current);
 
         const tileProviders = [PRIMARY_TILE_URL];
@@ -983,6 +1139,7 @@ export default function ProductMap({
     clearMarkers,
     clearSelectionPolygon,
     initialFocusProductId,
+    savedUserLocation,
     t,
   ]);
 

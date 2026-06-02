@@ -125,6 +125,8 @@ export interface SessionUser {
   street?: string;
   whatsappCountryIso?: string;
   whatsappNumber?: string;
+  locationLatitude?: number;
+  locationLongitude?: number;
 }
 
 export interface VendorDto {
@@ -949,6 +951,19 @@ function normalizeSessionUserItem(value: unknown): SessionUser | null {
   const whatsappNumber = normalizePhoneDigits(whatsappNumberRaw);
   if (whatsappNumber) {
     user.whatsappNumber = whatsappNumber;
+  }
+
+  const locationLatitude = toOptionalNumber(
+    firstDefined(parsed, ["locationLatitude", "location_latitude"]),
+  );
+  const locationLongitude = toOptionalNumber(
+    firstDefined(parsed, ["locationLongitude", "location_longitude"]),
+  );
+  if (locationLatitude !== undefined) {
+    user.locationLatitude = locationLatitude;
+  }
+  if (locationLongitude !== undefined) {
+    user.locationLongitude = locationLongitude;
   }
 
   return user;
@@ -1903,6 +1918,13 @@ export const api = {
     }
 
     throw new Error("Resposta inválida ao atualizar foto de perfil.");
+  },
+  async updateProfileLocation(latitude: number, longitude: number) {
+    const raw = await request<unknown>("/api/profile/location", {
+      method: "PUT",
+      body: JSON.stringify({ latitude, longitude }),
+    });
+    return normalizeSessionUserItem(raw);
   },
   async updatePreferredLocale(locale: "it-IT" | "pt-BR" | "ar-SA") {
     const payload = { locale };

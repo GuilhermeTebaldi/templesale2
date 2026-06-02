@@ -121,6 +121,8 @@ type UserRow = {
   street: string | null;
   whatsapp_country_iso: string | null;
   whatsapp_number: string | null;
+  location_latitude: number | null;
+  location_longitude: number | null;
 };
 
 type SessionUser = {
@@ -135,6 +137,8 @@ type SessionUser = {
   street?: string;
   whatsappCountryIso?: string;
   whatsappNumber?: string;
+  locationLatitude?: number;
+  locationLongitude?: number;
 };
 
 type PublicVendorRecord = {
@@ -272,6 +276,8 @@ type SessionUserRow = Pick<
   | "street"
   | "whatsapp_country_iso"
   | "whatsapp_number"
+  | "location_latitude"
+  | "location_longitude"
 >;
 
 dotenv.config();
@@ -720,7 +726,9 @@ const USER_SELECT_FIELDS = `
   neighborhood,
   street,
   whatsapp_country_iso,
-  whatsapp_number
+  whatsapp_number,
+  location_latitude,
+  location_longitude
 `;
 
 const SESSION_USER_SELECT_FIELDS = `
@@ -734,7 +742,9 @@ const SESSION_USER_SELECT_FIELDS = `
   u.neighborhood,
   u.street,
   u.whatsapp_country_iso,
-  u.whatsapp_number
+  u.whatsapp_number,
+  u.location_latitude,
+  u.location_longitude
 `;
 
 let sqliteDb: Database.Database | null = null;
@@ -896,6 +906,8 @@ function normalizeUserRow(row: Record<string, unknown>): UserRow {
     street: toNullableString(row.street),
     whatsapp_country_iso: toNullableString(row.whatsapp_country_iso),
     whatsapp_number: toNullableString(row.whatsapp_number),
+    location_latitude: toNullableNumber(row.location_latitude),
+    location_longitude: toNullableNumber(row.location_longitude),
   };
 }
 
@@ -912,6 +924,8 @@ function normalizeSessionUserRow(row: Record<string, unknown>): SessionUserRow {
     street: toNullableString(row.street),
     whatsapp_country_iso: toNullableString(row.whatsapp_country_iso),
     whatsapp_number: toNullableString(row.whatsapp_number),
+    location_latitude: toNullableNumber(row.location_latitude),
+    location_longitude: toNullableNumber(row.location_longitude),
   };
 }
 
@@ -1555,6 +1569,8 @@ function initializeSqliteDatabase() {
       street TEXT NOT NULL DEFAULT '',
       whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT',
       whatsapp_number TEXT NOT NULL DEFAULT '',
+      location_latitude REAL,
+      location_longitude REAL,
       new_product_defaults TEXT NOT NULL DEFAULT '{}',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
     );
@@ -1739,6 +1755,12 @@ function initializeSqliteDatabase() {
   if (!userColumns.some((column) => column.name === "new_product_defaults")) {
     db.exec("ALTER TABLE users ADD COLUMN new_product_defaults TEXT NOT NULL DEFAULT '{}'");
   }
+  if (!userColumns.some((column) => column.name === "location_latitude")) {
+    db.exec("ALTER TABLE users ADD COLUMN location_latitude REAL");
+  }
+  if (!userColumns.some((column) => column.name === "location_longitude")) {
+    db.exec("ALTER TABLE users ADD COLUMN location_longitude REAL");
+  }
 
   const visitorColumns = db.prepare("PRAGMA table_info(site_daily_visitors)").all() as Array<{
     name: string;
@@ -1874,6 +1896,8 @@ async function initializePostgresDatabase() {
         street TEXT NOT NULL DEFAULT '',
         whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT',
         whatsapp_number TEXT NOT NULL DEFAULT '',
+        location_latitude DOUBLE PRECISION,
+        location_longitude DOUBLE PRECISION,
         new_product_defaults TEXT NOT NULL DEFAULT '{}',
         created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
       )
@@ -2021,6 +2045,8 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS street TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT'",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS location_latitude DOUBLE PRECISION",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS location_longitude DOUBLE PRECISION",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS new_product_defaults TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS visit_date TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE site_daily_visitors ADD COLUMN IF NOT EXISTS visitor_key TEXT NOT NULL DEFAULT ''",
@@ -3749,6 +3775,39 @@ async function updateUserAvatarRecord(userId: number, avatarUrl: string): Promis
     });
 }
 
+async function updateUserLocationRecord(
+  userId: number,
+  latitude: number,
+  longitude: number,
+): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(
+      `
+        UPDATE users
+        SET location_latitude = $1, location_longitude = $2
+        WHERE id = $3
+      `,
+      [latitude, longitude, userId],
+    );
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        UPDATE users
+        SET location_latitude = @location_latitude,
+            location_longitude = @location_longitude
+        WHERE id = @id
+      `,
+    )
+    .run({
+      id: userId,
+      location_latitude: latitude,
+      location_longitude: longitude,
+    });
+}
+
 async function selectUserNewProductDraftDefaultsRecord(
   userId: number,
 ): Promise<NewProductDraftDefaults> {
@@ -5112,8 +5171,12 @@ function sanitizeUser(
     | "street"
     | "whatsapp_country_iso"
     | "whatsapp_number"
+    | "location_latitude"
+    | "location_longitude"
   >,
 ): SessionUser {
+  const locationLatitude = toNullableNumber(user.location_latitude);
+  const locationLongitude = toNullableNumber(user.location_longitude);
   return {
     id: user.id,
     name: user.name,
@@ -5126,6 +5189,8 @@ function sanitizeUser(
     street: user.street ?? "",
     whatsappCountryIso: user.whatsapp_country_iso ?? "IT",
     whatsappNumber: user.whatsapp_number ?? "",
+    ...(locationLatitude !== null ? { locationLatitude } : {}),
+    ...(locationLongitude !== null ? { locationLongitude } : {}),
   };
 }
 
@@ -6290,6 +6355,44 @@ async function bootstrap() {
       res.json(sanitizeUser(updatedUser));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao atualizar perfil.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.put("/api/profile/location", async (req, res) => {
+    const sessionUser = await requireAuth(req, res);
+    if (!sessionUser) {
+      return;
+    }
+
+    try {
+      const body = req.body as Record<string, unknown>;
+      const latitude = toNullableNumber(body.latitude);
+      const longitude = toNullableNumber(body.longitude);
+
+      if (
+        latitude === null ||
+        longitude === null ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180
+      ) {
+        res.status(400).json({ error: "Localização inválida." });
+        return;
+      }
+
+      await updateUserLocationRecord(sessionUser.id, latitude, longitude);
+
+      const updatedUser = await selectUserByIdRow(sessionUser.id);
+      if (!updatedUser) {
+        res.status(500).json({ error: "Falha ao atualizar localização." });
+        return;
+      }
+
+      res.json(sanitizeUser(updatedUser));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao atualizar localização.";
       res.status(400).json({ error: message });
     }
   });

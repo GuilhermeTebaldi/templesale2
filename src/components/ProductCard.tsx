@@ -46,6 +46,7 @@ export default function ProductCard({
   const { t, locale } = useI18n();
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
   const images = React.useMemo(() => resolveProductImages(product), [product]);
+  const categoryTextClass = "inline-flex w-fit max-w-full truncate items-center text-[11px] text-stone-500";
 
   const nextImage = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -142,11 +143,11 @@ export default function ProductCard({
       </div>
       
       <div className="px-3 py-3 sm:px-3.5 sm:py-3.5 flex flex-col gap-1.5">
-        <span className="inline-flex w-fit max-w-full truncate items-center text-[11px] text-stone-500">
+        <span className={categoryTextClass}>
           {getCategoryLabel(product.category, locale)}
         </span>
         <div className="flex flex-col gap-1.5">
-          <h3 className="text-[18px] sm:text-[20px] font-semibold text-stone-900 leading-tight [display:-webkit-box] [-webkit-line-clamp:3] [-webkit-box-orient:vertical] overflow-hidden">
+          <h3 className={categoryTextClass}>
             {product.name}
           </h3>
           <span className="text-[24px] sm:text-[28px] font-semibold text-stone-900 leading-none">

@@ -1435,6 +1435,14 @@ export default function App() {
     [scrollPageToTop],
   );
 
+  const handleSearchQueryChange = React.useCallback(
+    (nextSearchQuery: string) => {
+      setSearchQuery(nextSearchQuery);
+      scrollPageToTop();
+    },
+    [scrollPageToTop],
+  );
+
   const availableCategoryFilters = React.useMemo(() => {
     const categoryCounts = new globalThis.Map<string, number>();
     products.forEach((product) => {
@@ -1934,6 +1942,14 @@ export default function App() {
             onAddToCart={(product) => {
               handleAddToCart(product, 1);
             }}
+            currentUser={currentUser}
+            onUserLocationSaved={(updatedUser) => {
+              setCurrentUser((current) => ({
+                ...(current ?? updatedUser),
+                locationLatitude: updatedUser.locationLatitude,
+                locationLongitude: updatedUser.locationLongitude,
+              }));
+            }}
             onClose={() => {
               setIsMapOpen(false);
               setMapOpenWithResults(false);
@@ -2266,7 +2282,7 @@ export default function App() {
           <button
             type="button"
             onClick={scrollPageToTop}
-            className="text-sm sm:text-2xl font-serif tracking-[0.08em] sm:tracking-[0.15em] uppercase text-center grow px-2 whitespace-nowrap notranslate bg-transparent cursor-pointer"
+            className="text-[22px] sm:text-[32px] font-serif font-semibold tracking-[0.08em] text-stone-900 text-center grow px-2 whitespace-nowrap notranslate bg-transparent cursor-pointer leading-none [font-variant:small-caps]"
             translate="no"
           >
             {BRAND_NAME}
@@ -2448,7 +2464,7 @@ export default function App() {
                 ref={homeSearchInputRef}
                 type="search"
                 value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
+                onChange={(event) => handleSearchQueryChange(event.target.value)}
                 placeholder={t("Buscar produtos, categorias ou cidade (ex.: casa em Ardea)...")}
                 className="w-full h-11 rounded-xl border border-stone-200 bg-white pl-10 pr-10 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-colors"
               />
