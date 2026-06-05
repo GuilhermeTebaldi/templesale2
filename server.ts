@@ -301,6 +301,9 @@ const ALLOW_REMOTE_DATABASE_IN_DEV =
   String(process.env.ALLOW_REMOTE_DATABASE_IN_DEV ?? "false").toLowerCase() === "true";
 const DEV_REMOTE_READ_ONLY =
   String(process.env.DEV_REMOTE_READ_ONLY ?? "true").toLowerCase() === "true";
+const RUN_DATABASE_MIGRATIONS =
+  String(process.env.RUN_DATABASE_MIGRATIONS ?? (!IS_PRODUCTION).toString()).toLowerCase() ===
+  "true";
 
 function normalizePostgresSearchPath(value: unknown): string {
   const raw = String(value ?? DEFAULT_DATABASE_SEARCH_PATH).trim();
@@ -1894,6 +1897,11 @@ async function initializePostgresDatabase() {
     return;
   }
 
+  if (!RUN_DATABASE_MIGRATIONS) {
+    console.log("PostgreSQL migrations disabled by RUN_DATABASE_MIGRATIONS.");
+    return;
+  }
+
   const migrationStatements = [
     `
       CREATE TABLE IF NOT EXISTS users (
@@ -2155,6 +2163,9 @@ async function initializePostgresDatabase() {
 
 async function initializeDatabase() {
   await initializePostgresDatabase();
+  if (!RUN_DATABASE_MIGRATIONS) {
+    return;
+  }
   if (IS_DEV_REMOTE_READ_ONLY) {
     return;
   }
