@@ -2651,7 +2651,7 @@ export default function App() {
           <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-5">
             <div className="overflow-x-auto no-scrollbar">
               <div className="flex items-center gap-2.5 sm:gap-3 min-w-max">
-                {randomProductsByCategory.map((product) => (
+                {randomProductsByCategory.map((product, index) => (
                   <button
                     key={`top-category-${product.category}-${product.id}`}
                     onClick={() => openProductDetails(product)}
@@ -2662,6 +2662,9 @@ export default function App() {
                     <ProgressiveProductImage
                       src={product.image}
                       alt={product.name}
+                      loading={index < 8 ? "eager" : "lazy"}
+                      fetchPriority={index < 8 ? "high" : "low"}
+                      variant="thumbnail"
                       className="relative w-full h-full object-cover transition-[opacity,transform] duration-500"
                     />
                   </button>
@@ -2685,10 +2688,12 @@ export default function App() {
             </div>
           ) : (
             <div className="grid grid-cols-2 items-stretch gap-x-3 gap-y-6 sm:gap-x-5 sm:gap-y-10 lg:grid-cols-4">
-              {filteredProducts.map((product) => (
+              {filteredProducts.map((product, index) => (
                 <div key={product.id} className="h-full">
                   <ProductCard 
                     product={product} 
+                    imageLoading={index < 8 ? "eager" : "lazy"}
+                    imageFetchPriority={index < 8 ? "high" : "auto"}
                     onClick={() => openProductDetails(product)}
                     isLiked={likedProductIds.has(product.id)}
                     onToggleLike={() => {

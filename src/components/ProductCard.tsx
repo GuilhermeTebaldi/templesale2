@@ -4,7 +4,11 @@ import { ShoppingBag, Heart, ChevronLeft, ChevronRight, Eye, MapPin } from "luci
 import { useI18n } from "../i18n/provider";
 import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
-import { getImageRetryUrls, resolveProductImages } from "../lib/product-images";
+import {
+  getImageRetryUrls,
+  resolveProductImages,
+  type ProductImageVariant,
+} from "../lib/product-images";
 
 export interface Product {
   id: number;
@@ -34,6 +38,8 @@ interface ProductCardProps {
   isLiked?: boolean;
   onToggleLike?: () => void;
   onAddToCart?: () => void;
+  imageLoading?: "eager" | "lazy";
+  imageFetchPriority?: "high" | "low" | "auto";
 }
 
 interface ProgressiveProductImageProps {
@@ -41,6 +47,8 @@ interface ProgressiveProductImageProps {
   alt: string;
   className: string;
   loading?: "eager" | "lazy";
+  fetchPriority?: "high" | "low" | "auto";
+  variant?: ProductImageVariant;
 }
 
 export function ProgressiveProductImage({
@@ -48,11 +56,13 @@ export function ProgressiveProductImage({
   alt,
   className,
   loading = "lazy",
+  fetchPriority = "auto",
+  variant = "full",
 }: ProgressiveProductImageProps) {
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [sourceIndex, setSourceIndex] = React.useState(0);
   const imageRef = React.useRef<HTMLImageElement | null>(null);
-  const sources = React.useMemo(() => getImageRetryUrls(src), [src]);
+  const sources = React.useMemo(() => getImageRetryUrls(src, variant), [src, variant]);
   const activeSrc = sources[sourceIndex] ?? "";
 
   React.useEffect(() => {
@@ -99,6 +109,7 @@ export function ProgressiveProductImage({
           src={activeSrc}
           alt={alt}
           loading={loading}
+          fetchPriority={fetchPriority}
           decoding="async"
           onLoad={() => setIsLoaded(true)}
           onError={handleImageError}
@@ -118,6 +129,8 @@ export default function ProductCard({
   isLiked = false,
   onToggleLike,
   onAddToCart,
+  imageLoading = "lazy",
+  imageFetchPriority = "auto",
 }: ProductCardProps) {
   const { t, locale } = useI18n();
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
@@ -150,6 +163,9 @@ export default function ProductCard({
         <ProgressiveProductImage
           src={images[currentImageIndex]}
           alt={product.name}
+          loading={imageLoading}
+          fetchPriority={imageFetchPriority}
+          variant="card"
           className="relative h-full w-full object-contain p-1 sm:p-1.5 scale-[1.03] ease-out group-hover:scale-[1.07]"
         />
 

@@ -261,10 +261,12 @@ export default function Vendedores({ onClose, onOpenProduct }: VendedoresProps) 
                 </div>
               ) : (
                 <div className="grid grid-cols-2 xl:grid-cols-3 gap-x-4 sm:gap-x-6 gap-y-10">
-                  {vendorProducts.map((product) => (
+                  {vendorProducts.map((product, index) => (
                     <div key={product.id}>
                       <ProductCard
                         product={product}
+                        imageLoading={index < 6 ? "eager" : "lazy"}
+                        imageFetchPriority={index < 6 ? "high" : "auto"}
                         onClick={() => onOpenProduct(product)}
                       />
                     </div>

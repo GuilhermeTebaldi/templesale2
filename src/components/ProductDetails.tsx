@@ -1111,6 +1111,7 @@ export default function ProductDetails({
                       <ProgressiveProductImage
                         src={resolveProductImages(relatedProduct)[0]}
                         alt={relatedProduct.name}
+                        variant="thumbnail"
                         className="relative w-full h-full object-cover transition-[opacity,transform] duration-500 group-hover:scale-105"
                       />
                     </div>

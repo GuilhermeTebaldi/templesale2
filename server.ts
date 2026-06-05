@@ -4805,7 +4805,7 @@ async function uploadImageToCloudinary(
   }
 
   return {
-    url: secureUrl.replace(/\/image\/upload\//i, "/image/upload/f_auto,q_auto/"),
+    url: secureUrl.replace(/\/image\/upload\//i, "/image/upload/f_auto,q_auto,c_limit,w_1600/"),
     publicId: String(uploadJson.public_id ?? publicId),
     width: Number(uploadJson.width ?? 0) || undefined,
     height: Number(uploadJson.height ?? 0) || undefined,

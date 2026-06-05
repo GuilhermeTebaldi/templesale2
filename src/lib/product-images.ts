@@ -3,6 +3,8 @@ interface ProductImageSource {
   images?: unknown;
 }
 
+export type ProductImageVariant = "full" | "card" | "thumbnail";
+
 function isCloudinaryUrl(url: string): boolean {
   return /(^https?:\/\/)?res\.cloudinary\.com\//i.test(url);
 }
@@ -82,25 +84,48 @@ function normalizeAndDedupeImageUrls(values: string[]): string[] {
   return result;
 }
 
-function addCloudinaryDeliveryDefaults(url: string): string {
+function getCloudinaryTransformation(variant: ProductImageVariant): string {
+  if (variant === "thumbnail") {
+    return "f_auto,q_auto,c_fill,w_180,h_180,dpr_auto";
+  }
+  if (variant === "card") {
+    return "f_auto,q_auto,c_fit,w_640,h_640,dpr_auto";
+  }
+  return "f_auto,q_auto,c_limit,w_1600";
+}
+
+function replaceCloudinaryTransformation(
+  url: string,
+  variant: ProductImageVariant,
+): string {
   if (!isCloudinaryUrl(url) || !isCloudinaryUploadUrl(url)) {
     return url;
   }
 
-  if (/\/image\/upload\/[^/?#]*(?:f_|q_|c_|w_|h_|dpr_|e_|g_)/i.test(url)) {
-    return url;
-  }
-
-  return url.replace(/\/image\/upload\//i, "/image/upload/f_auto,q_auto/");
+  const transformation = getCloudinaryTransformation(variant);
+  return url.replace(
+    /\/image\/upload\/(?:(?!v\d+\/)[^/?#]+\/)?/i,
+    `/image/upload/${transformation}/`,
+  );
 }
 
-export function getCompatibleImageUrl(value: string): string {
+function addCloudinaryDeliveryDefaults(
+  url: string,
+  variant: ProductImageVariant,
+): string {
+  return replaceCloudinaryTransformation(url, variant);
+}
+
+export function getCompatibleImageUrl(
+  value: string,
+  variant: ProductImageVariant = "full",
+): string {
   const normalized = extractCloudinaryAssetUrlFromShareLink(value);
   if (!normalized) {
     return "";
   }
 
-  const optimized = addCloudinaryDeliveryDefaults(normalized);
+  const optimized = addCloudinaryDeliveryDefaults(normalized, variant);
   if (isCloudinaryUrl(optimized) && isAvifImageUrl(optimized)) {
     return replaceAvifExtension(optimized, "jpg");
   }
@@ -108,16 +133,29 @@ export function getCompatibleImageUrl(value: string): string {
   return optimized;
 }
 
-export function getImageRetryUrls(value: string): string[] {
-  const compatible = getCompatibleImageUrl(value);
+export function getImageRetryUrls(
+  value: string,
+  variant: ProductImageVariant = "full",
+): string[] {
+  const compatible = getCompatibleImageUrl(value, variant);
   if (!compatible) {
     return [];
   }
 
   const retryUrls = [compatible];
   if (isCloudinaryUrl(compatible) && isCloudinaryUploadUrl(compatible)) {
-    retryUrls.push(compatible.replace(/\/image\/upload\/(?:[^/?#]+\/)?/i, "/image/upload/f_jpg,q_auto/"));
-    retryUrls.push(compatible.replace(/\/image\/upload\/(?:[^/?#]+\/)?/i, "/image/upload/f_webp,q_auto/"));
+    retryUrls.push(
+      compatible.replace(
+        /\/image\/upload\/(?:(?!v\d+\/)[^/?#]+\/)?/i,
+        `/image/upload/${getCloudinaryTransformation(variant).replace("f_auto", "f_jpg")}/`,
+      ),
+    );
+    retryUrls.push(
+      compatible.replace(
+        /\/image\/upload\/(?:(?!v\d+\/)[^/?#]+\/)?/i,
+        `/image/upload/${getCloudinaryTransformation(variant).replace("f_auto", "f_webp")}/`,
+      ),
+    );
   }
   if (isAvifImageUrl(compatible)) {
     retryUrls.push(replaceAvifExtension(compatible, "jpg"));
