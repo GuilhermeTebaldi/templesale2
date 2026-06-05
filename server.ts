@@ -293,10 +293,24 @@ if (!DATABASE_URL) {
     "DATABASE_URL is required. Configure the Render PostgreSQL URL to start the backend.",
   );
 }
+const DEFAULT_DATABASE_SEARCH_PATH = "templesale,public";
+const DATABASE_SEARCH_PATH =
+  normalizePostgresSearchPath(process.env.DATABASE_SEARCH_PATH) || DEFAULT_DATABASE_SEARCH_PATH;
+const PRIMARY_DATABASE_SCHEMA = DATABASE_SEARCH_PATH.split(",")[0] || "templesale";
 const ALLOW_REMOTE_DATABASE_IN_DEV =
   String(process.env.ALLOW_REMOTE_DATABASE_IN_DEV ?? "false").toLowerCase() === "true";
 const DEV_REMOTE_READ_ONLY =
   String(process.env.DEV_REMOTE_READ_ONLY ?? "true").toLowerCase() === "true";
+
+function normalizePostgresSearchPath(value: unknown): string {
+  const raw = String(value ?? DEFAULT_DATABASE_SEARCH_PATH).trim();
+  const schemaNames = raw
+    .split(",")
+    .map((schemaName) => schemaName.trim())
+    .filter((schemaName) => /^[a-z_][a-z0-9_]*$/i.test(schemaName));
+
+  return Array.from(new Set(schemaNames)).join(",");
+}
 
 function isLocalDatabaseHost(hostname: string): boolean {
   const normalizedHost = String(hostname ?? "").trim().toLowerCase();
@@ -752,6 +766,7 @@ let pgPool: Pool | null = null;
 
 pgPool = new Pool({
   connectionString: DATABASE_URL,
+  options: `-c search_path=${DATABASE_SEARCH_PATH}`,
   ssl: String(process.env.PGSSL ?? "").toLowerCase() === "false"
     ? false
     : { rejectUnauthorized: false },
@@ -5621,13 +5636,14 @@ async function bootstrap() {
           `
             SELECT column_name, is_nullable, data_type, column_default
             FROM information_schema.columns
-            WHERE table_schema = 'public' AND table_name = $1
+            WHERE table_schema = $1 AND table_name = $2
             ORDER BY ordinal_position
           `,
-          [tableName],
+          [PRIMARY_DATABASE_SCHEMA, tableName],
         );
 
         res.json({
+          schema: PRIMARY_DATABASE_SCHEMA,
           table: tableName,
           columns: result.rows.map((row) => ({
             name: row.column_name,
@@ -6940,6 +6956,7 @@ async function bootstrap() {
     const mode = isProduction ? "production" : "development";
     console.log(`Server running at http://localhost:${port} (${mode})`);
     console.log("Database: PostgreSQL via DATABASE_URL");
+    console.log(`Database search_path: ${DATABASE_SEARCH_PATH}`);
     if (IS_DEV_REMOTE_READ_ONLY) {
       console.log("Remote database dev mode: READ ONLY");
     }
