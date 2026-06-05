@@ -15,6 +15,10 @@ function isAvifImageUrl(url: string): boolean {
   return /\.avif(?:[?#].*)?$/i.test(String(url ?? "").trim());
 }
 
+function isCloudinaryUploadUrl(url: string): boolean {
+  return /\/image\/upload(?:\/|$)/i.test(url);
+}
+
 function replaceAvifExtension(url: string, nextExtension: "jpg" | "webp"): string {
   return String(url ?? "").replace(/\.avif(?=($|[?#]))/i, `.${nextExtension}`);
 }
@@ -78,17 +82,49 @@ function normalizeAndDedupeImageUrls(values: string[]): string[] {
   return result;
 }
 
+function addCloudinaryDeliveryDefaults(url: string): string {
+  if (!isCloudinaryUrl(url) || !isCloudinaryUploadUrl(url)) {
+    return url;
+  }
+
+  if (/\/image\/upload\/[^/?#]*(?:f_|q_|c_|w_|h_|dpr_|e_|g_)/i.test(url)) {
+    return url;
+  }
+
+  return url.replace(/\/image\/upload\//i, "/image/upload/f_auto,q_auto/");
+}
+
 export function getCompatibleImageUrl(value: string): string {
   const normalized = extractCloudinaryAssetUrlFromShareLink(value);
   if (!normalized) {
     return "";
   }
 
-  if (isCloudinaryUrl(normalized) && isAvifImageUrl(normalized)) {
-    return replaceAvifExtension(normalized, "jpg");
+  const optimized = addCloudinaryDeliveryDefaults(normalized);
+  if (isCloudinaryUrl(optimized) && isAvifImageUrl(optimized)) {
+    return replaceAvifExtension(optimized, "jpg");
   }
 
-  return normalized;
+  return optimized;
+}
+
+export function getImageRetryUrls(value: string): string[] {
+  const compatible = getCompatibleImageUrl(value);
+  if (!compatible) {
+    return [];
+  }
+
+  const retryUrls = [compatible];
+  if (isCloudinaryUrl(compatible) && isCloudinaryUploadUrl(compatible)) {
+    retryUrls.push(compatible.replace(/\/image\/upload\/(?:[^/?#]+\/)?/i, "/image/upload/f_jpg,q_auto/"));
+    retryUrls.push(compatible.replace(/\/image\/upload\/(?:[^/?#]+\/)?/i, "/image/upload/f_webp,q_auto/"));
+  }
+  if (isAvifImageUrl(compatible)) {
+    retryUrls.push(replaceAvifExtension(compatible, "jpg"));
+    retryUrls.push(replaceAvifExtension(compatible, "webp"));
+  }
+
+  return normalizeAndDedupeImageUrls(retryUrls);
 }
 
 function parseImageString(value: string): string[] {

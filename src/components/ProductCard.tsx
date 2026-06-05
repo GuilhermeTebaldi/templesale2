@@ -4,7 +4,7 @@ import { ShoppingBag, Heart, ChevronLeft, ChevronRight, Eye, MapPin } from "luci
 import { useI18n } from "../i18n/provider";
 import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
-import { resolveProductImages } from "../lib/product-images";
+import { getImageRetryUrls, resolveProductImages } from "../lib/product-images";
 
 export interface Product {
   id: number;
@@ -50,10 +50,40 @@ export function ProgressiveProductImage({
   loading = "lazy",
 }: ProgressiveProductImageProps) {
   const [isLoaded, setIsLoaded] = React.useState(false);
+  const [sourceIndex, setSourceIndex] = React.useState(0);
+  const imageRef = React.useRef<HTMLImageElement | null>(null);
+  const sources = React.useMemo(() => getImageRetryUrls(src), [src]);
+  const activeSrc = sources[sourceIndex] ?? "";
 
   React.useEffect(() => {
     setIsLoaded(false);
+    setSourceIndex(0);
   }, [src]);
+
+  React.useEffect(() => {
+    const image = imageRef.current;
+    if (!image || !activeSrc) {
+      return;
+    }
+
+    if (image.complete && image.naturalWidth > 0) {
+      setIsLoaded(true);
+      return;
+    }
+
+    const timeoutId = globalThis.setTimeout(() => {
+      setSourceIndex((current) => (current + 1 < sources.length ? current + 1 : current));
+    }, 3500);
+
+    return () => {
+      globalThis.clearTimeout(timeoutId);
+    };
+  }, [activeSrc, sources.length]);
+
+  const handleImageError = React.useCallback(() => {
+    setIsLoaded(false);
+    setSourceIndex((current) => (current + 1 < sources.length ? current + 1 : current));
+  }, [sources.length]);
 
   return (
     <>
@@ -63,17 +93,21 @@ export function ProgressiveProductImage({
           isLoaded ? "opacity-0" : "opacity-100"
         }`}
       />
-      <img
-        src={src}
-        alt={alt}
-        loading={loading}
-        decoding="async"
-        onLoad={() => setIsLoaded(true)}
-        className={`${className} transition-[opacity,transform] duration-500 ${
-          isLoaded ? "opacity-100" : "opacity-0"
-        }`}
-        referrerPolicy="no-referrer"
-      />
+      {activeSrc && (
+        <img
+          ref={imageRef}
+          src={activeSrc}
+          alt={alt}
+          loading={loading}
+          decoding="async"
+          onLoad={() => setIsLoaded(true)}
+          onError={handleImageError}
+          className={`${className} transition-[opacity,transform] duration-500 ${
+            isLoaded ? "opacity-100" : "opacity-0"
+          }`}
+          referrerPolicy="no-referrer"
+        />
+      )}
     </>
   );
 }

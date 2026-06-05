@@ -25,6 +25,7 @@ import {
   parsePriceToNumber,
 } from "../lib/currency";
 import { normalizeProductDetailsRecord } from "../lib/product-details";
+import { getCompatibleImageUrl } from "../lib/product-images";
 
 interface NewProductProps {
   onClose: () => void;
@@ -594,7 +595,7 @@ export default function NewProduct({
         const response = await api.uploadProductImage(file, {
           signal: uploadController.signal,
         });
-        const imageUrl = String(response.url ?? "").trim();
+        const imageUrl = getCompatibleImageUrl(String(response.url ?? "").trim());
         if (!imageUrl) {
           throw new Error(t("Upload concluído sem URL de imagem."));
         }
