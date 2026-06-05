@@ -98,4 +98,7 @@ export const ptBRTranslations: Record<string, string> = {
   "Este email nao pode ser alterado.": "Este email nao pode ser alterado.",
   "Ver senha": "Ver senha",
   "Ocultar senha": "Ocultar senha",
+  "Carregar mais": "Carregar mais",
+  "Carregando...": "Carregando...",
+  "Falha ao carregar produtos.": "Falha ao carregar produtos.",
 };

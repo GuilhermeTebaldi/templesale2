@@ -372,5 +372,8 @@ export const arSATranslations: Record<string, string> = {
   "Total estimado": "الإجمالي التقديري",
   "Upload concluído sem URL de imagem.": "اكتمل الرفع بدون رابط صورة.",
   "Você já atingiu o limite disponível deste produto.": "لقد وصلت بالفعل إلى الحد المتاح لهذا المنتج.",
-  "Você pode enviar no máximo {count} imagens.": "يمكنك إرسال {count} صور كحد أقصى."
+  "Você pode enviar no máximo {count} imagens.": "يمكنك إرسال {count} صور كحد أقصى.",
+  "Carregar mais": "تحميل المزيد",
+  "Carregando...": "جارٍ التحميل...",
+  "Falha ao carregar produtos.": "فشل في تحميل المنتجات."
 };

@@ -31,6 +31,22 @@ export interface ProductDto {
   sellerWhatsappNumber?: string;
 }
 
+export interface ProductPageDto {
+  products: ProductDto[];
+  hasMore: boolean;
+  nextOffset: number;
+  limit: number;
+  offset: number;
+}
+
+export interface GetProductsPageInput {
+  limit: number;
+  offset?: number;
+  search?: string;
+  category?: string;
+  maxPrice?: number | null;
+}
+
 export type NotificationDto =
   | {
       id: string;
@@ -1161,6 +1177,29 @@ function normalizeProductList(value: unknown): ProductDto[] {
     .filter((item): item is ProductDto => item !== null);
 }
 
+function normalizeProductPage(value: unknown, fallbackLimit: number, fallbackOffset: number): ProductPageDto {
+  const parsed = parseJsonIfNeeded(value);
+  const products = normalizeProductList(parsed);
+  const pagination = isRecord(parsed) && isRecord(parsed.pagination) ? parsed.pagination : {};
+  const returned = products.length;
+  const hasMore =
+    toOptionalBoolean(firstDefined(pagination, ["hasMore", "has_more"])) ??
+    returned >= fallbackLimit;
+  const nextOffset =
+    toNonNegativeInteger(firstDefined(pagination, ["nextOffset", "next_offset"])) ??
+    fallbackOffset + returned;
+  const limit = toNonNegativeInteger(firstDefined(pagination, ["limit"])) ?? fallbackLimit;
+  const offset = toNonNegativeInteger(firstDefined(pagination, ["offset"])) ?? fallbackOffset;
+
+  return {
+    products,
+    hasMore,
+    nextOffset,
+    limit,
+    offset,
+  };
+}
+
 function normalizeNotificationList(value: unknown): NotificationDto[] {
   const items = extractArrayPayload(value, ["data", "notifications", "items", "rows", "results"]);
   return items.filter((item): item is NotificationDto => isRecord(item));
@@ -1976,6 +2015,30 @@ export const api = {
   async getProducts() {
     const payload = await request<unknown>("/api/products");
     return normalizeProductList(payload);
+  },
+  async getProductsPage(input: GetProductsPageInput): Promise<ProductPageDto> {
+    const safeLimit = Math.min(Math.max(Math.floor(Number(input.limit) || 36), 1), 100);
+    const safeOffset = Math.max(Math.floor(Number(input.offset ?? 0) || 0), 0);
+    const query = new URLSearchParams();
+    query.set("limit", String(safeLimit));
+    query.set("offset", String(safeOffset));
+
+    const search = String(input.search ?? "").trim();
+    if (search) {
+      query.set("search", search);
+    }
+
+    const category = String(input.category ?? "").trim();
+    if (category && category !== "All") {
+      query.set("category", category);
+    }
+
+    if (typeof input.maxPrice === "number" && Number.isFinite(input.maxPrice) && input.maxPrice > 0) {
+      query.set("maxPrice", String(input.maxPrice));
+    }
+
+    const payload = await request<unknown>(`/api/products?${query.toString()}`);
+    return normalizeProductPage(payload, safeLimit, safeOffset);
   },
   async getVendors(search = "", limit = 60) {
     const normalizedSearch = search.trim();

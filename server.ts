@@ -29,6 +29,7 @@ type ProductRecord = {
   ownerId?: number;
   latitude?: number;
   longitude?: number;
+  city?: string;
   sellerName?: string;
   sellerWhatsappCountryIso?: string;
   sellerWhatsappNumber?: string;
@@ -50,6 +51,7 @@ type ProductRow = {
   user_id: number | null;
   latitude: number | null;
   longitude: number | null;
+  city: string | null;
   seller_name: string | null;
   seller_whatsapp_country_iso: string | null;
   seller_whatsapp_number: string | null;
@@ -725,6 +727,7 @@ const PRODUCT_SELECT_FIELDS = `
   p.user_id,
   COALESCE(p.latitude, p.lat) AS latitude,
   COALESCE(p.longitude, p.lng) AS longitude,
+  u.city AS city,
   u.name AS seller_name,
   u.whatsapp_country_iso AS seller_whatsapp_country_iso,
   u.whatsapp_number AS seller_whatsapp_number
@@ -903,6 +906,7 @@ function normalizeProductRow(row: Record<string, unknown>): ProductRow {
     user_id: toNullableNumber(row.user_id),
     latitude: toNullableNumber(row.latitude),
     longitude: toNullableNumber(row.longitude),
+    city: toNullableString(row.city),
     seller_name: toNullableString(row.seller_name),
     seller_whatsapp_country_iso: toNullableString(row.seller_whatsapp_country_iso),
     seller_whatsapp_number: toNullableString(row.seller_whatsapp_number),
@@ -1870,6 +1874,9 @@ function initializeSqliteDatabase() {
   }
 
   db.exec("CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_products_click_id ON products(click_count DESC, id DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_users_city ON users(city)");
   db.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_site_daily_visitors_date_key ON site_daily_visitors(visit_date, visitor_key)",
   );
@@ -2134,6 +2141,9 @@ async function initializePostgresDatabase() {
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_product_likes_user_product_unique ON product_likes(user_id, product_id)",
     "CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)",
+    "CREATE INDEX IF NOT EXISTS idx_products_click_id ON products(click_count DESC, id DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_users_city ON users(city)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_site_daily_visitors_date_key ON site_daily_visitors(visit_date, visitor_key)",
     "CREATE INDEX IF NOT EXISTS idx_site_daily_visitors_date_last_seen ON site_daily_visitors(visit_date, last_seen_at DESC)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_self_signatures_unique ON admin_visitor_self_signatures(admin_email, signature_key)",
@@ -2334,6 +2344,150 @@ async function selectAllProductsRows(): Promise<ProductRow[]> {
     )
     .all() as Array<Record<string, unknown>>;
   return rows.map(normalizeProductRow);
+}
+
+type ProductPageQuery = {
+  search: string;
+  category: string;
+  maxPrice: number | null;
+  limit: number;
+  offset: number;
+};
+
+function normalizeProductPageLimit(value: unknown, fallback = 36): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(Math.max(Math.floor(parsed), 1), 100);
+}
+
+function normalizeProductPageOffset(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  return Math.max(Math.floor(parsed), 0);
+}
+
+function normalizeProductPageMaxPrice(value: unknown): number | null {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
+async function selectProductsPageRows(query: ProductPageQuery): Promise<{
+  rows: ProductRow[];
+  hasMore: boolean;
+}> {
+  const limitPlusOne = query.limit + 1;
+
+  if (pgPool) {
+    const whereParts: string[] = [];
+    const values: unknown[] = [];
+    const addValue = (value: unknown) => {
+      values.push(value);
+      return `$${values.length}`;
+    };
+
+    if (query.search) {
+      const searchParam = addValue(`%${query.search}%`);
+      whereParts.push(`
+        (
+          COALESCE(p.name, '') ILIKE ${searchParam}
+          OR COALESCE(p.title, '') ILIKE ${searchParam}
+          OR COALESCE(p.category, '') ILIKE ${searchParam}
+          OR COALESCE(p.description, '') ILIKE ${searchParam}
+          OR COALESCE(u.name, '') ILIKE ${searchParam}
+          OR COALESCE(u.city, '') ILIKE ${searchParam}
+        )
+      `);
+    }
+
+    if (query.category && query.category !== "All") {
+      whereParts.push(`p.category = ${addValue(query.category)}`);
+    }
+
+    if (query.maxPrice !== null) {
+      whereParts.push(`
+        COALESCE(p.price_negotiable, FALSE) = FALSE
+        AND CASE
+          WHEN COALESCE(p.price, '') ~ '^[0-9]+(\\.[0-9]+)?$' THEN p.price::numeric
+          ELSE NULL
+        END <= ${addValue(query.maxPrice)}
+      `);
+    }
+
+    const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT ${PRODUCT_SELECT_FIELDS}
+        FROM products p
+        LEFT JOIN users u ON u.id = p.user_id
+        ${whereClause}
+        ORDER BY COALESCE(p.click_count, 0) DESC, p.id DESC
+        LIMIT ${addValue(limitPlusOne)}
+        OFFSET ${addValue(query.offset)}
+      `,
+      values,
+    );
+    const rows = result.rows.map(normalizeProductRow);
+    return {
+      rows: rows.slice(0, query.limit),
+      hasMore: rows.length > query.limit,
+    };
+  }
+
+  const whereParts: string[] = [];
+  const values: unknown[] = [];
+
+  if (query.search) {
+    const searchParam = `%${query.search.toLowerCase()}%`;
+    whereParts.push(`
+      (
+        LOWER(COALESCE(p.name, '')) LIKE ?
+        OR LOWER(COALESCE(p.title, '')) LIKE ?
+        OR LOWER(COALESCE(p.category, '')) LIKE ?
+        OR LOWER(COALESCE(p.description, '')) LIKE ?
+        OR LOWER(COALESCE(u.name, '')) LIKE ?
+        OR LOWER(COALESCE(u.city, '')) LIKE ?
+      )
+    `);
+    values.push(searchParam, searchParam, searchParam, searchParam, searchParam, searchParam);
+  }
+
+  if (query.category && query.category !== "All") {
+    whereParts.push("p.category = ?");
+    values.push(query.category);
+  }
+
+  if (query.maxPrice !== null) {
+    whereParts.push("COALESCE(p.price_negotiable, 0) = 0 AND CAST(COALESCE(p.price, '0') AS REAL) <= ?");
+    values.push(query.maxPrice);
+  }
+
+  values.push(limitPlusOne, query.offset);
+  const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT ${PRODUCT_SELECT_FIELDS}
+        FROM products p
+        LEFT JOIN users u ON u.id = p.user_id
+        ${whereClause}
+        ORDER BY COALESCE(p.click_count, 0) DESC, p.id DESC
+        LIMIT ?
+        OFFSET ?
+      `,
+    )
+    .all(...values) as Array<Record<string, unknown>>;
+  const normalizedRows = rows.map(normalizeProductRow);
+  return {
+    rows: normalizedRows.slice(0, query.limit),
+    hasMore: normalizedRows.length > query.limit,
+  };
 }
 
 async function selectProductsByOwnerRows(ownerId: number): Promise<ProductRow[]> {
@@ -4104,6 +4258,9 @@ function rowToProduct(row: ProductRow): ProductRecord {
   }
   if (row.longitude !== null) {
     product.longitude = row.longitude;
+  }
+  if (row.city) {
+    product.city = row.city;
   }
   if (row.seller_name) {
     product.sellerName = row.seller_name;
@@ -6498,8 +6655,42 @@ async function bootstrap() {
     }
   });
 
-  app.get("/api/products", async (_req, res) => {
+  app.get("/api/products", async (req, res) => {
     try {
+      const hasPaginationQuery =
+        req.query.limit !== undefined ||
+        req.query.offset !== undefined ||
+        req.query.search !== undefined ||
+        req.query.category !== undefined ||
+        req.query.maxPrice !== undefined;
+
+      if (hasPaginationQuery) {
+        const search = normalizeTextField(String(req.query.search ?? ""), "Busca", 120).toLowerCase();
+        const category = normalizeTextField(String(req.query.category ?? "All"), "Categoria", 120);
+        const maxPrice = normalizeProductPageMaxPrice(req.query.maxPrice);
+        const limit = normalizeProductPageLimit(req.query.limit, 36);
+        const offset = normalizeProductPageOffset(req.query.offset);
+        const page = await selectProductsPageRows({
+          search,
+          category,
+          maxPrice,
+          limit,
+          offset,
+        });
+
+        res.json({
+          products: page.rows.map(rowToProduct),
+          pagination: {
+            limit,
+            offset,
+            returned: page.rows.length,
+            hasMore: page.hasMore,
+            nextOffset: offset + page.rows.length,
+          },
+        });
+        return;
+      }
+
       const rows = await selectAllProductsRows();
       res.json(rows.map(rowToProduct));
     } catch (error) {

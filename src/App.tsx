@@ -54,6 +54,23 @@ const PARTNER_PROMO_LOGO =
 const CART_STORAGE_KEY = "templesale_cart_items";
 const CART_UNSEEN_STORAGE_KEY = "templesale_cart_unseen_alert";
 const READ_NOTIFICATIONS_STORAGE_KEY = "templesale_read_notifications";
+const MOBILE_INITIAL_PRODUCT_LIMIT = 30;
+const MOBILE_MORE_PRODUCT_LIMIT = 20;
+const DESKTOP_PRODUCT_LIMIT = 36;
+
+function isMobileProductViewport(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.matchMedia("(max-width: 639px)").matches;
+}
+
+function getProductPageLimit(isLoadMore: boolean): number {
+  if (isMobileProductViewport()) {
+    return isLoadMore ? MOBILE_MORE_PRODUCT_LIMIT : MOBILE_INITIAL_PRODUCT_LIMIT;
+  }
+  return DESKTOP_PRODUCT_LIMIT;
+}
 
 function getScopedStorageKey(baseKey: string, userId?: number | null): string {
   const normalizedUserId = Number(userId);
@@ -237,7 +254,12 @@ export default function App() {
   const [readNotificationIds, setReadNotificationIds] = React.useState<string[]>([]);
   const [heroDate, setHeroDate] = React.useState<Date>(() => new Date());
   const [isLoadingProducts, setIsLoadingProducts] = React.useState(true);
+  const [isLoadingMoreProducts, setIsLoadingMoreProducts] = React.useState(false);
+  const [hasMoreProducts, setHasMoreProducts] = React.useState(false);
+  const [nextProductsOffset, setNextProductsOffset] = React.useState(0);
+  const [productsError, setProductsError] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState("");
   const [cartToast, setCartToast] = React.useState<{
     id: number;
     message: string;
@@ -250,6 +272,7 @@ export default function App() {
   const [isPriceDropdownOpen, setIsPriceDropdownOpen] = React.useState(false);
   const [maxPriceFilter, setMaxPriceFilter] = React.useState<number | null>(null);
   const cartToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const productsRequestSequenceRef = React.useRef(0);
   const hasMemberAccess = Boolean(currentUser);
   const cartStorageKey = React.useMemo(
     () => getScopedStorageKey(CART_STORAGE_KEY, currentUser?.id),
@@ -352,18 +375,69 @@ export default function App() {
   }, [isOverlayBlockingScroll]);
 
   React.useEffect(() => {
-    let cancelled = false;
+    const timeoutId = globalThis.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 350);
 
-    const fetchProducts = async (attempt = 0): Promise<void> => {
+    return () => {
+      globalThis.clearTimeout(timeoutId);
+    };
+  }, [searchQuery]);
+
+  const loadProductsPage = React.useCallback(
+    async ({
+      append,
+      offset = 0,
+      attempt = 0,
+    }: {
+      append: boolean;
+      offset?: number;
+      attempt?: number;
+    }): Promise<void> => {
+      const requestSequence = productsRequestSequenceRef.current + 1;
+      productsRequestSequenceRef.current = requestSequence;
+      const isLatestRequest = () => productsRequestSequenceRef.current === requestSequence;
+      const limit = getProductPageLimit(append);
+
+      if (append) {
+        setIsLoadingMoreProducts(true);
+      } else {
+        setIsLoadingProducts(true);
+        setProductsError("");
+      }
+
       try {
-        const data = await api.getProducts();
-        if (!cancelled) {
-          setProducts(asArray<Product>(data));
-          setIsLoadingProducts(false);
+        const page = await api.getProductsPage({
+          limit,
+          offset,
+          search: debouncedSearchQuery,
+          category: activeCategory,
+          maxPrice:
+            typeof maxPriceFilter === "number" && Number.isFinite(maxPriceFilter) && maxPriceFilter > 0
+              ? maxPriceFilter
+              : null,
+        });
+
+        if (!isLatestRequest()) {
+          return;
         }
+
+        setProducts((current) => {
+          if (!append) {
+            return asArray<Product>(page.products);
+          }
+
+          const nextById = new globalThis.Map<number, Product>();
+          current.forEach((product) => nextById.set(product.id, product));
+          asArray<Product>(page.products).forEach((product) => nextById.set(product.id, product));
+          return Array.from(nextById.values());
+        });
+        setHasMoreProducts(page.hasMore);
+        setNextProductsOffset(page.nextOffset);
+        setProductsError("");
       } catch (err) {
-        const maxRetries = 4;
-        if (!cancelled && attempt < maxRetries) {
+        const maxRetries = append ? 1 : 4;
+        if (attempt < maxRetries) {
           const delayMs = Math.min(1000 * Math.pow(2, attempt), 8000);
           console.warn(
             `[products] Tentativa ${attempt + 1} falhou. Nova tentativa em ${delayMs}ms.`,
@@ -372,19 +446,59 @@ export default function App() {
           await new Promise<void>((resolve) => {
             globalThis.setTimeout(resolve, delayMs);
           });
-          if (!cancelled) {
-            await fetchProducts(attempt + 1);
-          }
+          await loadProductsPage({ append, offset, attempt: attempt + 1 });
           return;
         }
 
         console.error("Error fetching products:", err);
-        if (!cancelled) {
+        if (!isLatestRequest()) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : t("Falha ao carregar produtos.");
+        setProductsError(message);
+        if (!append) {
           setProducts([]);
+          setHasMoreProducts(false);
+          setNextProductsOffset(0);
+        }
+      } finally {
+        if (!isLatestRequest()) {
+          return;
+        }
+        if (append) {
+          setIsLoadingMoreProducts(false);
+        } else {
           setIsLoadingProducts(false);
         }
       }
-    };
+    },
+    [
+      activeCategory,
+      debouncedSearchQuery,
+      maxPriceFilter,
+      t,
+    ],
+  );
+
+  React.useEffect(() => {
+    void loadProductsPage({ append: false });
+  }, [loadProductsPage]);
+
+  const handleLoadMoreProducts = React.useCallback(() => {
+    if (isLoadingProducts || isLoadingMoreProducts || !hasMoreProducts) {
+      return;
+    }
+    void loadProductsPage({ append: true, offset: nextProductsOffset });
+  }, [
+    hasMoreProducts,
+    isLoadingMoreProducts,
+    isLoadingProducts,
+    loadProductsPage,
+    nextProductsOffset,
+  ]);
+
+  React.useEffect(() => {
+    let cancelled = false;
 
     const restoreSession = async () => {
       try {
@@ -399,7 +513,6 @@ export default function App() {
       }
     };
 
-    void fetchProducts();
     void restoreSession();
 
     return () => {
@@ -1444,6 +1557,7 @@ export default function App() {
   );
 
   const availableCategoryFilters = React.useMemo(() => {
+    const knownCategories = CATEGORIES.filter((category) => category !== "All");
     const categoryCounts = new globalThis.Map<string, number>();
     products.forEach((product) => {
       const category = String(product.category ?? "").trim();
@@ -1453,10 +1567,6 @@ export default function App() {
       categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
     });
 
-    const knownCategories = CATEGORIES.filter((category) => category !== "All");
-    const knownCategoriesWithProducts = knownCategories.filter(
-      (category) => (categoryCounts.get(category) ?? 0) > 0,
-    );
     const knownSet = new Set<string>(knownCategories);
     const customCategoriesWithProducts = Array.from(categoryCounts.keys()) as string[];
     const filteredCustomCategories = customCategoriesWithProducts
@@ -1468,7 +1578,7 @@ export default function App() {
         key: "All",
         count: products.length,
       },
-      ...knownCategoriesWithProducts.map((category) => ({
+      ...knownCategories.map((category) => ({
         key: category,
         count: categoryCounts.get(category) ?? 0,
       })),
@@ -1478,15 +1588,6 @@ export default function App() {
       })),
     ];
   }, [products, locale]);
-
-  React.useEffect(() => {
-    const hasActiveCategory = availableCategoryFilters.some(
-      (category) => category.key === activeCategory,
-    );
-    if (!hasActiveCategory) {
-      setActiveCategory("All");
-    }
-  }, [availableCategoryFilters, activeCategory]);
 
   const priceSliderMax = React.useMemo(() => {
     const rawMaxPrice = products.reduce((highest, product) => {
@@ -1500,14 +1601,18 @@ export default function App() {
       return Math.max(highest, parsedPrice);
     }, 0);
 
-    if (rawMaxPrice <= 0) {
+    const activeMaxPrice =
+      typeof maxPriceFilter === "number" && Number.isFinite(maxPriceFilter) ? maxPriceFilter : 0;
+    const resolvedMaxPrice = Math.max(rawMaxPrice, activeMaxPrice);
+
+    if (resolvedMaxPrice <= 0) {
       return 1000;
     }
 
     const roundingBase =
-      rawMaxPrice <= 100 ? 10 : rawMaxPrice <= 1000 ? 50 : rawMaxPrice <= 5000 ? 100 : 500;
-    return Math.ceil(rawMaxPrice / roundingBase) * roundingBase;
-  }, [products]);
+      resolvedMaxPrice <= 100 ? 10 : resolvedMaxPrice <= 1000 ? 50 : resolvedMaxPrice <= 5000 ? 100 : 500;
+    return Math.ceil(resolvedMaxPrice / roundingBase) * roundingBase;
+  }, [products, maxPriceFilter]);
 
   const priceSliderStep = React.useMemo(() => {
     if (priceSliderMax <= 100) {
@@ -1521,15 +1626,6 @@ export default function App() {
     }
     return 100;
   }, [priceSliderMax]);
-
-  React.useEffect(() => {
-    if (maxPriceFilter === null) {
-      return;
-    }
-    if (maxPriceFilter > priceSliderMax) {
-      setMaxPriceFilter(null);
-    }
-  }, [maxPriceFilter, priceSliderMax]);
 
   const hasMaxPriceFilter =
     typeof maxPriceFilter === "number" &&
@@ -1554,7 +1650,10 @@ export default function App() {
         const matchesSearch =
           normalizedSearch === "" ||
           product.name.toLowerCase().includes(normalizedSearch) ||
-          product.category.toLowerCase().includes(normalizedSearch);
+          product.category.toLowerCase().includes(normalizedSearch) ||
+          String(product.description ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(product.city ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(product.sellerName ?? "").toLowerCase().includes(normalizedSearch);
         const matchesPrice =
           resolvedMaxPriceFilter === null ||
           (!product.priceNegotiable &&
@@ -2687,25 +2786,46 @@ export default function App() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 items-stretch gap-x-3 gap-y-6 sm:gap-x-5 sm:gap-y-10 lg:grid-cols-4">
-              {filteredProducts.map((product, index) => (
-                <div key={product.id} className="h-full">
-                  <ProductCard 
-                    product={product} 
-                    imageLoading={index < 8 ? "eager" : "lazy"}
-                    imageFetchPriority={index < 8 ? "high" : "auto"}
-                    onClick={() => openProductDetails(product)}
-                    isLiked={likedProductIds.has(product.id)}
-                    onToggleLike={() => {
-                      void handleToggleLike(product);
-                    }}
-                    onAddToCart={() => {
-                      handleAddToCart(product, 1);
-                    }}
-                  />
+            <>
+              <div className="grid grid-cols-2 items-stretch gap-x-3 gap-y-6 sm:gap-x-5 sm:gap-y-10 lg:grid-cols-4">
+                {filteredProducts.map((product, index) => (
+                  <div key={product.id} className="h-full">
+                    <ProductCard 
+                      product={product} 
+                      imageLoading={index < 8 ? "eager" : "lazy"}
+                      imageFetchPriority={index < 8 ? "high" : "auto"}
+                      onClick={() => openProductDetails(product)}
+                      isLiked={likedProductIds.has(product.id)}
+                      onToggleLike={() => {
+                        void handleToggleLike(product);
+                      }}
+                      onAddToCart={() => {
+                        handleAddToCart(product, 1);
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {productsError && (
+                <p className="mt-8 text-center text-xs uppercase tracking-[0.18em] text-red-500">
+                  {productsError}
+                </p>
+              )}
+
+              {hasMoreProducts && (
+                <div className="mt-10 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={handleLoadMoreProducts}
+                    disabled={isLoadingMoreProducts}
+                    className="inline-flex min-w-40 items-center justify-center rounded-lg border border-stone-300 bg-white px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-800 transition-colors hover:border-stone-600 disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    {isLoadingMoreProducts ? t("Carregando...") : t("Carregar mais")}
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </section>
 

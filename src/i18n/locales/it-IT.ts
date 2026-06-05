@@ -347,5 +347,8 @@ export const itITTranslations: Record<string, string> = {
   "Link copiado para a área de transferência.": "Link copiato negli appunti.",
   "Link pronto para compartilhar.": "Link pronto per la condivisione.",
   "Não foi possível compartilhar agora.": "Impossibile condividere in questo momento.",
-  "Produto compartilhado.": "Prodotto condiviso."
+  "Produto compartilhado.": "Prodotto condiviso.",
+  "Carregar mais": "Carica altro",
+  "Carregando...": "Caricamento...",
+  "Falha ao carregar produtos.": "Errore durante il caricamento dei prodotti."
 };
