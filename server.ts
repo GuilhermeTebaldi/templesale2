@@ -53,8 +53,24 @@ type ProductRow = {
   longitude: number | null;
   city: string | null;
   seller_name: string | null;
+  seller_email: string | null;
+  seller_country: string | null;
+  seller_state: string | null;
   seller_whatsapp_country_iso: string | null;
   seller_whatsapp_number: string | null;
+};
+
+type AdminProductRecord = ProductRecord & {
+  owner?: {
+    id?: number;
+    name?: string;
+    email?: string;
+    country?: string;
+    state?: string;
+    city?: string;
+    whatsappCountryIso?: string;
+    whatsappNumber?: string;
+  };
 };
 
 type ProductCommentRow = {
@@ -739,6 +755,9 @@ const PRODUCT_SELECT_FIELDS = `
   COALESCE(p.longitude, p.lng) AS longitude,
   u.city AS city,
   u.name AS seller_name,
+  u.email AS seller_email,
+  u.country AS seller_country,
+  u.state AS seller_state,
   u.whatsapp_country_iso AS seller_whatsapp_country_iso,
   u.whatsapp_number AS seller_whatsapp_number
 `;
@@ -920,6 +939,9 @@ function normalizeProductRow(row: Record<string, unknown>): ProductRow {
     longitude: toNullableNumber(row.longitude),
     city: toNullableString(row.city),
     seller_name: toNullableString(row.seller_name),
+    seller_email: toNullableString(row.seller_email),
+    seller_country: toNullableString(row.seller_country),
+    seller_state: toNullableString(row.seller_state),
     seller_whatsapp_country_iso: toNullableString(row.seller_whatsapp_country_iso),
     seller_whatsapp_number: toNullableString(row.seller_whatsapp_number),
   };
@@ -2435,6 +2457,8 @@ async function selectProductsPageRows(query: ProductPageQuery): Promise<{
           OR COALESCE(p.category, '') ILIKE ${searchParam}
           OR COALESCE(p.description, '') ILIKE ${searchParam}
           OR COALESCE(u.name, '') ILIKE ${searchParam}
+          OR COALESCE(u.email, '') ILIKE ${searchParam}
+          OR COALESCE(u.whatsapp_number, '') ILIKE ${searchParam}
           OR COALESCE(u.city, '') ILIKE ${searchParam}
         )
       `);
@@ -2486,10 +2510,21 @@ async function selectProductsPageRows(query: ProductPageQuery): Promise<{
         OR LOWER(COALESCE(p.category, '')) LIKE ?
         OR LOWER(COALESCE(p.description, '')) LIKE ?
         OR LOWER(COALESCE(u.name, '')) LIKE ?
+        OR LOWER(COALESCE(u.email, '')) LIKE ?
+        OR LOWER(COALESCE(u.whatsapp_number, '')) LIKE ?
         OR LOWER(COALESCE(u.city, '')) LIKE ?
       )
     `);
-    values.push(searchParam, searchParam, searchParam, searchParam, searchParam, searchParam);
+    values.push(
+      searchParam,
+      searchParam,
+      searchParam,
+      searchParam,
+      searchParam,
+      searchParam,
+      searchParam,
+      searchParam,
+    );
   }
 
   if (query.category && query.category !== "All") {
@@ -4410,6 +4445,42 @@ function rowToProduct(row: ProductRow): ProductRecord {
   }
   if (row.seller_whatsapp_number) {
     product.sellerWhatsappNumber = row.seller_whatsapp_number;
+  }
+
+  return product;
+}
+
+function rowToAdminProduct(row: ProductRow): AdminProductRecord {
+  const product = rowToProduct(row) as AdminProductRecord;
+  const owner: NonNullable<AdminProductRecord["owner"]> = {};
+
+  if (row.user_id !== null) {
+    owner.id = row.user_id;
+  }
+  if (row.seller_name) {
+    owner.name = row.seller_name;
+  }
+  if (row.seller_email) {
+    owner.email = row.seller_email;
+  }
+  if (row.seller_country) {
+    owner.country = row.seller_country;
+  }
+  if (row.seller_state) {
+    owner.state = row.seller_state;
+  }
+  if (row.city) {
+    owner.city = row.city;
+  }
+  if (row.seller_whatsapp_country_iso) {
+    owner.whatsappCountryIso = row.seller_whatsapp_country_iso;
+  }
+  if (row.seller_whatsapp_number) {
+    owner.whatsappNumber = row.seller_whatsapp_number;
+  }
+
+  if (Object.keys(owner).length > 0) {
+    product.owner = owner;
   }
 
   return product;
@@ -6530,6 +6601,34 @@ async function bootstrap() {
       res.json({ success: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao atualizar senha.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/admin/products", async (req, res) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    try {
+      const search = String(req.query.q ?? req.query.search ?? "").trim();
+      const limit = normalizeProductPageLimit(req.query.limit, 36);
+      const offset = normalizeProductPageOffset(req.query.offset);
+      const page = await selectProductsPageRows({
+        search,
+        category: "",
+        maxPrice: null,
+        limit,
+        offset,
+      });
+
+      res.json({
+        products: page.rows.map(rowToAdminProduct),
+        hasMore: page.hasMore,
+        nextOffset: offset + page.rows.length,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar produtos.";
       res.status(500).json({ error: message });
     }
   });

@@ -59,6 +59,25 @@ type AdminProductV2 = {
   createdAt?: string;
   clickCount?: number;
   quantity?: number;
+  ownerId?: number;
+  sellerName?: string;
+  sellerWhatsappNumber?: string;
+  owner?: {
+    id?: number;
+    name?: string;
+    email?: string;
+    country?: string;
+    state?: string;
+    city?: string;
+    whatsappCountryIso?: string;
+    whatsappNumber?: string;
+  };
+};
+
+type AdminProductsResponseV2 = {
+  products: AdminProductV2[];
+  hasMore: boolean;
+  nextOffset: number;
 };
 
 type AdminSessionV2 = {
@@ -66,7 +85,7 @@ type AdminSessionV2 = {
   token: string;
 };
 
-type AdminViewV2 = "overview" | "users" | "visitors" | "security";
+type AdminViewV2 = "overview" | "products" | "users" | "visitors" | "security";
 
 type SecurityEventFilter = "all" | SecurityCheckStatus;
 
@@ -452,6 +471,66 @@ function normalizeAdminProduct(item: unknown): AdminProductV2 | null {
   if (Number.isFinite(quantity)) {
     product.quantity = quantity;
   }
+  const ownerId = Number(record.ownerId ?? record.owner_id ?? record.user_id);
+  if (Number.isInteger(ownerId) && ownerId > 0) {
+    product.ownerId = ownerId;
+  }
+  const sellerName = String(record.sellerName ?? record.seller_name ?? "").trim();
+  if (sellerName) {
+    product.sellerName = sellerName;
+  }
+  const sellerWhatsappNumber = String(
+    record.sellerWhatsappNumber ?? record.seller_whatsapp_number ?? "",
+  ).trim();
+  if (sellerWhatsappNumber) {
+    product.sellerWhatsappNumber = sellerWhatsappNumber;
+  }
+
+  const ownerRecord = asRecord(record.owner);
+  if (ownerRecord) {
+    const owner: NonNullable<AdminProductV2["owner"]> = {};
+    const nestedOwnerId = Number(ownerRecord.id ?? ownerRecord.user_id ?? ownerRecord.userId);
+    if (Number.isInteger(nestedOwnerId) && nestedOwnerId > 0) {
+      owner.id = nestedOwnerId;
+    }
+    const ownerName = String(ownerRecord.name ?? ownerRecord.username ?? "").trim();
+    if (ownerName) {
+      owner.name = ownerName;
+    }
+    const ownerEmail = String(ownerRecord.email ?? "").trim().toLowerCase();
+    if (ownerEmail) {
+      owner.email = ownerEmail;
+    }
+    const ownerCountry = String(ownerRecord.country ?? "").trim();
+    if (ownerCountry) {
+      owner.country = ownerCountry;
+    }
+    const ownerState = String(ownerRecord.state ?? "").trim();
+    if (ownerState) {
+      owner.state = ownerState;
+    }
+    const ownerCity = String(ownerRecord.city ?? "").trim();
+    if (ownerCity) {
+      owner.city = ownerCity;
+    }
+    const ownerWhatsappCountryIso = String(
+      ownerRecord.whatsappCountryIso ?? ownerRecord.whatsapp_country_iso ?? "",
+    )
+      .trim()
+      .toUpperCase();
+    if (ownerWhatsappCountryIso) {
+      owner.whatsappCountryIso = ownerWhatsappCountryIso;
+    }
+    const ownerWhatsappNumber = String(
+      ownerRecord.whatsappNumber ?? ownerRecord.whatsapp_number ?? "",
+    ).trim();
+    if (ownerWhatsappNumber) {
+      owner.whatsappNumber = ownerWhatsappNumber;
+    }
+    if (Object.keys(owner).length > 0) {
+      product.owner = owner;
+    }
+  }
   return product;
 }
 
@@ -478,6 +557,23 @@ function normalizeAdminProductList(payload: unknown): AdminProductV2[] {
   }
 
   return [];
+}
+
+function normalizeAdminProductsResponse(payload: unknown): AdminProductsResponseV2 {
+  const record = asRecord(payload);
+  if (!record) {
+    const products = normalizeAdminProductList(payload);
+    return { products, hasMore: false, nextOffset: products.length };
+  }
+
+  const products = normalizeAdminProductList(record.products ?? record.items ?? record.data ?? payload);
+  const hasMore = toBoolean(record.hasMore ?? record.has_more);
+  const nextOffsetRaw = Number(record.nextOffset ?? record.next_offset);
+  return {
+    products,
+    hasMore,
+    nextOffset: Number.isFinite(nextOffsetRaw) ? nextOffsetRaw : products.length,
+  };
 }
 
 function toNumber(value: unknown): number {
@@ -1119,6 +1215,25 @@ async function adminGetUserProducts(token: string, userId: number): Promise<Admi
   return normalizeAdminProductList(response);
 }
 
+async function adminGetProducts(
+  token: string,
+  query = "",
+  offset = 0,
+  limit = 36,
+): Promise<AdminProductsResponseV2> {
+  const params = new URLSearchParams();
+  const normalizedQuery = query.trim();
+  if (normalizedQuery) {
+    params.set("q", normalizedQuery);
+  }
+  params.set("offset", String(Math.max(0, Math.floor(offset))));
+  params.set("limit", String(Math.max(1, Math.floor(limit))));
+  const response = await adminRequest<unknown>(`/api/admin/products?${params.toString()}`, {
+    token,
+  });
+  return normalizeAdminProductsResponse(response);
+}
+
 async function adminGetVisitors(
   token: string,
   day: string,
@@ -1157,6 +1272,13 @@ async function adminResetUserPassword(
 
 async function adminDeleteUser(token: string, userId: number): Promise<void> {
   await adminRequest<unknown>(`/api/admin/users/${userId}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+async function adminDeleteProduct(token: string, productId: number): Promise<void> {
+  await adminRequest<unknown>(`/api/admin/products/${productId}`, {
     method: "DELETE",
     token,
   });
@@ -1301,6 +1423,14 @@ export default function AdminPanelV2() {
   const [query, setQuery] = React.useState("");
   const [isLoadingUsers, setIsLoadingUsers] = React.useState(false);
   const [usersError, setUsersError] = React.useState("");
+  const [products, setProducts] = React.useState<AdminProductV2[]>([]);
+  const [productQuery, setProductQuery] = React.useState("");
+  const [productsNextOffset, setProductsNextOffset] = React.useState(0);
+  const [productsHasMore, setProductsHasMore] = React.useState(false);
+  const [isLoadingProducts, setIsLoadingProducts] = React.useState(false);
+  const [isLoadingMoreProducts, setIsLoadingMoreProducts] = React.useState(false);
+  const [productsError, setProductsError] = React.useState("");
+  const [deletingProductId, setDeletingProductId] = React.useState<number | null>(null);
   const [pendingBanUserId, setPendingBanUserId] = React.useState<number | null>(null);
   const [deletingUserId, setDeletingUserId] = React.useState<number | null>(null);
   const [selectedUser, setSelectedUser] = React.useState<AdminUserV2 | null>(null);
@@ -1345,6 +1475,45 @@ export default function AdminPanelV2() {
         setUsersError(message);
       } finally {
         setIsLoadingUsers(false);
+      }
+    },
+    [],
+  );
+
+  const loadProducts = React.useCallback(
+    async (
+      token: string,
+      searchQuery = "",
+      options?: { append?: boolean; offset?: number },
+    ) => {
+      const append = Boolean(options?.append);
+      const offset = Math.max(0, Math.floor(options?.offset ?? 0));
+      if (append) {
+        setIsLoadingMoreProducts(true);
+      } else {
+        setIsLoadingProducts(true);
+      }
+      setProductsError("");
+
+      try {
+        const payload = await adminGetProducts(token, searchQuery, offset, 36);
+        setProducts((current) => (append ? [...current, ...payload.products] : payload.products));
+        setProductsHasMore(payload.hasMore);
+        setProductsNextOffset(payload.nextOffset);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Falha ao carregar produtos.";
+        if (!append) {
+          setProducts([]);
+          setProductsNextOffset(0);
+          setProductsHasMore(false);
+        }
+        setProductsError(message);
+      } finally {
+        if (append) {
+          setIsLoadingMoreProducts(false);
+        } else {
+          setIsLoadingProducts(false);
+        }
       }
     },
     [],
@@ -1520,6 +1689,14 @@ export default function AdminPanelV2() {
       setVisitorsUpdatedAt(null);
       setIsLoadingVisitors(false);
       setVisitorsError("");
+      setProducts([]);
+      setProductQuery("");
+      setProductsNextOffset(0);
+      setProductsHasMore(false);
+      setIsLoadingProducts(false);
+      setIsLoadingMoreProducts(false);
+      setProductsError("");
+      setDeletingProductId(null);
       setUsersError("");
       setAuthError("");
       setQuery("");
@@ -1636,6 +1813,7 @@ export default function AdminPanelV2() {
 	    if (activeView === "overview") {
 	      await Promise.all([
 	        loadUsers(authToken, query),
+	        loadProducts(authToken, productQuery),
 	        loadVisitors(authToken, visitorDay, { silent: true }),
 	        loadSecurityEvents(authToken, { silent: true }),
 	      ]);
@@ -1653,7 +1831,42 @@ export default function AdminPanelV2() {
       await loadVisitors(authToken, visitorDay);
       return;
     }
+    if (activeView === "products") {
+      await loadProducts(authToken, productQuery);
+      return;
+    }
     await loadUsers(authToken, query);
+  };
+
+  const handleProductSearchSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await loadProducts(authToken, productQuery);
+  };
+
+  const handleLoadMoreProducts = async () => {
+    await loadProducts(authToken, productQuery, { append: true, offset: productsNextOffset });
+  };
+
+  const handleDeleteProduct = async (product: AdminProductV2) => {
+    const confirmation = window.confirm(
+      `Excluir o produto ${product.name || `#${product.id}`}?`,
+    );
+    if (!confirmation) {
+      return;
+    }
+
+    setDeletingProductId(product.id);
+    setProductsError("");
+    try {
+      await adminDeleteProduct(authToken, product.id);
+      setProducts((current) => current.filter((item) => item.id !== product.id));
+      setSelectedUserProducts((current) => current.filter((item) => item.id !== product.id));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao excluir produto.";
+      setProductsError(message);
+    } finally {
+      setDeletingProductId(null);
+    }
   };
 
   const handleOpenUserDetail = async (user: AdminUserV2) => {
@@ -1905,6 +2118,13 @@ export default function AdminPanelV2() {
     void loadVisitors(authToken, visitorDay);
   }, [activeView, authToken, loadVisitors, sessionEmail, visitorDay]);
 
+  React.useEffect(() => {
+    if (!sessionEmail || !authToken || activeView !== "products") {
+      return;
+    }
+    void loadProducts(authToken, productQuery);
+  }, [activeView, authToken, loadProducts, sessionEmail]);
+
   const selectedResetCode = selectedUser ? pendingResetCodesByUserId[selectedUser.id] ?? "" : "";
   const selectedWhatsappResetUrl =
     selectedUser && selectedResetCode ? buildWhatsappResetUrl(selectedUser, selectedResetCode) : "";
@@ -2039,6 +2259,18 @@ export default function AdminPanelV2() {
 	            </button>
 	            <button
 	              type="button"
+	              onClick={() => setActiveView("products")}
+	              className={`inline-flex items-center gap-2 px-3 py-2 text-xs uppercase tracking-[0.14em] border transition-colors ${
+	                activeView === "products"
+	                  ? "border-stone-900 bg-stone-900 text-white"
+	                  : "border-stone-300 text-stone-700 hover:border-stone-800"
+	              }`}
+	            >
+	              <Package className="w-3.5 h-3.5" />
+	              Produtos
+	            </button>
+	            <button
+	              type="button"
 	              onClick={() => setActiveView("users")}
               className={`inline-flex items-center gap-2 px-3 py-2 text-xs uppercase tracking-[0.14em] border transition-colors ${
                 activeView === "users"
@@ -2139,6 +2371,135 @@ export default function AdminPanelV2() {
 	                ))}
 	              </div>
 	            </article>
+	          </section>
+	        ) : activeView === "products" ? (
+	          <section className="space-y-4">
+	            <article className="border border-stone-200 bg-white p-4 sm:p-5">
+	              <div className="mb-4 flex items-center gap-3">
+	                <Package className="w-4 h-4 text-stone-600" />
+	                <div>
+	                  <h2 className="text-sm font-semibold text-stone-900">
+	                    Produtos cadastrados ({products.length})
+	                  </h2>
+	                  <p className="mt-1 text-xs text-stone-500">
+	                    Pesquise por produto, categoria, cidade, nome, email ou WhatsApp do dono.
+	                  </p>
+	                </div>
+	              </div>
+	              <form
+	                onSubmit={(event) => void handleProductSearchSubmit(event)}
+	                className="flex flex-col gap-2 sm:flex-row"
+	              >
+	                <input
+	                  type="text"
+	                  value={productQuery}
+	                  onChange={(event) => setProductQuery(event.target.value)}
+	                  placeholder="Pesquisar produto ou dono"
+	                  className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
+	                />
+	                <button
+	                  type="submit"
+	                  disabled={isLoadingProducts}
+	                  className="inline-flex items-center justify-center gap-2 border border-stone-900 bg-stone-900 px-4 py-2.5 text-xs uppercase tracking-[0.14em] text-white hover:bg-black disabled:opacity-60"
+	                >
+	                  <Search className="w-3.5 h-3.5" />
+	                  Pesquisar
+	                </button>
+	              </form>
+	            </article>
+
+	            {productsError && (
+	              <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+	                {productsError}
+	              </div>
+	            )}
+
+	            {isLoadingProducts ? (
+	              <div className="py-16 text-center text-sm text-stone-500">
+	                Carregando produtos...
+	              </div>
+	            ) : products.length === 0 ? (
+	              <div className="border border-stone-200 bg-white py-16 text-center text-sm text-stone-500">
+	                Nenhum produto encontrado.
+	              </div>
+	            ) : (
+	              <div className="space-y-3">
+	                {products.map((product) => {
+	                  const ownerName =
+	                    product.owner?.name || product.sellerName || `Usuário ${product.ownerId ?? "-"}`;
+	                  const ownerEmail = product.owner?.email || "-";
+	                  const ownerCity = product.owner?.city || product.city || "-";
+	                  const ownerWhatsapp =
+	                    product.owner?.whatsappNumber || product.sellerWhatsappNumber || "-";
+	                  return (
+	                    <article
+	                      key={product.id}
+	                      className="border border-stone-200 bg-white p-4 sm:p-5"
+	                    >
+	                      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.1fr_0.9fr_auto] lg:items-start">
+	                        <div className="min-w-0">
+	                          <div className="flex flex-wrap items-center gap-2">
+	                            <span className="border border-stone-300 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-stone-500">
+	                              ID {product.id}
+	                            </span>
+	                            <span className="text-[11px] uppercase tracking-[0.12em] text-stone-500">
+	                              {product.category || "Sem categoria"}
+	                            </span>
+	                          </div>
+	                          <h3 className="mt-2 text-sm font-semibold text-stone-900">
+	                            {product.name}
+	                          </h3>
+	                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-600">
+	                            <span>Preço: {product.price || "Tratt."}</span>
+	                            <span>Cliques: {product.clickCount ?? 0}</span>
+	                            <span>Qtd.: {product.quantity ?? "-"}</span>
+	                          </div>
+	                        </div>
+
+	                        <div className="border border-stone-100 bg-stone-50 px-3 py-3">
+	                          <p className="text-[10px] uppercase tracking-[0.12em] text-stone-500">
+	                            Dono do produto
+	                          </p>
+	                          <p className="mt-1 text-sm font-semibold text-stone-900">
+	                            {ownerName}
+	                          </p>
+	                          <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-stone-600 sm:grid-cols-2 lg:grid-cols-1">
+	                            <span>Email: {ownerEmail}</span>
+	                            <span>Cidade: {ownerCity}</span>
+	                            <span>WhatsApp: {ownerWhatsapp}</span>
+	                            <span>ID usuário: {product.owner?.id ?? product.ownerId ?? "-"}</span>
+	                          </div>
+	                        </div>
+
+	                        <button
+	                          type="button"
+	                          onClick={() => void handleDeleteProduct(product)}
+	                          disabled={deletingProductId === product.id}
+	                          className="inline-flex items-center justify-center gap-2 border border-red-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-red-700 hover:bg-red-50 disabled:opacity-60 lg:w-40"
+	                        >
+	                          <Trash2 className="w-3.5 h-3.5" />
+	                          {deletingProductId === product.id ? "Excluindo..." : "Excluir"}
+	                        </button>
+	                      </div>
+	                    </article>
+	                  );
+	                })}
+	              </div>
+	            )}
+
+	            {productsHasMore && (
+	              <div className="flex justify-center pt-2">
+	                <button
+	                  type="button"
+	                  onClick={() => void handleLoadMoreProducts()}
+	                  disabled={isLoadingMoreProducts}
+	                  className="inline-flex items-center justify-center gap-2 border border-stone-300 bg-white px-4 py-2.5 text-xs uppercase tracking-[0.14em] text-stone-700 hover:border-stone-900 disabled:opacity-60"
+	                >
+	                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingMoreProducts ? "animate-spin" : ""}`} />
+	                  {isLoadingMoreProducts ? "Carregando..." : "Carregar mais"}
+	                </button>
+	              </div>
+	            )}
 	          </section>
 	        ) : activeView === "users" ? (
 	          <>
@@ -2880,6 +3241,15 @@ export default function AdminPanelV2() {
                                 <span>Qtd.: {product.quantity ?? "-"}</span>
                                 <span>Criado: {formatDate(product.createdAt)}</span>
                               </div>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteProduct(product)}
+                                disabled={deletingProductId === product.id}
+                                className="mt-3 inline-flex items-center justify-center gap-2 border border-red-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-red-700 hover:bg-red-50 disabled:opacity-60"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                {deletingProductId === product.id ? "Excluindo..." : "Excluir produto"}
+                              </button>
                             </div>
                           ))}
                         </div>
