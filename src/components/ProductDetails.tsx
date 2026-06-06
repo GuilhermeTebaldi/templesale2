@@ -26,7 +26,7 @@ import {
   isNegotiablePrice,
 } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
-import { resolveProductImages } from "../lib/product-images";
+import { getImageRetryUrls, resolveProductImages, type ProductImageVariant } from "../lib/product-images";
 import { normalizeProductDetailsRecord } from "../lib/product-details";
 
 interface ProductDetailsProps {
@@ -60,6 +60,102 @@ const DETAIL_KEYS_REAL_ESTATE = new Set(["type", "area", "room", "rooms", "bathr
 const DETAIL_KEYS_VEHICLE = new Set(["brand", "model", "color", "year"]);
 const DETAIL_KEYS_ELECTRONICS = new Set(["brand", "model", "color"]);
 const PRODUCT_COMMENT_MAX_BODY_LENGTH = 1200;
+
+interface LayeredProductDetailImageProps {
+  src: string;
+  alt: string;
+  className: string;
+  previewVariant: ProductImageVariant;
+  fullVariant: ProductImageVariant;
+  loading?: "eager" | "lazy";
+  fetchPriority?: "high" | "low" | "auto";
+}
+
+function LayeredProductDetailImage({
+  src,
+  alt,
+  className,
+  previewVariant,
+  fullVariant,
+  loading = "lazy",
+  fetchPriority = "auto",
+}: LayeredProductDetailImageProps) {
+  const previewSources = React.useMemo(
+    () => getImageRetryUrls(src, previewVariant),
+    [src, previewVariant],
+  );
+  const fullSources = React.useMemo(
+    () => getImageRetryUrls(src, fullVariant),
+    [src, fullVariant],
+  );
+  const [previewIndex, setPreviewIndex] = React.useState(0);
+  const [fullIndex, setFullIndex] = React.useState(0);
+  const [isPreviewLoaded, setIsPreviewLoaded] = React.useState(false);
+  const [isFullLoaded, setIsFullLoaded] = React.useState(false);
+  const previewSrc = previewSources[previewIndex] ?? "";
+  const fullSrc = fullSources[fullIndex] ?? "";
+
+  React.useEffect(() => {
+    setPreviewIndex(0);
+    setFullIndex(0);
+    setIsPreviewLoaded(false);
+    setIsFullLoaded(false);
+  }, [src]);
+
+  const handlePreviewError = React.useCallback(() => {
+    setPreviewIndex((current) =>
+      current + 1 < previewSources.length ? current + 1 : current,
+    );
+  }, [previewSources.length]);
+
+  const handleFullError = React.useCallback(() => {
+    setFullIndex((current) =>
+      current + 1 < fullSources.length ? current + 1 : current,
+    );
+  }, [fullSources.length]);
+
+  return (
+    <>
+      <div
+        aria-hidden="true"
+        className={`absolute inset-0 bg-linear-to-br from-stone-100 via-stone-50 to-stone-200 transition-opacity duration-300 ${
+          isPreviewLoaded || isFullLoaded ? "opacity-0" : "opacity-100"
+        }`}
+      />
+      {previewSrc && (
+        <img
+          src={previewSrc}
+          alt=""
+          loading={loading}
+          fetchPriority={fetchPriority}
+          decoding="async"
+          onLoad={() => setIsPreviewLoaded(true)}
+          onError={handlePreviewError}
+          className={`${className} transition-opacity duration-300 ${
+            isFullLoaded ? "opacity-0" : isPreviewLoaded ? "opacity-100" : "opacity-0"
+          }`}
+          referrerPolicy="no-referrer"
+          aria-hidden="true"
+        />
+      )}
+      {fullSrc && (
+        <img
+          src={fullSrc}
+          alt={alt}
+          loading={loading}
+          fetchPriority={fetchPriority}
+          decoding="async"
+          onLoad={() => setIsFullLoaded(true)}
+          onError={handleFullError}
+          className={`absolute inset-0 ${className} transition-opacity duration-500 ${
+            isFullLoaded ? "opacity-100" : "opacity-0"
+          }`}
+          referrerPolicy="no-referrer"
+        />
+      )}
+    </>
+  );
+}
 
 function formatCommentDate(createdAt: number, locale: string): string {
   const safeDate = new Date(Math.max(0, Number(createdAt) || 0) * 1000);
@@ -612,17 +708,25 @@ export default function ProductDetails({
                 <X className="w-6 h-6 text-white" />
               </button>
 
-              <div className="relative w-full h-full flex items-center justify-center px-4">
-                <AnimatePresence mode="wait">
-                  <motion.img
-                    key={activeImageIndex}
-                    src={images[activeImageIndex]}
-                    alt={t("Imagem ampliada de {name}", { name: product.name })}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 1.1 }}
-                    className="max-w-full max-h-full object-contain"
-                  />
+                <div className="relative w-full h-full flex items-center justify-center px-4">
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={activeImageIndex}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 1.1 }}
+                      className="relative h-full w-full"
+                    >
+                      <LayeredProductDetailImage
+                        src={images[activeImageIndex]}
+                        alt={t("Imagem ampliada de {name}", { name: product.name })}
+                        previewVariant="card"
+                        fullVariant="full"
+                        loading="eager"
+                        fetchPriority="high"
+                        className="h-full w-full object-contain"
+                      />
+                    </motion.div>
                 </AnimatePresence>
 
                 <button 
@@ -683,10 +787,14 @@ export default function ProductDetails({
                 className="relative aspect-3/4 bg-stone-100 overflow-hidden rounded-sm cursor-zoom-in group"
                 onClick={() => setIsLightboxOpen(true)}
               >
-                <img 
-                  src={images[activeImageIndex]} 
-                  alt={product.name} 
-                  className="w-full h-full object-cover"
+                <LayeredProductDetailImage
+                  src={images[activeImageIndex]}
+                  alt={product.name}
+                  previewVariant="card"
+                  fullVariant="full"
+                  loading="eager"
+                  fetchPriority="high"
+                  className="h-full w-full object-cover"
                 />
                 <div className="absolute bottom-6 right-6 p-3 bg-white/80 backdrop-blur-sm rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
                   <Maximize2 className="w-5 h-5 text-stone-600" />
@@ -697,16 +805,17 @@ export default function ProductDetails({
                   <div 
                     key={i} 
                     onClick={() => setActiveImageIndex(i)}
-                    className={`aspect-square bg-stone-100 rounded-sm overflow-hidden cursor-pointer transition-all border-2 ${
+                    className={`relative aspect-square bg-stone-100 rounded-sm overflow-hidden cursor-pointer transition-all border-2 ${
                       i === activeImageIndex ? "border-stone-800" : "border-transparent opacity-60 hover:opacity-100"
                     }`}
                   >
-                    <img 
-                      src={img} 
+                    <ProgressiveProductImage
+                      src={img}
                       alt={t("Imagem {index} de {name}", {
                         index: i + 1,
                         name: product.name,
                       })}
+                      variant="thumbnail"
                       className="w-full h-full object-cover"
                     />
                   </div>
