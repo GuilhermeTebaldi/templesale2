@@ -18,6 +18,11 @@ import {
   Monitor,
   Bot,
   ChevronDown,
+  Copy,
+  KeyRound,
+  MessageCircle,
+  Package,
+  X,
 } from "lucide-react";
 import {
   getSecurityCategoryLabel,
@@ -35,9 +40,25 @@ type AdminUserV2 = {
   country?: string;
   state?: string;
   city?: string;
+  neighborhood?: string;
+  street?: string;
+  whatsappCountryIso?: string;
+  locationLatitude?: number;
+  locationLongitude?: number;
   createdAt?: string;
   isBanned: boolean;
   banReason?: string;
+};
+
+type AdminProductV2 = {
+  id: number;
+  name: string;
+  category?: string;
+  price?: string;
+  city?: string;
+  createdAt?: string;
+  clickCount?: number;
+  quantity?: number;
 };
 
 type AdminSessionV2 = {
@@ -325,6 +346,35 @@ function normalizeAdminUser(item: unknown): AdminUserV2 | null {
     user.city = city;
   }
 
+  const neighborhood = String(record.neighborhood ?? "").trim();
+  if (neighborhood) {
+    user.neighborhood = neighborhood;
+  }
+
+  const street = String(record.street ?? "").trim();
+  if (street) {
+    user.street = street;
+  }
+
+  const whatsappCountryIso = String(
+    record.whatsapp_country_iso ?? record.whatsappCountryIso ?? "",
+  )
+    .trim()
+    .toUpperCase();
+  if (whatsappCountryIso) {
+    user.whatsappCountryIso = whatsappCountryIso;
+  }
+
+  const locationLatitude = Number(record.location_latitude ?? record.locationLatitude);
+  if (Number.isFinite(locationLatitude)) {
+    user.locationLatitude = locationLatitude;
+  }
+
+  const locationLongitude = Number(record.location_longitude ?? record.locationLongitude);
+  if (Number.isFinite(locationLongitude)) {
+    user.locationLongitude = locationLongitude;
+  }
+
   const createdAt = String(record.created_at ?? record.createdAt ?? "").trim();
   if (createdAt) {
     user.createdAt = createdAt;
@@ -358,6 +408,73 @@ function normalizeAdminUserList(payload: unknown): AdminUserV2[] {
     return nested
       .map((item) => normalizeAdminUser(item))
       .filter((item): item is AdminUserV2 => item !== null);
+  }
+
+  return [];
+}
+
+function normalizeAdminProduct(item: unknown): AdminProductV2 | null {
+  const record = asRecord(item);
+  if (!record) {
+    return null;
+  }
+
+  const id = Number(record.id ?? record.product_id ?? record.productId);
+  if (!Number.isInteger(id) || id <= 0) {
+    return null;
+  }
+
+  const product: AdminProductV2 = {
+    id,
+    name: String(record.name ?? record.title ?? "").trim() || `Produto ${id}`,
+  };
+  const category = String(record.category ?? "").trim();
+  if (category) {
+    product.category = category;
+  }
+  const price = String(record.price ?? "").trim();
+  if (price) {
+    product.price = price;
+  }
+  const city = String(record.city ?? "").trim();
+  if (city) {
+    product.city = city;
+  }
+  const createdAt = String(record.created_at ?? record.createdAt ?? "").trim();
+  if (createdAt) {
+    product.createdAt = createdAt;
+  }
+  const clickCount = Number(record.click_count ?? record.clickCount);
+  if (Number.isFinite(clickCount)) {
+    product.clickCount = clickCount;
+  }
+  const quantity = Number(record.quantity);
+  if (Number.isFinite(quantity)) {
+    product.quantity = quantity;
+  }
+  return product;
+}
+
+function normalizeAdminProductList(payload: unknown): AdminProductV2[] {
+  if (Array.isArray(payload)) {
+    return payload
+      .map((item) => normalizeAdminProduct(item))
+      .filter((item): item is AdminProductV2 => item !== null);
+  }
+
+  const record = asRecord(payload);
+  if (!record) {
+    return [];
+  }
+
+  const nestedCandidates = [record.data, record.products, record.items, record.rows, record.results];
+  for (const nested of nestedCandidates) {
+    if (!Array.isArray(nested)) {
+      continue;
+    }
+    return nested
+      .map((item) => normalizeAdminProduct(item))
+      .filter((item): item is AdminProductV2 => item !== null);
   }
 
   return [];
@@ -590,6 +707,52 @@ function formatDayDate(value: string): string {
     year: "numeric",
     timeZone: "UTC",
   }).format(parsed);
+}
+
+function generateResetCode(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function getAdminUserDetailRows(user: AdminUserV2): Array<{ label: string; value: string }> {
+  const coordinates =
+    typeof user.locationLatitude === "number" && typeof user.locationLongitude === "number"
+      ? `${user.locationLatitude.toFixed(5)}, ${user.locationLongitude.toFixed(5)}`
+      : "";
+
+  return [
+    { label: "ID", value: String(user.id) },
+    { label: "Nome", value: user.username || "-" },
+    { label: "Email", value: user.email || "-" },
+    { label: "Telefone", value: user.phone || "-" },
+    { label: "País", value: user.country || "-" },
+    { label: "Estado", value: user.state || "-" },
+    { label: "Cidade", value: user.city || "-" },
+    { label: "Bairro", value: user.neighborhood || "-" },
+    { label: "Rua", value: user.street || "-" },
+    { label: "WhatsApp ISO", value: user.whatsappCountryIso || "-" },
+    { label: "Coordenadas", value: coordinates || "-" },
+    { label: "Criado em", value: formatDate(user.createdAt) },
+    { label: "Status", value: user.isBanned ? "Banido" : "Ativo" },
+    { label: "Motivo do bloqueio", value: user.banReason || "-" },
+  ];
+}
+
+function buildWhatsappResetUrl(user: AdminUserV2, code: string): string {
+  const digits = (user.phone || "").replace(/\D/g, "");
+  if (!digits || !code) {
+    return "";
+  }
+
+  const dialPrefixByIso: Record<string, string> = {
+    BR: "55",
+    IT: "39",
+    PT: "351",
+    US: "1",
+  };
+  const prefix = user.whatsappCountryIso ? dialPrefixByIso[user.whatsappCountryIso] : "";
+  const phone = prefix && !digits.startsWith(prefix) ? `${prefix}${digits}` : digits;
+  const message = `Olá, seu código temporário TempleSale é ${code}. Use ele como senha e depois altere no perfil.`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
 
 const COUNTRY_NAME_BY_CODE: Record<string, string> = {
@@ -951,6 +1114,11 @@ async function adminGetUsers(token: string, query = ""): Promise<AdminUserV2[]> 
   return normalizeAdminUserList(response);
 }
 
+async function adminGetUserProducts(token: string, userId: number): Promise<AdminProductV2[]> {
+  const response = await adminRequest<unknown>(`/api/admin/users/${userId}/products`, { token });
+  return normalizeAdminProductList(response);
+}
+
 async function adminGetVisitors(
   token: string,
   day: string,
@@ -972,6 +1140,18 @@ async function adminToggleUserBan(
     method: "PATCH",
     token,
     body: { isBanned },
+  });
+}
+
+async function adminResetUserPassword(
+  token: string,
+  userId: number,
+  password: string,
+): Promise<void> {
+  await adminRequest<unknown>(`/api/admin/users/${userId}/password`, {
+    method: "PUT",
+    token,
+    body: { password },
   });
 }
 
@@ -1123,6 +1303,15 @@ export default function AdminPanelV2() {
   const [usersError, setUsersError] = React.useState("");
   const [pendingBanUserId, setPendingBanUserId] = React.useState<number | null>(null);
   const [deletingUserId, setDeletingUserId] = React.useState<number | null>(null);
+  const [selectedUser, setSelectedUser] = React.useState<AdminUserV2 | null>(null);
+  const [selectedUserProducts, setSelectedUserProducts] = React.useState<AdminProductV2[]>([]);
+  const [isLoadingSelectedUserProducts, setIsLoadingSelectedUserProducts] = React.useState(false);
+  const [selectedUserError, setSelectedUserError] = React.useState("");
+  const [resetPasswordValue, setResetPasswordValue] = React.useState("");
+  const [isResettingUserPassword, setIsResettingUserPassword] = React.useState(false);
+  const [pendingResetCodesByUserId, setPendingResetCodesByUserId] = React.useState<
+    Record<number, string>
+  >({});
   const [testAreaPassword, setTestAreaPassword] = React.useState("");
   const [isTestAreaUnlocked, setIsTestAreaUnlocked] = React.useState(false);
   const [isUnlockingTestArea, setIsUnlockingTestArea] = React.useState(false);
@@ -1267,6 +1456,17 @@ export default function AdminPanelV2() {
     };
   }, [loadSecurityEvents, loadUsers, loadVisitors]);
 
+  React.useEffect(() => {
+    if (!selectedUser) {
+      return;
+    }
+
+    const updatedUser = users.find((user) => user.id === selectedUser.id);
+    if (updatedUser) {
+      setSelectedUser(updatedUser);
+    }
+  }, [selectedUser, users]);
+
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalizedEmail = email.trim().toLowerCase();
@@ -1324,6 +1524,11 @@ export default function AdminPanelV2() {
       setAuthError("");
       setQuery("");
       setPassword("");
+      setSelectedUser(null);
+      setSelectedUserProducts([]);
+      setSelectedUserError("");
+      setResetPasswordValue("");
+      setPendingResetCodesByUserId({});
       setActiveView("overview");
       setTestAreaPassword("");
       setIsTestAreaUnlocked(false);
@@ -1451,6 +1656,79 @@ export default function AdminPanelV2() {
     await loadUsers(authToken, query);
   };
 
+  const handleOpenUserDetail = async (user: AdminUserV2) => {
+    setSelectedUser(user);
+    setSelectedUserProducts([]);
+    setSelectedUserError("");
+    setResetPasswordValue(pendingResetCodesByUserId[user.id] ?? "");
+    setIsLoadingSelectedUserProducts(true);
+
+    try {
+      const products = await adminGetUserProducts(authToken, user.id);
+      setSelectedUserProducts(products);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao carregar ficha do usuário.";
+      setSelectedUserError(message);
+    } finally {
+      setIsLoadingSelectedUserProducts(false);
+    }
+  };
+
+  const handleCloseUserDetail = () => {
+    setSelectedUser(null);
+    setSelectedUserProducts([]);
+    setSelectedUserError("");
+    setResetPasswordValue("");
+    setIsLoadingSelectedUserProducts(false);
+  };
+
+  const handleGenerateResetCode = (user: AdminUserV2) => {
+    const code = generateResetCode();
+    setPendingResetCodesByUserId((current) => ({ ...current, [user.id]: code }));
+    setResetPasswordValue(code);
+    setSelectedUserError("Código temporário gerado. Aplique como senha e envie ao usuário.");
+  };
+
+  const handleCopyResetCode = async (code: string) => {
+    if (!code) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(code);
+      setSelectedUserError("Código copiado.");
+    } catch {
+      setSelectedUserError("Não foi possível copiar automaticamente. Selecione o código manualmente.");
+    }
+  };
+
+  const handleResetUserPassword = async (user: AdminUserV2) => {
+    const nextPassword = resetPasswordValue.trim();
+    if (nextPassword.length < 6) {
+      setSelectedUserError("A senha temporária precisa ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    setSelectedUserError("");
+    setIsResettingUserPassword(true);
+    try {
+      await adminResetUserPassword(authToken, user.id, nextPassword);
+      setPendingResetCodesByUserId((current) => {
+        const next = { ...current };
+        delete next[user.id];
+        return next;
+      });
+      setResetPasswordValue("");
+      setSelectedUserError("Senha atualizada. As sessões antigas desse usuário foram encerradas.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao atualizar senha.";
+      setSelectedUserError(message);
+    } finally {
+      setIsResettingUserPassword(false);
+    }
+  };
+
   const handleToggleBan = async (user: AdminUserV2) => {
     const nextBan = !user.isBanned;
     const actionLabel = nextBan ? "banir" : "desbanir";
@@ -1466,6 +1744,11 @@ export default function AdminPanelV2() {
     try {
       await adminToggleUserBan(authToken, user.id, nextBan);
       await loadUsers(authToken, query);
+      if (selectedUser?.id === user.id) {
+        setSelectedUser((current) =>
+          current ? { ...current, isBanned: nextBan, banReason: nextBan ? current.banReason : "" } : current,
+        );
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao atualizar status do usuário.";
@@ -1488,6 +1771,9 @@ export default function AdminPanelV2() {
     try {
       await adminDeleteUser(authToken, user.id);
       setUsers((current) => current.filter((item) => item.id !== user.id));
+      if (selectedUser?.id === user.id) {
+        handleCloseUserDetail();
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao excluir usuário.";
       setUsersError(message);
@@ -1619,6 +1905,10 @@ export default function AdminPanelV2() {
     void loadVisitors(authToken, visitorDay);
   }, [activeView, authToken, loadVisitors, sessionEmail, visitorDay]);
 
+  const selectedResetCode = selectedUser ? pendingResetCodesByUserId[selectedUser.id] ?? "" : "";
+  const selectedWhatsappResetUrl =
+    selectedUser && selectedResetCode ? buildWhatsappResetUrl(selectedUser, selectedResetCode) : "";
+
   if (isBootstrapping) {
     return (
       <div className="min-h-screen bg-[#fdfcfb] flex items-center justify-center">
@@ -1701,7 +1991,7 @@ export default function AdminPanelV2() {
   return (
     <div className="min-h-screen bg-[#f6f3ee]">
       <header className="sticky top-0 z-30 bg-white border-b border-stone-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
             <Shield className="w-5 h-5 text-stone-700" />
             <div>
@@ -1711,11 +2001,11 @@ export default function AdminPanelV2() {
               <p className="text-[11px] text-stone-500">{sessionEmail}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full sm:w-auto items-center gap-2">
             <button
               type="button"
               onClick={() => void handleRefresh()}
-              className="inline-flex items-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.15em] text-stone-700 hover:border-stone-800"
+              className="inline-flex flex-1 sm:flex-none items-center justify-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.15em] text-stone-700 hover:border-stone-800"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Atualizar
@@ -1723,7 +2013,7 @@ export default function AdminPanelV2() {
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex items-center gap-2 bg-stone-900 text-white px-3 py-2 text-xs uppercase tracking-[0.15em] hover:bg-black"
+              className="inline-flex flex-1 sm:flex-none items-center justify-center gap-2 bg-stone-900 text-white px-3 py-2 text-xs uppercase tracking-[0.15em] hover:bg-black"
             >
               <LogOut className="w-3.5 h-3.5" />
               Sair
@@ -1733,8 +2023,8 @@ export default function AdminPanelV2() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-	        <div className="mb-6 border border-stone-200 bg-white p-4 sm:p-5">
-	          <div className="flex flex-wrap items-center gap-2">
+	        <div className="mb-6 border border-stone-200 bg-white p-3 sm:p-5 overflow-x-auto">
+	          <div className="flex min-w-max sm:min-w-0 sm:flex-wrap items-center gap-2">
 	            <button
 	              type="button"
 	              onClick={() => setActiveView("overview")}
@@ -1888,12 +2178,23 @@ export default function AdminPanelV2() {
                     className="border border-stone-200 bg-white p-4 sm:p-5 flex flex-col gap-4"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-sm font-semibold text-stone-900">
-                          {user.username || user.email || `Usuário ${user.id}`}
+                      <button
+                        type="button"
+                        onClick={() => void handleOpenUserDetail(user)}
+                        className="min-w-0 flex-1 text-left group"
+                      >
+                        <h3 className="text-sm font-semibold text-stone-900 group-hover:underline">
+                          <span className="inline-flex items-center gap-2">
+                            {pendingResetCodesByUserId[user.id] && (
+                              <span className="h-2.5 w-2.5 rounded-full bg-red-600 animate-pulse" />
+                            )}
+                            <span className="truncate">
+                              {user.username || user.email || `Usuário ${user.id}`}
+                            </span>
+                          </span>
                         </h3>
                         <p className="text-xs text-stone-600">{user.email || "-"}</p>
-                      </div>
+                      </button>
                       <span className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.12em] px-2 py-1 border border-stone-300 text-stone-600">
                         ID {user.id}
                       </span>
@@ -1914,29 +2215,11 @@ export default function AdminPanelV2() {
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => void handleToggleBan(user)}
-                        disabled={pendingBanUserId === user.id}
-                        className="inline-flex items-center gap-2 border border-amber-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                        onClick={() => void handleOpenUserDetail(user)}
+                        className="inline-flex items-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-800"
                       >
-                        {user.isBanned ? (
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                        ) : (
-                          <Ban className="w-3.5 h-3.5" />
-                        )}
-                        {pendingBanUserId === user.id
-                          ? "Atualizando..."
-                          : user.isBanned
-                            ? "Desbanir"
-                            : "Banir"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteUser(user)}
-                        disabled={deletingUserId === user.id}
-                        className="inline-flex items-center gap-2 border border-red-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-red-700 hover:bg-red-50 disabled:opacity-60"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        {deletingUserId === user.id ? "Excluindo..." : "Excluir usuário"}
+                        <Users className="w-3.5 h-3.5" />
+                        Abrir ficha
                       </button>
                     </div>
                   </article>
@@ -2497,6 +2780,223 @@ export default function AdminPanelV2() {
               </article>
             )}
           </section>
+        )}
+
+        {selectedUser && (
+          <div className="fixed inset-0 z-50 bg-black/35 sm:p-6" role="dialog" aria-modal="true">
+            <div className="ml-auto flex h-full w-full max-w-4xl flex-col bg-white shadow-xl">
+              <div className="flex items-start justify-between gap-3 border-b border-stone-200 px-4 py-4 sm:px-6">
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                    Ficha do usuário
+                  </p>
+                  <h2 className="mt-1 flex items-center gap-2 text-base font-semibold text-stone-900 sm:text-lg">
+                    {selectedResetCode && (
+                      <span className="h-2.5 w-2.5 rounded-full bg-red-600 animate-pulse" />
+                    )}
+                    <span className="truncate">
+                      {selectedUser.username || selectedUser.email || `Usuário ${selectedUser.id}`}
+                    </span>
+                  </h2>
+                  <p className="text-xs text-stone-500">{selectedUser.email || "-"}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCloseUserDetail}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-stone-300 text-stone-700 hover:border-stone-900"
+                  aria-label="Fechar ficha do usuário"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+                {selectedUserError && (
+                  <div className="mb-4 border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    {selectedUserError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                  <section className="space-y-4">
+                    <article className="border border-stone-200 p-4">
+                      <div className="mb-3 flex items-center gap-2">
+                        <Users className="h-4 w-4 text-stone-700" />
+                        <h3 className="text-sm font-semibold text-stone-900">Dados disponíveis</h3>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {getAdminUserDetailRows(selectedUser).map((row) => (
+                          <div key={row.label} className="border border-stone-100 bg-stone-50 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-[0.12em] text-stone-500">
+                              {row.label}
+                            </p>
+                            <p className="mt-1 break-words text-sm text-stone-800">{row.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+
+                    <article className="border border-stone-200 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Package className="h-4 w-4 text-stone-700" />
+                          <h3 className="text-sm font-semibold text-stone-900">Produtos publicados</h3>
+                        </div>
+                        <span className="text-xs text-stone-500">
+                          {selectedUserProducts.length} item(ns)
+                        </span>
+                      </div>
+                      {isLoadingSelectedUserProducts ? (
+                        <div className="py-8 text-center text-sm text-stone-500">
+                          Carregando produtos...
+                        </div>
+                      ) : selectedUserProducts.length === 0 ? (
+                        <div className="py-8 text-center text-sm text-stone-500">
+                          Nenhum produto publicado.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {selectedUserProducts.map((product) => (
+                            <div
+                              key={product.id}
+                              className="border border-stone-100 bg-stone-50 px-3 py-3"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-stone-900">
+                                    {product.name}
+                                  </p>
+                                  <p className="text-xs text-stone-500">
+                                    {product.category || "Sem categoria"} · ID {product.id}
+                                  </p>
+                                </div>
+                                <span className="shrink-0 text-xs font-semibold text-stone-900">
+                                  {product.price || "Tratt."}
+                                </span>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-stone-500">
+                                <span>Cidade: {product.city || "-"}</span>
+                                <span>Cliques: {product.clickCount ?? 0}</span>
+                                <span>Qtd.: {product.quantity ?? "-"}</span>
+                                <span>Criado: {formatDate(product.createdAt)}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  </section>
+
+                  <aside className="space-y-4">
+                    <article className="border border-stone-200 p-4">
+                      <div className="mb-3 flex items-center gap-2">
+                        <KeyRound className="h-4 w-4 text-stone-700" />
+                        <h3 className="text-sm font-semibold text-stone-900">Ajuda com senha</h3>
+                      </div>
+                      {selectedResetCode && (
+                        <div className="mb-3 border border-red-200 bg-red-50 px-3 py-2">
+                          <p className="flex items-center gap-2 text-xs font-semibold text-red-700">
+                            <span className="h-2.5 w-2.5 rounded-full bg-red-600 animate-pulse" />
+                            Código pendente para enviar
+                          </p>
+                          <p className="mt-1 font-mono text-lg font-semibold text-red-800">
+                            {selectedResetCode}
+                          </p>
+                        </div>
+                      )}
+                      <div className="space-y-2">
+                        <label
+                          htmlFor="admin-user-reset-password"
+                          className="text-xs uppercase tracking-[0.14em] text-stone-500"
+                        >
+                          Senha temporária ou nova senha
+                        </label>
+                        <input
+                          id="admin-user-reset-password"
+                          type="text"
+                          value={resetPasswordValue}
+                          onChange={(event) => setResetPasswordValue(event.target.value)}
+                          className="w-full border border-stone-300 px-3 py-2.5 text-sm outline-none focus:border-stone-900"
+                          placeholder="Mínimo 6 caracteres"
+                        />
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateResetCode(selectedUser)}
+                          className="inline-flex items-center justify-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-900"
+                        >
+                          <KeyRound className="h-3.5 w-3.5" />
+                          Gerar código
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleResetUserPassword(selectedUser)}
+                          disabled={isResettingUserPassword}
+                          className="inline-flex items-center justify-center gap-2 bg-stone-900 px-3 py-2 text-xs uppercase tracking-[0.12em] text-white hover:bg-black disabled:opacity-60"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          {isResettingUserPassword ? "Aplicando..." : "Aplicar senha"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleCopyResetCode(resetPasswordValue || selectedResetCode)}
+                          disabled={!resetPasswordValue && !selectedResetCode}
+                          className="inline-flex items-center justify-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-900 disabled:opacity-50"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Copiar
+                        </button>
+                        {selectedWhatsappResetUrl && (
+                          <a
+                            href={selectedWhatsappResetUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center justify-center gap-2 border border-emerald-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-emerald-700 hover:bg-emerald-50"
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" />
+                            WhatsApp
+                          </a>
+                        )}
+                      </div>
+                    </article>
+
+                    <article className="border border-stone-200 p-4">
+                      <h3 className="mb-3 text-sm font-semibold text-stone-900">Ações da conta</h3>
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleToggleBan(selectedUser)}
+                          disabled={pendingBanUserId === selectedUser.id}
+                          className="inline-flex w-full items-center justify-center gap-2 border border-amber-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                        >
+                          {selectedUser.isBanned ? (
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          ) : (
+                            <Ban className="h-3.5 w-3.5" />
+                          )}
+                          {pendingBanUserId === selectedUser.id
+                            ? "Atualizando..."
+                            : selectedUser.isBanned
+                              ? "Desbanir usuário"
+                              : "Banir usuário"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteUser(selectedUser)}
+                          disabled={deletingUserId === selectedUser.id}
+                          className="inline-flex w-full items-center justify-center gap-2 border border-red-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-red-700 hover:bg-red-50 disabled:opacity-60"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          {deletingUserId === selectedUser.id ? "Excluindo..." : "Excluir usuário"}
+                        </button>
+                      </div>
+                    </article>
+                  </aside>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </div>

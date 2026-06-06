@@ -125,6 +125,8 @@ type UserRow = {
   whatsapp_number: string | null;
   location_latitude: number | null;
   location_longitude: number | null;
+  is_banned: boolean;
+  ban_reason: string | null;
 };
 
 type SessionUser = {
@@ -161,9 +163,17 @@ type AdminUserRecord = {
   username?: string;
   phone?: string;
   country?: string;
+  state?: string;
   city?: string;
+  neighborhood?: string;
+  street?: string;
+  whatsappCountryIso?: string;
+  locationLatitude?: number;
+  locationLongitude?: number;
   productCount: number;
   createdAt?: string;
+  isBanned?: boolean;
+  banReason?: string;
 };
 
 type DailyVisitorRow = {
@@ -748,7 +758,9 @@ const USER_SELECT_FIELDS = `
   whatsapp_country_iso,
   whatsapp_number,
   location_latitude,
-  location_longitude
+  location_longitude,
+  COALESCE(is_banned, FALSE) AS is_banned,
+  NULLIF(TRIM(COALESCE(ban_reason, '')), '') AS ban_reason
 `;
 
 const SESSION_USER_SELECT_FIELDS = `
@@ -930,6 +942,8 @@ function normalizeUserRow(row: Record<string, unknown>): UserRow {
     whatsapp_number: toNullableString(row.whatsapp_number),
     location_latitude: toNullableNumber(row.location_latitude),
     location_longitude: toNullableNumber(row.location_longitude),
+    is_banned: toBooleanValue(row.is_banned, false),
+    ban_reason: toNullableString(row.ban_reason),
   };
 }
 
@@ -1083,9 +1097,17 @@ function normalizeAdminUserRecord(row: Record<string, unknown>): AdminUserRecord
     username: toOptionalTrimmedString(row.username),
     phone: toOptionalTrimmedString(row.phone),
     country: toOptionalTrimmedString(row.country),
+    state: toOptionalTrimmedString(row.state),
     city: toOptionalTrimmedString(row.city),
+    neighborhood: toOptionalTrimmedString(row.neighborhood),
+    street: toOptionalTrimmedString(row.street),
+    whatsappCountryIso: toOptionalTrimmedString(row.whatsapp_country_iso ?? row.whatsappCountryIso),
+    locationLatitude: toNullableNumber(row.location_latitude ?? row.locationLatitude) ?? undefined,
+    locationLongitude: toNullableNumber(row.location_longitude ?? row.locationLongitude) ?? undefined,
     productCount: toRequiredNumber(row.product_count ?? row.productCount ?? 0),
     createdAt: toOptionalIsoDateString(row.created_at ?? row.createdAt),
+    isBanned: toBooleanValue(row.is_banned ?? row.isBanned, false),
+    banReason: toOptionalTrimmedString(row.ban_reason ?? row.banReason),
   };
 }
 
@@ -1593,6 +1615,8 @@ function initializeSqliteDatabase() {
       whatsapp_number TEXT NOT NULL DEFAULT '',
       location_latitude REAL,
       location_longitude REAL,
+      is_banned INTEGER NOT NULL DEFAULT 0,
+      ban_reason TEXT NOT NULL DEFAULT '',
       new_product_defaults TEXT NOT NULL DEFAULT '{}',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
     );
@@ -1783,6 +1807,12 @@ function initializeSqliteDatabase() {
   if (!userColumns.some((column) => column.name === "location_longitude")) {
     db.exec("ALTER TABLE users ADD COLUMN location_longitude REAL");
   }
+  if (!userColumns.some((column) => column.name === "is_banned")) {
+    db.exec("ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!userColumns.some((column) => column.name === "ban_reason")) {
+    db.exec("ALTER TABLE users ADD COLUMN ban_reason TEXT NOT NULL DEFAULT ''");
+  }
 
   const visitorColumns = db.prepare("PRAGMA table_info(site_daily_visitors)").all() as Array<{
     name: string;
@@ -1928,6 +1958,8 @@ async function initializePostgresDatabase() {
         whatsapp_number TEXT NOT NULL DEFAULT '',
         location_latitude DOUBLE PRECISION,
         location_longitude DOUBLE PRECISION,
+        is_banned BOOLEAN NOT NULL DEFAULT FALSE,
+        ban_reason TEXT NOT NULL DEFAULT '',
         new_product_defaults TEXT NOT NULL DEFAULT '{}',
         created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
       )
@@ -2030,6 +2062,8 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS ban_reason TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id BIGINT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS name TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS title TEXT",
@@ -2530,7 +2564,15 @@ async function selectAdminUsersRows(): Promise<AdminUserRecord[]> {
           u.email,
           NULLIF(BTRIM(u.whatsapp_number), '') AS phone,
           NULLIF(BTRIM(u.country), '') AS country,
+          NULLIF(BTRIM(u.state), '') AS state,
           NULLIF(BTRIM(u.city), '') AS city,
+          NULLIF(BTRIM(u.neighborhood), '') AS neighborhood,
+          NULLIF(BTRIM(u.street), '') AS street,
+          NULLIF(BTRIM(u.whatsapp_country_iso), '') AS whatsapp_country_iso,
+          u.location_latitude,
+          u.location_longitude,
+          COALESCE(u.is_banned, FALSE) AS is_banned,
+          NULLIF(BTRIM(COALESCE(u.ban_reason, '')), '') AS ban_reason,
           u.created_at,
           COUNT(p.id)::INT AS product_count
         FROM users u
@@ -2542,7 +2584,15 @@ async function selectAdminUsersRows(): Promise<AdminUserRecord[]> {
           u.email,
           u.whatsapp_number,
           u.country,
+          u.state,
           u.city,
+          u.neighborhood,
+          u.street,
+          u.whatsapp_country_iso,
+          u.location_latitude,
+          u.location_longitude,
+          u.is_banned,
+          u.ban_reason,
           u.created_at
         ORDER BY u.id DESC
       `,
@@ -2559,7 +2609,15 @@ async function selectAdminUsersRows(): Promise<AdminUserRecord[]> {
           u.email,
           u.whatsapp_number AS phone,
           u.country,
+          u.state,
           u.city,
+          u.neighborhood,
+          u.street,
+          u.whatsapp_country_iso,
+          u.location_latitude,
+          u.location_longitude,
+          COALESCE(u.is_banned, 0) AS is_banned,
+          NULLIF(TRIM(COALESCE(u.ban_reason, '')), '') AS ban_reason,
           u.created_at,
           COUNT(p.id) AS product_count
         FROM users u
@@ -2570,7 +2628,15 @@ async function selectAdminUsersRows(): Promise<AdminUserRecord[]> {
           u.email,
           u.whatsapp_number,
           u.country,
+          u.state,
           u.city,
+          u.neighborhood,
+          u.street,
+          u.whatsapp_country_iso,
+          u.location_latitude,
+          u.location_longitude,
+          u.is_banned,
+          u.ban_reason,
           u.created_at
         ORDER BY u.id DESC
       `,
@@ -3847,6 +3913,64 @@ async function selectUserByIdRow(id: number): Promise<UserRow | undefined> {
   return row ? normalizeUserRow(row) : undefined;
 }
 
+async function updateUserPasswordRecord(
+  userId: number,
+  passwordHash: string,
+  passwordSalt: string,
+): Promise<boolean> {
+  if (pgPool) {
+    const result = await pgPool.query(
+      `
+        UPDATE users
+        SET password = $1, password_hash = $2, password_salt = $3
+        WHERE id = $4
+      `,
+      [passwordHash, passwordHash, passwordSalt, userId],
+    );
+    return Number(result.rowCount ?? 0) > 0;
+  }
+
+  const result = requireSqliteDb()
+    .prepare(
+      `
+        UPDATE users
+        SET password_hash = ?, password_salt = ?
+        WHERE id = ?
+      `,
+    )
+    .run(passwordHash, passwordSalt, userId);
+  return Number(result.changes ?? 0) > 0;
+}
+
+async function updateUserBanRecord(
+  userId: number,
+  isBanned: boolean,
+  reason: string,
+): Promise<boolean> {
+  if (pgPool) {
+    const result = await pgPool.query(
+      `
+        UPDATE users
+        SET is_banned = $1, ban_reason = $2
+        WHERE id = $3
+      `,
+      [isBanned, reason, userId],
+    );
+    return Number(result.rowCount ?? 0) > 0;
+  }
+
+  const result = requireSqliteDb()
+    .prepare(
+      `
+        UPDATE users
+        SET is_banned = ?, ban_reason = ?
+        WHERE id = ?
+      `,
+    )
+    .run(isBanned ? 1 : 0, reason, userId);
+  return Number(result.changes ?? 0) > 0;
+}
+
 async function createUserRecord(
   name: string,
   email: string,
@@ -4144,6 +4268,22 @@ async function deleteSessionByTokenHashRecord(tokenHash: string): Promise<void> 
       `,
     )
     .run(tokenHash);
+}
+
+async function deleteSessionsByUserIdRecord(userId: number): Promise<void> {
+  if (pgPool) {
+    await pgPool.query("DELETE FROM sessions WHERE user_id = $1", [userId]);
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        DELETE FROM sessions
+        WHERE user_id = ?
+      `,
+    )
+    .run(userId);
 }
 
 async function deleteExpiredSessionsRecords(): Promise<void> {
@@ -6310,6 +6450,90 @@ async function bootstrap() {
     }
   });
 
+  app.patch("/api/admin/users/:id/ban", async (req, res) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    const userId = Number(req.params.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      res.status(400).json({ error: "ID de usuário inválido." });
+      return;
+    }
+
+    try {
+      const existingUser = await selectUserByIdRow(userId);
+      if (!existingUser) {
+        res.status(404).json({ error: "Usuário não encontrado." });
+        return;
+      }
+
+      const body = req.body as Record<string, unknown>;
+      const isBanned = toBooleanValue(body.isBanned ?? body.is_banned, false);
+      const reason = String(body.reason ?? body.banReason ?? "").trim().slice(0, 240);
+      const updated = await updateUserBanRecord(userId, isBanned, reason);
+      if (!updated) {
+        res.status(404).json({ error: "Usuário não encontrado." });
+        return;
+      }
+
+      if (isBanned) {
+        await deleteSessionsByUserIdRecord(userId);
+      }
+
+      const users = await selectAdminUsersRows();
+      const adminUser = users.find((user) => user.id === userId);
+      res.json(adminUser ?? { success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao atualizar usuário.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.put("/api/admin/users/:id/password", async (req, res) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    const userId = Number(req.params.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      res.status(400).json({ error: "ID de usuário inválido." });
+      return;
+    }
+
+    try {
+      const existingUser = await selectUserByIdRow(userId);
+      if (!existingUser) {
+        res.status(404).json({ error: "Usuário não encontrado." });
+        return;
+      }
+
+      const body = req.body as Record<string, unknown>;
+      const nextPassword = String(body.password ?? "").trim();
+      if (nextPassword.length < 6) {
+        res.status(400).json({ error: "A nova senha precisa ter pelo menos 6 caracteres." });
+        return;
+      }
+
+      const credentials = createPasswordCredentials(nextPassword);
+      const updated = await updateUserPasswordRecord(
+        userId,
+        credentials.hash,
+        credentials.salt,
+      );
+      if (!updated) {
+        res.status(404).json({ error: "Usuário não encontrado." });
+        return;
+      }
+
+      await deleteSessionsByUserIdRecord(userId);
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao atualizar senha.";
+      res.status(500).json({ error: message });
+    }
+  });
+
   app.delete("/api/admin/products/:id", async (req, res) => {
     if (!requireAdmin(req, res)) {
       return;
@@ -6438,6 +6662,15 @@ async function bootstrap() {
       const user = await selectUserByEmailRow(email);
       if (!user || !verifyPassword(password, user.password_salt, user.password_hash)) {
         res.status(401).json({ error: "Email ou senha inválidos." });
+        return;
+      }
+
+      if (user.is_banned) {
+        res.status(403).json({
+          error: user.ban_reason
+            ? `Usuário bloqueado pelo administrador: ${user.ban_reason}`
+            : "Usuário bloqueado pelo administrador.",
+        });
         return;
       }
 
