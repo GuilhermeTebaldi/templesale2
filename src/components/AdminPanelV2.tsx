@@ -13,6 +13,11 @@ import {
   ShieldAlert,
   AlertTriangle,
   Users,
+  LayoutDashboard,
+  Smartphone,
+  Monitor,
+  Bot,
+  ChevronDown,
 } from "lucide-react";
 import {
   getSecurityCategoryLabel,
@@ -40,7 +45,7 @@ type AdminSessionV2 = {
   token: string;
 };
 
-type AdminViewV2 = "users" | "visitors" | "security";
+type AdminViewV2 = "overview" | "users" | "visitors" | "security";
 
 type SecurityEventFilter = "all" | SecurityCheckStatus;
 
@@ -90,6 +95,10 @@ type AdminVisitorV2 = {
   region: string;
   city: string;
   userAgent: string;
+  deviceType: string;
+  deviceModel: string;
+  deviceOsName: string;
+  deviceOsVersion: string;
 };
 
 type AdminVisitorsResponseV2 = {
@@ -434,6 +443,10 @@ function normalizeAdminVisitor(item: unknown): AdminVisitorV2 | null {
     region: String(record.region ?? "").trim(),
     city: String(record.city ?? "").trim(),
     userAgent: String(record.userAgent ?? record.user_agent ?? "").trim() || "-",
+    deviceType: String(record.deviceType ?? record.device_type ?? "").trim() || "unknown",
+    deviceModel: String(record.deviceModel ?? record.device_model ?? "").trim() || "unknown",
+    deviceOsName: String(record.deviceOsName ?? record.device_os_name ?? "").trim(),
+    deviceOsVersion: String(record.deviceOsVersion ?? record.device_os_version ?? "").trim(),
   };
 }
 
@@ -579,14 +592,96 @@ function formatDayDate(value: string): string {
   }).format(parsed);
 }
 
+const COUNTRY_NAME_BY_CODE: Record<string, string> = {
+  BR: "Brasil",
+  DE: "Alemanha",
+  IT: "Itália",
+  FR: "França",
+  ES: "Espanha",
+  PT: "Portugal",
+  US: "Estados Unidos",
+  GB: "Reino Unido",
+  UK: "Reino Unido",
+  AR: "Argentina",
+  CL: "Chile",
+  UY: "Uruguai",
+  PY: "Paraguai",
+  CO: "Colômbia",
+  MX: "México",
+  CA: "Canadá",
+  CH: "Suíça",
+  AT: "Áustria",
+  NL: "Países Baixos",
+  BE: "Bélgica",
+  IE: "Irlanda",
+  SE: "Suécia",
+  NO: "Noruega",
+  DK: "Dinamarca",
+  FI: "Finlândia",
+  PL: "Polônia",
+};
+
+function formatCountryName(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  const upper = normalized.toUpperCase();
+  return COUNTRY_NAME_BY_CODE[upper] ?? normalized;
+}
+
 function formatVisitorLocation(visitor: AdminVisitorV2): string {
-  const parts = [visitor.city, visitor.region, visitor.country]
+  const country = formatCountryName(visitor.country);
+  const parts = [visitor.city, visitor.region, country]
     .map((part) => part.trim())
     .filter(Boolean);
   if (parts.length === 0) {
-    return "-";
+    return "Local não identificado";
   }
   return parts.join(", ");
+}
+
+function formatVisitorCountryDetail(visitor: AdminVisitorV2): string {
+  const countryName = formatCountryName(visitor.country);
+  const countryCode = visitor.country.trim().toUpperCase();
+  if (!countryName) {
+    return "-";
+  }
+  if (countryCode && countryName !== countryCode) {
+    return `${countryName} (${countryCode})`;
+  }
+  return countryName;
+}
+
+function getVisitorDeviceIcon(visitor: AdminVisitorV2) {
+  if (visitor.deviceType === "bot") {
+    return Bot;
+  }
+  if (visitor.deviceType === "mobile" || visitor.deviceType === "tablet") {
+    return Smartphone;
+  }
+  return Monitor;
+}
+
+function formatVisitorDeviceSummary(visitor: AdminVisitorV2): string {
+  const osName = visitor.deviceOsName.trim();
+  const osVersion = visitor.deviceOsVersion.trim();
+  const osLabel = [osName, osVersion].filter(Boolean).join(" ");
+
+  if (visitor.deviceType === "bot") {
+    return "Robô ou verificador automático";
+  }
+  if (visitor.deviceType === "mobile") {
+    return osLabel ? `Celular ${osLabel}` : "Celular";
+  }
+  if (visitor.deviceType === "tablet") {
+    return osLabel ? `Tablet ${osLabel}` : "Tablet";
+  }
+  if (visitor.deviceType === "desktop") {
+    return osLabel ? `Computador ${osLabel}` : "Computador";
+  }
+  return osLabel || "Dispositivo não identificado";
 }
 
 function formatVisitorSource(visitor: AdminVisitorV2): string {
@@ -1007,7 +1102,7 @@ async function adminClearSecurityEvents(token: string): Promise<void> {
 
 export default function AdminPanelV2() {
   const [isBootstrapping, setIsBootstrapping] = React.useState(true);
-  const [activeView, setActiveView] = React.useState<AdminViewV2>("users");
+  const [activeView, setActiveView] = React.useState<AdminViewV2>("overview");
   const [sessionEmail, setSessionEmail] = React.useState<string | null>(null);
   const [authToken, setAuthToken] = React.useState("");
   const [email, setEmail] = React.useState(ADMIN_DEFAULT_EMAIL);
@@ -1229,7 +1324,7 @@ export default function AdminPanelV2() {
       setAuthError("");
       setQuery("");
       setPassword("");
-      setActiveView("users");
+      setActiveView("overview");
       setTestAreaPassword("");
       setIsTestAreaUnlocked(false);
       setIsUnlockingTestArea(false);
@@ -1329,11 +1424,19 @@ export default function AdminPanelV2() {
     }
   };
 
-  const handleRefresh = async () => {
-    if (!sessionEmail) {
-      return;
-    }
-    if (activeView === "security") {
+	  const handleRefresh = async () => {
+	    if (!sessionEmail) {
+	      return;
+	    }
+	    if (activeView === "overview") {
+	      await Promise.all([
+	        loadUsers(authToken, query),
+	        loadVisitors(authToken, visitorDay, { silent: true }),
+	        loadSecurityEvents(authToken, { silent: true }),
+	      ]);
+	      return;
+	    }
+	    if (activeView === "security") {
       if (!isTestAreaUnlocked) {
         setTestAreaError("Desbloqueie a área de testes para atualizar o monitor.");
         return;
@@ -1630,11 +1733,23 @@ export default function AdminPanelV2() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        <div className="mb-6 border border-stone-200 bg-white p-4 sm:p-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveView("users")}
+	        <div className="mb-6 border border-stone-200 bg-white p-4 sm:p-5">
+	          <div className="flex flex-wrap items-center gap-2">
+	            <button
+	              type="button"
+	              onClick={() => setActiveView("overview")}
+	              className={`inline-flex items-center gap-2 px-3 py-2 text-xs uppercase tracking-[0.14em] border transition-colors ${
+	                activeView === "overview"
+	                  ? "border-stone-900 bg-stone-900 text-white"
+	                  : "border-stone-300 text-stone-700 hover:border-stone-800"
+	              }`}
+	            >
+	              <LayoutDashboard className="w-3.5 h-3.5" />
+	              Resumo
+	            </button>
+	            <button
+	              type="button"
+	              onClick={() => setActiveView("users")}
               className={`inline-flex items-center gap-2 px-3 py-2 text-xs uppercase tracking-[0.14em] border transition-colors ${
                 activeView === "users"
                   ? "border-stone-900 bg-stone-900 text-white"
@@ -1671,8 +1786,72 @@ export default function AdminPanelV2() {
           </div>
         </div>
 
-        {activeView === "users" ? (
-          <>
+	        {activeView === "overview" ? (
+	          <section className="space-y-4">
+	            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+	              <article className="border border-stone-200 bg-white p-4 sm:p-5">
+	                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
+	                  Usuários
+	                </p>
+	                <p className="mt-2 text-2xl font-semibold text-stone-900">{users.length}</p>
+	                <p className="mt-1 text-xs text-stone-500">
+	                  Pessoas cadastradas para publicar e interagir.
+	                </p>
+	              </article>
+	              <article className="border border-stone-200 bg-white p-4 sm:p-5">
+	                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
+	                  Visitantes hoje
+	                </p>
+	                <p className="mt-2 text-2xl font-semibold text-stone-900">
+	                  {visitorsSummary.externalVisits}
+	                </p>
+	                <p className="mt-1 text-xs text-stone-500">
+	                  Acessos externos, sem contar seu próprio acesso.
+	                </p>
+	              </article>
+	              <article className="border border-stone-200 bg-white p-4 sm:p-5">
+	                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
+	                  Segurança
+	                </p>
+	                <p className="mt-2 text-2xl font-semibold text-stone-900">
+	                  {securityEventsTotalTracked}
+	                </p>
+	                <p className="mt-1 text-xs text-stone-500">
+	                  Eventos monitorados pela área administrativa.
+	                </p>
+	              </article>
+	            </div>
+
+	            <article className="border border-stone-200 bg-white p-4 sm:p-5">
+	              <div className="flex items-start gap-3">
+	                <LayoutDashboard className="mt-0.5 h-4 w-4 text-stone-700" />
+	                <div>
+	                  <h2 className="text-sm font-semibold text-stone-900">
+	                    Áreas úteis para operar uma pequena empresa
+	                  </h2>
+	                  <p className="mt-1 text-xs text-stone-500">
+	                    O painel já cobre usuários, visitantes e segurança. As próximas áreas mais úteis
+	                    costumam ser estas:
+	                  </p>
+	                </div>
+	              </div>
+	              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+	                {[
+	                  ["Produtos", "Moderar anúncios, ver produtos por vendedor e remover itens problemáticos."],
+	                  ["Pedidos/interesses", "Acompanhar carrinhos, contatos e intenção real de compra."],
+	                  ["Relatórios", "Ver produtos mais vistos, cidades com mais acesso e horários fortes."],
+	                  ["Configurações", "Editar banners, categorias, contatos e textos sem mexer no código."],
+	                ].map(([title, description]) => (
+	                  <div key={title} className="border border-stone-200 bg-stone-50 px-3 py-3">
+	                    <p className="text-xs font-semibold text-stone-900">{title}</p>
+	                    <p className="mt-1 text-xs leading-relaxed text-stone-500">{description}</p>
+	                  </div>
+	                ))}
+	              </div>
+	            </article>
+	          </section>
+	        ) : activeView === "users" ? (
+	          <>
             <div className="mb-6 border border-stone-200 bg-white p-4 sm:p-5">
               <div className="flex items-center gap-3 mb-3">
                 <Search className="w-4 h-4 text-stone-600" />
@@ -1773,10 +1952,11 @@ export default function AdminPanelV2() {
                     <Users className="w-4 h-4 text-stone-700 mt-0.5" />
                     <div>
                       <h2 className="text-sm font-semibold text-stone-900">Visitantes do TempleSale</h2>
-                      <p className="text-xs text-stone-500 mt-1">
-                        Registro diário de acessos no site (por IP + navegador), com marcação de
-                        <strong> Eu</strong> para o seu acesso atual.
-                      </p>
+	                      <p className="text-xs text-stone-500 mt-1">
+	                        Registro diário de acessos no site (por IP + navegador), com marcação de
+	                        <strong> Eu</strong> para o seu acesso atual. Ao mudar o dia, os dados são
+	                        atualizados automaticamente.
+	                      </p>
                     </div>
                   </div>
                   <div className="flex flex-col gap-1">
@@ -1791,13 +1971,14 @@ export default function AdminPanelV2() {
                     />
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-3 text-xs text-stone-500">
-                  <span>
-                    Dia selecionado: <strong>{formatDayDate(visitorDay)}</strong>
-                  </span>
-                  {visitorsUpdatedAt !== null && (
-                    <span>Atualizado em: {formatDateTime(visitorsUpdatedAt)}</span>
-                  )}
+	                <div className="flex flex-wrap gap-3 text-xs text-stone-500">
+	                  <span>
+	                    Dia selecionado: <strong>{formatDayDate(visitorDay)}</strong>
+	                  </span>
+	                  {isLoadingVisitors && <span>Carregando este dia...</span>}
+	                  {visitorsUpdatedAt !== null && (
+	                    <span>Atualizado em: {formatDateTime(visitorsUpdatedAt)}</span>
+	                  )}
                 </div>
               </article>
 
@@ -1848,48 +2029,87 @@ export default function AdminPanelV2() {
               ) : (
                 <article className="border border-stone-200 bg-white p-4 sm:p-5">
                   <div className="max-h-130 overflow-y-auto pr-1 space-y-2">
-                    {visitors.map((visitor) => (
-                      <article
-                        key={`${visitor.visitorKey || visitor.id}-${visitor.lastSeenAt}`}
-                        className={`border px-3 py-3 ${
-                          visitor.isSelf
-                            ? "border-emerald-200 bg-emerald-50/60"
-                            : "border-stone-200 bg-white"
-                        }`}
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`inline-flex items-center border px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] ${
-                              visitor.isSelf
-                                ? "border-emerald-300 text-emerald-700"
-                                : "border-stone-300 text-stone-700"
-                            }`}
-                          >
-                            {visitor.label}
-                          </span>
-                          <span className="text-xs text-stone-600">
-                            Entradas no dia: <strong>{visitor.visits}</strong>
-                          </span>
-                          <span className="text-xs text-stone-500">
-                            Primeiro acesso: {formatDateTime(visitor.firstSeenAt)}
-                          </span>
-                          <span className="text-xs text-stone-500">
-                            Último acesso: {formatDateTime(visitor.lastSeenAt)}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-xs text-stone-600 break-all">
-                          IP: <strong>{visitor.ip}</strong> | Página:{" "}
-                          <span className="font-mono">{visitor.entryPath}</span>
-                        </p>
-                        <p className="mt-1 text-xs text-stone-600 break-all">
-                          Origem: <strong>{formatVisitorSource(visitor)}</strong> | Localização:{" "}
-                          <strong>{formatVisitorLocation(visitor)}</strong>
-                        </p>
-                        <p className="mt-1 text-[11px] text-stone-500 break-all">
-                          Navegador/aplicativo: {visitor.userAgent}
-                        </p>
-                      </article>
-                    ))}
+	                    {visitors.map((visitor) => {
+	                      const DeviceIcon = getVisitorDeviceIcon(visitor);
+	                      return (
+	                        <article
+	                          key={`${visitor.visitorKey || visitor.id}-${visitor.lastSeenAt}`}
+	                          className={`border px-3 py-3 ${
+	                            visitor.isSelf
+	                              ? "border-emerald-200 bg-emerald-50/60"
+	                              : "border-stone-200 bg-white"
+	                          }`}
+	                        >
+	                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+	                            <div className="min-w-0 space-y-2">
+	                              <div className="flex flex-wrap items-center gap-2">
+	                                <span
+	                                  className={`inline-flex items-center border px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] ${
+	                                    visitor.isSelf
+	                                      ? "border-emerald-300 text-emerald-700"
+	                                      : "border-stone-300 text-stone-700"
+	                                  }`}
+	                                >
+	                                  {visitor.label}
+	                                </span>
+	                                <span className="inline-flex items-center gap-1 text-xs font-medium text-stone-700">
+	                                  <DeviceIcon className="h-3.5 w-3.5" />
+	                                  {formatVisitorDeviceSummary(visitor)}
+	                                </span>
+	                              </div>
+	                              <p className="text-xs text-stone-600">
+	                                Localização provável:{" "}
+	                                <strong>{formatVisitorLocation(visitor)}</strong>
+	                              </p>
+	                              <p className="text-xs text-stone-500">
+	                                Visitou <strong>{visitor.visits}</strong> vez(es). Último acesso:{" "}
+	                                {formatDateTime(visitor.lastSeenAt)}
+	                              </p>
+	                            </div>
+	                            <div className="shrink-0 text-xs text-stone-500 sm:text-right">
+	                              <p>Origem</p>
+	                              <p className="max-w-56 truncate font-medium text-stone-700">
+	                                {formatVisitorSource(visitor)}
+	                              </p>
+	                            </div>
+	                          </div>
+
+	                          <details className="mt-3 border-t border-stone-200 pt-3">
+	                            <summary className="inline-flex cursor-pointer list-none items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-stone-600 hover:text-stone-900">
+	                              <ChevronDown className="h-3.5 w-3.5" />
+	                              Ver detalhes técnicos
+	                            </summary>
+	                            <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-stone-600 md:grid-cols-2">
+	                              <p>
+	                                IP: <strong>{visitor.ip || "-"}</strong>
+	                              </p>
+	                              <p>
+	                                Página de entrada:{" "}
+	                                <span className="font-mono">{visitor.entryPath || "/"}</span>
+	                              </p>
+	                              <p>Primeiro acesso: {formatDateTime(visitor.firstSeenAt)}</p>
+	                              <p>Último acesso: {formatDateTime(visitor.lastSeenAt)}</p>
+	                              <p>Cidade: {visitor.city || "-"}</p>
+	                              <p>Região: {visitor.region || "-"}</p>
+	                              <p>País: {formatVisitorCountryDetail(visitor)}</p>
+	                              <p>Dispositivo: {visitor.deviceModel || "-"}</p>
+	                              <p>
+	                                Sistema:{" "}
+	                                {[visitor.deviceOsName, visitor.deviceOsVersion]
+	                                  .filter(Boolean)
+	                                  .join(" ") || "-"}
+	                              </p>
+	                              <p className="break-all md:col-span-2">
+	                                Navegador/aplicativo original: {visitor.userAgent}
+	                              </p>
+	                              <p className="break-all md:col-span-2">
+	                                Referência completa: {visitor.referrer || "Acesso direto"}
+	                              </p>
+	                            </div>
+	                          </details>
+	                        </article>
+	                      );
+	                    })}
                   </div>
                 </article>
               )}
