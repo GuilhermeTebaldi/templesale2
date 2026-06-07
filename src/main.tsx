@@ -15,12 +15,35 @@ import {
 } from "./lib/auth0-config";
 
 const VISITOR_PING_HEARTBEAT_INTERVAL_MS = 30 * 1000;
+const VISITOR_PING_RETRY_DELAY_MS = 1500;
+const VISITOR_PING_RETRYABLE_STATUSES = new Set([502, 503, 504]);
 const VISITOR_PING_API_BASE = String(import.meta.env.VITE_API_BASE_URL ?? "")
   .trim()
   .replace(/\/+$/, "");
 
 function buildVisitorPingUrl(): string {
   return VISITOR_PING_API_BASE ? `${VISITOR_PING_API_BASE}/api/visitor/ping` : "/api/visitor/ping";
+}
+
+function sendVisitorPingFetch(body: string, url: string, attempt = 0) {
+  void fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    keepalive: true,
+    credentials: "include",
+    cache: "no-store",
+  })
+    .then((response) => {
+      if (attempt === 0 && VISITOR_PING_RETRYABLE_STATUSES.has(response.status)) {
+        window.setTimeout(() => {
+          sendVisitorPingFetch(body, url, attempt + 1);
+        }, VISITOR_PING_RETRY_DELAY_MS);
+      }
+    })
+    .catch(() => {
+      // Ignore network errors: tracking must not block app rendering.
+    });
 }
 
 function sendVisitorPing(source: "entry" | "heartbeat" | "pagehide") {
@@ -38,7 +61,7 @@ function sendVisitorPing(source: "entry" | "heartbeat" | "pagehide") {
   const url = buildVisitorPingUrl();
 
   try {
-    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+    if (source === "pagehide" && typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
       const blob = new Blob([body], { type: "application/json" });
       const sent = navigator.sendBeacon(url, blob);
       if (sent) {
@@ -49,16 +72,7 @@ function sendVisitorPing(source: "entry" | "heartbeat" | "pagehide") {
     // Fallback to fetch when sendBeacon is unavailable or fails.
   }
 
-  void fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-    keepalive: true,
-    credentials: "include",
-    cache: "no-store",
-  }).catch(() => {
-    // Ignore network errors: tracking must not block app rendering.
-  });
+  sendVisitorPingFetch(body, url);
 }
 
 if (typeof window !== "undefined" && typeof document !== "undefined") {
