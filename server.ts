@@ -603,7 +603,9 @@ function buildContentSecurityPolicy(isProduction: boolean): string {
     "https://saleday-backend.onrender.com",
     "https://www.templesale.com",
     "https://templesale.com",
+    "https://dev-qsrhlowiffrnw0dr.eu.auth0.com",
   ];
+  const frameSources = ["https://dev-qsrhlowiffrnw0dr.eu.auth0.com"];
 
   if (!isProduction) {
     scriptSources.push("'unsafe-eval'", "'unsafe-inline'", "http://localhost:*", "http://127.0.0.1:*");
@@ -621,7 +623,7 @@ function buildContentSecurityPolicy(isProduction: boolean): string {
     "img-src 'self' data: blob: https:",
     "font-src 'self' data: https://fonts.gstatic.com",
     `connect-src ${connectSources.join(" ")}`,
-    "frame-src 'none'",
+    `frame-src ${frameSources.join(" ")}`,
     "worker-src 'self' blob:",
     "upgrade-insecure-requests",
   ].join("; ");

@@ -46,6 +46,8 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
       }
       await loginWithRedirect({
         authorizationParams: {
+          redirect_uri: window.location.origin,
+          ...(AUTH0_AUDIENCE ? { audience: AUTH0_AUDIENCE } : {}),
           screen_hint: isLogin ? "login" : "signup",
         },
       });
