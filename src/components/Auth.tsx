@@ -3,7 +3,12 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { motion } from "motion/react";
 import { X, ArrowRight, Mail } from "lucide-react";
 import { useI18n } from "../i18n/provider";
-import { AUTH0_AUDIENCE, AUTH0_DEBUG_LOGS, IS_AUTH0_CONFIGURED } from "../lib/auth0-config";
+import {
+  AUTH0_AUDIENCE,
+  AUTH0_CLIENT_ID,
+  AUTH0_DOMAIN,
+  IS_AUTH0_CONFIGURED,
+} from "../lib/auth0-config";
 
 export type AuthMode = "login" | "register";
 
@@ -29,21 +34,32 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
 
   const isLogin = mode === "login";
 
-  const handleAuth0Redirect = async () => {
+  const handleAuth0Redirect = async (event?: React.MouseEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
     setErrorMessage("");
+    console.info("[auth0-login] clicked");
     if (!IS_AUTH0_CONFIGURED) {
-      setErrorMessage("Auth0 não está configurado. Defina VITE_AUTH0_DOMAIN e VITE_AUTH0_CLIENT_ID.");
+      const message = "Auth0 não está configurado. Defina VITE_AUTH0_DOMAIN e VITE_AUTH0_CLIENT_ID.";
+      console.error("[auth0-login] missing config", {
+        hasDomain: Boolean(AUTH0_DOMAIN),
+        hasClientId: Boolean(AUTH0_CLIENT_ID),
+        hasAudience: Boolean(AUTH0_AUDIENCE),
+        redirect_uri: window.location.origin,
+      });
+      setErrorMessage(message);
       return;
     }
 
     try {
       setIsSubmitting(true);
-      if (AUTH0_DEBUG_LOGS) {
-        console.info("[auth0] loginWithRedirect", {
-          mode,
-          audience: AUTH0_AUDIENCE || "(none)",
-        });
-      }
+      console.info("[auth0-login] config", {
+        hasDomain: true,
+        hasClientId: true,
+        hasAudience: Boolean(AUTH0_AUDIENCE),
+        redirect_uri: window.location.origin,
+      });
+      console.info("[auth0-login] calling loginWithRedirect");
       await loginWithRedirect({
         authorizationParams: {
           redirect_uri: window.location.origin,
@@ -52,6 +68,7 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
         },
       });
     } catch (error) {
+      console.error("[auth0-login] loginWithRedirect failed", error);
       const message =
         error instanceof Error ? error.message : t("Falha ao autenticar.");
       setErrorMessage(message);
@@ -101,7 +118,7 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
           <button 
             disabled={isSubmitting || isLoading}
             type="button"
-            onClick={() => void handleAuth0Redirect()}
+            onClick={(event) => void handleAuth0Redirect(event)}
             className="w-full bg-stone-900 text-white py-6 text-xs uppercase tracking-[0.3em] font-bold flex items-center justify-center gap-3 hover:bg-black transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isSubmitting || isLoading
