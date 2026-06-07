@@ -1,4 +1,5 @@
 import React from "react";
+import { useAuth0 } from "@auth0/auth0-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Search, ShoppingBag, Menu, ArrowRight, Instagram, Twitter, Facebook, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, Heart, Plus, Minus, Share2, Bell, Filter, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown, ImagePlus, LoaderCircle } from "lucide-react";
 import ProductCard, { ProgressiveProductImage, type Product } from "./components/ProductCard";
@@ -17,6 +18,7 @@ import { localeOptions, type AppLocale } from "./i18n";
 import { formatCollectionDate, formatRelativeTime } from "./i18n/formatters";
 import { getCategoryLabel } from "./i18n/categories";
 import { parsePriceToNumber } from "./lib/currency";
+import { AUTH0_AUDIENCE, IS_AUTH0_CONFIGURED } from "./lib/auth0-config";
 
 const CATEGORIES = [
   "All",
@@ -212,6 +214,13 @@ function readNotificationIdsStorage(storageKey: string): string[] {
 
 export default function App() {
   const { locale, setLocale, t } = useI18n();
+  const {
+    getAccessTokenSilently,
+    getIdTokenClaims,
+    isAuthenticated: isAuth0Authenticated,
+    isLoading: isAuth0Loading,
+    logout: auth0Logout,
+  } = useAuth0();
   const [activeCategory, setActiveCategory] = React.useState("All");
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = React.useState(false);
@@ -273,6 +282,7 @@ export default function App() {
   const [maxPriceFilter, setMaxPriceFilter] = React.useState<number | null>(null);
   const cartToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const productsRequestSequenceRef = React.useRef(0);
+  const auth0SyncAttemptedRef = React.useRef(false);
   const hasMemberAccess = Boolean(currentUser);
   const cartStorageKey = React.useMemo(
     () => getScopedStorageKey(CART_STORAGE_KEY, currentUser?.id),
@@ -519,6 +529,54 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  React.useEffect(() => {
+    if (!IS_AUTH0_CONFIGURED || isAuth0Loading || !isAuth0Authenticated) {
+      if (!isAuth0Authenticated) {
+        auth0SyncAttemptedRef.current = false;
+      }
+      return;
+    }
+    if (auth0SyncAttemptedRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+    auth0SyncAttemptedRef.current = true;
+
+    const syncAuth0Session = async () => {
+      try {
+        const token = AUTH0_AUDIENCE
+          ? await getAccessTokenSilently()
+          : String(
+              ((await getIdTokenClaims()) as { __raw?: string } | undefined)?.__raw ?? "",
+            );
+        if (!token) {
+          throw new Error("Auth0 não retornou token para sincronizar sessão.");
+        }
+
+        const user = await api.syncAuth0(token);
+        if (!cancelled) {
+          setCurrentUser(user);
+          setIsAuthModalOpen(false);
+        }
+      } catch (error) {
+        auth0SyncAttemptedRef.current = false;
+        console.error("Error syncing Auth0 session:", error);
+      }
+    };
+
+    void syncAuth0Session();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    getAccessTokenSilently,
+    getIdTokenClaims,
+    isAuth0Authenticated,
+    isAuth0Loading,
+  ]);
 
   React.useEffect(() => {
     const updateHeroDate = () => {
@@ -869,6 +927,16 @@ export default function App() {
       await api.logout();
     } catch (err) {
       console.error("Error logging out:", err);
+    }
+
+    if (IS_AUTH0_CONFIGURED && isAuth0Authenticated) {
+      auth0SyncAttemptedRef.current = false;
+      await auth0Logout({
+        logoutParams: {
+          returnTo: window.location.origin,
+        },
+      });
+      return;
     }
 
     setCurrentUser(null);

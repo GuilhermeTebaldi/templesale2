@@ -1832,6 +1832,21 @@ export const api = {
     }
     return user;
   },
+  async syncAuth0(auth0Token: string) {
+    const raw = await request<unknown>("/api/auth/auth0/sync", {
+      method: "POST",
+      skipAuthToken: true,
+      headers: {
+        Authorization: `Bearer ${auth0Token}`,
+      },
+    });
+    persistAuthTokenFromPayload(raw);
+    const user = normalizeSessionUserItem(raw);
+    if (!user) {
+      throw new Error("Resposta inválida ao autenticar com Auth0.");
+    }
+    return user;
+  },
   async getCurrentUser() {
     const raw = await request<unknown>("/api/auth/me");
     persistAuthTokenFromPayload(raw);

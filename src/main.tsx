@@ -1,4 +1,5 @@
 import { StrictMode } from "react";
+import { Auth0Provider } from "@auth0/auth0-react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import AdminPanelV2 from "./components/AdminPanelV2";
@@ -6,6 +7,12 @@ import FrameStudio from "./components/FrameStudio";
 import GlobalLoadingOverlay from "./components/GlobalLoadingOverlay";
 import "./index.css";
 import { I18nProvider } from "./i18n/provider";
+import {
+  AUTH0_AUDIENCE,
+  AUTH0_CLIENT_ID,
+  AUTH0_DOMAIN,
+  IS_AUTH0_CONFIGURED,
+} from "./lib/auth0-config";
 
 const VISITOR_PING_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 const VISITOR_PING_API_BASE = String(import.meta.env.VITE_API_BASE_URL ?? "")
@@ -69,12 +76,30 @@ const pathname =
 const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
 const isFrameStudioRoute = pathname === "/moldura" || pathname.startsWith("/moldura/");
 const RootComponent = isAdminRoute ? AdminPanelV2 : isFrameStudioRoute ? FrameStudio : App;
+const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
+const auth0AuthorizationParams = {
+  redirect_uri: appOrigin,
+  ...(AUTH0_AUDIENCE ? { audience: AUTH0_AUDIENCE } : {}),
+};
+const appTree = (
+  <I18nProvider>
+    <RootComponent />
+    <GlobalLoadingOverlay />
+  </I18nProvider>
+);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <I18nProvider>
-      <RootComponent />
-      <GlobalLoadingOverlay />
-    </I18nProvider>
+    {IS_AUTH0_CONFIGURED ? (
+      <Auth0Provider
+        domain={AUTH0_DOMAIN}
+        clientId={AUTH0_CLIENT_ID}
+        authorizationParams={auth0AuthorizationParams}
+      >
+        {appTree}
+      </Auth0Provider>
+    ) : (
+      appTree
+    )}
   </StrictMode>,
 );

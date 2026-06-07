@@ -1,7 +1,9 @@
 import React from "react";
+import { useAuth0 } from "@auth0/auth0-react";
 import { motion } from "motion/react";
-import { X, ArrowRight, Mail, Lock, User, Eye, EyeOff } from "lucide-react";
+import { X, ArrowRight, Mail } from "lucide-react";
 import { useI18n } from "../i18n/provider";
+import { IS_AUTH0_CONFIGURED } from "../lib/auth0-config";
 
 export type AuthMode = "login" | "register";
 
@@ -18,44 +20,28 @@ interface AuthProps {
   defaultMode?: AuthMode;
 }
 
-export default function Auth({ onSubmit, onClose, defaultMode = "register" }: AuthProps) {
+export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
   const { t } = useI18n();
+  const { loginWithRedirect, isLoading } = useAuth0();
   const [mode, setMode] = React.useState<AuthMode>(defaultMode);
   const [errorMessage, setErrorMessage] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [isPasswordVisible, setIsPasswordVisible] = React.useState(false);
-  const [formData, setFormData] = React.useState({
-    email: "",
-    password: "",
-    name: "",
-  });
 
   const isLogin = mode === "login";
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const email = formData.email.trim();
-    const password = formData.password.trim();
-    const name = formData.name.trim();
-
-    if (!email || !password) {
-      setErrorMessage(t("Preencha email e senha."));
-      return;
-    }
-
-    if (!isLogin && !name) {
-      setErrorMessage(t("Preencha seu nome para criar a conta."));
-      return;
-    }
-
+  const handleAuth0Redirect = async () => {
     setErrorMessage("");
+    if (!IS_AUTH0_CONFIGURED) {
+      setErrorMessage("Auth0 não está configurado. Defina VITE_AUTH0_DOMAIN e VITE_AUTH0_CLIENT_ID.");
+      return;
+    }
+
     try {
       setIsSubmitting(true);
-      await onSubmit({
-        mode,
-        name,
-        email,
-        password,
+      await loginWithRedirect({
+        authorizationParams: {
+          screen_hint: isLogin ? "login" : "signup",
+        },
       });
     } catch (error) {
       const message =
@@ -90,83 +76,34 @@ export default function Auth({ onSubmit, onClose, defaultMode = "register" }: Au
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {!isLogin && (
-            <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Nome completo")}</label>
-              <div className="relative">
-                <User className="absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-300" />
-                <input 
-                  required
-                  type="text"
-                  placeholder={t("Seu nome")}
-                  className="w-full bg-transparent border-b border-stone-200 py-3 pl-8 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
-                  value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Endereço de email")}</label>
-            <div className="relative">
-              <Mail className="absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-300" />
-              <input 
-                required
-                type="email"
-                placeholder={t("voce@email.com")}
-                className="w-full bg-transparent border-b border-stone-200 py-3 pl-8 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
-                value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
-              />
-            </div>
+        <div className="space-y-6">
+          <div className="border border-stone-200 bg-white/70 p-5 text-center">
+            <Mail className="mx-auto mb-3 h-5 w-5 text-stone-500" />
+            <p className="text-sm leading-relaxed text-stone-600">
+              {isLogin
+                ? "Entre com sua conta TempleSale pelo Auth0."
+                : "Crie sua conta TempleSale com Auth0. Se o email já existir, sua conta antiga será vinculada automaticamente."}
+            </p>
           </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Senha")}</label>
-            <div className="relative">
-              <Lock className="absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-300" />
-                <input 
-                  required
-                  type={isPasswordVisible ? "text" : "password"}
-                  placeholder="••••••••"
-                  className="w-full bg-transparent border-b border-stone-200 py-3 pl-8 pr-10 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
-                  value={formData.password}
-                  onChange={(e) => setFormData({...formData, password: e.target.value})}
-                />
-                <button
-                  type="button"
-                  onClick={() => setIsPasswordVisible((current) => !current)}
-                  className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-700 transition-colors"
-                  aria-label={isPasswordVisible ? t("Ocultar senha") : t("Ver senha")}
-                >
-                  {isPasswordVisible ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-            </div>
 
           {errorMessage && (
             <p className="text-xs text-red-500">{errorMessage}</p>
           )}
 
           <button 
-            disabled={isSubmitting}
-            type="submit"
+            disabled={isSubmitting || isLoading}
+            type="button"
+            onClick={() => void handleAuth0Redirect()}
             className="w-full bg-stone-900 text-white py-6 text-xs uppercase tracking-[0.3em] font-bold flex items-center justify-center gap-3 hover:bg-black transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {isSubmitting
+            {isSubmitting || isLoading
               ? t("Processando...")
               : isLogin
                 ? t("Entrar")
                 : t("Criar conta")}
             <ArrowRight className="w-4 h-4" />
           </button>
-        </form>
+        </div>
 
         <div className="mt-12 text-center">
           <button 

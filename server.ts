@@ -1,5 +1,5 @@
 import cors from "cors";
-import crypto from "node:crypto";
+import crypto, { type JsonWebKey as NodeJsonWebKey } from "node:crypto";
 import Database from "better-sqlite3";
 import dotenv from "dotenv";
 import express, { type Request, type Response } from "express";
@@ -129,6 +129,7 @@ type UserRow = {
   id: number;
   name: string;
   email: string;
+  auth0_sub: string | null;
   password_hash: string;
   password_salt: string;
   avatar_url: string | null;
@@ -159,6 +160,25 @@ type SessionUser = {
   whatsappNumber?: string;
   locationLatitude?: number;
   locationLongitude?: number;
+};
+
+type Auth0JwtClaims = {
+  sub: string;
+  email?: string;
+  name?: string;
+  picture?: string;
+  email_verified?: boolean;
+  iss?: string;
+  aud?: string | string[];
+  exp?: number;
+  nbf?: number;
+  iat?: number;
+};
+
+type Auth0JsonWebKey = NodeJsonWebKey & {
+  kid?: string;
+  alg?: string;
+  use?: string;
 };
 
 type PublicVendorRecord = {
@@ -296,6 +316,7 @@ type SessionUserRow = Pick<
   | "id"
   | "name"
   | "email"
+  | "auth0_sub"
   | "avatar_url"
   | "country"
   | "state"
@@ -418,6 +439,21 @@ const CLOUDINARY_PROFILE_UPLOAD_FOLDER =
   `${CLOUDINARY_UPLOAD_FOLDER.replace(/\/+$/, "")}/profiles`;
 const CLEAN_LOCAL_PRODUCTS_ON_BOOT =
   String(process.env.CLEAN_LOCAL_PRODUCTS_ON_BOOT ?? "false").toLowerCase() === "true";
+const AUTH0_DOMAIN = String(process.env.AUTH0_DOMAIN ?? process.env.VITE_AUTH0_DOMAIN ?? "")
+  .trim()
+  .replace(/^https?:\/\//i, "")
+  .replace(/\/+$/, "");
+const AUTH0_ISSUER = AUTH0_DOMAIN ? `https://${AUTH0_DOMAIN}/` : "";
+const AUTH0_CLIENT_ID = String(
+  process.env.AUTH0_CLIENT_ID ?? process.env.VITE_AUTH0_CLIENT_ID ?? "",
+).trim();
+const AUTH0_AUDIENCE = String(
+  process.env.AUTH0_AUDIENCE ?? process.env.VITE_AUTH0_AUDIENCE ?? "",
+).trim();
+const AUTH0_EXPECTED_AUDIENCE = AUTH0_AUDIENCE || AUTH0_CLIENT_ID;
+const AUTH0_JWKS_URL = AUTH0_ISSUER ? `${AUTH0_ISSUER}.well-known/jwks.json` : "";
+const AUTH0_JWKS_CACHE_TTL_MS = 60 * 60 * 1000;
+let auth0JwksCache: { fetchedAt: number; keys: Auth0JsonWebKey[] } | null = null;
 const SESSION_COOKIE_NAME = "templesale_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 const DEFAULT_ADMIN_EMAIL = "templesale@admin.com";
@@ -766,6 +802,7 @@ const USER_SELECT_FIELDS = `
   id,
   name,
   email,
+  auth0_sub,
   password_hash,
   password_salt,
   avatar_url,
@@ -786,6 +823,7 @@ const SESSION_USER_SELECT_FIELDS = `
   u.id,
   u.name,
   u.email,
+  u.auth0_sub,
   u.avatar_url,
   u.country,
   u.state,
@@ -952,6 +990,7 @@ function normalizeUserRow(row: Record<string, unknown>): UserRow {
     id: toRequiredNumber(row.id),
     name: String(row.name ?? ""),
     email: String(row.email ?? ""),
+    auth0_sub: toNullableString(row.auth0_sub),
     password_hash: String(row.password_hash ?? ""),
     password_salt: String(row.password_salt ?? ""),
     avatar_url: toNullableString(row.avatar_url),
@@ -974,6 +1013,7 @@ function normalizeSessionUserRow(row: Record<string, unknown>): SessionUserRow {
     id: toRequiredNumber(row.id),
     name: String(row.name ?? ""),
     email: String(row.email ?? ""),
+    auth0_sub: toNullableString(row.auth0_sub),
     avatar_url: toNullableString(row.avatar_url),
     country: toNullableString(row.country),
     state: toNullableString(row.state),
@@ -1625,6 +1665,7 @@ function initializeSqliteDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE,
+      auth0_sub TEXT,
       password_hash TEXT NOT NULL,
       password_salt TEXT NOT NULL,
       avatar_url TEXT NOT NULL DEFAULT '',
@@ -1829,6 +1870,9 @@ function initializeSqliteDatabase() {
   if (!userColumns.some((column) => column.name === "location_longitude")) {
     db.exec("ALTER TABLE users ADD COLUMN location_longitude REAL");
   }
+  if (!userColumns.some((column) => column.name === "auth0_sub")) {
+    db.exec("ALTER TABLE users ADD COLUMN auth0_sub TEXT");
+  }
   if (!userColumns.some((column) => column.name === "is_banned")) {
     db.exec("ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0");
   }
@@ -1929,6 +1973,11 @@ function initializeSqliteDatabase() {
   db.exec("CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_products_click_id ON products(click_count DESC, id DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_users_city ON users(city)");
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth0_sub_unique
+    ON users(auth0_sub)
+    WHERE auth0_sub IS NOT NULL AND auth0_sub <> ''
+  `);
   db.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_site_daily_visitors_date_key ON site_daily_visitors(visit_date, visitor_key)",
   );
@@ -1968,6 +2017,7 @@ async function initializePostgresDatabase() {
         name TEXT NOT NULL,
         username TEXT NOT NULL DEFAULT '',
         email TEXT NOT NULL UNIQUE,
+        auth0_sub TEXT,
         password_hash TEXT NOT NULL,
         password_salt TEXT NOT NULL,
         avatar_url TEXT NOT NULL DEFAULT '',
@@ -2080,6 +2130,7 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth0_sub TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT",
@@ -2195,6 +2246,7 @@ async function initializePostgresDatabase() {
     "CREATE INDEX IF NOT EXISTS idx_product_comments_product_created ON product_comments(product_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_product_comments_parent ON product_comments(parent_comment_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth0_sub_unique ON users(auth0_sub) WHERE auth0_sub IS NOT NULL AND auth0_sub <> ''",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_product_likes_user_product_unique ON product_likes(user_id, product_id)",
     "CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)",
@@ -3897,14 +3949,15 @@ async function deleteProductLikeRecord(userId: number, productId: number): Promi
 }
 
 async function selectUserByEmailRow(email: string): Promise<UserRow | undefined> {
+  const normalizedEmail = normalizeEmail(email);
   if (pgPool) {
     const result = await pgPool.query<Record<string, unknown>>(
       `
         SELECT ${USER_SELECT_FIELDS}
         FROM users
-        WHERE email = $1
+        WHERE LOWER(email) = $1
       `,
-      [email],
+      [normalizedEmail],
     );
     const row = result.rows[0];
     return row ? normalizeUserRow(row) : undefined;
@@ -3915,10 +3968,41 @@ async function selectUserByEmailRow(email: string): Promise<UserRow | undefined>
       `
         SELECT ${USER_SELECT_FIELDS}
         FROM users
-        WHERE email = ?
+        WHERE LOWER(email) = ?
       `,
     )
-    .get(email) as Record<string, unknown> | undefined;
+    .get(normalizedEmail) as Record<string, unknown> | undefined;
+  return row ? normalizeUserRow(row) : undefined;
+}
+
+async function selectUserByAuth0SubRow(auth0Sub: string): Promise<UserRow | undefined> {
+  const normalizedSub = auth0Sub.trim();
+  if (!normalizedSub) {
+    return undefined;
+  }
+
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT ${USER_SELECT_FIELDS}
+        FROM users
+        WHERE auth0_sub = $1
+      `,
+      [normalizedSub],
+    );
+    const row = result.rows[0];
+    return row ? normalizeUserRow(row) : undefined;
+  }
+
+  const row = requireSqliteDb()
+    .prepare(
+      `
+        SELECT ${USER_SELECT_FIELDS}
+        FROM users
+        WHERE auth0_sub = ?
+      `,
+    )
+    .get(normalizedSub) as Record<string, unknown> | undefined;
   return row ? normalizeUserRow(row) : undefined;
 }
 
@@ -4004,6 +4088,129 @@ async function updateUserBanRecord(
     )
     .run(isBanned ? 1 : 0, reason, userId);
   return Number(result.changes ?? 0) > 0;
+}
+
+async function linkAuth0UserRecord(input: {
+  userId: number;
+  auth0Sub: string;
+  name: string;
+  picture: string;
+}): Promise<boolean> {
+  const normalizedName = input.name.trim();
+  const normalizedPicture = input.picture.trim();
+
+  if (pgPool) {
+    const result = await pgPool.query(
+      `
+        UPDATE users
+        SET
+          auth0_sub = $1,
+          name = CASE
+            WHEN $2 <> '' AND (name IS NULL OR BTRIM(name) = '' OR LOWER(BTRIM(name)) = LOWER(BTRIM(email)))
+              THEN $2
+            ELSE name
+          END,
+          avatar_url = CASE
+            WHEN $3 <> '' THEN $3
+            ELSE avatar_url
+          END
+        WHERE id = $4
+          AND (auth0_sub IS NULL OR auth0_sub = '' OR auth0_sub = $1)
+      `,
+      [input.auth0Sub, normalizedName, normalizedPicture, input.userId],
+    );
+    return Number(result.rowCount ?? 0) > 0;
+  }
+
+  const result = requireSqliteDb()
+    .prepare(
+      `
+        UPDATE users
+        SET
+          auth0_sub = ?,
+          name = CASE
+            WHEN ? <> '' AND (name IS NULL OR TRIM(name) = '' OR LOWER(TRIM(name)) = LOWER(TRIM(email)))
+              THEN ?
+            ELSE name
+          END,
+          avatar_url = CASE
+            WHEN ? <> '' THEN ?
+            ELSE avatar_url
+          END
+        WHERE id = ?
+          AND (auth0_sub IS NULL OR auth0_sub = '' OR auth0_sub = ?)
+      `,
+    )
+    .run(
+      input.auth0Sub,
+      normalizedName,
+      normalizedName,
+      normalizedPicture,
+      normalizedPicture,
+      input.userId,
+      input.auth0Sub,
+    );
+  return Number(result.changes ?? 0) > 0;
+}
+
+async function createAuth0UserRecord(input: {
+  auth0Sub: string;
+  email: string;
+  name: string;
+  picture: string;
+}): Promise<number> {
+  const credentials = createPasswordCredentials(crypto.randomBytes(24).toString("hex"));
+  const normalizedEmail = normalizeEmail(input.email);
+  const normalizedName =
+    input.name.trim() || normalizedEmail.split("@")[0] || `user${Date.now()}`;
+  const normalizedPicture = input.picture.trim();
+
+  if (pgPool) {
+    const result = await pgPool.query<{ id: number | string }>(
+      `
+        INSERT INTO users (
+          name,
+          username,
+          email,
+          auth0_sub,
+          password,
+          password_hash,
+          password_salt,
+          avatar_url
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id
+      `,
+      [
+        normalizedName,
+        normalizedEmail,
+        normalizedEmail,
+        input.auth0Sub,
+        credentials.hash,
+        credentials.hash,
+        credentials.salt,
+        normalizedPicture,
+      ],
+    );
+    return toRequiredNumber(result.rows[0]?.id);
+  }
+
+  const result = requireSqliteDb()
+    .prepare(
+      `
+        INSERT INTO users (name, email, auth0_sub, password_hash, password_salt, avatar_url)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `,
+    )
+    .run(
+      normalizedName,
+      normalizedEmail,
+      input.auth0Sub,
+      credentials.hash,
+      credentials.salt,
+      normalizedPicture,
+    );
+  return Number(result.lastInsertRowid);
 }
 
 async function createUserRecord(
@@ -5032,6 +5239,112 @@ function verifyPassword(password: string, salt: string, storedHash: string): boo
 
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function decodeBase64UrlJson(value: string): Record<string, unknown> {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+  const decoded = Buffer.from(padded, "base64").toString("utf8");
+  const parsed = JSON.parse(decoded) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Token Auth0 inválido.");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function extractBearerToken(req: Request): string {
+  const authorizationHeader = getRequestHeaderTokenValue(req.headers.authorization);
+  if (!authorizationHeader.toLowerCase().startsWith("bearer ")) {
+    return "";
+  }
+  return authorizationHeader.slice(7).trim();
+}
+
+async function fetchAuth0Jwks(): Promise<Auth0JsonWebKey[]> {
+  if (!AUTH0_JWKS_URL) {
+    throw new Error("Auth0 não configurado no backend.");
+  }
+
+  const now = Date.now();
+  if (auth0JwksCache && now - auth0JwksCache.fetchedAt < AUTH0_JWKS_CACHE_TTL_MS) {
+    return auth0JwksCache.keys;
+  }
+
+  const response = await fetch(AUTH0_JWKS_URL, {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new Error("Falha ao carregar chaves públicas do Auth0.");
+  }
+
+  const payload = (await response.json()) as { keys?: Auth0JsonWebKey[] };
+  const keys = Array.isArray(payload.keys) ? payload.keys : [];
+  auth0JwksCache = { fetchedAt: now, keys };
+  return keys;
+}
+
+function validateAuth0Claims(claims: Auth0JwtClaims) {
+  const now = Math.floor(Date.now() / 1000);
+  if (!claims.sub) {
+    throw new Error("Token Auth0 sem identificador.");
+  }
+  if (claims.iss !== AUTH0_ISSUER) {
+    throw new Error("Emissor Auth0 inválido.");
+  }
+  const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud].filter(Boolean);
+  if (!AUTH0_EXPECTED_AUDIENCE || !audiences.includes(AUTH0_EXPECTED_AUDIENCE)) {
+    throw new Error("Audiência Auth0 inválida.");
+  }
+  if (typeof claims.exp !== "number" || claims.exp <= now) {
+    throw new Error("Token Auth0 expirado.");
+  }
+  if (typeof claims.nbf === "number" && claims.nbf > now + 60) {
+    throw new Error("Token Auth0 ainda não é válido.");
+  }
+}
+
+async function verifyAuth0Jwt(token: string): Promise<Auth0JwtClaims> {
+  if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID) {
+    throw new Error("Auth0 não configurado no backend.");
+  }
+
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    throw new Error("Token Auth0 inválido.");
+  }
+
+  const header = decodeBase64UrlJson(parts[0]);
+  const claims = decodeBase64UrlJson(parts[1]) as Auth0JwtClaims;
+  const alg = String(header.alg ?? "");
+  const kid = String(header.kid ?? "");
+  if (alg !== "RS256" || !kid) {
+    throw new Error("Assinatura Auth0 inválida.");
+  }
+
+  const keys = await fetchAuth0Jwks();
+  const jwk = keys.find((key) => key.kid === kid && (key.use === "sig" || !key.use));
+  if (!jwk) {
+    auth0JwksCache = null;
+    throw new Error("Chave Auth0 não encontrada.");
+  }
+
+  const verifier = crypto.createVerify("RSA-SHA256");
+  verifier.update(`${parts[0]}.${parts[1]}`);
+  verifier.end();
+  const publicKey = crypto.createPublicKey({ key: jwk, format: "jwk" });
+  const signature = Buffer.from(
+    parts[2].replace(/-/g, "+").replace(/_/g, "/").padEnd(
+      parts[2].length + ((4 - (parts[2].length % 4)) % 4),
+      "=",
+    ),
+    "base64",
+  );
+  if (!verifier.verify(publicKey, signature)) {
+    throw new Error("Assinatura Auth0 inválida.");
+  }
+
+  validateAuth0Claims(claims);
+  return claims;
 }
 
 function decodeHeaderFilename(value: string | undefined): string {
@@ -6692,6 +7005,84 @@ async function bootstrap() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao excluir usuário.";
       res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/auth/auth0/sync", async (req, res) => {
+    try {
+      const auth0Token = extractBearerToken(req);
+      if (!auth0Token) {
+        res.status(401).json({ error: "Token Auth0 obrigatório." });
+        return;
+      }
+
+      const claims = await verifyAuth0Jwt(auth0Token);
+      const auth0Sub = String(claims.sub ?? "").trim();
+      const email = normalizeEmail(String(claims.email ?? ""));
+      if (!EMAIL_REGEX.test(email)) {
+        res.status(400).json({ error: "Auth0 não retornou email válido." });
+        return;
+      }
+
+      const name = String(claims.name ?? "").trim();
+      const picture = String(claims.picture ?? "").trim();
+      let user = await selectUserByAuth0SubRow(auth0Sub);
+
+      if (!user) {
+        const existingByEmail = await selectUserByEmailRow(email);
+        if (existingByEmail) {
+          if (existingByEmail.auth0_sub && existingByEmail.auth0_sub !== auth0Sub) {
+            res.status(409).json({ error: "Este email já está vinculado a outro login Auth0." });
+            return;
+          }
+
+          const linked = await linkAuth0UserRecord({
+            userId: existingByEmail.id,
+            auth0Sub,
+            name,
+            picture,
+          });
+          if (!linked) {
+            res.status(409).json({ error: "Não foi possível vincular esta conta Auth0." });
+            return;
+          }
+          user = await selectUserByIdRow(existingByEmail.id);
+        }
+      }
+
+      if (!user) {
+        const createdUserId = await createAuth0UserRecord({
+          auth0Sub,
+          email,
+          name,
+          picture,
+        });
+        user = await selectUserByIdRow(createdUserId);
+      }
+
+      if (!user) {
+        res.status(500).json({ error: "Falha ao sincronizar usuário Auth0." });
+        return;
+      }
+
+      if (user.is_banned) {
+        res.status(403).json({
+          error: user.ban_reason
+            ? `Usuário bloqueado pelo administrador: ${user.ban_reason}`
+            : "Usuário bloqueado pelo administrador.",
+        });
+        return;
+      }
+
+      const token = await createSession(user.id);
+      setSessionCookie(res, token, isProduction);
+      res.json({
+        ...sanitizeUser(user),
+        token,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao autenticar com Auth0.";
+      res.status(401).json({ error: message });
     }
   });
 
