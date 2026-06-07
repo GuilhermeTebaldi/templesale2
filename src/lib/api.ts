@@ -1644,6 +1644,9 @@ async function uploadProfileImageFile(file: File): Promise<UploadImageResponse> 
 }
 
 export const api = {
+  hasLocalAuthToken() {
+    return Boolean(readAuthToken());
+  },
   async register(payload: AuthInput) {
     const email = payload.email.trim();
     const name = payload.name?.trim() || "";

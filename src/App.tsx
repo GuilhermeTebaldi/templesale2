@@ -511,6 +511,11 @@ export default function App() {
     let cancelled = false;
 
     const restoreSession = async () => {
+      if (!api.hasLocalAuthToken()) {
+        setCurrentUser(null);
+        return;
+      }
+
       try {
         const user = await api.getCurrentUser();
         if (!cancelled) {
