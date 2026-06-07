@@ -454,6 +454,7 @@ const AUTH0_EXPECTED_AUDIENCE = AUTH0_AUDIENCE || AUTH0_CLIENT_ID;
 const AUTH0_JWKS_URL = AUTH0_ISSUER ? `${AUTH0_ISSUER}.well-known/jwks.json` : "";
 const AUTH0_JWKS_CACHE_TTL_MS = 60 * 60 * 1000;
 let auth0JwksCache: { fetchedAt: number; keys: Auth0JsonWebKey[] } | null = null;
+const AUTH0_DEBUG_LOGS = !IS_PRODUCTION;
 const SESSION_COOKIE_NAME = "templesale_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 const DEFAULT_ADMIN_EMAIL = "templesale@admin.com";
@@ -5283,7 +5284,7 @@ async function fetchAuth0Jwks(): Promise<Auth0JsonWebKey[]> {
   return keys;
 }
 
-function validateAuth0Claims(claims: Auth0JwtClaims) {
+function validateAuth0Claims(claims: Auth0JwtClaims, expectedAudience: string) {
   const now = Math.floor(Date.now() / 1000);
   if (!claims.sub) {
     throw new Error("Token Auth0 sem identificador.");
@@ -5292,7 +5293,7 @@ function validateAuth0Claims(claims: Auth0JwtClaims) {
     throw new Error("Emissor Auth0 inválido.");
   }
   const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud].filter(Boolean);
-  if (!AUTH0_EXPECTED_AUDIENCE || !audiences.includes(AUTH0_EXPECTED_AUDIENCE)) {
+  if (!expectedAudience || !audiences.includes(expectedAudience)) {
     throw new Error("Audiência Auth0 inválida.");
   }
   if (typeof claims.exp !== "number" || claims.exp <= now) {
@@ -5303,7 +5304,10 @@ function validateAuth0Claims(claims: Auth0JwtClaims) {
   }
 }
 
-async function verifyAuth0Jwt(token: string): Promise<Auth0JwtClaims> {
+async function verifyAuth0Jwt(
+  token: string,
+  expectedAudience = AUTH0_EXPECTED_AUDIENCE,
+): Promise<Auth0JwtClaims> {
   if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID) {
     throw new Error("Auth0 não configurado no backend.");
   }
@@ -5343,7 +5347,7 @@ async function verifyAuth0Jwt(token: string): Promise<Auth0JwtClaims> {
     throw new Error("Assinatura Auth0 inválida.");
   }
 
-  validateAuth0Claims(claims);
+  validateAuth0Claims(claims, expectedAudience);
   return claims;
 }
 
@@ -7017,15 +7021,34 @@ async function bootstrap() {
       }
 
       const claims = await verifyAuth0Jwt(auth0Token);
+      const idToken = getRequestHeaderTokenValue(req.headers["x-auth0-id-token"]);
+      let profileClaims = claims;
+      if (AUTH0_DEBUG_LOGS) {
+        console.info("[auth0] sync token validated", {
+          subject: claims.sub,
+          audience: claims.aud,
+          expectedAudience: AUTH0_EXPECTED_AUDIENCE,
+          hasEmail: Boolean(claims.email),
+          hasProfileToken: Boolean(idToken),
+        });
+      }
+      if (!EMAIL_REGEX.test(normalizeEmail(String(claims.email ?? ""))) && idToken) {
+        const idTokenClaims = await verifyAuth0Jwt(idToken, AUTH0_CLIENT_ID);
+        if (idTokenClaims.sub !== claims.sub) {
+          res.status(401).json({ error: "Token Auth0 de perfil não pertence ao mesmo usuário." });
+          return;
+        }
+        profileClaims = idTokenClaims;
+      }
       const auth0Sub = String(claims.sub ?? "").trim();
-      const email = normalizeEmail(String(claims.email ?? ""));
+      const email = normalizeEmail(String(profileClaims.email ?? ""));
       if (!EMAIL_REGEX.test(email)) {
         res.status(400).json({ error: "Auth0 não retornou email válido." });
         return;
       }
 
-      const name = String(claims.name ?? "").trim();
-      const picture = String(claims.picture ?? "").trim();
+      const name = String(profileClaims.name ?? claims.name ?? "").trim();
+      const picture = String(profileClaims.picture ?? claims.picture ?? "").trim();
       let user = await selectUserByAuth0SubRow(auth0Sub);
 
       if (!user) {
@@ -7082,6 +7105,9 @@ async function bootstrap() {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao autenticar com Auth0.";
+      if (AUTH0_DEBUG_LOGS) {
+        console.warn("[auth0] sync failed", { message });
+      }
       res.status(401).json({ error: message });
     }
   });

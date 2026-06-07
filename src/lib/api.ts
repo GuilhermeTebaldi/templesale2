@@ -1835,20 +1835,34 @@ export const api = {
     }
     return user;
   },
-  async syncAuth0(auth0Token: string) {
-    const raw = await request<unknown>("/api/auth/auth0/sync", {
-      method: "POST",
-      skipAuthToken: true,
-      headers: {
+  async syncAuth0(auth0Token: string, idToken = "") {
+    try {
+      const headers: Record<string, string> = {
         Authorization: `Bearer ${auth0Token}`,
-      },
-    });
-    persistAuthTokenFromPayload(raw);
-    const user = normalizeSessionUserItem(raw);
-    if (!user) {
-      throw new Error("Resposta inválida ao autenticar com Auth0.");
+      };
+      if (idToken) {
+        headers["X-Auth0-ID-Token"] = idToken;
+      }
+      const raw = await request<unknown>("/api/auth/auth0/sync", {
+        method: "POST",
+        skipAuthToken: true,
+        headers,
+      });
+      persistAuthTokenFromPayload(raw);
+      const user = normalizeSessionUserItem(raw);
+      if (!user) {
+        throw new Error("Resposta inválida ao autenticar com Auth0.");
+      }
+      if (import.meta.env.DEV) {
+        console.info("[auth0] local sync succeeded", { userId: user.id, email: user.email });
+      }
+      return user;
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error("[auth0] local sync failed", error);
+      }
+      throw error;
     }
-    return user;
   },
   async getCurrentUser() {
     const raw = await request<unknown>("/api/auth/me");

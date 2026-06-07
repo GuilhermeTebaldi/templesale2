@@ -18,7 +18,7 @@ import { localeOptions, type AppLocale } from "./i18n";
 import { formatCollectionDate, formatRelativeTime } from "./i18n/formatters";
 import { getCategoryLabel } from "./i18n/categories";
 import { parsePriceToNumber } from "./lib/currency";
-import { AUTH0_AUDIENCE, IS_AUTH0_CONFIGURED } from "./lib/auth0-config";
+import { AUTH0_AUDIENCE, AUTH0_DEBUG_LOGS, IS_AUTH0_CONFIGURED } from "./lib/auth0-config";
 
 const CATEGORIES = [
   "All",
@@ -220,6 +220,7 @@ export default function App() {
     isAuthenticated: isAuth0Authenticated,
     isLoading: isAuth0Loading,
     logout: auth0Logout,
+    user: auth0User,
   } = useAuth0();
   const [activeCategory, setActiveCategory] = React.useState("All");
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
@@ -536,6 +537,15 @@ export default function App() {
   }, []);
 
   React.useEffect(() => {
+    if (AUTH0_DEBUG_LOGS) {
+      console.info("[auth0] state", {
+        isConfigured: IS_AUTH0_CONFIGURED,
+        isLoading: isAuth0Loading,
+        isAuthenticated: isAuth0Authenticated,
+        email: auth0User?.email,
+        audience: AUTH0_AUDIENCE || "(none)",
+      });
+    }
     if (!IS_AUTH0_CONFIGURED || isAuth0Loading || !isAuth0Authenticated) {
       if (!isAuth0Authenticated) {
         auth0SyncAttemptedRef.current = false;
@@ -551,23 +561,28 @@ export default function App() {
 
     const syncAuth0Session = async () => {
       try {
+        const idToken = String(
+          ((await getIdTokenClaims()) as { __raw?: string } | undefined)?.__raw ?? "",
+        );
         const token = AUTH0_AUDIENCE
-          ? await getAccessTokenSilently()
-          : String(
-              ((await getIdTokenClaims()) as { __raw?: string } | undefined)?.__raw ?? "",
-            );
+          ? await getAccessTokenSilently({
+              authorizationParams: { audience: AUTH0_AUDIENCE },
+            })
+          : idToken;
         if (!token) {
           throw new Error("Auth0 não retornou token para sincronizar sessão.");
         }
 
-        const user = await api.syncAuth0(token);
+        const user = await api.syncAuth0(token, idToken);
         if (!cancelled) {
           setCurrentUser(user);
           setIsAuthModalOpen(false);
         }
       } catch (error) {
         auth0SyncAttemptedRef.current = false;
-        console.error("Error syncing Auth0 session:", error);
+        if (AUTH0_DEBUG_LOGS) {
+          console.error("[auth0] getAccessTokenSilently/sync error", error);
+        }
       }
     };
 
@@ -579,6 +594,7 @@ export default function App() {
   }, [
     getAccessTokenSilently,
     getIdTokenClaims,
+    auth0User?.email,
     isAuth0Authenticated,
     isAuth0Loading,
   ]);
