@@ -1,4 +1,5 @@
 import { trackedFetch } from "./networkActivity";
+import { AUTH0_DEBUG_LOGS } from "./auth0-config";
 import {
   normalizeProductDetailKey,
   normalizeProductDetailsRecord,
@@ -1838,27 +1839,43 @@ export const api = {
   async syncAuth0(auth0Token: string, idToken = "") {
     try {
       const headers: Record<string, string> = {
+        "Content-Type": "application/json",
         Authorization: `Bearer ${auth0Token}`,
       };
       if (idToken) {
         headers["X-Auth0-ID-Token"] = idToken;
       }
-      const raw = await request<unknown>("/api/auth/auth0/sync", {
+      const syncUrl = "/api/auth/auth0/sync";
+      const response = await trackedFetch(buildApiUrl(syncUrl), {
         method: "POST",
-        skipAuthToken: true,
+        credentials: "include",
         headers,
       });
+      const contentType = response.headers.get("content-type") || "";
+      const raw = contentType.includes("application/json")
+        ? ((await response.json().catch(() => null)) as unknown)
+        : await response.text().catch(() => "");
+      if (AUTH0_DEBUG_LOGS) {
+        console.info("[auth0] sync response status", {
+          status: response.status,
+          ok: response.ok,
+          url: buildApiUrl(syncUrl),
+        });
+      }
+      if (!response.ok) {
+        throw new Error(extractApiError(raw) || `Falha ao sincronizar Auth0 (${response.status}).`);
+      }
       persistAuthTokenFromPayload(raw);
       const user = normalizeSessionUserItem(raw);
       if (!user) {
         throw new Error("Resposta inválida ao autenticar com Auth0.");
       }
-      if (import.meta.env.DEV) {
-        console.info("[auth0] local sync succeeded", { userId: user.id, email: user.email });
+      if (AUTH0_DEBUG_LOGS) {
+        console.info("[auth0] local session applied", { userId: user.id, email: user.email });
       }
       return user;
     } catch (error) {
-      if (import.meta.env.DEV) {
+      if (AUTH0_DEBUG_LOGS) {
         console.error("[auth0] local sync failed", error);
       }
       throw error;

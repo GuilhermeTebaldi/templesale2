@@ -3,7 +3,7 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { motion } from "motion/react";
 import { X, ArrowRight, Mail } from "lucide-react";
 import { useI18n } from "../i18n/provider";
-import { IS_AUTH0_CONFIGURED } from "../lib/auth0-config";
+import { AUTH0_AUDIENCE, AUTH0_DEBUG_LOGS, IS_AUTH0_CONFIGURED } from "../lib/auth0-config";
 
 export type AuthMode = "login" | "register";
 
@@ -38,6 +38,12 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
 
     try {
       setIsSubmitting(true);
+      if (AUTH0_DEBUG_LOGS) {
+        console.info("[auth0] loginWithRedirect", {
+          mode,
+          audience: AUTH0_AUDIENCE || "(none)",
+        });
+      }
       await loginWithRedirect({
         authorizationParams: {
           screen_hint: isLogin ? "login" : "signup",
