@@ -13,6 +13,30 @@ export const AUTH0_AUDIENCE = String(
 ).trim();
 
 export const IS_AUTH0_CONFIGURED = Boolean(AUTH0_DOMAIN && AUTH0_CLIENT_ID);
+export const AUTH0_DIAGNOSTIC_STORAGE_KEY = "templesale_auth0_diagnostic";
+
+type Auth0DiagnosticPayload = Record<string, unknown>;
+
+export function writeAuth0Diagnostic(step: string, payload: Auth0DiagnosticPayload = {}) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const entry = {
+    step,
+    at: new Date().toISOString(),
+    href: window.location.href,
+    ...payload,
+  };
+
+  try {
+    window.sessionStorage.setItem(AUTH0_DIAGNOSTIC_STORAGE_KEY, JSON.stringify(entry));
+  } catch {
+    // Diagnostics must never block authentication.
+  }
+
+  console.info("[auth0-detect]", entry);
+}
 
 function resolveAuth0DebugLogs(): boolean {
   if (import.meta.env.DEV) {

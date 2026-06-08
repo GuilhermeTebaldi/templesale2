@@ -12,6 +12,7 @@ import {
   AUTH0_CLIENT_ID,
   AUTH0_DOMAIN,
   IS_AUTH0_CONFIGURED,
+  writeAuth0Diagnostic,
 } from "./lib/auth0-config";
 
 const VISITOR_PING_HEARTBEAT_INTERVAL_MS = 30 * 1000;
@@ -95,6 +96,22 @@ const auth0AuthorizationParams = {
   redirect_uri: appOrigin,
   ...(AUTH0_AUDIENCE ? { audience: AUTH0_AUDIENCE } : {}),
 };
+const handleAuth0RedirectCallback = (appState?: { returnTo?: string }) => {
+  writeAuth0Diagnostic("provider-redirect-callback", {
+    returnTo: appState?.returnTo,
+    hasCode: typeof window !== "undefined" && new URLSearchParams(window.location.search).has("code"),
+    hasState: typeof window !== "undefined" && new URLSearchParams(window.location.search).has("state"),
+    error: typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("error")
+      : null,
+    errorDescription: typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("error_description")
+      : null,
+  });
+
+  const target = appState?.returnTo || window.location.pathname;
+  window.history.replaceState({}, document.title, target);
+};
 const appTree = (
   <I18nProvider>
     <RootComponent />
@@ -109,6 +126,7 @@ createRoot(document.getElementById("root")!).render(
         domain={AUTH0_DOMAIN}
         clientId={AUTH0_CLIENT_ID}
         authorizationParams={auth0AuthorizationParams}
+        onRedirectCallback={handleAuth0RedirectCallback}
       >
         {appTree}
       </Auth0Provider>

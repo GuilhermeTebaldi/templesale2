@@ -18,7 +18,12 @@ import { localeOptions, type AppLocale } from "./i18n";
 import { formatCollectionDate, formatRelativeTime } from "./i18n/formatters";
 import { getCategoryLabel } from "./i18n/categories";
 import { parsePriceToNumber } from "./lib/currency";
-import { AUTH0_AUDIENCE, AUTH0_DEBUG_LOGS, IS_AUTH0_CONFIGURED } from "./lib/auth0-config";
+import {
+  AUTH0_AUDIENCE,
+  AUTH0_DEBUG_LOGS,
+  IS_AUTH0_CONFIGURED,
+  writeAuth0Diagnostic,
+} from "./lib/auth0-config";
 
 const CATEGORIES = [
   "All",
@@ -217,6 +222,7 @@ export default function App() {
   const {
     getAccessTokenSilently,
     getIdTokenClaims,
+    error: auth0Error,
     isAuthenticated: isAuth0Authenticated,
     isLoading: isAuth0Loading,
     logout: auth0Logout,
@@ -537,6 +543,12 @@ export default function App() {
   }, []);
 
   React.useEffect(() => {
+    if (auth0Error) {
+      writeAuth0Diagnostic("sdk-error", {
+        error: auth0Error.message,
+        name: auth0Error.name,
+      });
+    }
     if (AUTH0_DEBUG_LOGS) {
       console.info("[auth0] state", {
         isConfigured: IS_AUTH0_CONFIGURED,
@@ -544,6 +556,7 @@ export default function App() {
         isAuthenticated: isAuth0Authenticated,
         email: auth0User?.email,
         audience: AUTH0_AUDIENCE || "(none)",
+        error: auth0Error?.message,
       });
     }
     if (!IS_AUTH0_CONFIGURED || isAuth0Loading || !isAuth0Authenticated) {
@@ -561,6 +574,10 @@ export default function App() {
 
     const syncAuth0Session = async () => {
       try {
+        writeAuth0Diagnostic("sync-started", {
+          email: auth0User?.email,
+          audience: AUTH0_AUDIENCE || "(none)",
+        });
         const idToken = String(
           ((await getIdTokenClaims()) as { __raw?: string } | undefined)?.__raw ?? "",
         );
@@ -577,9 +594,16 @@ export default function App() {
         if (!cancelled) {
           setCurrentUser(user);
           setIsAuthModalOpen(false);
+          writeAuth0Diagnostic("sync-completed", {
+            userId: user.id,
+            email: user.email,
+          });
         }
       } catch (error) {
         auth0SyncAttemptedRef.current = false;
+        writeAuth0Diagnostic("sync-failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
         if (AUTH0_DEBUG_LOGS) {
           console.error("[auth0] getAccessTokenSilently/sync error", error);
         }
@@ -595,6 +619,7 @@ export default function App() {
     getAccessTokenSilently,
     getIdTokenClaims,
     auth0User?.email,
+    auth0Error,
     isAuth0Authenticated,
     isAuth0Loading,
   ]);

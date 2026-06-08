@@ -8,6 +8,7 @@ import {
   AUTH0_CLIENT_ID,
   AUTH0_DOMAIN,
   IS_AUTH0_CONFIGURED,
+  writeAuth0Diagnostic,
 } from "../lib/auth0-config";
 
 export type AuthMode = "login" | "register";
@@ -28,17 +29,23 @@ interface AuthProps {
 export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
   const { t } = useI18n();
   const { loginWithRedirect, isLoading } = useAuth0();
-  const [mode, setMode] = React.useState<AuthMode>(defaultMode);
+  const [mode] = React.useState<AuthMode>(defaultMode);
   const [errorMessage, setErrorMessage] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-
-  const isLogin = mode === "login";
 
   const handleAuth0Redirect = async (event?: React.MouseEvent<HTMLButtonElement>) => {
     event?.preventDefault();
     event?.stopPropagation();
     setErrorMessage("");
     console.info("[auth0-login] clicked");
+    writeAuth0Diagnostic("button-clicked", {
+      hasDomain: Boolean(AUTH0_DOMAIN),
+      hasClientId: Boolean(AUTH0_CLIENT_ID),
+      hasAudience: Boolean(AUTH0_AUDIENCE),
+      isAuth0Loading: isLoading,
+      mode,
+      redirect_uri: window.location.origin,
+    });
     if (!IS_AUTH0_CONFIGURED) {
       const message = "Auth0 não está configurado. Defina VITE_AUTH0_DOMAIN e VITE_AUTH0_CLIENT_ID.";
       console.error("[auth0-login] missing config", {
@@ -53,6 +60,12 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
 
     try {
       setIsSubmitting(true);
+      writeAuth0Diagnostic("calling-loginWithRedirect", {
+        domain: AUTH0_DOMAIN,
+        clientIdSuffix: AUTH0_CLIENT_ID.slice(-6),
+        audience: AUTH0_AUDIENCE || "(none)",
+        redirect_uri: window.location.origin,
+      });
       console.info("[auth0-login] config", {
         hasDomain: true,
         hasClientId: true,
@@ -64,11 +77,17 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
         authorizationParams: {
           redirect_uri: window.location.origin,
           ...(AUTH0_AUDIENCE ? { audience: AUTH0_AUDIENCE } : {}),
-          screen_hint: isLogin ? "login" : "signup",
         },
       });
+      writeAuth0Diagnostic("loginWithRedirect-returned-without-navigation", {
+        message: "Auth0 SDK returned control to the app instead of leaving the current page.",
+      });
+      console.warn("[auth0-login] loginWithRedirect returned without navigation");
     } catch (error) {
       console.error("[auth0-login] loginWithRedirect failed", error);
+      writeAuth0Diagnostic("loginWithRedirect-failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
       const message =
         error instanceof Error ? error.message : t("Falha ao autenticar.");
       setErrorMessage(message);
@@ -97,7 +116,7 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
         <div className="text-center mb-12">
           <h1 className="text-4xl font-serif tracking-[0.2em] uppercase mb-4">Templesale</h1>
           <p className="text-xs uppercase tracking-[0.3em] text-stone-400 font-medium">
-            {isLogin ? t("Entrar na Conta") : t("Criar Conta")}
+            {t("Acessar Conta")}
           </p>
         </div>
 
@@ -105,9 +124,7 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
           <div className="border border-stone-200 bg-white/70 p-5 text-center">
             <Mail className="mx-auto mb-3 h-5 w-5 text-stone-500" />
             <p className="text-sm leading-relaxed text-stone-600">
-              {isLogin
-                ? "Entre com sua conta TempleSale pelo Auth0."
-                : "Crie sua conta TempleSale com Auth0. Se o email já existir, sua conta antiga será vinculada automaticamente."}
+              Acesse pelo Auth0. Se o email ainda não existir, a conta será criada; se já existir, ela será vinculada automaticamente.
             </p>
           </div>
 
@@ -123,19 +140,8 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
           >
             {isSubmitting || isLoading
               ? t("Processando...")
-              : isLogin
-                ? t("Entrar")
-                : t("Criar conta")}
+              : t("Acessar")}
             <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="mt-12 text-center">
-          <button 
-            onClick={() => setMode(isLogin ? "register" : "login")}
-            className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400 hover:text-stone-800 transition-colors"
-          >
-            {isLogin ? t("Ainda não tem conta? Cadastre-se") : t("Já tem conta? Entrar")}
           </button>
         </div>
       </motion.div>
