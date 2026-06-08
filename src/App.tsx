@@ -2849,6 +2849,13 @@ export default function App() {
                                   const presentation = getNotificationPresentation(notification);
                                   const title = presentation.title;
                                   const message = presentation.message;
+                                  const productImageUrl =
+                                    String(
+                                      ("productImageUrl" in notification ? notification.productImageUrl : "") ?? "",
+                                    ).trim();
+                                  const productName =
+                                    String(("productName" in notification ? notification.productName : "") ?? "")
+                                      .trim() || title;
 
                                   return (
                                     <motion.div
@@ -2901,6 +2908,13 @@ export default function App() {
                                       >
                                         {!isRead && (
                                           <div className="absolute left-0 top-0 bottom-0 w-1 bg-stone-900" />
+                                        )}
+                                        {productImageUrl && (
+                                          <img
+                                            src={productImageUrl}
+                                            alt={productName}
+                                            className="float-right ml-3 mb-2 h-16 w-16 rounded-md border border-stone-200 object-cover shadow-sm"
+                                          />
                                         )}
                                         <div className="flex justify-between items-start mb-1 gap-3">
                                           <h4

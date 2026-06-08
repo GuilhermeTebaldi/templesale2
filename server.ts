@@ -113,6 +113,7 @@ type NotificationEventRow = {
   actor_country: string | null;
   product_id: number | null;
   product_name: string;
+  product_image_url: string | null;
   comment_id: number | null;
   created_at: number;
   event_id: string;
@@ -131,6 +132,7 @@ type NotificationRecord = {
   actorCountry?: string;
   productId?: number;
   productName?: string;
+  productImageUrl?: string;
   commentId?: number;
 };
 
@@ -1084,6 +1086,7 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
     actor_country: toNullableString(row.actor_country),
     product_id: productId,
     product_name: String(row.product_name ?? ""),
+    product_image_url: toNullableString(row.product_image_url),
     comment_id: toNullableNumber(row.comment_id),
     created_at: parsedCreatedAt,
     event_id:
@@ -3720,8 +3723,13 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(BTRIM(lu.country), '') AS actor_country,
             p.id AS product_id,
             p.name AS product_name,
+            COALESCE(NULLIF(BTRIM(p.image), ''), NULLIF(BTRIM(p.image_url), '')) AS product_image_url,
             NULL::BIGINT AS comment_id,
             l.created_at::TEXT AS created_at,
+            CASE
+              WHEN l.created_at::TEXT ~ '^[0-9]+$' THEN l.created_at::TEXT::BIGINT
+              ELSE EXTRACT(EPOCH FROM l.created_at::TEXT::TIMESTAMPTZ)::BIGINT
+            END AS sort_created_at,
             'product_like:' || l.user_id::TEXT || ':' || l.product_id::TEXT || ':' || l.created_at::TEXT AS event_id
           FROM product_likes l
           INNER JOIN products p ON p.id = l.product_id
@@ -3739,8 +3747,13 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(BTRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
             p.name AS product_name,
+            COALESCE(NULLIF(BTRIM(p.image), ''), NULLIF(BTRIM(p.image_url), '')) AS product_image_url,
             NULL::BIGINT AS comment_id,
             c.created_at::TEXT AS created_at,
+            CASE
+              WHEN c.created_at::TEXT ~ '^[0-9]+$' THEN c.created_at::TEXT::BIGINT
+              ELSE EXTRACT(EPOCH FROM c.created_at::TEXT::TIMESTAMPTZ)::BIGINT
+            END AS sort_created_at,
             'product_cart_interest:' || c.id::TEXT AS event_id
           FROM product_cart_notifications c
           INNER JOIN products p ON p.id = c.product_id
@@ -3759,8 +3772,13 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(BTRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
             p.name AS product_name,
+            COALESCE(NULLIF(BTRIM(p.image), ''), NULLIF(BTRIM(p.image_url), '')) AS product_image_url,
             c.id AS comment_id,
             c.created_at::TEXT AS created_at,
+            CASE
+              WHEN c.created_at::TEXT ~ '^[0-9]+$' THEN c.created_at::TEXT::BIGINT
+              ELSE EXTRACT(EPOCH FROM c.created_at::TEXT::TIMESTAMPTZ)::BIGINT
+            END AS sort_created_at,
             'product_comment:' || c.id::TEXT AS event_id
           FROM product_comments c
           INNER JOIN products p ON p.id = c.product_id
@@ -3779,8 +3797,13 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL::TEXT AS actor_country,
             p.id AS product_id,
             COALESCE(NULLIF(BTRIM(b.message), ''), NULLIF(BTRIM(p.name), ''), 'Atualização TempleSale') AS product_name,
+            COALESCE(NULLIF(BTRIM(p.image), ''), NULLIF(BTRIM(p.image_url), '')) AS product_image_url,
             NULL::BIGINT AS comment_id,
             b.created_at::TEXT AS created_at,
+            CASE
+              WHEN b.created_at::TEXT ~ '^[0-9]+$' THEN b.created_at::TEXT::BIGINT
+              ELSE EXTRACT(EPOCH FROM b.created_at::TEXT::TIMESTAMPTZ)::BIGINT
+            END AS sort_created_at,
             'admin_broadcast:' || b.id::TEXT AS event_id
           FROM admin_broadcast_notifications b
           LEFT JOIN products p ON p.id = b.product_id
@@ -3790,7 +3813,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           FROM notification_dismissals d
           WHERE d.owner_user_id = $3 AND d.event_id = notifications.event_id
         )
-        ORDER BY created_at DESC, product_id DESC
+        ORDER BY sort_created_at DESC, event_id DESC
         LIMIT 100
       `,
       [ownerId, ownerId, ownerId],
@@ -3812,8 +3835,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(TRIM(lu.country), '') AS actor_country,
             p.id AS product_id,
             p.name AS product_name,
+            COALESCE(NULLIF(TRIM(p.image), ''), NULLIF(TRIM(p.image_url), '')) AS product_image_url,
             NULL AS comment_id,
             l.created_at,
+            CAST(l.created_at AS INTEGER) AS sort_created_at,
             'product_like:' || l.user_id || ':' || l.product_id || ':' || l.created_at AS event_id
           FROM product_likes l
           INNER JOIN products p ON p.id = l.product_id
@@ -3831,8 +3856,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(TRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
             p.name AS product_name,
+            COALESCE(NULLIF(TRIM(p.image), ''), NULLIF(TRIM(p.image_url), '')) AS product_image_url,
             NULL AS comment_id,
             c.created_at,
+            CAST(c.created_at AS INTEGER) AS sort_created_at,
             'product_cart_interest:' || c.id AS event_id
           FROM product_cart_notifications c
           INNER JOIN products p ON p.id = c.product_id
@@ -3851,8 +3878,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(TRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
             p.name AS product_name,
+            COALESCE(NULLIF(TRIM(p.image), ''), NULLIF(TRIM(p.image_url), '')) AS product_image_url,
             c.id AS comment_id,
             c.created_at,
+            CAST(c.created_at AS INTEGER) AS sort_created_at,
             'product_comment:' || c.id AS event_id
           FROM product_comments c
           INNER JOIN products p ON p.id = c.product_id
@@ -3871,8 +3900,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL AS actor_country,
             p.id AS product_id,
             COALESCE(NULLIF(TRIM(b.message), ''), NULLIF(TRIM(p.name), ''), 'Atualização TempleSale') AS product_name,
+            COALESCE(NULLIF(TRIM(p.image), ''), NULLIF(TRIM(p.image_url), '')) AS product_image_url,
             NULL AS comment_id,
             b.created_at,
+            CAST(b.created_at AS INTEGER) AS sort_created_at,
             'admin_broadcast:' || b.id AS event_id
           FROM admin_broadcast_notifications b
           LEFT JOIN products p ON p.id = b.product_id
@@ -3882,7 +3913,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           FROM notification_dismissals d
           WHERE d.owner_user_id = ? AND d.event_id = event_id
         )
-        ORDER BY created_at DESC, product_id DESC
+        ORDER BY sort_created_at DESC, event_id DESC
         LIMIT 100
       `,
     )
@@ -5193,6 +5224,9 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
       normalized.productId = row.product_id;
       normalized.productName = productName;
     }
+    if (row.product_image_url) {
+      normalized.productImageUrl = row.product_image_url;
+    }
     return normalized;
   }
 
@@ -5221,6 +5255,9 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
 
   if (row.product_id) {
     normalized.productId = row.product_id;
+  }
+  if (row.product_image_url) {
+    normalized.productImageUrl = row.product_image_url;
   }
 
   if (row.actor_user_id !== null) {

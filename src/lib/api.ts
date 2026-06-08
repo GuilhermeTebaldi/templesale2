@@ -61,6 +61,7 @@ export type NotificationDto =
       actorCity?: string;
       actorCountry?: string;
       productName?: string;
+      productImageUrl?: string;
       productId: number;
     }
   | {
@@ -75,6 +76,7 @@ export type NotificationDto =
       actorCity?: string;
       actorCountry?: string;
       productName?: string;
+      productImageUrl?: string;
       productId: number;
     }
   | {
@@ -89,6 +91,7 @@ export type NotificationDto =
       actorCity?: string;
       actorCountry?: string;
       productName?: string;
+      productImageUrl?: string;
       productId: number;
       commentId?: number;
     }
@@ -100,6 +103,7 @@ export type NotificationDto =
       createdAt: number;
       actorName?: string;
       productName?: string;
+      productImageUrl?: string;
       productId?: number;
     }
   | {
