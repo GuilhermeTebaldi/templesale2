@@ -70,6 +70,8 @@ const READ_NOTIFICATIONS_STORAGE_KEY = "templesale_read_notifications";
 const MOBILE_INITIAL_PRODUCT_LIMIT = 30;
 const MOBILE_MORE_PRODUCT_LIMIT = 20;
 const DESKTOP_PRODUCT_LIMIT = 36;
+const NOTIFICATIONS_POLL_INTERVAL_MS = 120000;
+const NOTIFICATION_UNDO_TIMEOUT_MS = 5000;
 
 function isMobileProductViewport(): boolean {
   if (typeof window === "undefined") {
@@ -275,6 +277,9 @@ export default function App() {
   const [notifications, setNotifications] = React.useState<NotificationDto[]>([]);
   const [readNotificationIds, setReadNotificationIds] = React.useState<string[]>([]);
   const [swipedNotificationId, setSwipedNotificationId] = React.useState<string | null>(null);
+  const [deletedNotificationUndo, setDeletedNotificationUndo] = React.useState<{
+    notification: NotificationDto;
+  } | null>(null);
   const [focusedCommentId, setFocusedCommentId] = React.useState<number | null>(null);
   const [likersProduct, setLikersProduct] = React.useState<Product | null>(null);
   const [productLikers, setProductLikers] = React.useState<PublicLikerDto[]>([]);
@@ -351,6 +356,7 @@ export default function App() {
   const avatarPickerPanelRef = React.useRef<HTMLDivElement | null>(null);
   const notificationsButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const notificationsPanelRef = React.useRef<HTMLDivElement | null>(null);
+  const notificationUndoTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const homeSearchInputRef = React.useRef<HTMLInputElement | null>(null);
   const categoryDropdownRef = React.useRef<HTMLDivElement | null>(null);
   const hydratedCartStorageKeyRef = React.useRef<string | null>(null);
@@ -701,6 +707,7 @@ export default function App() {
 
   React.useEffect(() => {
     let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
 
     const fetchNotifications = async () => {
       if (!currentUser) {
@@ -715,43 +722,56 @@ export default function App() {
         }
       } catch (err) {
         console.error("Error fetching notifications:", err);
-        if (!cancelled) {
-          setNotifications([]);
-        }
       }
     };
 
-    fetchNotifications();
+    void fetchNotifications();
+    if (currentUser) {
+      const notificationEventsUrl = api.getNotificationEventsUrl();
+      let notificationEvents: EventSource | null = null;
+
+      if (notificationEventsUrl && typeof window !== "undefined" && "EventSource" in window) {
+        notificationEvents = new EventSource(notificationEventsUrl, { withCredentials: true });
+        notificationEvents.addEventListener("ready", () => {
+          void fetchNotifications();
+        });
+        notificationEvents.addEventListener("notifications-changed", () => {
+          void fetchNotifications();
+        });
+        notificationEvents.onerror = (error) => {
+          console.warn("Notification live stream disconnected; fallback refresh is active.", error);
+        };
+      }
+
+      intervalId = setInterval(() => {
+        void fetchNotifications();
+      }, NOTIFICATIONS_POLL_INTERVAL_MS);
+
+      return () => {
+        cancelled = true;
+        notificationEvents?.close();
+        if (intervalId) {
+          clearInterval(intervalId);
+        }
+      };
+    }
 
     return () => {
       cancelled = true;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
     };
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   React.useEffect(() => {
-    let cancelled = false;
-
-    const refreshNotificationsWhenOpen = async () => {
-      if (!currentUser || !isNotificationsOpen) {
-        return;
-      }
-
-      try {
-        const data = await api.getNotifications();
-        if (!cancelled) {
-          setNotifications(asArray<NotificationDto>(data));
-        }
-      } catch (err) {
-        console.error("Error refreshing notifications:", err);
-      }
-    };
-
-    refreshNotificationsWhenOpen();
-
     return () => {
-      cancelled = true;
+      if (notificationUndoTimerRef.current) {
+        clearTimeout(notificationUndoTimerRef.current);
+        notificationUndoTimerRef.current = null;
+      }
     };
-  }, [currentUser, isNotificationsOpen]);
+  }, []);
 
   React.useEffect(() => {
     if (!currentUser) {
@@ -1625,14 +1645,58 @@ export default function App() {
   };
 
   const handleDeleteNotification = async (notificationId: string) => {
+    const notificationToDelete = notificationsToDisplay.find((notification) => notification.id === notificationId);
+
+    if (notificationUndoTimerRef.current) {
+      clearTimeout(notificationUndoTimerRef.current);
+      notificationUndoTimerRef.current = null;
+    }
+
+    if (notificationToDelete) {
+      setDeletedNotificationUndo({ notification: notificationToDelete });
+      notificationUndoTimerRef.current = setTimeout(() => {
+        setDeletedNotificationUndo(null);
+        notificationUndoTimerRef.current = null;
+      }, NOTIFICATION_UNDO_TIMEOUT_MS);
+    }
+
     setNotifications((current) => current.filter((notification) => notification.id !== notificationId));
     setReadNotificationIds((current) => current.filter((id) => id !== notificationId));
     setSwipedNotificationId(null);
+
     try {
       await api.deleteNotification(notificationId);
     } catch (error) {
       console.error("Error deleting notification:", error);
-      void api.getNotifications().then(setNotifications).catch(() => {});
+      setDeletedNotificationUndo(null);
+      void api.getNotifications().then((data) => setNotifications(asArray<NotificationDto>(data))).catch(() => {});
+    }
+  };
+
+  const handleUndoDeleteNotification = async () => {
+    if (!deletedNotificationUndo) {
+      return;
+    }
+
+    const { notification } = deletedNotificationUndo;
+    if (notificationUndoTimerRef.current) {
+      clearTimeout(notificationUndoTimerRef.current);
+      notificationUndoTimerRef.current = null;
+    }
+
+    setDeletedNotificationUndo(null);
+    setNotifications((current) => {
+      if (current.some((item) => item.id === notification.id)) {
+        return current;
+      }
+      return [...current, notification].sort((a, b) => b.createdAt - a.createdAt);
+    });
+
+    try {
+      await api.restoreNotification(notification.id);
+    } catch (error) {
+      console.error("Error restoring notification:", error);
+      void api.getNotifications().then((data) => setNotifications(asArray<NotificationDto>(data))).catch(() => {});
     }
   };
 
@@ -1963,6 +2027,30 @@ export default function App() {
             >
               <ShoppingBag className="w-4 h-4 shrink-0" />
               <span className="text-xs tracking-[0.06em]">{cartToast.message}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {deletedNotificationUndo && (
+          <motion.div
+            key={deletedNotificationUndo.notification.id}
+            initial={{ opacity: 0, y: 24, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 18, scale: 0.96 }}
+            transition={{ type: "spring", damping: 22, stiffness: 320 }}
+            className={`fixed left-1/2 z-170 -translate-x-1/2 px-4 ${cartToast ? "bottom-20" : "bottom-6"}`}
+          >
+            <div className="flex min-w-[280px] max-w-[92vw] items-center justify-between gap-4 border border-stone-800 bg-stone-950/95 px-4 py-3 text-white shadow-xl backdrop-blur-sm">
+              <span className="text-xs tracking-[0.06em]">{t("Notificação excluída.")}</span>
+              <button
+                type="button"
+                onClick={() => void handleUndoDeleteNotification()}
+                className="text-xs font-bold uppercase tracking-[0.12em] text-white underline decoration-white/40 underline-offset-4 transition-colors hover:text-stone-200"
+              >
+                {t("Desfazer")}
+              </button>
             </div>
           </motion.div>
         )}
@@ -2700,7 +2788,9 @@ export default function App() {
                   >
                     <Bell className="w-5 h-5 text-stone-600" />
                     {unreadNotificationsCount > 0 && (
-                      <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-[#fdfcfb]" />
+                      <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#fdfcfb] bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                        {unreadNotificationsCount > 9 ? "9+" : unreadNotificationsCount}
+                      </span>
                     )}
                   </button>
 
@@ -2722,7 +2812,16 @@ export default function App() {
                           transition={{ type: "spring", damping: 20, stiffness: 300 }}
                           className="fixed left-1/2 top-[5.5rem] w-[calc(100vw-3rem)] max-w-sm -translate-x-1/2 sm:absolute sm:left-auto sm:top-full sm:w-80 sm:max-w-none sm:translate-x-0 sm:right-0 sm:mt-2 bg-white border border-stone-100 shadow-xl rounded-xl z-100 overflow-hidden"
                         >
-                          <div className="p-4 border-b border-stone-50 flex items-center justify-between">
+                          <div className="p-4 border-b border-stone-50 grid grid-cols-[2rem_1fr_auto] items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setIsNotificationsOpen(false)}
+                              className="flex h-8 w-8 items-center justify-center rounded-full text-stone-400 transition-colors hover:bg-stone-50 hover:text-stone-800"
+                              aria-label={t("Fechar notificações")}
+                              title={t("Fechar notificações")}
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
                             <h3 className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-800">
                               {t("Notificações")}
                             </h3>
@@ -2744,97 +2843,112 @@ export default function App() {
                                 {t("Nenhuma notificação disponível.")}
                               </div>
                             ) : (
-                              notificationsToDisplay.map((notification) => {
-                                const isRead = readNotificationIdSet.has(notification.id);
-                                const presentation = getNotificationPresentation(notification);
-                                const title = presentation.title;
-                                const message = presentation.message;
+                              <AnimatePresence initial={false}>
+                                {notificationsToDisplay.map((notification) => {
+                                  const isRead = readNotificationIdSet.has(notification.id);
+                                  const presentation = getNotificationPresentation(notification);
+                                  const title = presentation.title;
+                                  const message = presentation.message;
 
-                                return (
-                                  <div key={notification.id} className="relative overflow-hidden border-b border-stone-50 last:border-0">
-                                    <div className="absolute inset-y-0 right-0 flex w-20 items-center justify-center bg-red-600">
-                                      <button
-                                        type="button"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          void handleDeleteNotification(notification.id);
-                                        }}
-                                        className="flex h-full w-full items-center justify-center text-white"
-                                        aria-label={t("Excluir notificação")}
-                                        title={t("Excluir notificação")}
-                                      >
-                                        <Trash2 className="h-5 w-5" />
-                                      </button>
-                                    </div>
-                                    <motion.button
-                                      type="button"
-                                      drag="x"
-                                      dragConstraints={{ left: -80, right: 0 }}
-                                      dragElastic={0.08}
-                                      animate={{ x: swipedNotificationId === notification.id ? -80 : 0 }}
-                                      onDragEnd={(_, info) => {
-                                        setSwipedNotificationId(info.offset.x < -45 ? notification.id : null);
+                                  return (
+                                    <motion.div
+                                      key={notification.id}
+                                      layout
+                                      initial={{ opacity: 0, y: 8, filter: "blur(4px)" }}
+                                      animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                                      exit={{
+                                        opacity: 0,
+                                        x: -48,
+                                        scale: 0.94,
+                                        filter: "blur(10px)",
+                                        transition: { duration: 0.28, ease: "easeOut" },
                                       }}
-                                      onClick={() => {
-                                        if (swipedNotificationId === notification.id) {
-                                          setSwipedNotificationId(null);
-                                          return;
-                                        }
-                                        void handleNotificationClick(notification);
-                                      }}
-                                      className={`block w-full text-left p-4 hover:bg-stone-50 transition-colors cursor-pointer relative bg-white ${
-                                        !isRead ? "bg-stone-50/50" : ""
-                                      }`}
+                                      className="relative overflow-hidden border-b border-stone-50 last:border-0"
                                     >
-                                      {!isRead && (
-                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-stone-900" />
-                                      )}
-                                      <div className="flex justify-between items-start mb-1 gap-3">
-                                        <h4
-                                          className={`text-xs font-bold text-stone-800 ${
-                                            containsBrandName(title) ? "notranslate" : ""
-                                          }`}
-                                          translate={containsBrandName(title) ? "no" : "yes"}
+                                      <div className="absolute inset-y-0 right-0 flex w-20 items-center justify-center bg-red-600">
+                                        <button
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            void handleDeleteNotification(notification.id);
+                                          }}
+                                          className="flex h-full w-full items-center justify-center text-white"
+                                          aria-label={t("Excluir notificação")}
+                                          title={t("Excluir notificação")}
                                         >
-                                          {title}
-                                        </h4>
-                                        <span className="shrink-0 text-[9px] text-stone-400">
-                                          {formatRelativeTime(notification.createdAt, locale)}
-                                        </span>
+                                          <Trash2 className="h-5 w-5" />
+                                        </button>
                                       </div>
-                                      <p
-                                        className={`text-xs text-stone-500 leading-relaxed ${
-                                          containsBrandName(message) ? "notranslate" : ""
+                                      <motion.button
+                                        type="button"
+                                        drag="x"
+                                        dragConstraints={{ left: -80, right: 0 }}
+                                        dragElastic={0.08}
+                                        animate={{ x: swipedNotificationId === notification.id ? -80 : 0 }}
+                                        onDragEnd={(_, info) => {
+                                          setSwipedNotificationId(info.offset.x < -45 ? notification.id : null);
+                                        }}
+                                        onClick={() => {
+                                          if (swipedNotificationId === notification.id) {
+                                            setSwipedNotificationId(null);
+                                            return;
+                                          }
+                                          void handleNotificationClick(notification);
+                                        }}
+                                        className={`block w-full text-left p-4 hover:bg-stone-50 transition-colors cursor-pointer relative bg-white ${
+                                          !isRead ? "bg-stone-50/50" : ""
                                         }`}
-                                        translate={containsBrandName(message) ? "no" : "yes"}
                                       >
-                                        {message}
-                                      </p>
-                                      {notification.type !== "system_welcome" && (
-                                        <div className="mt-3 flex items-center gap-2">
-                                          <img
-                                            src={notification.actorAvatarUrl || `https://picsum.photos/seed/notification-${encodeURIComponent(notification.id)}/80/80`}
-                                            alt={notification.actorName || t("Usuário")}
-                                            className="h-7 w-7 rounded-full border border-stone-200 object-cover"
-                                          />
-                                          <div className="min-w-0">
-                                            <p className="truncate text-[11px] font-semibold text-stone-700">
-                                              {notification.actorName || t("Usuário TempleSale")}
-                                            </p>
-                                            {(notification.actorCity || notification.actorCountry) && (
-                                              <p className="truncate text-[10px] text-stone-400">
-                                                {[notification.actorCity, notification.actorCountry]
-                                                  .filter(Boolean)
-                                                  .join(", ")}
-                                              </p>
-                                            )}
-                                          </div>
+                                        {!isRead && (
+                                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-stone-900" />
+                                        )}
+                                        <div className="flex justify-between items-start mb-1 gap-3">
+                                          <h4
+                                            className={`text-xs font-bold text-stone-800 ${
+                                              containsBrandName(title) ? "notranslate" : ""
+                                            }`}
+                                            translate={containsBrandName(title) ? "no" : "yes"}
+                                          >
+                                            {title}
+                                          </h4>
+                                          <span className="shrink-0 text-[9px] text-stone-400">
+                                            {formatRelativeTime(notification.createdAt, locale)}
+                                          </span>
                                         </div>
-                                      )}
-                                    </motion.button>
-                                  </div>
-                                );
-                              })
+                                        <p
+                                          className={`text-xs text-stone-500 leading-relaxed ${
+                                            containsBrandName(message) ? "notranslate" : ""
+                                          }`}
+                                          translate={containsBrandName(message) ? "no" : "yes"}
+                                        >
+                                          {message}
+                                        </p>
+                                        {notification.type !== "system_welcome" && (
+                                          <div className="mt-3 flex items-center gap-2">
+                                            <img
+                                              src={notification.actorAvatarUrl || `https://picsum.photos/seed/notification-${encodeURIComponent(notification.id)}/80/80`}
+                                              alt={notification.actorName || t("Usuário")}
+                                              className="h-7 w-7 rounded-full border border-stone-200 object-cover"
+                                            />
+                                            <div className="min-w-0">
+                                              <p className="truncate text-[11px] font-semibold text-stone-700">
+                                                {notification.actorName || t("Usuário TempleSale")}
+                                              </p>
+                                              {(notification.actorCity || notification.actorCountry) && (
+                                                <p className="truncate text-[10px] text-stone-400">
+                                                  {[notification.actorCity, notification.actorCountry]
+                                                    .filter(Boolean)
+                                                    .join(", ")}
+                                                </p>
+                                              )}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </motion.button>
+                                    </motion.div>
+                                  );
+                                })}
+                              </AnimatePresence>
                             )}
                           </div>
                           <div className="p-3 bg-stone-50 text-center">

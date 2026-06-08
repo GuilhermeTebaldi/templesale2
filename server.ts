@@ -3517,6 +3517,27 @@ async function dismissNotificationRecord(ownerId: number, eventId: string): Prom
     .run(ownerId, normalizedEventId);
 }
 
+async function restoreNotificationRecord(ownerId: number, eventId: string): Promise<void> {
+  const normalizedEventId = eventId.trim();
+  if (!normalizedEventId || normalizedEventId.length > 260) {
+    throw new Error("Notificação inválida.");
+  }
+
+  await ensureNotificationDismissalsStorage();
+
+  if (pgPool) {
+    await pgPool.query(
+      "DELETE FROM notification_dismissals WHERE owner_user_id = $1 AND event_id = $2",
+      [ownerId, normalizedEventId],
+    );
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare("DELETE FROM notification_dismissals WHERE owner_user_id = ? AND event_id = ?")
+    .run(ownerId, normalizedEventId);
+}
+
 async function selectNotificationsByOwnerRows(ownerId: number): Promise<NotificationEventRow[]> {
   await ensureNotificationDismissalsStorage();
 
@@ -6193,6 +6214,10 @@ async function getSessionUser(req: Request): Promise<SessionUser | null> {
   await deleteExpiredSessionsRecords();
 
   const token = getSessionTokenFromRequest(req);
+  return getSessionUserFromToken(token);
+}
+
+async function getSessionUserFromToken(token: string | null): Promise<SessionUser | null> {
   if (!token) {
     return null;
   }
@@ -6205,6 +6230,15 @@ async function getSessionUser(req: Request): Promise<SessionUser | null> {
   return sanitizeUser(user);
 }
 
+async function getNotificationStreamUser(req: Request): Promise<SessionUser | null> {
+  const queryToken = String(req.query.token ?? "").trim();
+  if (queryToken) {
+    await deleteExpiredSessionsRecords();
+    return getSessionUserFromToken(queryToken);
+  }
+  return getSessionUser(req);
+}
+
 async function requireAuth(req: Request, res: Response): Promise<SessionUser | null> {
   const user = await getSessionUser(req);
   if (!user) {
@@ -6212,6 +6246,71 @@ async function requireAuth(req: Request, res: Response): Promise<SessionUser | n
     return null;
   }
   return user;
+}
+
+type NotificationStreamClient = {
+  id: number;
+  res: Response;
+  heartbeat: ReturnType<typeof setInterval>;
+};
+
+let notificationStreamClientId = 0;
+const notificationStreamClients = new Map<number, Map<number, NotificationStreamClient>>();
+
+function writeNotificationStreamEvent(
+  client: NotificationStreamClient,
+  event: string,
+  payload: Record<string, unknown>,
+): void {
+  client.res.write(`event: ${event}\n`);
+  client.res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function addNotificationStreamClient(userId: number, res: Response): NotificationStreamClient {
+  notificationStreamClientId += 1;
+  const client: NotificationStreamClient = {
+    id: notificationStreamClientId,
+    res,
+    heartbeat: setInterval(() => {
+      writeNotificationStreamEvent(client, "ping", { now: Date.now() });
+    }, 25000),
+  };
+
+  const userClients = notificationStreamClients.get(userId) ?? new Map<number, NotificationStreamClient>();
+  userClients.set(client.id, client);
+  notificationStreamClients.set(userId, userClients);
+  writeNotificationStreamEvent(client, "ready", { now: Date.now() });
+  return client;
+}
+
+function removeNotificationStreamClient(userId: number, client: NotificationStreamClient): void {
+  clearInterval(client.heartbeat);
+  const userClients = notificationStreamClients.get(userId);
+  if (!userClients) {
+    return;
+  }
+  userClients.delete(client.id);
+  if (userClients.size === 0) {
+    notificationStreamClients.delete(userId);
+  }
+}
+
+function notifyUserNotificationsChanged(userId: number | null | undefined, reason: string): void {
+  if (!userId || userId <= 0) {
+    return;
+  }
+
+  const userClients = notificationStreamClients.get(userId);
+  if (!userClients || userClients.size === 0) {
+    return;
+  }
+
+  userClients.forEach((client) => {
+    writeNotificationStreamEvent(client, "notifications-changed", {
+      reason,
+      now: Date.now(),
+    });
+  });
 }
 
 function parseTileCoordinate(value: string): number | null {
@@ -7823,6 +7922,9 @@ async function bootstrap() {
         rating,
         body: commentBody,
       });
+      if (product.user_id && product.user_id !== user.id) {
+        notifyUserNotificationsChanged(product.user_id, "product-comment");
+      }
 
       const comments = await selectProductCommentsRows(productId);
       res.status(201).json({ comments: buildProductCommentsThread(comments) });
@@ -7967,6 +8069,24 @@ async function bootstrap() {
     }
   });
 
+  app.get("/api/notifications/events", async (req, res) => {
+    const user = await getNotificationStreamUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Faça login para continuar." });
+      return;
+    }
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders?.();
+
+    const client = addNotificationStreamClient(user.id, res);
+    req.on("close", () => {
+      removeNotificationStreamClient(user.id, client);
+    });
+  });
+
   app.delete("/api/notifications/:id", async (req, res) => {
     const user = await requireAuth(req, res);
     if (!user) {
@@ -7976,9 +8096,27 @@ async function bootstrap() {
     try {
       const eventId = decodeURIComponent(String(req.params.id ?? "")).trim();
       await dismissNotificationRecord(user.id, eventId);
+      notifyUserNotificationsChanged(user.id, "notification-dismissed");
       res.json({ success: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao excluir notificação.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.post("/api/notifications/:id/restore", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+
+    try {
+      const eventId = decodeURIComponent(String(req.params.id ?? "")).trim();
+      await restoreNotificationRecord(user.id, eventId);
+      notifyUserNotificationsChanged(user.id, "notification-restored");
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao restaurar notificação.";
       res.status(400).json({ error: message });
     }
   });
@@ -8009,12 +8147,15 @@ async function bootstrap() {
         return;
       }
 
-      await createProductCartNotificationRecord(
+      const createdNotification = await createProductCartNotificationRecord(
         ownerUserId,
         id,
         actorUser?.id ?? null,
         actorUser?.name ?? "",
       );
+      if (createdNotification) {
+        notifyUserNotificationsChanged(ownerUserId, "product-cart-interest");
+      }
 
       res.status(201).json({ success: true });
     } catch (error) {
@@ -8112,6 +8253,9 @@ async function bootstrap() {
       }
 
       await createProductLikeRecord(user.id, id);
+      if (existing.user_id && existing.user_id !== user.id) {
+        notifyUserNotificationsChanged(existing.user_id, "product-like");
+      }
       res.status(201).json({ success: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao curtir produto.";

@@ -48,8 +48,10 @@
   @media (max-width: 1024px) {
     input,
     textarea,
-    select {
+    select,
+    [contenteditable="true"] {
       font-size: 16px !important;
+      line-height: 1.4;
     }
   }
 }

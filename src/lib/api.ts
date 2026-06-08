@@ -263,6 +263,13 @@ function buildApiUrl(path: string): string {
   return API_BASE_URL ? `${API_BASE_URL}${normalizedPath}` : normalizedPath;
 }
 
+function buildApiUrlWithQuery(path: string, query: Record<string, string>): string {
+  const url = buildApiUrl(path);
+  const separator = url.includes("?") ? "&" : "?";
+  const params = new URLSearchParams(query);
+  return `${url}${separator}${params.toString()}`;
+}
+
 function canUseStorage(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 }
@@ -2350,6 +2357,18 @@ export const api = {
     await request<unknown>(`/api/notifications/${encodeURIComponent(notificationId)}`, {
       method: "DELETE",
     });
+  },
+  async restoreNotification(notificationId: string) {
+    await request<unknown>(`/api/notifications/${encodeURIComponent(notificationId)}/restore`, {
+      method: "POST",
+    });
+  },
+  getNotificationEventsUrl() {
+    const token = readAuthToken();
+    if (!token) {
+      return null;
+    }
+    return buildApiUrlWithQuery("/api/notifications/events", { token });
   },
   async getProductLikers(productId: number) {
     const payload = await request<unknown>(`/api/products/${productId}/likes`);
