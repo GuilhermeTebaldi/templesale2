@@ -1,7 +1,7 @@
 import React from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { motion } from "motion/react";
-import { X, ArrowRight, Mail } from "lucide-react";
+import { X } from "lucide-react";
 import { useI18n } from "../i18n/provider";
 import {
   AUTH0_AUDIENCE,
@@ -114,7 +114,7 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
           </button>
         </div>
 
-        <div className="text-center mb-12">
+        <div className="text-center mb-10">
           <h1 className="text-4xl font-serif tracking-[0.2em] uppercase mb-4">Templesale</h1>
           <p className="text-xs uppercase tracking-[0.3em] text-stone-400 font-medium">
             {t("Acessar Conta")}
@@ -122,12 +122,9 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
         </div>
 
         <div className="space-y-6">
-          <div className="border border-stone-200 bg-white/70 p-5 text-center">
-            <Mail className="mx-auto mb-3 h-5 w-5 text-stone-500" />
-            <p className="text-sm leading-relaxed text-stone-600">
-              Acesse pelo Auth0. Se o email ainda não existir, a conta será criada; se já existir, ela será vinculada automaticamente.
-            </p>
-          </div>
+          <p className="text-center text-sm leading-relaxed text-stone-500">
+            Entre com sua conta Google. Se for seu primeiro acesso, a conta TempleSale sera criada automaticamente.
+          </p>
 
           {errorMessage && (
             <p className="text-xs text-red-500">{errorMessage}</p>
@@ -137,12 +134,14 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
             disabled={isSubmitting || isLoading}
             type="button"
             onClick={(event) => void handleAuth0Redirect(event)}
-            className="w-full bg-stone-900 text-white py-6 text-xs uppercase tracking-[0.3em] font-bold flex items-center justify-center gap-3 hover:bg-black transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full border border-stone-300 bg-white px-5 py-5 text-sm font-semibold text-stone-900 flex items-center justify-center gap-3 shadow-sm hover:bg-stone-50 hover:border-stone-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
+            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-stone-200 bg-white text-base font-bold text-[#4285f4]">
+              G
+            </span>
             {isSubmitting || isLoading
               ? t("Processando...")
-              : t("Acessar")}
-            <ArrowRight className="w-4 h-4" />
+              : t("Continuar com Google")}
           </button>
         </div>
       </motion.div>

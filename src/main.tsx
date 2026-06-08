@@ -135,7 +135,9 @@ createRoot(document.getElementById("root")!).render(
         domain={AUTH0_DOMAIN}
         clientId={AUTH0_CLIENT_ID}
         authorizationParams={auth0AuthorizationParams}
+        cacheLocation="localstorage"
         onRedirectCallback={handleAuth0RedirectCallback}
+        useRefreshTokens
       >
         {appTree}
       </Auth0Provider>
