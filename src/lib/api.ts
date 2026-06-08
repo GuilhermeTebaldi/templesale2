@@ -1460,6 +1460,7 @@ function persistAuthTokenFromPayload(value: unknown): void {
 type ApiRequestInit = RequestInit & {
   useAdminToken?: boolean;
   skipAuthToken?: boolean;
+  skipGlobalLoadingOverlay?: boolean;
 };
 
 function waitForRetryDelay(attempt: number): Promise<void> {
@@ -2388,7 +2389,9 @@ export const api = {
   },
   async getNotifications() {
     try {
-      const payload = await request<unknown>("/api/notifications");
+      const payload = await request<unknown>("/api/notifications", {
+        skipGlobalLoadingOverlay: true,
+      });
       return normalizeNotificationList(payload);
     } catch (error) {
       if (isMissingApiRouteError(error)) {
@@ -2400,11 +2403,13 @@ export const api = {
   async deleteNotification(notificationId: string) {
     await request<unknown>(`/api/notifications/${encodeURIComponent(notificationId)}`, {
       method: "DELETE",
+      skipGlobalLoadingOverlay: true,
     });
   },
   async restoreNotification(notificationId: string) {
     await request<unknown>(`/api/notifications/${encodeURIComponent(notificationId)}/restore`, {
       method: "POST",
+      skipGlobalLoadingOverlay: true,
     });
   },
   getNotificationEventsUrl() {
