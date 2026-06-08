@@ -83,6 +83,16 @@ type AdminProductsResponseV2 = {
   nextOffset: number;
 };
 
+type AdminBroadcastNotificationV2 = {
+  id: number;
+  title: string;
+  message: string;
+  productId?: number;
+  productName?: string;
+  createdBy?: string;
+  createdAt: number;
+};
+
 type AdminSessionV2 = {
   email: string;
   token: string;
@@ -793,6 +803,69 @@ function normalizeSecurityEventsPayload(payload: unknown): {
   return { events, totalTracked };
 }
 
+function normalizeAdminBroadcastCreatedAt(value: unknown): number {
+  const numericValue = toNumber(value);
+  if (numericValue > 0) {
+    return numericValue > 10_000_000_000 ? numericValue : numericValue * 1000;
+  }
+
+  const parsed = Date.parse(String(value ?? ""));
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function normalizeAdminBroadcastNotification(item: unknown): AdminBroadcastNotificationV2 | null {
+  const record = asRecord(item);
+  if (!record) {
+    return null;
+  }
+
+  const id = toNumber(record.id);
+  const title = String(record.title ?? "").trim();
+  const message = String(record.message ?? "").trim();
+  if (!id || !title || !message) {
+    return null;
+  }
+
+  const notification: AdminBroadcastNotificationV2 = {
+    id,
+    title,
+    message,
+    createdAt: normalizeAdminBroadcastCreatedAt(record.createdAt ?? record.created_at),
+  };
+
+  const productId = toNumber(record.productId ?? record.product_id);
+  if (productId > 0) {
+    notification.productId = productId;
+  }
+
+  const productName = String(record.productName ?? record.product_name ?? "").trim();
+  if (productName) {
+    notification.productName = productName;
+  }
+
+  const createdBy = String(record.createdBy ?? record.created_by ?? "").trim();
+  if (createdBy) {
+    notification.createdBy = createdBy;
+  }
+
+  return notification;
+}
+
+function normalizeAdminBroadcastNotifications(payload: unknown): AdminBroadcastNotificationV2[] {
+  const record = asRecord(payload);
+  const candidates = record
+    ? [record.notifications, record.broadcasts, record.items, record.data, record.rows]
+    : [payload];
+  const rawItems = candidates.find((candidate) => Array.isArray(candidate));
+  if (!Array.isArray(rawItems)) {
+    return [];
+  }
+
+  return rawItems
+    .map((item) => normalizeAdminBroadcastNotification(item))
+    .filter((item): item is AdminBroadcastNotificationV2 => item !== null);
+}
+
 function formatDate(value?: string): string {
   if (!value) {
     return "-";
@@ -1333,6 +1406,20 @@ async function adminSendBroadcastNotification(
   return { deliveredTo: toNumber(record?.deliveredTo ?? record?.delivered_to) };
 }
 
+async function adminGetBroadcastNotifications(token: string): Promise<AdminBroadcastNotificationV2[]> {
+  const response = await adminRequest<unknown>("/api/admin/notifications/broadcasts", {
+    token,
+  });
+  return normalizeAdminBroadcastNotifications(response);
+}
+
+async function adminDeleteBroadcastNotification(token: string, notificationId: number): Promise<void> {
+  await adminRequest<unknown>(`/api/admin/notifications/broadcasts/${notificationId}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
 async function adminLogout(token: string): Promise<void> {
   const routes: Array<{ route: string; method: "POST" | "DELETE" }> = [
     { route: "/api/admin/auth/logout", method: "POST" },
@@ -1488,6 +1575,13 @@ export default function AdminPanelV2() {
   const [broadcastStatus, setBroadcastStatus] = React.useState("");
   const [broadcastError, setBroadcastError] = React.useState("");
   const [isSendingBroadcast, setIsSendingBroadcast] = React.useState(false);
+  const [broadcastNotifications, setBroadcastNotifications] = React.useState<
+    AdminBroadcastNotificationV2[]
+  >([]);
+  const [isLoadingBroadcastNotifications, setIsLoadingBroadcastNotifications] =
+    React.useState(false);
+  const [deletingBroadcastNotificationId, setDeletingBroadcastNotificationId] =
+    React.useState<number | null>(null);
   const [pendingBanUserId, setPendingBanUserId] = React.useState<number | null>(null);
   const [deletingUserId, setDeletingUserId] = React.useState<number | null>(null);
   const [selectedUser, setSelectedUser] = React.useState<AdminUserV2 | null>(null);
@@ -1570,6 +1664,30 @@ export default function AdminPanelV2() {
           setIsLoadingMoreProducts(false);
         } else {
           setIsLoadingProducts(false);
+        }
+      }
+    },
+    [],
+  );
+
+  const loadBroadcastNotifications = React.useCallback(
+    async (token: string, options?: { silent?: boolean }) => {
+      const silent = Boolean(options?.silent);
+      if (!silent) {
+        setIsLoadingBroadcastNotifications(true);
+      }
+      setBroadcastError("");
+
+      try {
+        const payload = await adminGetBroadcastNotifications(token);
+        setBroadcastNotifications(payload);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Falha ao carregar notificações enviadas.";
+        setBroadcastError(message);
+      } finally {
+        if (!silent) {
+          setIsLoadingBroadcastNotifications(false);
         }
       }
     },
@@ -1761,6 +1879,9 @@ export default function AdminPanelV2() {
       setBroadcastStatus("");
       setBroadcastError("");
       setIsSendingBroadcast(false);
+      setBroadcastNotifications([]);
+      setIsLoadingBroadcastNotifications(false);
+      setDeletingBroadcastNotificationId(null);
       setUsersError("");
       setAuthError("");
       setQuery("");
@@ -2085,11 +2206,34 @@ export default function AdminPanelV2() {
       setBroadcastMessage("");
       setBroadcastProductId("");
       setBroadcastStatus(`Notificação enviada para ${result.deliveredTo} usuário(s) ativo(s).`);
+      await loadBroadcastNotifications(authToken, { silent: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao enviar notificação.";
       setBroadcastError(message);
     } finally {
       setIsSendingBroadcast(false);
+    }
+  };
+
+  const handleDeleteBroadcastNotification = async (notification: AdminBroadcastNotificationV2) => {
+    if (!window.confirm("Excluir esta notificação enviada? Ela sairá do sino dos usuários.")) {
+      return;
+    }
+
+    setDeletingBroadcastNotificationId(notification.id);
+    setBroadcastError("");
+    setBroadcastStatus("");
+    try {
+      await adminDeleteBroadcastNotification(authToken, notification.id);
+      setBroadcastNotifications((current) =>
+        current.filter((item) => item.id !== notification.id),
+      );
+      setBroadcastStatus("Notificação excluída do sino dos usuários.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao excluir notificação.";
+      setBroadcastError(message);
+    } finally {
+      setDeletingBroadcastNotificationId(null);
     }
   };
 
@@ -2222,6 +2366,13 @@ export default function AdminPanelV2() {
     }
     void loadProducts(authToken, productQuery);
   }, [activeView, authToken, loadProducts, sessionEmail]);
+
+  React.useEffect(() => {
+    if (!sessionEmail || !authToken || activeView !== "notifications") {
+      return;
+    }
+    void loadBroadcastNotifications(authToken);
+  }, [activeView, authToken, loadBroadcastNotifications, sessionEmail]);
 
   const selectedResetCode = selectedUser ? pendingResetCodesByUserId[selectedUser.id] ?? "" : "";
   const selectedWhatsappResetUrl =
@@ -2821,6 +2972,97 @@ export default function AdminPanelV2() {
                     {isSendingBroadcast ? "Enviando..." : "Enviar para todos"}
                   </button>
                 </form>
+              </article>
+
+              <article className="border border-stone-200 bg-white p-4 sm:p-5">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <Bell className="mt-0.5 h-4 w-4 text-stone-700" />
+                    <div>
+                      <h2 className="text-sm font-semibold text-stone-900">
+                        Notificações enviadas
+                      </h2>
+                      <p className="mt-1 text-xs text-stone-500">
+                        Consulte o histórico e exclua uma notificação do sino dos usuários.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void loadBroadcastNotifications(authToken)}
+                    disabled={isLoadingBroadcastNotifications}
+                    className="inline-flex items-center justify-center gap-2 border border-stone-300 bg-white px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-900 disabled:opacity-60"
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 ${isLoadingBroadcastNotifications ? "animate-spin" : ""}`}
+                    />
+                    Atualizar
+                  </button>
+                </div>
+
+                {isLoadingBroadcastNotifications && broadcastNotifications.length === 0 ? (
+                  <div className="flex items-center gap-2 border border-stone-100 bg-stone-50 px-3 py-4 text-sm text-stone-500">
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Carregando notificações enviadas...
+                  </div>
+                ) : broadcastNotifications.length === 0 ? (
+                  <div className="border border-dashed border-stone-300 px-3 py-6 text-center text-sm text-stone-500">
+                    Nenhuma notificação enviada pelo admin ainda.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-stone-100 border border-stone-100">
+                    {broadcastNotifications.map((notification) => {
+                      const isDeleting = deletingBroadcastNotificationId === notification.id;
+                      return (
+                        <div
+                          key={notification.id}
+                          className="flex flex-col gap-3 bg-white p-3 sm:flex-row sm:items-start sm:justify-between"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-semibold text-stone-900">
+                                {notification.title}
+                              </span>
+                              <span className="text-[11px] uppercase tracking-[0.12em] text-stone-400">
+                                #{notification.id}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-sm leading-relaxed text-stone-600">
+                              {notification.message}
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-500">
+                              <span>{formatDateTime(notification.createdAt)}</span>
+                              {notification.productId ? (
+                                <span>
+                                  Produto: #{notification.productId}{" "}
+                                  {notification.productName || "anúncio vinculado"}
+                                </span>
+                              ) : (
+                                <span>Sem anúncio vinculado</span>
+                              )}
+                              {notification.createdBy ? (
+                                <span>Admin: {notification.createdBy}</span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteBroadcastNotification(notification)}
+                            disabled={isDeleting}
+                            className="inline-flex items-center justify-center gap-2 border border-red-200 bg-red-50 px-3 py-2 text-xs uppercase tracking-[0.12em] text-red-700 hover:border-red-400 disabled:opacity-60"
+                          >
+                            {isDeleting ? (
+                              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                            Excluir
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </article>
             </section>
           ) : activeView === "visitors" ? (

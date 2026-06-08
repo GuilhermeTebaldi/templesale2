@@ -136,6 +136,16 @@ type NotificationRecord = {
   commentId?: number;
 };
 
+type AdminBroadcastNotificationRecord = {
+  id: number;
+  title: string;
+  message: string;
+  productId?: number;
+  productName?: string;
+  createdBy: string;
+  createdAt: number;
+};
+
 type UserRow = {
   id: number;
   name: string;
@@ -3705,6 +3715,105 @@ async function createAdminBroadcastNotificationRecord(input: {
   return Number(result.lastInsertRowid);
 }
 
+function rowToAdminBroadcastNotification(row: Record<string, unknown>): AdminBroadcastNotificationRecord {
+  const createdAt = (() => {
+    const numericValue = Number(row.created_at);
+    if (Number.isFinite(numericValue)) {
+      return Math.floor(numericValue);
+    }
+    if (row.created_at instanceof Date) {
+      const seconds = Math.floor(row.created_at.getTime() / 1000);
+      if (Number.isFinite(seconds)) {
+        return seconds;
+      }
+    }
+    const parsed = Date.parse(String(row.created_at ?? ""));
+    return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : Math.floor(Date.now() / 1000);
+  })();
+
+  const normalized: AdminBroadcastNotificationRecord = {
+    id: toRequiredNumber(row.id),
+    title: String(row.title ?? "").trim(),
+    message: String(row.message ?? "").trim(),
+    createdBy: String(row.created_by ?? "").trim(),
+    createdAt,
+  };
+
+  const productId = toNullableNumber(row.product_id);
+  if (productId !== null) {
+    normalized.productId = productId;
+  }
+  const productName = String(row.product_name ?? "").trim();
+  if (productName) {
+    normalized.productName = productName;
+  }
+
+  return normalized;
+}
+
+async function selectAdminBroadcastNotificationRows(): Promise<AdminBroadcastNotificationRecord[]> {
+  await ensureAdminBroadcastNotificationsStorage();
+
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          b.id,
+          b.title,
+          b.message,
+          b.product_id,
+          p.name AS product_name,
+          b.created_by,
+          b.created_at
+        FROM admin_broadcast_notifications b
+        LEFT JOIN products p ON p.id = b.product_id
+        ORDER BY
+          CASE
+            WHEN b.created_at::TEXT ~ '^[0-9]+$' THEN b.created_at::TEXT::BIGINT
+            ELSE EXTRACT(EPOCH FROM b.created_at::TEXT::TIMESTAMPTZ)::BIGINT
+          END DESC,
+          b.id DESC
+        LIMIT 120
+      `,
+    );
+    return result.rows.map(rowToAdminBroadcastNotification);
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          b.id,
+          b.title,
+          b.message,
+          b.product_id,
+          p.name AS product_name,
+          b.created_by,
+          b.created_at
+        FROM admin_broadcast_notifications b
+        LEFT JOIN products p ON p.id = b.product_id
+        ORDER BY CAST(b.created_at AS INTEGER) DESC, b.id DESC
+        LIMIT 120
+      `,
+    )
+    .all() as Array<Record<string, unknown>>;
+  return rows.map(rowToAdminBroadcastNotification);
+}
+
+async function deleteAdminBroadcastNotificationRecord(id: number): Promise<boolean> {
+  await ensureAdminBroadcastNotificationsStorage();
+
+  if (pgPool) {
+    const result = await pgPool.query("DELETE FROM admin_broadcast_notifications WHERE id = $1", [id]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  const result = requireSqliteDb()
+    .prepare("DELETE FROM admin_broadcast_notifications WHERE id = ?")
+    .run(id);
+  return result.changes > 0;
+}
+
 async function selectNotificationsByOwnerRows(ownerId: number): Promise<NotificationEventRow[]> {
   await ensureNotificationDismissalsStorage();
   await ensureAdminBroadcastNotificationsStorage();
@@ -3789,6 +3898,33 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           UNION ALL
 
           SELECT
+            'product_comment'::TEXT AS type,
+            c.user_id AS actor_user_id,
+            COALESCE(NULLIF(BTRIM(cu.name), ''), 'Dono do anúncio') AS actor_name,
+            NULLIF(BTRIM(cu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(BTRIM(cu.city), '') AS actor_city,
+            NULLIF(BTRIM(cu.country), '') AS actor_country,
+            p.id AS product_id,
+            p.name AS product_name,
+            COALESCE(NULLIF(BTRIM(p.image), ''), NULLIF(BTRIM(p.image_url), '')) AS product_image_url,
+            c.id AS comment_id,
+            c.created_at::TEXT AS created_at,
+            CASE
+              WHEN c.created_at::TEXT ~ '^[0-9]+$' THEN c.created_at::TEXT::BIGINT
+              ELSE EXTRACT(EPOCH FROM c.created_at::TEXT::TIMESTAMPTZ)::BIGINT
+            END AS sort_created_at,
+            'product_comment_reply:' || c.id::TEXT AS event_id
+          FROM product_comments c
+          INNER JOIN product_comments parent_comment ON parent_comment.id = c.parent_comment_id
+          INNER JOIN products p ON p.id = c.product_id
+          LEFT JOIN users cu ON cu.id = c.user_id
+          WHERE parent_comment.user_id = $1
+            AND c.user_id <> $2
+            AND p.user_id = c.user_id
+
+          UNION ALL
+
+          SELECT
             'admin_broadcast'::TEXT AS type,
             NULL::BIGINT AS actor_user_id,
             COALESCE(NULLIF(BTRIM(b.title), ''), 'TempleSale') AS actor_name,
@@ -3807,6 +3943,18 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             'admin_broadcast:' || b.id::TEXT AS event_id
           FROM admin_broadcast_notifications b
           LEFT JOIN products p ON p.id = b.product_id
+          INNER JOIN users recipient ON recipient.id = $4
+          WHERE (
+            CASE
+              WHEN b.created_at::TEXT ~ '^[0-9]+$' THEN b.created_at::TEXT::BIGINT
+              ELSE EXTRACT(EPOCH FROM b.created_at::TEXT::TIMESTAMPTZ)::BIGINT
+            END
+          ) >= (
+            CASE
+              WHEN recipient.created_at::TEXT ~ '^[0-9]+$' THEN recipient.created_at::TEXT::BIGINT
+              ELSE EXTRACT(EPOCH FROM recipient.created_at::TEXT::TIMESTAMPTZ)::BIGINT
+            END
+          )
         ) notifications
         WHERE NOT EXISTS (
           SELECT 1
@@ -3816,7 +3964,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
         ORDER BY sort_created_at DESC, event_id DESC
         LIMIT 100
       `,
-      [ownerId, ownerId, ownerId],
+      [ownerId, ownerId, ownerId, ownerId],
     );
     return result.rows.map(normalizeNotificationEventRow);
   }
@@ -3892,6 +4040,30 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           UNION ALL
 
           SELECT
+            'product_comment' AS type,
+            c.user_id AS actor_user_id,
+            COALESCE(NULLIF(TRIM(cu.name), ''), 'Dono do anúncio') AS actor_name,
+            NULLIF(TRIM(cu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(TRIM(cu.city), '') AS actor_city,
+            NULLIF(TRIM(cu.country), '') AS actor_country,
+            p.id AS product_id,
+            p.name AS product_name,
+            COALESCE(NULLIF(TRIM(p.image), ''), NULLIF(TRIM(p.image_url), '')) AS product_image_url,
+            c.id AS comment_id,
+            c.created_at,
+            CAST(c.created_at AS INTEGER) AS sort_created_at,
+            'product_comment_reply:' || c.id AS event_id
+          FROM product_comments c
+          INNER JOIN product_comments parent_comment ON parent_comment.id = c.parent_comment_id
+          INNER JOIN products p ON p.id = c.product_id
+          LEFT JOIN users cu ON cu.id = c.user_id
+          WHERE parent_comment.user_id = ?
+            AND c.user_id <> ?
+            AND p.user_id = c.user_id
+
+          UNION ALL
+
+          SELECT
             'admin_broadcast' AS type,
             NULL AS actor_user_id,
             COALESCE(NULLIF(TRIM(b.title), ''), 'TempleSale') AS actor_name,
@@ -3907,6 +4079,8 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             'admin_broadcast:' || b.id AS event_id
           FROM admin_broadcast_notifications b
           LEFT JOIN products p ON p.id = b.product_id
+          INNER JOIN users recipient ON recipient.id = ?
+          WHERE CAST(b.created_at AS INTEGER) >= CAST(recipient.created_at AS INTEGER)
         )
         WHERE NOT EXISTS (
           SELECT 1
@@ -3917,7 +4091,18 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
         LIMIT 100
       `,
     )
-    .all(ownerId, ownerId, ownerId, ownerId, ownerId, ownerId, ownerId) as Array<Record<string, unknown>>;
+    .all(
+      ownerId,
+      ownerId,
+      ownerId,
+      ownerId,
+      ownerId,
+      ownerId,
+      ownerId,
+      ownerId,
+      ownerId,
+      ownerId,
+    ) as Array<Record<string, unknown>>;
   return rows.map(normalizeNotificationEventRow);
 }
 
@@ -5230,17 +5415,22 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
     return normalized;
   }
 
+  const isProductCommentReply = row.event_id.startsWith("product_comment_reply:");
   const title =
     row.type === "product_cart_interest"
       ? "Novo interesse no carrinho"
       : row.type === "product_comment"
-        ? "Novo comentário na publicação"
+        ? isProductCommentReply
+          ? "Resposta do dono do anúncio"
+          : "Novo comentário na publicação"
         : "Nova curtida";
   const message =
     row.type === "product_cart_interest"
       ? `${actorName} adicionou seu anúncio "${productName}" ao carrinho.`
       : row.type === "product_comment"
-        ? `${actorName} comentou na sua publicação "${productName}".`
+        ? isProductCommentReply
+          ? `${actorName} respondeu seu comentário em "${productName}".`
+          : `${actorName} comentou na sua publicação "${productName}".`
         : `${actorName} curtiu seu anúncio "${productName}".`;
 
   const normalized: NotificationRecord = {
@@ -7575,6 +7765,53 @@ async function bootstrap() {
     }
   });
 
+  app.get(["/api/admin/notifications/broadcast", "/api/admin/notifications/broadcasts"], async (req, res) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    try {
+      const notifications = await selectAdminBroadcastNotificationRows();
+      res.json({ notifications });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar notificações.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.delete(
+    ["/api/admin/notifications/broadcast/:id", "/api/admin/notifications/broadcasts/:id"],
+    async (req, res) => {
+      if (!requireAdmin(req, res)) {
+        return;
+      }
+
+      const notificationId = Number(req.params.id);
+      if (!Number.isInteger(notificationId) || notificationId <= 0) {
+        res.status(400).json({ error: "ID de notificação inválido." });
+        return;
+      }
+
+      try {
+        const deleted = await deleteAdminBroadcastNotificationRecord(notificationId);
+        if (!deleted) {
+          res.status(404).json({ error: "Notificação não encontrada." });
+          return;
+        }
+
+        const userIds = await selectAllUserIdsRows();
+        userIds.forEach((userId) => {
+          notifyUserNotificationsChanged(userId, "admin-broadcast-deleted");
+        });
+
+        res.json({ success: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Falha ao excluir notificação.";
+        res.status(500).json({ error: message });
+      }
+    },
+  );
+
   app.delete("/api/admin/products/:id", async (req, res) => {
     if (!requireAdmin(req, res)) {
       return;
@@ -8185,13 +8422,14 @@ async function bootstrap() {
         !isReply,
       );
 
+      let parentComment: ProductCommentRow | undefined;
       if (isReply) {
         if (rating !== null) {
           res.status(400).json({ error: "Respostas não aceitam avaliação em estrelas." });
           return;
         }
 
-        const parentComment = await selectProductCommentByIdRow(parentCommentId);
+        parentComment = await selectProductCommentByIdRow(parentCommentId);
         if (!parentComment || parentComment.product_id !== productId) {
           res.status(400).json({ error: "Comentário pai inválido para esta publicação." });
           return;
@@ -8212,7 +8450,9 @@ async function bootstrap() {
         rating,
         body: commentBody,
       });
-      if (product.user_id && product.user_id !== user.id) {
+      if (isReply && parentComment?.user_id && parentComment.user_id !== user.id) {
+        notifyUserNotificationsChanged(parentComment.user_id, "product-comment-reply");
+      } else if (product.user_id && product.user_id !== user.id) {
         notifyUserNotificationsChanged(product.user_id, "product-comment");
       }
 
