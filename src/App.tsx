@@ -1,7 +1,7 @@
 import React from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, ShoppingBag, Menu, ArrowRight, Instagram, Twitter, Facebook, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, Heart, Plus, Minus, Share2, Bell, Filter, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown, ImagePlus, LoaderCircle } from "lucide-react";
+import { Search, ShoppingBag, Menu, ArrowRight, Instagram, Twitter, Facebook, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, Heart, Plus, Minus, Share2, Bell, Filter, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown, ImagePlus, LoaderCircle, Trash2, Users } from "lucide-react";
 import ProductCard, { ProgressiveProductImage, type Product } from "./components/ProductCard";
 import ProductDetails from "./components/ProductDetails";
 import NewProduct from "./components/NewProduct";
@@ -12,7 +12,13 @@ import ProductMap from "./components/ProductMap";
 import Curtidas from "./components/Curtidas";
 import Carrinho, { type CartItem } from "./components/Carrinho";
 import Vendedores from "./components/Vendedores";
-import { api, type NotificationDto, type SessionUser, type UpdateProfileInput } from "./lib/api";
+import {
+  api,
+  type NotificationDto,
+  type PublicLikerDto,
+  type SessionUser,
+  type UpdateProfileInput,
+} from "./lib/api";
 import { useI18n } from "./i18n/provider";
 import { localeOptions, type AppLocale } from "./i18n";
 import { formatCollectionDate, formatRelativeTime } from "./i18n/formatters";
@@ -268,6 +274,12 @@ export default function App() {
   );
   const [notifications, setNotifications] = React.useState<NotificationDto[]>([]);
   const [readNotificationIds, setReadNotificationIds] = React.useState<string[]>([]);
+  const [swipedNotificationId, setSwipedNotificationId] = React.useState<string | null>(null);
+  const [focusedCommentId, setFocusedCommentId] = React.useState<number | null>(null);
+  const [likersProduct, setLikersProduct] = React.useState<Product | null>(null);
+  const [productLikers, setProductLikers] = React.useState<PublicLikerDto[]>([]);
+  const [isLoadingProductLikers, setIsLoadingProductLikers] = React.useState(false);
+  const [productLikersError, setProductLikersError] = React.useState("");
   const [heroDate, setHeroDate] = React.useState<Date>(() => new Date());
   const [isLoadingProducts, setIsLoadingProducts] = React.useState(true);
   const [isLoadingMoreProducts, setIsLoadingMoreProducts] = React.useState(false);
@@ -1266,7 +1278,7 @@ export default function App() {
     [],
   );
 
-  const openProductDetails = React.useCallback((product: Product) => {
+  const openProductDetails = React.useCallback((product: Product, options?: { focusCommentId?: number | null }) => {
     if (typeof window !== "undefined") {
       const nextPath = buildProductPath(product);
       const currentLocation = `${window.location.pathname}${window.location.search}`;
@@ -1277,6 +1289,7 @@ export default function App() {
       }
     }
 
+    setFocusedCommentId(options?.focusCommentId ?? null);
     setSelectedProduct(product);
 
     void api.trackProductClick(product.id).catch((error) => {
@@ -1286,6 +1299,7 @@ export default function App() {
 
   const handleProductDetailsClose = React.useCallback(() => {
     setSelectedProduct(null);
+    setFocusedCommentId(null);
 
     if (typeof window !== "undefined") {
       const currentLocation = `${window.location.pathname}${window.location.search}`;
@@ -1521,6 +1535,77 @@ export default function App() {
       }
       return [...current, notificationId];
     });
+  };
+
+  const resolveProductForNotification = async (productId?: number) => {
+    if (!productId) {
+      return null;
+    }
+
+    const existingProduct =
+      products.find((product) => product.id === productId) ??
+      myProducts.find((product) => product.id === productId) ??
+      likedProducts.find((product) => product.id === productId);
+    if (existingProduct) {
+      return existingProduct;
+    }
+
+    try {
+      return await api.getProductById(productId);
+    } catch (error) {
+      console.error("Error loading notification product:", error);
+      return null;
+    }
+  };
+
+  const openProductLikers = async (product: Product) => {
+    setLikersProduct(product);
+    setProductLikers([]);
+    setProductLikersError("");
+    setIsLoadingProductLikers(true);
+    try {
+      const users = await api.getProductLikers(product.id);
+      setProductLikers(users);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t("Não foi possível carregar as curtidas.");
+      setProductLikersError(message);
+    } finally {
+      setIsLoadingProductLikers(false);
+    }
+  };
+
+  const handleNotificationClick = async (notification: NotificationDto) => {
+    markNotificationAsRead(notification.id);
+    setSwipedNotificationId(null);
+    if (!("productId" in notification) || !notification.productId) {
+      return;
+    }
+
+    const product = await resolveProductForNotification(notification.productId);
+    if (!product) {
+      return;
+    }
+
+    setIsNotificationsOpen(false);
+    openProductDetails(product, {
+      focusCommentId: notification.type === "product_comment" ? notification.commentId ?? null : null,
+    });
+    if (notification.type === "product_like") {
+      void openProductLikers(product);
+    }
+  };
+
+  const handleDeleteNotification = async (notificationId: string) => {
+    setNotifications((current) => current.filter((notification) => notification.id !== notificationId));
+    setReadNotificationIds((current) => current.filter((id) => id !== notificationId));
+    setSwipedNotificationId(null);
+    try {
+      await api.deleteNotification(notificationId);
+    } catch (error) {
+      console.error("Error deleting notification:", error);
+      void api.getNotifications().then(setNotifications).catch(() => {});
+    }
   };
 
   const markAllNotificationsAsRead = () => {
@@ -2200,11 +2285,86 @@ export default function App() {
               handleAddToCart(selectedProduct, quantity);
             }}
             currentUser={currentUser}
+            focusCommentId={focusedCommentId}
             onRequireAuth={() => {
               setAuthModalMode("register");
               setIsAuthModalOpen(true);
             }}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {likersProduct && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setLikersProduct(null)}
+              className="fixed inset-0 z-190 bg-black/30"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.98 }}
+              className="fixed left-1/2 top-1/2 z-200 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 border border-stone-200 bg-white shadow-2xl"
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-stone-100 p-5">
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Users className="h-4 w-4 text-stone-600" />
+                    <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-800">
+                      {t("Curtidas")}
+                    </h3>
+                  </div>
+                  <p className="text-sm font-semibold text-stone-900">{likersProduct.name}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLikersProduct(null)}
+                  className="rounded-full p-2 text-stone-500 hover:bg-stone-50 hover:text-stone-900"
+                  aria-label={t("Fechar")}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="max-h-[22rem] overflow-y-auto p-4">
+                {isLoadingProductLikers ? (
+                  <div className="flex items-center justify-center gap-2 py-8 text-sm text-stone-500">
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    {t("Carregando...")}
+                  </div>
+                ) : productLikersError ? (
+                  <p className="py-6 text-center text-sm text-red-500">{productLikersError}</p>
+                ) : productLikers.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-stone-500">
+                    {t("Ainda não há curtidas públicas para esta publicação.")}
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {productLikers.map((liker) => (
+                      <div key={liker.id} className="flex items-center gap-3 rounded-sm border border-stone-100 p-3">
+                        <img
+                          src={liker.avatarUrl || `https://picsum.photos/seed/liker-${liker.id}/80/80`}
+                          alt={liker.name}
+                          className="h-10 w-10 rounded-full border border-stone-200 object-cover"
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-stone-800">{liker.name}</p>
+                          {(liker.city || liker.country) && (
+                            <p className="truncate text-xs text-stone-400">
+                              {[liker.city, liker.country].filter(Boolean).join(", ")}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
 
@@ -2563,37 +2723,87 @@ export default function App() {
                                 const message = presentation.message;
 
                                 return (
-                                  <div
-                                    key={notification.id}
-                                    onClick={() => markNotificationAsRead(notification.id)}
-                                    className={`p-4 border-b border-stone-50 last:border-0 hover:bg-stone-50 transition-colors cursor-pointer relative ${
-                                      !isRead ? "bg-stone-50/50" : ""
-                                    }`}
-                                  >
-                                    {!isRead && (
-                                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-stone-900" />
-                                    )}
-                                    <div className="flex justify-between items-start mb-1">
-                                      <h4
-                                        className={`text-xs font-bold text-stone-800 ${
-                                          containsBrandName(title) ? "notranslate" : ""
-                                        }`}
-                                        translate={containsBrandName(title) ? "no" : "yes"}
+                                  <div key={notification.id} className="relative overflow-hidden border-b border-stone-50 last:border-0">
+                                    <div className="absolute inset-y-0 right-0 flex w-20 items-center justify-center bg-red-600">
+                                      <button
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          void handleDeleteNotification(notification.id);
+                                        }}
+                                        className="flex h-full w-full items-center justify-center text-white"
+                                        aria-label={t("Excluir notificação")}
+                                        title={t("Excluir notificação")}
                                       >
-                                        {title}
-                                      </h4>
-                                      <span className="text-[9px] text-stone-400">
-                                        {formatRelativeTime(notification.createdAt, locale)}
-                                      </span>
+                                        <Trash2 className="h-5 w-5" />
+                                      </button>
                                     </div>
-                                    <p
-                                      className={`text-xs text-stone-500 leading-relaxed ${
-                                        containsBrandName(message) ? "notranslate" : ""
+                                    <motion.button
+                                      type="button"
+                                      drag="x"
+                                      dragConstraints={{ left: -80, right: 0 }}
+                                      dragElastic={0.08}
+                                      animate={{ x: swipedNotificationId === notification.id ? -80 : 0 }}
+                                      onDragEnd={(_, info) => {
+                                        setSwipedNotificationId(info.offset.x < -45 ? notification.id : null);
+                                      }}
+                                      onClick={() => {
+                                        if (swipedNotificationId === notification.id) {
+                                          setSwipedNotificationId(null);
+                                          return;
+                                        }
+                                        void handleNotificationClick(notification);
+                                      }}
+                                      className={`block w-full text-left p-4 hover:bg-stone-50 transition-colors cursor-pointer relative bg-white ${
+                                        !isRead ? "bg-stone-50/50" : ""
                                       }`}
-                                      translate={containsBrandName(message) ? "no" : "yes"}
                                     >
-                                      {message}
-                                    </p>
+                                      {!isRead && (
+                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-stone-900" />
+                                      )}
+                                      <div className="flex justify-between items-start mb-1 gap-3">
+                                        <h4
+                                          className={`text-xs font-bold text-stone-800 ${
+                                            containsBrandName(title) ? "notranslate" : ""
+                                          }`}
+                                          translate={containsBrandName(title) ? "no" : "yes"}
+                                        >
+                                          {title}
+                                        </h4>
+                                        <span className="shrink-0 text-[9px] text-stone-400">
+                                          {formatRelativeTime(notification.createdAt, locale)}
+                                        </span>
+                                      </div>
+                                      <p
+                                        className={`text-xs text-stone-500 leading-relaxed ${
+                                          containsBrandName(message) ? "notranslate" : ""
+                                        }`}
+                                        translate={containsBrandName(message) ? "no" : "yes"}
+                                      >
+                                        {message}
+                                      </p>
+                                      {notification.type !== "system_welcome" && (
+                                        <div className="mt-3 flex items-center gap-2">
+                                          <img
+                                            src={notification.actorAvatarUrl || `https://picsum.photos/seed/notification-${encodeURIComponent(notification.id)}/80/80`}
+                                            alt={notification.actorName || t("Usuário")}
+                                            className="h-7 w-7 rounded-full border border-stone-200 object-cover"
+                                          />
+                                          <div className="min-w-0">
+                                            <p className="truncate text-[11px] font-semibold text-stone-700">
+                                              {notification.actorName || t("Usuário TempleSale")}
+                                            </p>
+                                            {(notification.actorCity || notification.actorCountry) && (
+                                              <p className="truncate text-[10px] text-stone-400">
+                                                {[notification.actorCity, notification.actorCountry]
+                                                  .filter(Boolean)
+                                                  .join(", ")}
+                                              </p>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </motion.button>
                                   </div>
                                 );
                               })

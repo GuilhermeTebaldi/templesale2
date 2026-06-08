@@ -57,6 +57,9 @@ export type NotificationDto =
       createdAt: number;
       actorUserId?: number;
       actorName?: string;
+      actorAvatarUrl?: string;
+      actorCity?: string;
+      actorCountry?: string;
       productName?: string;
       productId: number;
     }
@@ -68,6 +71,9 @@ export type NotificationDto =
       createdAt: number;
       actorUserId?: number;
       actorName?: string;
+      actorAvatarUrl?: string;
+      actorCity?: string;
+      actorCountry?: string;
       productName?: string;
       productId: number;
     }
@@ -79,8 +85,12 @@ export type NotificationDto =
       createdAt: number;
       actorUserId?: number;
       actorName?: string;
+      actorAvatarUrl?: string;
+      actorCity?: string;
+      actorCountry?: string;
       productName?: string;
       productId: number;
+      commentId?: number;
     }
   | {
       id: string;
@@ -91,6 +101,15 @@ export type NotificationDto =
       actorUserId?: number;
       productId?: number;
     };
+
+export interface PublicLikerDto {
+  id: number;
+  name: string;
+  avatarUrl?: string;
+  country?: string;
+  city?: string;
+  likedAt?: number;
+}
 
 export interface CreateProductInput {
   name: string;
@@ -1206,6 +1225,31 @@ function normalizeNotificationList(value: unknown): NotificationDto[] {
   return items.filter((item): item is NotificationDto => isRecord(item));
 }
 
+function normalizePublicLikerList(value: unknown): PublicLikerDto[] {
+  const items = extractArrayPayload(value, ["data", "users", "likes", "items", "rows", "results"]);
+  return items
+    .map((item): PublicLikerDto | null => {
+      const parsed = parseJsonIfNeeded(item);
+      if (!isRecord(parsed)) {
+        return null;
+      }
+      const id = toOptionalNumber(firstDefined(parsed, ["id", "userId", "user_id"]));
+      if (id === undefined) {
+        return null;
+      }
+      const name = toStringValue(firstDefined(parsed, ["name", "username"])) || `Usuário ${id}`;
+      return {
+        id,
+        name,
+        avatarUrl: toStringValue(firstDefined(parsed, ["avatarUrl", "avatar_url"])),
+        country: toStringValue(firstDefined(parsed, ["country"])),
+        city: toStringValue(firstDefined(parsed, ["city"])),
+        likedAt: toOptionalNumber(firstDefined(parsed, ["likedAt", "liked_at"])),
+      };
+    })
+    .filter((item): item is PublicLikerDto => item !== null);
+}
+
 function normalizeProductCommentItem(value: unknown): ProductCommentDto | null {
   const parsed = parseJsonIfNeeded(value);
   if (!isRecord(parsed)) {
@@ -2301,6 +2345,15 @@ export const api = {
       }
       throw error;
     }
+  },
+  async deleteNotification(notificationId: string) {
+    await request<unknown>(`/api/notifications/${encodeURIComponent(notificationId)}`, {
+      method: "DELETE",
+    });
+  },
+  async getProductLikers(productId: number) {
+    const payload = await request<unknown>(`/api/products/${productId}/likes`);
+    return normalizePublicLikerList(payload);
   },
   async createProduct(product: CreateProductInput) {
     const payload = await request<unknown>("/api/products", {

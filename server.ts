@@ -107,8 +107,12 @@ type NotificationEventRow = {
   type: NotificationEventType;
   actor_user_id: number | null;
   actor_name: string;
+  actor_avatar_url: string | null;
+  actor_city: string | null;
+  actor_country: string | null;
   product_id: number;
   product_name: string;
+  comment_id: number | null;
   created_at: number;
   event_id: string;
 };
@@ -121,8 +125,12 @@ type NotificationRecord = {
   createdAt: number;
   actorUserId?: number;
   actorName?: string;
+  actorAvatarUrl?: string;
+  actorCity?: string;
+  actorCountry?: string;
   productId: number;
   productName: string;
+  commentId?: number;
 };
 
 type UserRow = {
@@ -1068,8 +1076,12 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
     type,
     actor_user_id: actorUserId,
     actor_name: String(row.actor_name ?? ""),
+    actor_avatar_url: toNullableString(row.actor_avatar_url),
+    actor_city: toNullableString(row.actor_city),
+    actor_country: toNullableString(row.actor_country),
     product_id: productId,
     product_name: String(row.product_name ?? ""),
+    comment_id: toNullableNumber(row.comment_id),
     created_at: parsedCreatedAt,
     event_id:
       String(row.event_id ?? "").trim() ||
@@ -1731,6 +1743,14 @@ function initializeSqliteDatabase() {
       CHECK (rating IS NULL OR (rating >= 1 AND rating <= 5))
     );
 
+    CREATE TABLE IF NOT EXISTS notification_dismissals (
+      owner_user_id INTEGER NOT NULL,
+      event_id TEXT NOT NULL,
+      dismissed_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      PRIMARY KEY (owner_user_id, event_id),
+      FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS site_daily_visitors (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       visit_date TEXT NOT NULL,
@@ -1772,6 +1792,8 @@ function initializeSqliteDatabase() {
       ON product_comments(product_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_product_comments_parent
       ON product_comments(parent_comment_id);
+    CREATE INDEX IF NOT EXISTS idx_notification_dismissals_owner
+      ON notification_dismissals(owner_user_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_site_daily_visitors_date_key
       ON site_daily_visitors(visit_date, visitor_key);
     CREATE INDEX IF NOT EXISTS idx_site_daily_visitors_date_last_seen
@@ -2100,6 +2122,14 @@ async function initializePostgresDatabase() {
       )
     `,
     `
+      CREATE TABLE IF NOT EXISTS notification_dismissals (
+        owner_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        event_id TEXT NOT NULL,
+        dismissed_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+        PRIMARY KEY (owner_user_id, event_id)
+      )
+    `,
+    `
       CREATE TABLE IF NOT EXISTS site_daily_visitors (
         id BIGSERIAL PRIMARY KEY,
         visit_date TEXT NOT NULL,
@@ -2178,6 +2208,9 @@ async function initializePostgresDatabase() {
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS rating INTEGER",
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS body TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
+    "ALTER TABLE notification_dismissals ADD COLUMN IF NOT EXISTS owner_user_id BIGINT",
+    "ALTER TABLE notification_dismissals ADD COLUMN IF NOT EXISTS event_id TEXT",
+    "ALTER TABLE notification_dismissals ADD COLUMN IF NOT EXISTS dismissed_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT ''",
@@ -2248,6 +2281,7 @@ async function initializePostgresDatabase() {
     "CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_product_id ON product_cart_notifications(product_id)",
     "CREATE INDEX IF NOT EXISTS idx_product_comments_product_created ON product_comments(product_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_product_comments_parent ON product_comments(parent_comment_id)",
+    "CREATE INDEX IF NOT EXISTS idx_notification_dismissals_owner ON notification_dismissals(owner_user_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth0_sub_unique ON users(auth0_sub) WHERE auth0_sub IS NOT NULL AND auth0_sub <> ''",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_product_likes_user_product_unique ON product_likes(user_id, product_id)",
@@ -3382,6 +3416,76 @@ async function selectLikedProductsByUserRows(userId: number): Promise<ProductRow
   return rows.map(normalizeProductRow);
 }
 
+async function selectProductLikerRows(productId: number): Promise<Array<Record<string, unknown>>> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          u.id,
+          u.name,
+          NULLIF(BTRIM(u.avatar_url), '') AS avatar_url,
+          NULLIF(BTRIM(u.country), '') AS country,
+          NULLIF(BTRIM(u.city), '') AS city,
+          l.created_at::TEXT AS liked_at
+        FROM product_likes l
+        INNER JOIN users u ON u.id = l.user_id
+        WHERE l.product_id = $1
+        ORDER BY l.created_at DESC, u.id DESC
+        LIMIT 80
+      `,
+      [productId],
+    );
+    return result.rows;
+  }
+
+  return requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          u.id,
+          u.name,
+          NULLIF(TRIM(u.avatar_url), '') AS avatar_url,
+          NULLIF(TRIM(u.country), '') AS country,
+          NULLIF(TRIM(u.city), '') AS city,
+          l.created_at AS liked_at
+        FROM product_likes l
+        INNER JOIN users u ON u.id = l.user_id
+        WHERE l.product_id = ?
+        ORDER BY l.created_at DESC, u.id DESC
+        LIMIT 80
+      `,
+    )
+    .all(productId) as Array<Record<string, unknown>>;
+}
+
+async function dismissNotificationRecord(ownerId: number, eventId: string): Promise<void> {
+  const normalizedEventId = eventId.trim();
+  if (!normalizedEventId || normalizedEventId.length > 260) {
+    throw new Error("Notificação inválida.");
+  }
+
+  if (pgPool) {
+    await pgPool.query(
+      `
+        INSERT INTO notification_dismissals (owner_user_id, event_id)
+        VALUES ($1, $2)
+        ON CONFLICT (owner_user_id, event_id) DO NOTHING
+      `,
+      [ownerId, normalizedEventId],
+    );
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        INSERT OR IGNORE INTO notification_dismissals (owner_user_id, event_id)
+        VALUES (?, ?)
+      `,
+    )
+    .run(ownerId, normalizedEventId);
+}
+
 async function selectNotificationsByOwnerRows(ownerId: number): Promise<NotificationEventRow[]> {
   if (pgPool) {
     const result = await pgPool.query<Record<string, unknown>>(
@@ -3392,8 +3496,12 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             'product_like'::TEXT AS type,
             l.user_id AS actor_user_id,
             COALESCE(NULLIF(BTRIM(lu.name), ''), 'Alguém') AS actor_name,
+            NULLIF(BTRIM(lu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(BTRIM(lu.city), '') AS actor_city,
+            NULLIF(BTRIM(lu.country), '') AS actor_country,
             p.id AS product_id,
             p.name AS product_name,
+            NULL::BIGINT AS comment_id,
             l.created_at::TEXT AS created_at,
             'product_like:' || l.user_id::TEXT || ':' || l.product_id::TEXT || ':' || l.created_at::TEXT AS event_id
           FROM product_likes l
@@ -3407,12 +3515,17 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             'product_cart_interest'::TEXT AS type,
             c.actor_user_id,
             COALESCE(NULLIF(BTRIM(c.actor_name), ''), '') AS actor_name,
+            NULLIF(BTRIM(cu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(BTRIM(cu.city), '') AS actor_city,
+            NULLIF(BTRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
             p.name AS product_name,
+            NULL::BIGINT AS comment_id,
             c.created_at::TEXT AS created_at,
             'product_cart_interest:' || c.id::TEXT AS event_id
           FROM product_cart_notifications c
           INNER JOIN products p ON p.id = c.product_id
+          LEFT JOIN users cu ON cu.id = c.actor_user_id
           WHERE c.owner_user_id = $1
             AND (c.actor_user_id IS NULL OR c.actor_user_id <> $2)
 
@@ -3422,8 +3535,12 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             'product_comment'::TEXT AS type,
             c.user_id AS actor_user_id,
             COALESCE(NULLIF(BTRIM(cu.name), ''), 'Alguém') AS actor_name,
+            NULLIF(BTRIM(cu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(BTRIM(cu.city), '') AS actor_city,
+            NULLIF(BTRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
             p.name AS product_name,
+            c.id AS comment_id,
             c.created_at::TEXT AS created_at,
             'product_comment:' || c.id::TEXT AS event_id
           FROM product_comments c
@@ -3432,10 +3549,15 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           WHERE p.user_id = $1
             AND c.user_id <> $2
         ) notifications
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM notification_dismissals d
+          WHERE d.owner_user_id = $3 AND d.event_id = notifications.event_id
+        )
         ORDER BY created_at DESC, product_id DESC
         LIMIT 100
       `,
-      [ownerId, ownerId],
+      [ownerId, ownerId, ownerId],
     );
     return result.rows.map(normalizeNotificationEventRow);
   }
@@ -3449,8 +3571,12 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             'product_like' AS type,
             l.user_id AS actor_user_id,
             COALESCE(NULLIF(TRIM(lu.name), ''), 'Alguém') AS actor_name,
+            NULLIF(TRIM(lu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(TRIM(lu.city), '') AS actor_city,
+            NULLIF(TRIM(lu.country), '') AS actor_country,
             p.id AS product_id,
             p.name AS product_name,
+            NULL AS comment_id,
             l.created_at,
             'product_like:' || l.user_id || ':' || l.product_id || ':' || l.created_at AS event_id
           FROM product_likes l
@@ -3464,12 +3590,17 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             'product_cart_interest' AS type,
             c.actor_user_id AS actor_user_id,
             COALESCE(NULLIF(TRIM(c.actor_name), ''), '') AS actor_name,
+            NULLIF(TRIM(cu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(TRIM(cu.city), '') AS actor_city,
+            NULLIF(TRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
             p.name AS product_name,
+            NULL AS comment_id,
             c.created_at,
             'product_cart_interest:' || c.id AS event_id
           FROM product_cart_notifications c
           INNER JOIN products p ON p.id = c.product_id
+          LEFT JOIN users cu ON cu.id = c.actor_user_id
           WHERE c.owner_user_id = ?
             AND (c.actor_user_id IS NULL OR c.actor_user_id <> ?)
 
@@ -3479,8 +3610,12 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             'product_comment' AS type,
             c.user_id AS actor_user_id,
             COALESCE(NULLIF(TRIM(cu.name), ''), 'Alguém') AS actor_name,
+            NULLIF(TRIM(cu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(TRIM(cu.city), '') AS actor_city,
+            NULLIF(TRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
             p.name AS product_name,
+            c.id AS comment_id,
             c.created_at,
             'product_comment:' || c.id AS event_id
           FROM product_comments c
@@ -3489,11 +3624,16 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           WHERE p.user_id = ?
             AND c.user_id <> ?
         )
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM notification_dismissals d
+          WHERE d.owner_user_id = ? AND d.event_id = event_id
+        )
         ORDER BY created_at DESC, product_id DESC
         LIMIT 100
       `,
     )
-    .all(ownerId, ownerId, ownerId, ownerId, ownerId, ownerId) as Array<Record<string, unknown>>;
+    .all(ownerId, ownerId, ownerId, ownerId, ownerId, ownerId, ownerId) as Array<Record<string, unknown>>;
   return rows.map(normalizeNotificationEventRow);
 }
 
@@ -4814,6 +4954,18 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
   if (row.actor_user_id !== null) {
     normalized.actorUserId = row.actor_user_id;
   }
+  if (row.actor_avatar_url) {
+    normalized.actorAvatarUrl = row.actor_avatar_url;
+  }
+  if (row.actor_city) {
+    normalized.actorCity = row.actor_city;
+  }
+  if (row.actor_country) {
+    normalized.actorCountry = row.actor_country;
+  }
+  if (row.comment_id !== null) {
+    normalized.commentId = row.comment_id;
+  }
 
   return normalized;
 }
@@ -5971,6 +6123,17 @@ function sanitizePublicUser(
     street: user.street ?? "",
     whatsappCountryIso: user.whatsapp_country_iso ?? "IT",
     whatsappNumber: user.whatsapp_number ?? "",
+  };
+}
+
+function rowToPublicLiker(row: Record<string, unknown>) {
+  return {
+    id: toRequiredNumber(row.id),
+    name: String(row.name ?? "").trim() || "Usuário TempleSale",
+    avatarUrl: toNullableString(row.avatar_url) ?? "",
+    country: toNullableString(row.country) ?? "",
+    city: toNullableString(row.city) ?? "",
+    likedAt: toNullableNumber(row.liked_at) ?? Math.floor(Date.now() / 1000),
   };
 }
 
@@ -7735,6 +7898,27 @@ async function bootstrap() {
     }
   });
 
+  app.get("/api/products/:id/likes", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID inválido." });
+      return;
+    }
+
+    try {
+      const product = await selectProductByIdRow(id);
+      if (!product) {
+        res.status(404).json({ error: "Produto não encontrado." });
+        return;
+      }
+      const rows = await selectProductLikerRows(id);
+      res.json({ users: rows.map(rowToPublicLiker) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar curtidas do produto.";
+      res.status(500).json({ error: message });
+    }
+  });
+
   app.get("/api/notifications", async (req, res) => {
     const user = await requireAuth(req, res);
     if (!user) {
@@ -7747,6 +7931,22 @@ async function bootstrap() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao listar notificações.";
       res.status(500).json({ error: message });
+    }
+  });
+
+  app.delete("/api/notifications/:id", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+
+    try {
+      const eventId = decodeURIComponent(String(req.params.id ?? "")).trim();
+      await dismissNotificationRecord(user.id, eventId);
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao excluir notificação.";
+      res.status(400).json({ error: message });
     }
   });
 

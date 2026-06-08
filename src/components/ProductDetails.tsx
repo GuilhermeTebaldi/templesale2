@@ -39,6 +39,7 @@ interface ProductDetailsProps {
   onAddToCart?: (quantity: number) => void;
   currentUser?: SessionUser | null;
   onRequireAuth?: () => void;
+  focusCommentId?: number | null;
 }
 
 const detailLabelByKey: Record<string, string> = {
@@ -226,6 +227,7 @@ export default function ProductDetails({
   onAddToCart,
   currentUser = null,
   onRequireAuth,
+  focusCommentId = null,
 }: ProductDetailsProps) {
   const { t, locale } = useI18n();
   const [selectedQuantity, setSelectedQuantity] = React.useState(1);
@@ -248,7 +250,9 @@ export default function ProductDetails({
   const [activeReplyBoxCommentId, setActiveReplyBoxCommentId] = React.useState<number | null>(null);
   const [replyDraftByCommentId, setReplyDraftByCommentId] = React.useState<Record<number, string>>({});
   const [submittingReplyByCommentId, setSubmittingReplyByCommentId] = React.useState<Record<number, boolean>>({});
+  const [highlightedCommentId, setHighlightedCommentId] = React.useState<number | null>(null);
   const detailsScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const commentElementRefs = React.useRef(new globalThis.Map<number, HTMLElement>());
   const scrollDetailsToTop = React.useCallback((behavior: ScrollBehavior = "auto") => {
     const container = detailsScrollRef.current;
     if (container) {
@@ -514,6 +518,33 @@ export default function ProductDetails({
       cancelled = true;
     };
   }, [product.id, t]);
+
+  React.useEffect(() => {
+    if (!focusCommentId || isCommentsLoading || comments.length === 0) {
+      return;
+    }
+
+    const frameId =
+      typeof window !== "undefined"
+        ? window.requestAnimationFrame(() => {
+            const element = commentElementRefs.current.get(focusCommentId);
+            if (!element) {
+              return;
+            }
+            element.scrollIntoView({ behavior: "smooth", block: "center" });
+            setHighlightedCommentId(focusCommentId);
+            window.setTimeout(() => {
+              setHighlightedCommentId((current) => (current === focusCommentId ? null : current));
+            }, 2800);
+          })
+        : null;
+
+    return () => {
+      if (frameId !== null && typeof window !== "undefined") {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [comments, focusCommentId, isCommentsLoading]);
 
   const nextImage = () => setActiveImageIndex((prev) => (prev + 1) % images.length);
   const prevImage = () => setActiveImageIndex((prev) => (prev - 1 + images.length) % images.length);
@@ -1061,7 +1092,21 @@ export default function ProductDetails({
                   </p>
                 ) : (
                   comments.map((comment) => (
-                    <article key={comment.id} className="border border-stone-200 rounded-sm bg-white p-4">
+                    <article
+                      key={comment.id}
+                      ref={(element) => {
+                        if (element) {
+                          commentElementRefs.current.set(comment.id, element);
+                        } else {
+                          commentElementRefs.current.delete(comment.id);
+                        }
+                      }}
+                      className={`border rounded-sm bg-white p-4 transition-colors ${
+                        highlightedCommentId === comment.id
+                          ? "border-amber-400 bg-amber-50"
+                          : "border-stone-200"
+                      }`}
+                    >
                       <div className="flex items-start gap-3">
                         <img
                           src={comment.authorAvatarUrl || "https://picsum.photos/seed/comment-avatar/80/80"}
@@ -1090,7 +1135,19 @@ export default function ProductDetails({
                           {comment.replies.length > 0 && (
                             <div className="mt-3 pl-4 border-l border-stone-200 space-y-3">
                               {comment.replies.map((reply) => (
-                                <div key={reply.id} className="space-y-1">
+                                <div
+                                  key={reply.id}
+                                  ref={(element) => {
+                                    if (element) {
+                                      commentElementRefs.current.set(reply.id, element);
+                                    } else {
+                                      commentElementRefs.current.delete(reply.id);
+                                    }
+                                  }}
+                                  className={`space-y-1 rounded-sm transition-colors ${
+                                    highlightedCommentId === reply.id ? "bg-amber-50 p-2" : ""
+                                  }`}
+                                >
                                   <div className="flex items-start gap-2">
                                     <img
                                       src={reply.authorAvatarUrl || "https://picsum.photos/seed/reply-avatar/80/80"}
