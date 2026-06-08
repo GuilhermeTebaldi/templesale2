@@ -61,6 +61,8 @@ const DETAIL_KEYS_REAL_ESTATE = new Set(["type", "area", "room", "rooms", "bathr
 const DETAIL_KEYS_VEHICLE = new Set(["brand", "model", "color", "year"]);
 const DETAIL_KEYS_ELECTRONICS = new Set(["brand", "model", "color"]);
 const PRODUCT_COMMENT_MAX_BODY_LENGTH = 1200;
+const PRODUCT_COMMENTS_INITIAL_VISIBLE_COUNT = 5;
+const PRODUCT_COMMENTS_MORE_COUNT = 5;
 
 interface LayeredProductDetailImageProps {
   src: string;
@@ -250,6 +252,13 @@ export default function ProductDetails({
   const [activeReplyBoxCommentId, setActiveReplyBoxCommentId] = React.useState<number | null>(null);
   const [replyDraftByCommentId, setReplyDraftByCommentId] = React.useState<Record<number, string>>({});
   const [submittingReplyByCommentId, setSubmittingReplyByCommentId] = React.useState<Record<number, boolean>>({});
+  const [editingCommentId, setEditingCommentId] = React.useState<number | null>(null);
+  const [editCommentDraft, setEditCommentDraft] = React.useState("");
+  const [savingCommentId, setSavingCommentId] = React.useState<number | null>(null);
+  const [deletingCommentId, setDeletingCommentId] = React.useState<number | null>(null);
+  const [visibleCommentCount, setVisibleCommentCount] = React.useState(
+    PRODUCT_COMMENTS_INITIAL_VISIBLE_COUNT,
+  );
   const [highlightedCommentId, setHighlightedCommentId] = React.useState<number | null>(null);
   const detailsScrollRef = React.useRef<HTMLDivElement | null>(null);
   const commentElementRefs = React.useRef(new globalThis.Map<number, HTMLElement>());
@@ -328,6 +337,8 @@ export default function ProductDetails({
       currentUser.id === product.ownerId,
   );
   const newCommentCharsRemaining = PRODUCT_COMMENT_MAX_BODY_LENGTH - newCommentBody.length;
+  const visibleComments = comments.slice(0, visibleCommentCount);
+  const hiddenCommentsCount = Math.max(0, comments.length - visibleComments.length);
   const productsForMap = React.useMemo(() => {
     if (products.length === 0) {
       return [product];
@@ -418,6 +429,7 @@ export default function ProductDetails({
     setActiveReplyBoxCommentId(null);
     setReplyDraftByCommentId({});
     setSubmittingReplyByCommentId({});
+    setVisibleCommentCount(PRODUCT_COMMENTS_INITIAL_VISIBLE_COUNT);
   }, [product.id, availableQuantity]);
 
   React.useEffect(() => {
@@ -524,6 +536,16 @@ export default function ProductDetails({
       return;
     }
 
+    const focusedTopLevelIndex = comments.findIndex(
+      (comment) =>
+        comment.id === focusCommentId ||
+        comment.replies.some((reply) => reply.id === focusCommentId),
+    );
+    if (focusedTopLevelIndex >= visibleCommentCount) {
+      setVisibleCommentCount(focusedTopLevelIndex + 1);
+      return;
+    }
+
     const frameId =
       typeof window !== "undefined"
         ? window.requestAnimationFrame(() => {
@@ -544,7 +566,7 @@ export default function ProductDetails({
         window.cancelAnimationFrame(frameId);
       }
     };
-  }, [comments, focusCommentId, isCommentsLoading]);
+  }, [comments, focusCommentId, isCommentsLoading, visibleCommentCount]);
 
   const nextImage = () => setActiveImageIndex((prev) => (prev + 1) % images.length);
   const prevImage = () => setActiveImageIndex((prev) => (prev - 1 + images.length) % images.length);
@@ -672,6 +694,62 @@ export default function ProductDetails({
       setCommentsError(message);
     } finally {
       setSubmittingReplyByCommentId((current) => ({ ...current, [commentId]: false }));
+    }
+  };
+
+  const beginEditComment = (comment: ProductCommentDto) => {
+    setEditingCommentId(comment.id);
+    setEditCommentDraft(comment.body);
+    setCommentsError("");
+  };
+
+  const cancelEditComment = () => {
+    setEditingCommentId(null);
+    setEditCommentDraft("");
+  };
+
+  const handleSaveEditedComment = async (commentId: number) => {
+    const normalizedBody = editCommentDraft.trim();
+    if (!normalizedBody) {
+      setCommentsError(t("Escreva um comentário para enviar."));
+      return;
+    }
+
+    setCommentsError("");
+    setSavingCommentId(commentId);
+    try {
+      const updatedComments = await api.updateProductComment(product.id, commentId, {
+        body: normalizedBody,
+      });
+      setComments(updatedComments);
+      cancelEditComment();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("Falha ao editar comentário.");
+      setCommentsError(message);
+    } finally {
+      setSavingCommentId(null);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: number) => {
+    const confirmed = typeof window === "undefined" || window.confirm(t("Excluir este comentário?"));
+    if (!confirmed) {
+      return;
+    }
+
+    setCommentsError("");
+    setDeletingCommentId(commentId);
+    try {
+      const updatedComments = await api.deleteProductComment(product.id, commentId);
+      setComments(updatedComments);
+      if (editingCommentId === commentId) {
+        cancelEditComment();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("Falha ao excluir comentário.");
+      setCommentsError(message);
+    } finally {
+      setDeletingCommentId(null);
     }
   };
 
@@ -1091,22 +1169,23 @@ export default function ProductDetails({
                     {t("Ainda não existem comentários para esta publicação.")}
                   </p>
                 ) : (
-                  comments.map((comment) => (
-                    <article
-                      key={comment.id}
-                      ref={(element) => {
-                        if (element) {
-                          commentElementRefs.current.set(comment.id, element);
-                        } else {
-                          commentElementRefs.current.delete(comment.id);
-                        }
-                      }}
-                      className={`border rounded-sm bg-white p-4 transition-colors ${
-                        highlightedCommentId === comment.id
-                          ? "border-amber-400 bg-amber-50"
-                          : "border-stone-200"
-                      }`}
-                    >
+                  <>
+                    {visibleComments.map((comment) => (
+                      <article
+                        key={comment.id}
+                        ref={(element) => {
+                          if (element) {
+                            commentElementRefs.current.set(comment.id, element);
+                          } else {
+                            commentElementRefs.current.delete(comment.id);
+                          }
+                        }}
+                        className={`border rounded-sm bg-white p-4 transition-colors ${
+                          highlightedCommentId === comment.id
+                            ? "border-amber-400 bg-amber-50"
+                            : "border-stone-200"
+                        }`}
+                      >
                       <div className="flex items-start gap-3">
                         <img
                           src={comment.authorAvatarUrl || "https://picsum.photos/seed/comment-avatar/80/80"}
@@ -1119,6 +1198,25 @@ export default function ProductDetails({
                             <span className="text-[11px] text-stone-400">
                               {formatCommentDate(comment.createdAt, locale)}
                             </span>
+                            {currentUser?.id === comment.userId && (
+                              <span className="ml-auto flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => beginEditComment(comment)}
+                                  className="text-[10px] uppercase tracking-[0.12em] font-bold text-stone-500 hover:text-stone-900"
+                                >
+                                  {t("Editar")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDeleteComment(comment.id)}
+                                  disabled={deletingCommentId === comment.id}
+                                  className="text-[10px] uppercase tracking-[0.12em] font-bold text-red-500 hover:text-red-700 disabled:opacity-50"
+                                >
+                                  {deletingCommentId === comment.id ? t("Excluindo...") : t("Excluir")}
+                                </button>
+                              </span>
+                            )}
                           </div>
 
                           {typeof comment.rating === "number" && (
@@ -1128,9 +1226,39 @@ export default function ProductDetails({
                             </div>
                           )}
 
-                          <p className="text-sm leading-relaxed text-stone-700 whitespace-pre-wrap">
-                            {comment.body}
-                          </p>
+                          {editingCommentId === comment.id ? (
+                            <div className="space-y-2">
+                              <textarea
+                                rows={3}
+                                value={editCommentDraft}
+                                onChange={(event) =>
+                                  setEditCommentDraft(event.target.value.slice(0, PRODUCT_COMMENT_MAX_BODY_LENGTH))
+                                }
+                                className="w-full bg-stone-50 border border-stone-200 p-2.5 text-sm text-stone-700 outline-none focus:border-stone-700 transition-colors resize-none"
+                              />
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleSaveEditedComment(comment.id)}
+                                  disabled={savingCommentId === comment.id || editCommentDraft.trim().length === 0}
+                                  className="px-3 py-1.5 bg-stone-900 text-white text-[10px] uppercase tracking-[0.14em] font-bold hover:bg-black transition-colors disabled:opacity-40"
+                                >
+                                  {savingCommentId === comment.id ? t("Salvando...") : t("Salvar")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelEditComment}
+                                  className="px-3 py-1.5 border border-stone-200 text-[10px] uppercase tracking-[0.14em] font-bold text-stone-600 hover:border-stone-500 hover:text-stone-900 transition-colors"
+                                >
+                                  {t("Cancelar")}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-sm leading-relaxed text-stone-700 whitespace-pre-wrap">
+                              {comment.body}
+                            </p>
+                          )}
 
                           {comment.replies.length > 0 && (
                             <div className="mt-3 pl-4 border-l border-stone-200 space-y-3">
@@ -1167,10 +1295,59 @@ export default function ProductDetails({
                                             {t("Resposta do dono")}
                                           </span>
                                         )}
+                                        {currentUser?.id === reply.userId && (
+                                          <span className="ml-auto flex items-center gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() => beginEditComment(reply)}
+                                              className="text-[10px] uppercase tracking-[0.12em] font-bold text-stone-500 hover:text-stone-900"
+                                            >
+                                              {t("Editar")}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => void handleDeleteComment(reply.id)}
+                                              disabled={deletingCommentId === reply.id}
+                                              className="text-[10px] uppercase tracking-[0.12em] font-bold text-red-500 hover:text-red-700 disabled:opacity-50"
+                                            >
+                                              {deletingCommentId === reply.id ? t("Excluindo...") : t("Excluir")}
+                                            </button>
+                                          </span>
+                                        )}
                                       </div>
-                                      <p className="text-xs leading-relaxed text-stone-600 whitespace-pre-wrap">
-                                        {reply.body}
-                                      </p>
+                                      {editingCommentId === reply.id ? (
+                                        <div className="mt-2 space-y-2">
+                                          <textarea
+                                            rows={2}
+                                            value={editCommentDraft}
+                                            onChange={(event) =>
+                                              setEditCommentDraft(event.target.value.slice(0, PRODUCT_COMMENT_MAX_BODY_LENGTH))
+                                            }
+                                            className="w-full bg-stone-50 border border-stone-200 p-2.5 text-xs text-stone-700 outline-none focus:border-stone-700 transition-colors resize-none"
+                                          />
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() => void handleSaveEditedComment(reply.id)}
+                                              disabled={savingCommentId === reply.id || editCommentDraft.trim().length === 0}
+                                              className="px-3 py-1.5 bg-stone-900 text-white text-[10px] uppercase tracking-[0.14em] font-bold hover:bg-black transition-colors disabled:opacity-40"
+                                            >
+                                              {savingCommentId === reply.id ? t("Salvando...") : t("Salvar")}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={cancelEditComment}
+                                              className="px-3 py-1.5 border border-stone-200 text-[10px] uppercase tracking-[0.14em] font-bold text-stone-600 hover:border-stone-500 hover:text-stone-900 transition-colors"
+                                            >
+                                              {t("Cancelar")}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <p className="text-xs leading-relaxed text-stone-600 whitespace-pre-wrap">
+                                          {reply.body}
+                                        </p>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -1239,8 +1416,24 @@ export default function ProductDetails({
                           )}
                         </div>
                       </div>
-                    </article>
-                  ))
+                      </article>
+                    ))}
+                    {hiddenCommentsCount > 0 && (
+                      <div className="flex justify-center pt-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setVisibleCommentCount((current) =>
+                              Math.min(comments.length, current + PRODUCT_COMMENTS_MORE_COUNT),
+                            )
+                          }
+                          className="inline-flex items-center justify-center border border-stone-300 bg-white px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-stone-600 transition-colors hover:border-stone-900 hover:text-stone-900"
+                        >
+                          {t("Ver mais comentários")} ({hiddenCommentsCount})
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </section>

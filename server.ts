@@ -101,7 +101,8 @@ type ProductCommentRecord = {
 type NotificationEventType =
   | "product_like"
   | "product_cart_interest"
-  | "product_comment";
+  | "product_comment"
+  | "admin_broadcast";
 
 type NotificationEventRow = {
   type: NotificationEventType;
@@ -110,7 +111,7 @@ type NotificationEventRow = {
   actor_avatar_url: string | null;
   actor_city: string | null;
   actor_country: string | null;
-  product_id: number;
+  product_id: number | null;
   product_name: string;
   comment_id: number | null;
   created_at: number;
@@ -128,8 +129,8 @@ type NotificationRecord = {
   actorAvatarUrl?: string;
   actorCity?: string;
   actorCountry?: string;
-  productId: number;
-  productName: string;
+  productId?: number;
+  productName?: string;
   commentId?: number;
 };
 
@@ -1045,8 +1046,10 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
       ? "product_cart_interest"
       : rawType === "product_comment"
         ? "product_comment"
-        : "product_like";
-  const productId = toRequiredNumber(row.product_id);
+        : rawType === "admin_broadcast"
+          ? "admin_broadcast"
+          : "product_like";
+  const productId = toNullableNumber(row.product_id);
   const actorUserId = toNullableNumber(row.actor_user_id);
   const parsedCreatedAt = (() => {
     const numericValue = Number(row.created_at);
@@ -1085,7 +1088,7 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
     created_at: parsedCreatedAt,
     event_id:
       String(row.event_id ?? "").trim() ||
-      `${type}:${productId}:${actorUserId ?? "anon"}:${parsedCreatedAt}`,
+      `${type}:${productId ?? "site"}:${actorUserId ?? "anon"}:${parsedCreatedAt}`,
   };
 }
 
@@ -1751,6 +1754,16 @@ function initializeSqliteDatabase() {
       FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS admin_broadcast_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL DEFAULT '',
+      message TEXT NOT NULL DEFAULT '',
+      product_id INTEGER,
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+    );
+
     CREATE TABLE IF NOT EXISTS site_daily_visitors (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       visit_date TEXT NOT NULL,
@@ -1794,6 +1807,8 @@ function initializeSqliteDatabase() {
       ON product_comments(parent_comment_id);
     CREATE INDEX IF NOT EXISTS idx_notification_dismissals_owner
       ON notification_dismissals(owner_user_id);
+    CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_created
+      ON admin_broadcast_notifications(created_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_site_daily_visitors_date_key
       ON site_daily_visitors(visit_date, visitor_key);
     CREATE INDEX IF NOT EXISTS idx_site_daily_visitors_date_last_seen
@@ -2130,6 +2145,16 @@ async function initializePostgresDatabase() {
       )
     `,
     `
+      CREATE TABLE IF NOT EXISTS admin_broadcast_notifications (
+        id BIGSERIAL PRIMARY KEY,
+        title TEXT NOT NULL DEFAULT '',
+        message TEXT NOT NULL DEFAULT '',
+        product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
+        created_by TEXT NOT NULL DEFAULT '',
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
+      )
+    `,
+    `
       CREATE TABLE IF NOT EXISTS site_daily_visitors (
         id BIGSERIAL PRIMARY KEY,
         visit_date TEXT NOT NULL,
@@ -2211,6 +2236,11 @@ async function initializePostgresDatabase() {
     "ALTER TABLE notification_dismissals ADD COLUMN IF NOT EXISTS owner_user_id BIGINT",
     "ALTER TABLE notification_dismissals ADD COLUMN IF NOT EXISTS event_id TEXT",
     "ALTER TABLE notification_dismissals ADD COLUMN IF NOT EXISTS dismissed_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
+    "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS message TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS product_id BIGINT",
+    "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT ''",
@@ -2282,6 +2312,7 @@ async function initializePostgresDatabase() {
     "CREATE INDEX IF NOT EXISTS idx_product_comments_product_created ON product_comments(product_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_product_comments_parent ON product_comments(parent_comment_id)",
     "CREATE INDEX IF NOT EXISTS idx_notification_dismissals_owner ON notification_dismissals(owner_user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_created ON admin_broadcast_notifications(created_at DESC)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth0_sub_unique ON users(auth0_sub) WHERE auth0_sub IS NOT NULL AND auth0_sub <> ''",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_product_likes_user_product_unique ON product_likes(user_id, product_id)",
@@ -3385,6 +3416,42 @@ async function createProductCommentRecord(input: {
   return Number(result.lastInsertRowid);
 }
 
+async function updateProductCommentRecord(commentId: number, userId: number, body: string): Promise<boolean> {
+  const normalizedBody = normalizeIncomingProductCommentBody(body);
+
+  if (pgPool) {
+    const result = await pgPool.query(
+      `
+        UPDATE product_comments
+        SET body = $1
+        WHERE id = $2 AND user_id = $3
+      `,
+      [normalizedBody, commentId, userId],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  const result = requireSqliteDb()
+    .prepare("UPDATE product_comments SET body = ? WHERE id = ? AND user_id = ?")
+    .run(normalizedBody, commentId, userId);
+  return result.changes > 0;
+}
+
+async function deleteProductCommentRecord(commentId: number, userId: number): Promise<boolean> {
+  if (pgPool) {
+    const result = await pgPool.query("DELETE FROM product_comments WHERE id = $1 AND user_id = $2", [
+      commentId,
+      userId,
+    ]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  const result = requireSqliteDb()
+    .prepare("DELETE FROM product_comments WHERE id = ? AND user_id = ?")
+    .run(commentId, userId);
+  return result.changes > 0;
+}
+
 async function selectLikedProductsByUserRows(userId: number): Promise<ProductRow[]> {
   if (pgPool) {
     const result = await pgPool.query<Record<string, unknown>>(
@@ -3538,6 +3605,68 @@ async function restoreNotificationRecord(ownerId: number, eventId: string): Prom
     .run(ownerId, normalizedEventId);
 }
 
+async function selectAllUserIdsRows(): Promise<number[]> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      "SELECT id FROM users WHERE COALESCE(is_banned, FALSE) = FALSE ORDER BY id ASC",
+    );
+    return result.rows.map((row) => toRequiredNumber(row.id)).filter((id) => id > 0);
+  }
+
+  const rows = requireSqliteDb()
+    .prepare("SELECT id FROM users WHERE COALESCE(is_banned, 0) = 0 ORDER BY id ASC")
+    .all() as Array<Record<string, unknown>>;
+  return rows.map((row) => toRequiredNumber(row.id)).filter((id) => id > 0);
+}
+
+async function createAdminBroadcastNotificationRecord(input: {
+  title: string;
+  message: string;
+  productId: number | null;
+  createdBy: string;
+}): Promise<number> {
+  const title = input.title.trim();
+  const message = input.message.trim();
+  const createdBy = input.createdBy.trim().toLowerCase();
+  const productId = input.productId;
+
+  if (title.length < 2 || title.length > 120) {
+    throw new Error("Título deve ter entre 2 e 120 caracteres.");
+  }
+  if (message.length < 2 || message.length > 600) {
+    throw new Error("Mensagem deve ter entre 2 e 600 caracteres.");
+  }
+  if (productId !== null) {
+    const product = await selectProductByIdRow(productId);
+    if (!product) {
+      throw new Error("Anúncio patrocinado não encontrado.");
+    }
+  }
+
+  if (pgPool) {
+    const result = await pgPool.query<{ id: number | string }>(
+      `
+        INSERT INTO admin_broadcast_notifications (title, message, product_id, created_by)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+      `,
+      [title, message, productId, createdBy],
+    );
+    return toRequiredNumber(result.rows[0]?.id);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const result = requireSqliteDb()
+    .prepare(
+      `
+        INSERT INTO admin_broadcast_notifications (title, message, product_id, created_by, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `,
+    )
+    .run(title, message, productId, createdBy, now);
+  return Number(result.lastInsertRowid);
+}
+
 async function selectNotificationsByOwnerRows(ownerId: number): Promise<NotificationEventRow[]> {
   await ensureNotificationDismissalsStorage();
 
@@ -3602,6 +3731,23 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           LEFT JOIN users cu ON cu.id = c.user_id
           WHERE p.user_id = $1
             AND c.user_id <> $2
+
+          UNION ALL
+
+          SELECT
+            'admin_broadcast'::TEXT AS type,
+            NULL::BIGINT AS actor_user_id,
+            COALESCE(NULLIF(BTRIM(b.title), ''), 'TempleSale') AS actor_name,
+            NULL::TEXT AS actor_avatar_url,
+            NULL::TEXT AS actor_city,
+            NULL::TEXT AS actor_country,
+            p.id AS product_id,
+            COALESCE(NULLIF(BTRIM(b.message), ''), NULLIF(BTRIM(p.name), ''), 'Atualização TempleSale') AS product_name,
+            NULL::BIGINT AS comment_id,
+            b.created_at::TEXT AS created_at,
+            'admin_broadcast:' || b.id::TEXT AS event_id
+          FROM admin_broadcast_notifications b
+          LEFT JOIN products p ON p.id = b.product_id
         ) notifications
         WHERE NOT EXISTS (
           SELECT 1
@@ -3677,6 +3823,23 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           LEFT JOIN users cu ON cu.id = c.user_id
           WHERE p.user_id = ?
             AND c.user_id <> ?
+
+          UNION ALL
+
+          SELECT
+            'admin_broadcast' AS type,
+            NULL AS actor_user_id,
+            COALESCE(NULLIF(TRIM(b.title), ''), 'TempleSale') AS actor_name,
+            NULL AS actor_avatar_url,
+            NULL AS actor_city,
+            NULL AS actor_country,
+            p.id AS product_id,
+            COALESCE(NULLIF(TRIM(b.message), ''), NULLIF(TRIM(p.name), ''), 'Atualização TempleSale') AS product_name,
+            NULL AS comment_id,
+            b.created_at,
+            'admin_broadcast:' || b.id AS event_id
+          FROM admin_broadcast_notifications b
+          LEFT JOIN products p ON p.id = b.product_id
         )
         WHERE NOT EXISTS (
           SELECT 1
@@ -4981,6 +5144,22 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
   const createdAt = Number.isFinite(row.created_at)
     ? row.created_at
     : Math.floor(Date.now() / 1000);
+  if (row.type === "admin_broadcast") {
+    const normalized: NotificationRecord = {
+      id: row.event_id,
+      type: row.type,
+      title: actorName || "TempleSale",
+      message: productName || "Atualização TempleSale",
+      createdAt,
+      actorName: "TempleSale",
+    };
+    if (row.product_id) {
+      normalized.productId = row.product_id;
+      normalized.productName = productName;
+    }
+    return normalized;
+  }
+
   const title =
     row.type === "product_cart_interest"
       ? "Novo interesse no carrinho"
@@ -5001,9 +5180,12 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
     message,
     createdAt,
     actorName,
-    productId: row.product_id,
     productName,
   };
+
+  if (row.product_id) {
+    normalized.productId = row.product_id;
+  }
 
   if (row.actor_user_id !== null) {
     normalized.actorUserId = row.actor_user_id;
@@ -7285,6 +7467,41 @@ async function bootstrap() {
     }
   });
 
+  app.post("/api/admin/notifications/broadcast", async (req, res) => {
+    const adminSession = requireAdmin(req, res);
+    if (!adminSession) {
+      return;
+    }
+
+    try {
+      const body = req.body as Record<string, unknown>;
+      const title = normalizeTextField(body.title, "Título", 120);
+      const message = normalizeTextField(body.message, "Mensagem", 600);
+      const rawProductId = Number(body.productId ?? body.product_id);
+      const productId = Number.isInteger(rawProductId) && rawProductId > 0 ? rawProductId : null;
+      const notificationId = await createAdminBroadcastNotificationRecord({
+        title,
+        message,
+        productId,
+        createdBy: adminSession.email,
+      });
+      const userIds = await selectAllUserIdsRows();
+      userIds.forEach((userId) => {
+        notifyUserNotificationsChanged(userId, "admin-broadcast");
+      });
+
+      res.status(201).json({
+        success: true,
+        id: notificationId,
+        deliveredTo: userIds.length,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao enviar notificação.";
+      const statusCode = message.includes("não encontrado") || message.includes("deve ter") ? 400 : 500;
+      res.status(statusCode).json({ error: message });
+    }
+  });
+
   app.delete("/api/admin/products/:id", async (req, res) => {
     if (!requireAdmin(req, res)) {
       return;
@@ -7931,6 +8148,87 @@ async function bootstrap() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao salvar comentário do produto.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.patch("/api/products/:productId/comments/:commentId", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+
+    const productId = Number(req.params.productId);
+    const commentId = Number(req.params.commentId);
+    if (!Number.isInteger(productId) || productId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
+      res.status(400).json({ error: "ID inválido." });
+      return;
+    }
+
+    try {
+      const comment = await selectProductCommentByIdRow(commentId);
+      if (!comment || comment.product_id !== productId) {
+        res.status(404).json({ error: "Comentário não encontrado." });
+        return;
+      }
+      if (comment.user_id !== user.id) {
+        res.status(403).json({ error: "Você só pode editar seus próprios comentários." });
+        return;
+      }
+
+      const body = req.body as Record<string, unknown>;
+      const updated = await updateProductCommentRecord(
+        commentId,
+        user.id,
+        String(body.body ?? body.comment ?? body.message ?? ""),
+      );
+      if (!updated) {
+        res.status(404).json({ error: "Comentário não encontrado." });
+        return;
+      }
+
+      const comments = await selectProductCommentsRows(productId);
+      res.json({ comments: buildProductCommentsThread(comments) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao editar comentário.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.delete("/api/products/:productId/comments/:commentId", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+
+    const productId = Number(req.params.productId);
+    const commentId = Number(req.params.commentId);
+    if (!Number.isInteger(productId) || productId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
+      res.status(400).json({ error: "ID inválido." });
+      return;
+    }
+
+    try {
+      const comment = await selectProductCommentByIdRow(commentId);
+      if (!comment || comment.product_id !== productId) {
+        res.status(404).json({ error: "Comentário não encontrado." });
+        return;
+      }
+      if (comment.user_id !== user.id) {
+        res.status(403).json({ error: "Você só pode excluir seus próprios comentários." });
+        return;
+      }
+
+      const deleted = await deleteProductCommentRecord(commentId, user.id);
+      if (!deleted) {
+        res.status(404).json({ error: "Comentário não encontrado." });
+        return;
+      }
+
+      const comments = await selectProductCommentsRows(productId);
+      res.json({ comments: buildProductCommentsThread(comments) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao excluir comentário.";
       res.status(400).json({ error: message });
     }
   });

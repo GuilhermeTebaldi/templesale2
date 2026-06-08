@@ -25,6 +25,7 @@ import {
   Eye,
   EyeOff,
   X,
+  Bell,
 } from "lucide-react";
 import {
   getSecurityCategoryLabel,
@@ -87,7 +88,7 @@ type AdminSessionV2 = {
   token: string;
 };
 
-type AdminViewV2 = "overview" | "products" | "users" | "visitors" | "security";
+type AdminViewV2 = "overview" | "products" | "users" | "notifications" | "visitors" | "security";
 
 type SecurityEventFilter = "all" | SecurityCheckStatus;
 
@@ -1315,6 +1316,23 @@ async function adminDeleteProduct(token: string, productId: number): Promise<voi
   });
 }
 
+async function adminSendBroadcastNotification(
+  token: string,
+  input: { title: string; message: string; productId?: number | null },
+): Promise<{ deliveredTo: number }> {
+  const response = await adminRequest<unknown>("/api/admin/notifications/broadcast", {
+    method: "POST",
+    token,
+    body: {
+      title: input.title,
+      message: input.message,
+      productId: input.productId ?? null,
+    },
+  });
+  const record = asRecord(response);
+  return { deliveredTo: toNumber(record?.deliveredTo ?? record?.delivered_to) };
+}
+
 async function adminLogout(token: string): Promise<void> {
   const routes: Array<{ route: string; method: "POST" | "DELETE" }> = [
     { route: "/api/admin/auth/logout", method: "POST" },
@@ -1464,6 +1482,12 @@ export default function AdminPanelV2() {
   const [isLoadingMoreProducts, setIsLoadingMoreProducts] = React.useState(false);
   const [productsError, setProductsError] = React.useState("");
   const [deletingProductId, setDeletingProductId] = React.useState<number | null>(null);
+  const [broadcastTitle, setBroadcastTitle] = React.useState("");
+  const [broadcastMessage, setBroadcastMessage] = React.useState("");
+  const [broadcastProductId, setBroadcastProductId] = React.useState("");
+  const [broadcastStatus, setBroadcastStatus] = React.useState("");
+  const [broadcastError, setBroadcastError] = React.useState("");
+  const [isSendingBroadcast, setIsSendingBroadcast] = React.useState(false);
   const [pendingBanUserId, setPendingBanUserId] = React.useState<number | null>(null);
   const [deletingUserId, setDeletingUserId] = React.useState<number | null>(null);
   const [selectedUser, setSelectedUser] = React.useState<AdminUserV2 | null>(null);
@@ -1731,6 +1755,12 @@ export default function AdminPanelV2() {
       setIsLoadingMoreProducts(false);
       setProductsError("");
       setDeletingProductId(null);
+      setBroadcastTitle("");
+      setBroadcastMessage("");
+      setBroadcastProductId("");
+      setBroadcastStatus("");
+      setBroadcastError("");
+      setIsSendingBroadcast(false);
       setUsersError("");
       setAuthError("");
       setQuery("");
@@ -2026,6 +2056,40 @@ export default function AdminPanelV2() {
       setUsersError(message);
     } finally {
       setDeletingUserId(null);
+    }
+  };
+
+  const handleSendBroadcast = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const title = broadcastTitle.trim();
+    const message = broadcastMessage.trim();
+    const productId = Number(broadcastProductId);
+    const normalizedProductId =
+      Number.isInteger(productId) && productId > 0 ? productId : null;
+
+    if (!title || !message) {
+      setBroadcastError("Preencha título e mensagem da notificação.");
+      return;
+    }
+
+    setBroadcastError("");
+    setBroadcastStatus("");
+    setIsSendingBroadcast(true);
+    try {
+      const result = await adminSendBroadcastNotification(authToken, {
+        title,
+        message,
+        productId: normalizedProductId,
+      });
+      setBroadcastTitle("");
+      setBroadcastMessage("");
+      setBroadcastProductId("");
+      setBroadcastStatus(`Notificação enviada para ${result.deliveredTo} usuário(s) ativo(s).`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao enviar notificação.";
+      setBroadcastError(message);
+    } finally {
+      setIsSendingBroadcast(false);
     }
   };
 
@@ -2358,6 +2422,18 @@ export default function AdminPanelV2() {
             </button>
             <button
               type="button"
+              onClick={() => setActiveView("notifications")}
+              className={`inline-flex items-center gap-2 px-3 py-2 text-xs uppercase tracking-[0.14em] border transition-colors ${
+                activeView === "notifications"
+                  ? "border-stone-900 bg-stone-900 text-white"
+                  : "border-stone-300 text-stone-700 hover:border-stone-800"
+              }`}
+            >
+              <Bell className="w-3.5 h-3.5" />
+              Notificações
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveView("security")}
               className={`inline-flex items-center gap-2 px-3 py-2 text-xs uppercase tracking-[0.14em] border transition-colors ${
                 activeView === "security"
@@ -2651,6 +2727,102 @@ export default function AdminPanelV2() {
               </div>
             )}
           </>
+          ) : activeView === "notifications" ? (
+            <section className="space-y-4">
+              <article className="border border-stone-200 bg-white p-4 sm:p-5">
+                <div className="mb-4 flex items-start gap-3">
+                  <Bell className="mt-0.5 h-4 w-4 text-stone-700" />
+                  <div>
+                    <h2 className="text-sm font-semibold text-stone-900">
+                      Enviar notificação para todos
+                    </h2>
+                    <p className="mt-1 text-xs text-stone-500">
+                      Use para avisos do site, problemas operacionais ou anúncio patrocinado.
+                      Se escolher um produto, o clique no sino abre esse anúncio.
+                    </p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSendBroadcast} className="space-y-3">
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_18rem]">
+                    <div className="space-y-3">
+                      <label className="block text-xs uppercase tracking-[0.12em] text-stone-500">
+                        Título
+                      </label>
+                      <input
+                        type="text"
+                        value={broadcastTitle}
+                        onChange={(event) => setBroadcastTitle(event.target.value.slice(0, 120))}
+                        placeholder="Ex.: Terreno à venda em destaque"
+                        className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
+                      />
+                      <label className="block text-xs uppercase tracking-[0.12em] text-stone-500">
+                        Mensagem
+                      </label>
+                      <textarea
+                        rows={5}
+                        value={broadcastMessage}
+                        onChange={(event) => setBroadcastMessage(event.target.value.slice(0, 600))}
+                        placeholder="Escreva a mensagem que vai aparecer no sino dos usuários."
+                        className="w-full resize-none border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
+                      />
+                    </div>
+                    <div className="space-y-3 border border-stone-100 bg-stone-50 p-3">
+                      <label className="block text-xs uppercase tracking-[0.12em] text-stone-500">
+                        Anúncio patrocinado opcional
+                      </label>
+                      <select
+                        value={broadcastProductId}
+                        onChange={(event) => setBroadcastProductId(event.target.value)}
+                        className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
+                      >
+                        <option value="">Sem anúncio</option>
+                        {products.map((product) => (
+                          <option key={product.id} value={product.id}>
+                            #{product.id} {product.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs leading-relaxed text-stone-500">
+                        Para escolher um produto que não aparece aqui, abra a aba Produtos e pesquise.
+                        A lista carregada fica disponível neste seletor.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveView("products");
+                          void loadProducts(authToken, productQuery);
+                        }}
+                        className="inline-flex w-full items-center justify-center gap-2 border border-stone-300 bg-white px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-900"
+                      >
+                        <Package className="h-3.5 w-3.5" />
+                        Procurar produto
+                      </button>
+                    </div>
+                  </div>
+
+                  {broadcastError && (
+                    <div className="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {broadcastError}
+                    </div>
+                  )}
+                  {broadcastStatus && (
+                    <div className="border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                      {broadcastStatus}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isSendingBroadcast}
+                    className="inline-flex items-center justify-center gap-2 bg-stone-900 px-4 py-2.5 text-xs uppercase tracking-[0.14em] text-white hover:bg-black disabled:opacity-60"
+                  >
+                    <Bell className="h-3.5 w-3.5" />
+                    {isSendingBroadcast ? "Enviando..." : "Enviar para todos"}
+                  </button>
+                </form>
+              </article>
+            </section>
           ) : activeView === "visitors" ? (
             <section className="space-y-4">
               <article className="border border-stone-200 bg-white p-4 sm:p-5 space-y-4">

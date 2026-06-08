@@ -94,6 +94,16 @@ export type NotificationDto =
     }
   | {
       id: string;
+      type: "admin_broadcast";
+      title: string;
+      message: string;
+      createdAt: number;
+      actorName?: string;
+      productName?: string;
+      productId?: number;
+    }
+  | {
+      id: string;
       type: "system_welcome";
       title: string;
       message: string;
@@ -146,6 +156,10 @@ export interface CreateProductCommentInput {
   body: string;
   rating?: number;
   parentCommentId?: number;
+}
+
+export interface UpdateProductCommentInput {
+  body: string;
 }
 
 export interface SessionUser {
@@ -2294,6 +2308,32 @@ export const api = {
     const response = await request<unknown>(`/api/products/${productId}/comments`, {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+    return normalizeProductCommentList(response);
+  },
+  async updateProductComment(productId: number, commentId: number, input: UpdateProductCommentInput) {
+    if (!Number.isInteger(productId) || productId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
+      throw new Error("ID de comentário inválido.");
+    }
+
+    const normalizedBody = toStringValue(input.body).trim();
+    if (!normalizedBody) {
+      throw new Error("Comentário é obrigatório.");
+    }
+
+    const response = await request<unknown>(`/api/products/${productId}/comments/${commentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ body: normalizedBody }),
+    });
+    return normalizeProductCommentList(response);
+  },
+  async deleteProductComment(productId: number, commentId: number) {
+    if (!Number.isInteger(productId) || productId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
+      throw new Error("ID de comentário inválido.");
+    }
+
+    const response = await request<unknown>(`/api/products/${productId}/comments/${commentId}`, {
+      method: "DELETE",
     });
     return normalizeProductCommentList(response);
   },
