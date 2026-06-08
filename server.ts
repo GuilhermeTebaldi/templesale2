@@ -3554,6 +3554,39 @@ async function ensureNotificationDismissalsStorage(): Promise<void> {
   `);
 }
 
+async function ensureAdminBroadcastNotificationsStorage(): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS admin_broadcast_notifications (
+        id BIGSERIAL PRIMARY KEY,
+        title TEXT NOT NULL DEFAULT '',
+        message TEXT NOT NULL DEFAULT '',
+        product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
+        created_by TEXT NOT NULL DEFAULT '',
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
+      )
+    `);
+    await pgPool.query(
+      "CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_created ON admin_broadcast_notifications(created_at DESC)",
+    );
+    return;
+  }
+
+  requireSqliteDb().exec(`
+    CREATE TABLE IF NOT EXISTS admin_broadcast_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL DEFAULT '',
+      message TEXT NOT NULL DEFAULT '',
+      product_id INTEGER,
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_created
+      ON admin_broadcast_notifications(created_at DESC);
+  `);
+}
+
 async function dismissNotificationRecord(ownerId: number, eventId: string): Promise<void> {
   const normalizedEventId = eventId.trim();
   if (!normalizedEventId || normalizedEventId.length > 260) {
@@ -3630,6 +3663,8 @@ async function createAdminBroadcastNotificationRecord(input: {
   const createdBy = input.createdBy.trim().toLowerCase();
   const productId = input.productId;
 
+  await ensureAdminBroadcastNotificationsStorage();
+
   if (title.length < 2 || title.length > 120) {
     throw new Error("Título deve ter entre 2 e 120 caracteres.");
   }
@@ -3669,6 +3704,7 @@ async function createAdminBroadcastNotificationRecord(input: {
 
 async function selectNotificationsByOwnerRows(ownerId: number): Promise<NotificationEventRow[]> {
   await ensureNotificationDismissalsStorage();
+  await ensureAdminBroadcastNotificationsStorage();
 
   if (pgPool) {
     const result = await pgPool.query<Record<string, unknown>>(
