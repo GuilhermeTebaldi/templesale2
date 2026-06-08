@@ -38,7 +38,14 @@
     appearance: none;
   }
 
-  @media (max-width: 768px) {
+  button,
+  input,
+  textarea,
+  select {
+    touch-action: manipulation;
+  }
+
+  @media (max-width: 1024px) {
     input,
     textarea,
     select {

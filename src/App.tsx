@@ -980,23 +980,31 @@ export default function App() {
     window.localStorage.setItem(cartUnseenStorageKey, hasUnseenCartAlert ? "1" : "0");
   }, [hasUnseenCartAlert, cartUnseenStorageKey]);
 
-  const handleLogout = async () => {
-    try {
-      await api.logout();
-    } catch (err) {
-      console.error("Error logging out:", err);
-    }
-
-    if (IS_AUTH0_CONFIGURED && isAuth0Authenticated) {
-      auth0SyncAttemptedRef.current = false;
-      await auth0Logout({
-        logoutParams: {
-          returnTo: window.location.origin,
-        },
-      });
+  const clearLocalAuth0Cache = () => {
+    if (typeof window === "undefined") {
       return;
     }
 
+    [window.localStorage, window.sessionStorage].forEach((storage) => {
+      const keysToRemove: string[] = [];
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+        if (!key) {
+          continue;
+        }
+        if (
+          key.startsWith("@@auth0spajs@@") ||
+          key.startsWith("auth0.") ||
+          key === "templesale_auth0_diagnostic"
+        ) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((key) => storage.removeItem(key));
+    });
+  };
+
+  const clearUserSessionState = () => {
     setCurrentUser(null);
     setMyProducts([]);
     setLikedProducts([]);
@@ -1013,6 +1021,26 @@ export default function App() {
     setIsAvatarPickerOpen(false);
     setIsAvatarUploading(false);
     setAvatarUploadError("");
+  };
+
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch (err) {
+      console.error("Error logging out:", err);
+    }
+
+    auth0SyncAttemptedRef.current = false;
+    clearLocalAuth0Cache();
+    clearUserSessionState();
+
+    if (IS_AUTH0_CONFIGURED && isAuth0Authenticated) {
+      await auth0Logout({
+        logoutParams: {
+          returnTo: window.location.origin,
+        },
+      });
+    }
   };
 
   const handleAuthSubmit = async (payload: AuthSubmitPayload) => {

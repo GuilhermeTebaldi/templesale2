@@ -3458,11 +3458,42 @@ async function selectProductLikerRows(productId: number): Promise<Array<Record<s
     .all(productId) as Array<Record<string, unknown>>;
 }
 
+async function ensureNotificationDismissalsStorage(): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS notification_dismissals (
+        owner_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        event_id TEXT NOT NULL,
+        dismissed_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+        PRIMARY KEY (owner_user_id, event_id)
+      )
+    `);
+    await pgPool.query(
+      "CREATE INDEX IF NOT EXISTS idx_notification_dismissals_owner ON notification_dismissals(owner_user_id)",
+    );
+    return;
+  }
+
+  requireSqliteDb().exec(`
+    CREATE TABLE IF NOT EXISTS notification_dismissals (
+      owner_user_id INTEGER NOT NULL,
+      event_id TEXT NOT NULL,
+      dismissed_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      PRIMARY KEY (owner_user_id, event_id),
+      FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_notification_dismissals_owner
+      ON notification_dismissals(owner_user_id);
+  `);
+}
+
 async function dismissNotificationRecord(ownerId: number, eventId: string): Promise<void> {
   const normalizedEventId = eventId.trim();
   if (!normalizedEventId || normalizedEventId.length > 260) {
     throw new Error("Notificação inválida.");
   }
+
+  await ensureNotificationDismissalsStorage();
 
   if (pgPool) {
     await pgPool.query(
@@ -3487,6 +3518,8 @@ async function dismissNotificationRecord(ownerId: number, eventId: string): Prom
 }
 
 async function selectNotificationsByOwnerRows(ownerId: number): Promise<NotificationEventRow[]> {
+  await ensureNotificationDismissalsStorage();
+
   if (pgPool) {
     const result = await pgPool.query<Record<string, unknown>>(
       `
