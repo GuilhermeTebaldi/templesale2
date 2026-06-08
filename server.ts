@@ -5306,6 +5306,44 @@ function validateAuth0Claims(claims: Auth0JwtClaims, expectedAudience: string) {
   }
 }
 
+function decodeAuth0ClaimsUnsafe(token: string): Partial<Auth0JwtClaims> | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    return null;
+  }
+
+  try {
+    return decodeBase64UrlJson(parts[1]) as Partial<Auth0JwtClaims>;
+  } catch {
+    return null;
+  }
+}
+
+function getAuth0SyncErrorCode(message: string): string {
+  if (message.includes("Emissor")) {
+    return "invalid_issuer";
+  }
+  if (message.includes("Audiência")) {
+    return "invalid_audience";
+  }
+  if (message.includes("Chave")) {
+    return "jwks_key_not_found";
+  }
+  if (message.includes("Assinatura")) {
+    return "invalid_signature";
+  }
+  if (message.includes("expirado")) {
+    return "token_expired";
+  }
+  if (message.includes("não configurado")) {
+    return "backend_auth0_not_configured";
+  }
+  if (message.includes("perfil")) {
+    return "profile_token_mismatch";
+  }
+  return "auth0_sync_failed";
+}
+
 async function verifyAuth0Jwt(
   token: string,
   expectedAudience = AUTH0_EXPECTED_AUDIENCE,
@@ -7015,8 +7053,9 @@ async function bootstrap() {
   });
 
   app.post("/api/auth/auth0/sync", async (req, res) => {
+    let auth0Token = "";
     try {
-      const auth0Token = extractBearerToken(req);
+      auth0Token = extractBearerToken(req);
       if (!auth0Token) {
         res.status(401).json({ error: "Token Auth0 obrigatório." });
         return;
@@ -7107,10 +7146,23 @@ async function bootstrap() {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao autenticar com Auth0.";
-      if (AUTH0_DEBUG_LOGS) {
-        console.warn("[auth0] sync failed", { message });
-      }
-      res.status(401).json({ error: message });
+      const claims = auth0Token ? decodeAuth0ClaimsUnsafe(auth0Token) : null;
+      const code = getAuth0SyncErrorCode(message);
+      const diagnostics = {
+        code,
+        configuredDomain: AUTH0_DOMAIN || "(empty)",
+        expectedIssuer: AUTH0_ISSUER || "(empty)",
+        expectedAudience: AUTH0_EXPECTED_AUDIENCE || "(empty)",
+        configuredClientIdSuffix: AUTH0_CLIENT_ID ? AUTH0_CLIENT_ID.slice(-6) : "(empty)",
+        tokenIssuer: claims?.iss ?? "(unreadable)",
+        tokenAudience: claims?.aud ?? "(unreadable)",
+        tokenSubjectPrefix: claims?.sub ? String(claims.sub).slice(0, 12) : "(unreadable)",
+      };
+      console.warn("[auth0] sync failed", { message, ...diagnostics });
+      res.status(401).json({
+        error: message,
+        ...diagnostics,
+      });
     }
   });
 
