@@ -22,6 +22,8 @@ import {
   KeyRound,
   MessageCircle,
   Package,
+  Eye,
+  EyeOff,
   X,
 } from "lucide-react";
 import {
@@ -164,6 +166,8 @@ class HttpError extends Error {
 const ADMIN_DEFAULT_EMAIL = "templesale@admin.com";
 const ADMIN_TOKEN_STORAGE_KEY = "templesale_admin_token_v2";
 const ADMIN_EMAIL_STORAGE_KEY = "templesale_admin_email_v2";
+const ADMIN_REMEMBER_PASSWORD_STORAGE_KEY = "templesale_admin_remember_password_v2";
+const ADMIN_PASSWORD_STORAGE_KEY = "templesale_admin_password_v2";
 const SECURITY_EVENTS_LIMIT = 120;
 const SECURITY_EVENTS_POLL_INTERVAL_MS = 3500;
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "")
@@ -196,6 +200,33 @@ function readStoredEmail(): string {
   return String(window.localStorage.getItem(ADMIN_EMAIL_STORAGE_KEY) ?? "")
     .trim()
     .toLowerCase();
+}
+
+function readRememberAdminPassword(): boolean {
+  if (!canUseStorage()) {
+    return false;
+  }
+  return window.localStorage.getItem(ADMIN_REMEMBER_PASSWORD_STORAGE_KEY) === "true";
+}
+
+function readStoredAdminPassword(): string {
+  if (!canUseStorage() || !readRememberAdminPassword()) {
+    return "";
+  }
+  return String(window.localStorage.getItem(ADMIN_PASSWORD_STORAGE_KEY) ?? "");
+}
+
+function persistRememberedAdminPassword(password: string, shouldRemember: boolean) {
+  if (!canUseStorage()) {
+    return;
+  }
+  if (shouldRemember) {
+    window.localStorage.setItem(ADMIN_REMEMBER_PASSWORD_STORAGE_KEY, "true");
+    window.localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, password);
+    return;
+  }
+  window.localStorage.removeItem(ADMIN_REMEMBER_PASSWORD_STORAGE_KEY);
+  window.localStorage.removeItem(ADMIN_PASSWORD_STORAGE_KEY);
 }
 
 function persistSession(session: AdminSessionV2) {
@@ -1408,7 +1439,9 @@ export default function AdminPanelV2() {
   const [sessionEmail, setSessionEmail] = React.useState<string | null>(null);
   const [authToken, setAuthToken] = React.useState("");
   const [email, setEmail] = React.useState(ADMIN_DEFAULT_EMAIL);
-  const [password, setPassword] = React.useState("");
+  const [password, setPassword] = React.useState(() => readStoredAdminPassword());
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [rememberPassword, setRememberPassword] = React.useState(() => readRememberAdminPassword());
   const [authError, setAuthError] = React.useState("");
   const [isAuthSubmitting, setIsAuthSubmitting] = React.useState(false);
   const [users, setUsers] = React.useState<AdminUserV2[]>([]);
@@ -1653,6 +1686,7 @@ export default function AdminPanelV2() {
       setAuthToken(session.token);
       setSessionEmail(session.email);
       setEmail(session.email);
+      persistRememberedAdminPassword(normalizedPassword, rememberPassword);
       persistSession(session);
       await loadUsers(session.token);
       await loadVisitors(session.token, getTodayDateKey(), { silent: true });
@@ -1700,7 +1734,7 @@ export default function AdminPanelV2() {
       setUsersError("");
       setAuthError("");
       setQuery("");
-      setPassword("");
+      setPassword(rememberPassword ? readStoredAdminPassword() : "");
       setSelectedUser(null);
       setSelectedUserProducts([]);
       setSelectedUserError("");
@@ -2183,17 +2217,46 @@ export default function AdminPanelV2() {
               >
                 Senha
               </label>
-              <input
-                id="admin-login-password"
-                name="password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="w-full border border-stone-300 px-3 py-2.5 text-sm outline-none focus:border-stone-900"
-                placeholder="••••••••"
-                autoComplete="current-password"
-              />
+              <div className="relative">
+                <input
+                  id="admin-login-password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="w-full border border-stone-300 px-3 py-2.5 pr-11 text-sm outline-none focus:border-stone-900"
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-stone-500 hover:text-stone-900"
+                  aria-label={showPassword ? "Ocultar senha" : "Ver senha"}
+                  title={showPassword ? "Ocultar senha" : "Ver senha"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
+            <label className="flex items-center gap-2 text-xs text-stone-600">
+              <input
+                type="checkbox"
+                checked={rememberPassword}
+                onChange={(event) => {
+                  const shouldRemember = event.target.checked;
+                  setRememberPassword(shouldRemember);
+                  if (!shouldRemember) {
+                    persistRememberedAdminPassword("", false);
+                  }
+                }}
+                className="h-4 w-4 accent-stone-900"
+              />
+              Salvar senha neste navegador
+            </label>
+            <p className="text-[11px] leading-relaxed text-stone-400">
+              Use apenas no seu computador pessoal.
+            </p>
             {authError && <p className="text-sm text-red-600">{authError}</p>}
             <button
               type="submit"
