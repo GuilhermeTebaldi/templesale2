@@ -41,6 +41,7 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
     writeAuth0Diagnostic("button-clicked", {
       hasDomain: Boolean(AUTH0_DOMAIN),
       hasClientId: Boolean(AUTH0_CLIENT_ID),
+      clientId: AUTH0_CLIENT_ID,
       hasAudience: Boolean(AUTH0_AUDIENCE),
       isAuth0Loading: isLoading,
       mode,
@@ -62,7 +63,7 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
       setIsSubmitting(true);
       writeAuth0Diagnostic("calling-loginWithRedirect", {
         domain: AUTH0_DOMAIN,
-        clientIdSuffix: AUTH0_CLIENT_ID.slice(-6),
+        clientId: AUTH0_CLIENT_ID,
         audience: AUTH0_AUDIENCE || "(none)",
         redirect_uri: window.location.origin,
       });

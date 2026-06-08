@@ -96,6 +96,15 @@ const auth0AuthorizationParams = {
   redirect_uri: appOrigin,
   ...(AUTH0_AUDIENCE ? { audience: AUTH0_AUDIENCE } : {}),
 };
+if (typeof window !== "undefined") {
+  writeAuth0Diagnostic("provider-config", {
+    isConfigured: IS_AUTH0_CONFIGURED,
+    domain: AUTH0_DOMAIN,
+    clientId: AUTH0_CLIENT_ID,
+    audience: AUTH0_AUDIENCE || "(none)",
+    redirect_uri: appOrigin,
+  });
+}
 const handleAuth0RedirectCallback = (appState?: { returnTo?: string }) => {
   writeAuth0Diagnostic("provider-redirect-callback", {
     returnTo: appState?.returnTo,

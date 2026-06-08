@@ -603,9 +603,9 @@ function buildContentSecurityPolicy(isProduction: boolean): string {
     "https://saleday-backend.onrender.com",
     "https://www.templesale.com",
     "https://templesale.com",
-    "https://dev-qsrhlowiffrnw0dr.eu.auth0.com",
+    "https://dev-dc1ylz5a2z8st3lr.eu.auth0.com",
   ];
-  const frameSources = ["https://dev-qsrhlowiffrnw0dr.eu.auth0.com"];
+  const frameSources = ["https://dev-dc1ylz5a2z8st3lr.eu.auth0.com"];
 
   if (!isProduction) {
     scriptSources.push("'unsafe-eval'", "'unsafe-inline'", "http://localhost:*", "http://127.0.0.1:*");

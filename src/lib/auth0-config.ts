@@ -1,16 +1,6 @@
-const DEFAULT_AUTH0_DOMAIN = "dev-qsrhlowiffrnw0dr.eu.auth0.com";
-const DEFAULT_AUTH0_CLIENT_ID = "5xH2LHeLMD5wRryzbt3SNGVbarv8C22D";
-const DEFAULT_AUTH0_AUDIENCE = "https://templesale-api";
-
-export const AUTH0_DOMAIN = String(
-  import.meta.env.VITE_AUTH0_DOMAIN ?? DEFAULT_AUTH0_DOMAIN,
-).trim();
-export const AUTH0_CLIENT_ID = String(
-  import.meta.env.VITE_AUTH0_CLIENT_ID ?? DEFAULT_AUTH0_CLIENT_ID,
-).trim();
-export const AUTH0_AUDIENCE = String(
-  import.meta.env.VITE_AUTH0_AUDIENCE ?? DEFAULT_AUTH0_AUDIENCE,
-).trim();
+export const AUTH0_DOMAIN = String(import.meta.env.VITE_AUTH0_DOMAIN ?? "").trim();
+export const AUTH0_CLIENT_ID = String(import.meta.env.VITE_AUTH0_CLIENT_ID ?? "").trim();
+export const AUTH0_AUDIENCE = String(import.meta.env.VITE_AUTH0_AUDIENCE ?? "").trim();
 
 export const IS_AUTH0_CONFIGURED = Boolean(AUTH0_DOMAIN && AUTH0_CLIENT_ID);
 export const AUTH0_DIAGNOSTIC_STORAGE_KEY = "templesale_auth0_diagnostic";
