@@ -39,6 +39,7 @@ type ProductRow = {
   id: number;
   slug: string | null;
   name: string;
+  name_translations: string | null;
   category: string;
   click_count: number;
   price: string;
@@ -47,6 +48,7 @@ type ProductRow = {
   image: string;
   images: string;
   description: string | null;
+  description_translations: string | null;
   details: string | null;
   user_id: number | null;
   latitude: number | null;
@@ -80,6 +82,7 @@ type ProductCommentRow = {
   parent_comment_id: number | null;
   rating: number | null;
   body: string;
+  body_translations: string | null;
   created_at: number;
   author_name: string;
   author_avatar_url: string | null;
@@ -117,6 +120,9 @@ type NotificationEventRow = {
   comment_id: number | null;
   created_at: number;
   event_id: string;
+  title_translations: string | null;
+  message_translations: string | null;
+  recipient_locale: string | null;
 };
 
 type NotificationRecord = {
@@ -140,11 +146,16 @@ type AdminBroadcastNotificationRecord = {
   id: number;
   title: string;
   message: string;
+  titleTranslations: Partial<Record<AppLocale, string>>;
+  messageTranslations: Partial<Record<AppLocale, string>>;
+  translationStatus: Partial<Record<AppLocale, string>>;
   productId?: number;
   productName?: string;
   createdBy: string;
   createdAt: number;
 };
+
+type AppLocale = "it-IT" | "pt-BR" | "ar-SA";
 
 type UserRow = {
   id: number;
@@ -163,6 +174,7 @@ type UserRow = {
   whatsapp_number: string | null;
   location_latitude: number | null;
   location_longitude: number | null;
+  preferred_locale: string | null;
   is_banned: boolean;
   ban_reason: string | null;
 };
@@ -181,6 +193,7 @@ type SessionUser = {
   whatsappNumber?: string;
   locationLatitude?: number;
   locationLongitude?: number;
+  preferredLocale?: AppLocale;
 };
 
 type Auth0JwtClaims = {
@@ -348,6 +361,7 @@ type SessionUserRow = Pick<
   | "whatsapp_number"
   | "location_latitude"
   | "location_longitude"
+  | "preferred_locale"
 >;
 
 dotenv.config();
@@ -374,6 +388,30 @@ const DEV_REMOTE_READ_ONLY =
 const RUN_DATABASE_MIGRATIONS =
   String(process.env.RUN_DATABASE_MIGRATIONS ?? (!IS_PRODUCTION).toString()).toLowerCase() ===
   "true";
+const SUPPORTED_APP_LOCALES: AppLocale[] = ["it-IT", "pt-BR", "ar-SA"];
+const DEFAULT_APP_LOCALE: AppLocale = "it-IT";
+const TRANSLATE_API_KEY = String(process.env.TRANSLATE_API_KEY ?? "").trim();
+const TRANSLATE_PROVIDER_TIMEOUT_MS = Math.max(
+  1500,
+  Number(process.env.TRANSLATE_TIMEOUT_MS ?? 5500) || 5500,
+);
+const TRANSLATE_PROVIDER_BASE_URLS = Array.from(
+  new Set(
+    [
+      String(process.env.TRANSLATE_API_BASE_URL ?? "").trim(),
+      "https://libretranslate.de",
+      "https://translate.astian.org",
+      "https://libretranslate.com",
+      "https://translate.argosopentech.com",
+    ].filter(Boolean),
+  ),
+);
+const TRANSLATE_LOCALE_TARGETS: Record<AppLocale, string> = {
+  "it-IT": "it",
+  "pt-BR": "pt",
+  "ar-SA": "ar",
+};
+const translationCache = new Map<string, string>();
 
 function normalizePostgresSearchPath(value: unknown): string {
   const raw = String(value ?? DEFAULT_DATABASE_SEARCH_PATH).trim();
@@ -383,6 +421,235 @@ function normalizePostgresSearchPath(value: unknown): string {
     .filter((schemaName) => /^[a-z_][a-z0-9_]*$/i.test(schemaName));
 
   return Array.from(new Set(schemaNames)).join(",");
+}
+
+function normalizeAppLocale(value: unknown): AppLocale | null {
+  const raw = String(value ?? "").trim();
+  if (raw === "it-IT" || raw === "pt-BR" || raw === "ar-SA") {
+    return raw;
+  }
+
+  const lower = raw.toLowerCase();
+  if (lower.startsWith("it")) {
+    return "it-IT";
+  }
+  if (lower.startsWith("pt")) {
+    return "pt-BR";
+  }
+  if (lower.startsWith("ar")) {
+    return "ar-SA";
+  }
+
+  return null;
+}
+
+function parseTranslationMap(value: unknown): Partial<Record<AppLocale, string>> {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+
+    const normalized: Partial<Record<AppLocale, string>> = {};
+    for (const locale of SUPPORTED_APP_LOCALES) {
+      const translated = String((parsed as Record<string, unknown>)[locale] ?? "").trim();
+      if (translated) {
+        normalized[locale] = translated;
+      }
+    }
+    return normalized;
+  } catch {
+    return {};
+  }
+}
+
+function stringifyTranslationMap(map: Partial<Record<AppLocale, string>>): string {
+  const normalized: Partial<Record<AppLocale, string>> = {};
+  for (const locale of SUPPORTED_APP_LOCALES) {
+    const translated = String(map[locale] ?? "").trim();
+    if (translated) {
+      normalized[locale] = translated;
+    }
+  }
+  return JSON.stringify(normalized);
+}
+
+function getLocalizedText(
+  original: string,
+  translations: unknown,
+  locale: AppLocale | null | undefined,
+): string {
+  const normalizedOriginal = String(original ?? "");
+  const normalizedLocale = normalizeAppLocale(locale) ?? DEFAULT_APP_LOCALE;
+  return parseTranslationMap(translations)[normalizedLocale] || normalizedOriginal;
+}
+
+function getRequestLocale(req: Request): AppLocale {
+  const explicitLocale = normalizeAppLocale(req.headers["x-templesale-locale"]);
+  if (explicitLocale) {
+    return explicitLocale;
+  }
+
+  const acceptLanguage = String(req.headers["accept-language"] ?? "");
+  for (const part of acceptLanguage.split(",")) {
+    const locale = normalizeAppLocale(part.split(";")[0]);
+    if (locale) {
+      return locale;
+    }
+  }
+
+  return DEFAULT_APP_LOCALE;
+}
+
+async function translateWithLibreProvider(
+  text: string,
+  target: string,
+  baseUrl: string,
+): Promise<string | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TRANSLATE_PROVIDER_TIMEOUT_MS);
+  try {
+    const payload: Record<string, unknown> = {
+      q: text,
+      source: "auto",
+      target,
+      format: "text",
+    };
+    if (TRANSLATE_API_KEY) {
+      payload.api_key = TRANSLATE_API_KEY;
+    }
+
+    const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/translate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+    const translated = String(data?.translatedText ?? "").trim();
+    return translated || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function translateWithMyMemory(text: string, target: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TRANSLATE_PROVIDER_TIMEOUT_MS);
+  try {
+    const url = new URL("https://api.mymemory.translated.net/get");
+    url.searchParams.set("q", text.slice(0, 5000));
+    url.searchParams.set("langpair", `auto|${target}`);
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      return null;
+    }
+    const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+    const responseData = data?.responseData as Record<string, unknown> | undefined;
+    const translated = String(responseData?.translatedText ?? "").trim();
+    return translated || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function translateTextToLocale(text: string, locale: AppLocale): Promise<string | null> {
+  const normalizedText = String(text ?? "").trim();
+  if (!normalizedText) {
+    return null;
+  }
+
+  const target = TRANSLATE_LOCALE_TARGETS[locale];
+  const cacheKey = `${locale}|${normalizedText}`;
+  const cached = translationCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  for (const baseUrl of TRANSLATE_PROVIDER_BASE_URLS) {
+    const translated = await translateWithLibreProvider(normalizedText, target, baseUrl);
+    if (translated) {
+      translationCache.set(cacheKey, translated);
+      return translated;
+    }
+  }
+
+  const fallback = await translateWithMyMemory(normalizedText, target);
+  if (fallback) {
+    translationCache.set(cacheKey, fallback);
+    return fallback;
+  }
+
+  return null;
+}
+
+async function buildTranslationsForText(
+  text: string,
+): Promise<{
+  translations: Partial<Record<AppLocale, string>>;
+  status: Partial<Record<AppLocale, string>>;
+}> {
+  const normalizedText = String(text ?? "").trim();
+  const translations: Partial<Record<AppLocale, string>> = {};
+  const status: Partial<Record<AppLocale, string>> = {};
+  if (!normalizedText) {
+    return { translations, status };
+  }
+
+  await Promise.all(
+    SUPPORTED_APP_LOCALES.map(async (locale) => {
+      const translated = await translateTextToLocale(normalizedText, locale);
+      translations[locale] = translated || normalizedText;
+      status[locale] = translated ? "translated" : "fallback";
+    }),
+  );
+
+  return { translations, status };
+}
+
+async function buildContentTranslations(input: {
+  title?: string;
+  message?: string;
+  name?: string;
+  description?: string;
+  body?: string;
+}) {
+  const [title, message, name, description, body] = await Promise.all([
+    buildTranslationsForText(input.title ?? ""),
+    buildTranslationsForText(input.message ?? ""),
+    buildTranslationsForText(input.name ?? ""),
+    buildTranslationsForText(input.description ?? ""),
+    buildTranslationsForText(input.body ?? ""),
+  ]);
+
+  const status: Partial<Record<AppLocale, string>> = {};
+  for (const locale of SUPPORTED_APP_LOCALES) {
+    const values = [
+      title.status[locale],
+      message.status[locale],
+      name.status[locale],
+      description.status[locale],
+      body.status[locale],
+    ].filter(Boolean);
+    if (values.length > 0) {
+      status[locale] = values.every((value) => value === "translated")
+        ? "translated"
+        : "partial";
+    }
+  }
+
+  return { title, message, name, description, body, status };
 }
 
 function isLocalDatabaseHost(hostname: string): boolean {
@@ -797,6 +1064,7 @@ const PRODUCT_SELECT_FIELDS = `
   p.id,
   NULLIF(TRIM(COALESCE(p.slug, '')), '') AS slug,
   COALESCE(NULLIF(TRIM(COALESCE(p.name, '')), ''), NULLIF(TRIM(COALESCE(p.title, '')), ''), 'Produto sem título') AS name,
+  COALESCE(p.name_translations, '{}') AS name_translations,
   p.category,
   COALESCE(p.click_count, 0) AS click_count,
   p.price,
@@ -809,6 +1077,7 @@ const PRODUCT_SELECT_FIELDS = `
     ELSE '[]'
   END AS images,
   COALESCE(p.description, '') AS description,
+  COALESCE(p.description_translations, '{}') AS description_translations,
   COALESCE(p.details, '{}') AS details,
   p.user_id,
   COALESCE(p.latitude, p.lat) AS latitude,
@@ -839,6 +1108,7 @@ const USER_SELECT_FIELDS = `
   whatsapp_number,
   location_latitude,
   location_longitude,
+  preferred_locale,
   COALESCE(is_banned, FALSE) AS is_banned,
   NULLIF(TRIM(COALESCE(ban_reason, '')), '') AS ban_reason
 `;
@@ -857,7 +1127,8 @@ const SESSION_USER_SELECT_FIELDS = `
   u.whatsapp_country_iso,
   u.whatsapp_number,
   u.location_latitude,
-  u.location_longitude
+  u.location_longitude,
+  u.preferred_locale
 `;
 
 let sqliteDb: Database.Database | null = null;
@@ -987,6 +1258,7 @@ function normalizeProductRow(row: Record<string, unknown>): ProductRow {
     id: toRequiredNumber(row.id),
     slug: toNullableString(row.slug),
     name: String(row.name ?? ""),
+    name_translations: toNullableString(row.name_translations),
     category: String(row.category ?? ""),
     click_count: toRequiredNonNegativeInteger(row.click_count, 0),
     price: String(row.price ?? ""),
@@ -995,6 +1267,7 @@ function normalizeProductRow(row: Record<string, unknown>): ProductRow {
     image: String(row.image ?? DEFAULT_IMAGE),
     images: String(row.images ?? "[]"),
     description: toNullableString(row.description),
+    description_translations: toNullableString(row.description_translations),
     details: toNullableString(row.details),
     user_id: toNullableNumber(row.user_id),
     latitude: toNullableNumber(row.latitude),
@@ -1027,6 +1300,7 @@ function normalizeUserRow(row: Record<string, unknown>): UserRow {
     whatsapp_number: toNullableString(row.whatsapp_number),
     location_latitude: toNullableNumber(row.location_latitude),
     location_longitude: toNullableNumber(row.location_longitude),
+    preferred_locale: toNullableString(row.preferred_locale),
     is_banned: toBooleanValue(row.is_banned, false),
     ban_reason: toNullableString(row.ban_reason),
   };
@@ -1048,6 +1322,7 @@ function normalizeSessionUserRow(row: Record<string, unknown>): SessionUserRow {
     whatsapp_number: toNullableString(row.whatsapp_number),
     location_latitude: toNullableNumber(row.location_latitude),
     location_longitude: toNullableNumber(row.location_longitude),
+    preferred_locale: toNullableString(row.preferred_locale),
   };
 }
 
@@ -1102,6 +1377,9 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
     event_id:
       String(row.event_id ?? "").trim() ||
       `${type}:${productId ?? "site"}:${actorUserId ?? "anon"}:${parsedCreatedAt}`,
+    title_translations: toNullableString(row.title_translations),
+    message_translations: toNullableString(row.message_translations),
+    recipient_locale: toNullableString(row.recipient_locale),
   };
 }
 
@@ -1137,6 +1415,7 @@ function normalizeProductCommentRow(row: Record<string, unknown>): ProductCommen
     parent_comment_id: toNullableNumber(row.parent_comment_id),
     rating: toNullableNumber(row.rating),
     body: String(row.body ?? ""),
+    body_translations: toNullableString(row.body_translations),
     created_at: parsedCreatedAt,
     author_name: String(row.author_name ?? "").trim() || `Usuário ${toRequiredNumber(row.user_id)}`,
     author_avatar_url: toNullableString(row.author_avatar_url),
@@ -1677,6 +1956,7 @@ function initializeSqliteDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       slug TEXT,
       name TEXT NOT NULL,
+      name_translations TEXT NOT NULL DEFAULT '{}',
       category TEXT NOT NULL,
       click_count INTEGER NOT NULL DEFAULT 0,
       price TEXT NOT NULL,
@@ -1685,6 +1965,7 @@ function initializeSqliteDatabase() {
       image TEXT NOT NULL,
       images TEXT NOT NULL DEFAULT '[]',
       description TEXT DEFAULT '',
+      description_translations TEXT NOT NULL DEFAULT '{}',
       details TEXT NOT NULL DEFAULT '{}',
       user_id INTEGER,
       latitude REAL,
@@ -1709,6 +1990,7 @@ function initializeSqliteDatabase() {
       whatsapp_number TEXT NOT NULL DEFAULT '',
       location_latitude REAL,
       location_longitude REAL,
+      preferred_locale TEXT NOT NULL DEFAULT 'it-IT',
       is_banned INTEGER NOT NULL DEFAULT 0,
       ban_reason TEXT NOT NULL DEFAULT '',
       new_product_defaults TEXT NOT NULL DEFAULT '{}',
@@ -1752,6 +2034,7 @@ function initializeSqliteDatabase() {
       parent_comment_id INTEGER,
       rating INTEGER,
       body TEXT NOT NULL DEFAULT '',
+      body_translations TEXT NOT NULL DEFAULT '{}',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -1771,6 +2054,9 @@ function initializeSqliteDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL DEFAULT '',
       message TEXT NOT NULL DEFAULT '',
+      title_translations TEXT NOT NULL DEFAULT '{}',
+      message_translations TEXT NOT NULL DEFAULT '{}',
+      translation_status TEXT NOT NULL DEFAULT '{}',
       product_id INTEGER,
       created_by TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
@@ -1869,6 +2155,12 @@ function initializeSqliteDatabase() {
   if (!productColumns.some((column) => column.name === "slug")) {
     db.exec("ALTER TABLE products ADD COLUMN slug TEXT");
   }
+  if (!productColumns.some((column) => column.name === "name_translations")) {
+    db.exec("ALTER TABLE products ADD COLUMN name_translations TEXT NOT NULL DEFAULT '{}'");
+  }
+  if (!productColumns.some((column) => column.name === "description_translations")) {
+    db.exec("ALTER TABLE products ADD COLUMN description_translations TEXT NOT NULL DEFAULT '{}'");
+  }
   db.exec("UPDATE products SET click_count = 0 WHERE click_count IS NULL OR click_count < 0");
   db.exec("UPDATE products SET quantity = 1 WHERE quantity IS NULL OR quantity < 0");
   db.exec(
@@ -1923,6 +2215,9 @@ function initializeSqliteDatabase() {
   if (!userColumns.some((column) => column.name === "location_longitude")) {
     db.exec("ALTER TABLE users ADD COLUMN location_longitude REAL");
   }
+  if (!userColumns.some((column) => column.name === "preferred_locale")) {
+    db.exec("ALTER TABLE users ADD COLUMN preferred_locale TEXT NOT NULL DEFAULT 'it-IT'");
+  }
   if (!userColumns.some((column) => column.name === "auth0_sub")) {
     db.exec("ALTER TABLE users ADD COLUMN auth0_sub TEXT");
   }
@@ -1931,6 +2226,13 @@ function initializeSqliteDatabase() {
   }
   if (!userColumns.some((column) => column.name === "ban_reason")) {
     db.exec("ALTER TABLE users ADD COLUMN ban_reason TEXT NOT NULL DEFAULT ''");
+  }
+
+  const commentColumns = db.prepare("PRAGMA table_info(product_comments)").all() as Array<{
+    name: string;
+  }>;
+  if (!commentColumns.some((column) => column.name === "body_translations")) {
+    db.exec("ALTER TABLE product_comments ADD COLUMN body_translations TEXT NOT NULL DEFAULT '{}'");
   }
 
   const visitorColumns = db.prepare("PRAGMA table_info(site_daily_visitors)").all() as Array<{
@@ -2083,6 +2385,7 @@ async function initializePostgresDatabase() {
         whatsapp_number TEXT NOT NULL DEFAULT '',
         location_latitude DOUBLE PRECISION,
         location_longitude DOUBLE PRECISION,
+        preferred_locale TEXT NOT NULL DEFAULT 'it-IT',
         is_banned BOOLEAN NOT NULL DEFAULT FALSE,
         ban_reason TEXT NOT NULL DEFAULT '',
         new_product_defaults TEXT NOT NULL DEFAULT '{}',
@@ -2094,6 +2397,7 @@ async function initializePostgresDatabase() {
         id BIGSERIAL PRIMARY KEY,
         slug TEXT,
         name TEXT NOT NULL,
+        name_translations TEXT NOT NULL DEFAULT '{}',
         category TEXT NOT NULL,
         click_count INTEGER NOT NULL DEFAULT 0,
         price TEXT NOT NULL,
@@ -2102,6 +2406,7 @@ async function initializePostgresDatabase() {
         image TEXT NOT NULL,
         images TEXT NOT NULL DEFAULT '[]',
         description TEXT DEFAULT '',
+        description_translations TEXT NOT NULL DEFAULT '{}',
         details TEXT NOT NULL DEFAULT '{}',
         user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
         latitude DOUBLE PRECISION,
@@ -2144,6 +2449,7 @@ async function initializePostgresDatabase() {
         parent_comment_id BIGINT REFERENCES product_comments(id) ON DELETE CASCADE,
         rating INTEGER,
         body TEXT NOT NULL DEFAULT '',
+        body_translations TEXT NOT NULL DEFAULT '{}',
         created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
         CONSTRAINT product_comments_rating_range
           CHECK (rating IS NULL OR (rating >= 1 AND rating <= 5))
@@ -2162,6 +2468,9 @@ async function initializePostgresDatabase() {
         id BIGSERIAL PRIMARY KEY,
         title TEXT NOT NULL DEFAULT '',
         message TEXT NOT NULL DEFAULT '',
+        title_translations TEXT NOT NULL DEFAULT '{}',
+        message_translations TEXT NOT NULL DEFAULT '{}',
+        translation_status TEXT NOT NULL DEFAULT '{}',
         product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
         created_by TEXT NOT NULL DEFAULT '',
         created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
@@ -2208,9 +2517,11 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS ban_reason TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_locale TEXT NOT NULL DEFAULT 'it-IT'",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id BIGINT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS name TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS title TEXT",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS name_translations TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS category TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS click_count INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS price TEXT",
@@ -2221,6 +2532,7 @@ async function initializePostgresDatabase() {
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS images TEXT DEFAULT '[]'",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_urls TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS description_translations TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS details TEXT DEFAULT '{}'",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS slug TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION",
@@ -2245,12 +2557,16 @@ async function initializePostgresDatabase() {
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS parent_comment_id BIGINT",
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS rating INTEGER",
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS body TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS body_translations TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
     "ALTER TABLE notification_dismissals ADD COLUMN IF NOT EXISTS owner_user_id BIGINT",
     "ALTER TABLE notification_dismissals ADD COLUMN IF NOT EXISTS event_id TEXT",
     "ALTER TABLE notification_dismissals ADD COLUMN IF NOT EXISTS dismissed_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS message TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS title_translations TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS message_translations TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS translation_status TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS product_id BIGINT",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
@@ -3284,6 +3600,7 @@ async function selectProductCommentByIdRow(commentId: number): Promise<ProductCo
           c.parent_comment_id,
           c.rating,
           c.body,
+          COALESCE(c.body_translations, '{}') AS body_translations,
           c.created_at,
           COALESCE(
             NULLIF(BTRIM(u.name), ''),
@@ -3312,6 +3629,7 @@ async function selectProductCommentByIdRow(commentId: number): Promise<ProductCo
           c.parent_comment_id,
           c.rating,
           c.body,
+          COALESCE(c.body_translations, '{}') AS body_translations,
           c.created_at,
           COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), 'Usuário') AS author_name,
           NULLIF(TRIM(u.avatar_url), '') AS author_avatar_url
@@ -3335,6 +3653,7 @@ async function selectProductCommentsRows(productId: number): Promise<ProductComm
           c.parent_comment_id,
           c.rating,
           c.body,
+          COALESCE(c.body_translations, '{}') AS body_translations,
           c.created_at,
           COALESCE(
             NULLIF(BTRIM(u.name), ''),
@@ -3363,6 +3682,7 @@ async function selectProductCommentsRows(productId: number): Promise<ProductComm
           c.parent_comment_id,
           c.rating,
           c.body,
+          COALESCE(c.body_translations, '{}') AS body_translations,
           c.created_at,
           COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), 'Usuário') AS author_name,
           NULLIF(TRIM(u.avatar_url), '') AS author_avatar_url
@@ -3384,6 +3704,8 @@ async function createProductCommentRecord(input: {
   body: string;
 }): Promise<number> {
   const createdAt = Math.floor(Date.now() / 1000);
+  const translations = await buildContentTranslations({ body: input.body });
+  const bodyTranslations = stringifyTranslationMap(translations.body.translations);
 
   if (pgPool) {
     const result = await pgPool.query<{ id: number | string }>(
@@ -3393,12 +3715,20 @@ async function createProductCommentRecord(input: {
           user_id,
           parent_comment_id,
           rating,
-          body
+          body,
+          body_translations
         )
-        VALUES ($1, $2, $3, $4, $5)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
       `,
-      [input.productId, input.userId, input.parentCommentId, input.rating, input.body],
+      [
+        input.productId,
+        input.userId,
+        input.parentCommentId,
+        input.rating,
+        input.body,
+        bodyTranslations,
+      ],
     );
     return toRequiredNumber(result.rows[0]?.id);
   }
@@ -3412,9 +3742,10 @@ async function createProductCommentRecord(input: {
           parent_comment_id,
           rating,
           body,
+          body_translations,
           created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `,
     )
     .run(
@@ -3423,6 +3754,7 @@ async function createProductCommentRecord(input: {
       input.parentCommentId,
       input.rating,
       input.body,
+      bodyTranslations,
       createdAt,
     );
 
@@ -3431,22 +3763,25 @@ async function createProductCommentRecord(input: {
 
 async function updateProductCommentRecord(commentId: number, userId: number, body: string): Promise<boolean> {
   const normalizedBody = normalizeIncomingProductCommentBody(body);
+  const translations = await buildContentTranslations({ body: normalizedBody });
+  const bodyTranslations = stringifyTranslationMap(translations.body.translations);
 
   if (pgPool) {
     const result = await pgPool.query(
       `
         UPDATE product_comments
-        SET body = $1
-        WHERE id = $2 AND user_id = $3
+        SET body = $1,
+            body_translations = $2
+        WHERE id = $3 AND user_id = $4
       `,
-      [normalizedBody, commentId, userId],
+      [normalizedBody, bodyTranslations, commentId, userId],
     );
     return (result.rowCount ?? 0) > 0;
   }
 
   const result = requireSqliteDb()
-    .prepare("UPDATE product_comments SET body = ? WHERE id = ? AND user_id = ?")
-    .run(normalizedBody, commentId, userId);
+    .prepare("UPDATE product_comments SET body = ?, body_translations = ? WHERE id = ? AND user_id = ?")
+    .run(normalizedBody, bodyTranslations, commentId, userId);
   return result.changes > 0;
 }
 
@@ -3574,11 +3909,17 @@ async function ensureAdminBroadcastNotificationsStorage(): Promise<void> {
         id BIGSERIAL PRIMARY KEY,
         title TEXT NOT NULL DEFAULT '',
         message TEXT NOT NULL DEFAULT '',
+        title_translations TEXT NOT NULL DEFAULT '{}',
+        message_translations TEXT NOT NULL DEFAULT '{}',
+        translation_status TEXT NOT NULL DEFAULT '{}',
         product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
         created_by TEXT NOT NULL DEFAULT '',
         created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
       )
     `);
+    await pgPool.query("ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS title_translations TEXT NOT NULL DEFAULT '{}'");
+    await pgPool.query("ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS message_translations TEXT NOT NULL DEFAULT '{}'");
+    await pgPool.query("ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS translation_status TEXT NOT NULL DEFAULT '{}'");
     await pgPool.query(
       "CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_created ON admin_broadcast_notifications(created_at DESC)",
     );
@@ -3590,6 +3931,9 @@ async function ensureAdminBroadcastNotificationsStorage(): Promise<void> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL DEFAULT '',
       message TEXT NOT NULL DEFAULT '',
+      title_translations TEXT NOT NULL DEFAULT '{}',
+      message_translations TEXT NOT NULL DEFAULT '{}',
+      translation_status TEXT NOT NULL DEFAULT '{}',
       product_id INTEGER,
       created_by TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
@@ -3598,6 +3942,18 @@ async function ensureAdminBroadcastNotificationsStorage(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_created
       ON admin_broadcast_notifications(created_at DESC);
   `);
+  const columns = requireSqliteDb()
+    .prepare("PRAGMA table_info(admin_broadcast_notifications)")
+    .all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "title_translations")) {
+    requireSqliteDb().exec("ALTER TABLE admin_broadcast_notifications ADD COLUMN title_translations TEXT NOT NULL DEFAULT '{}'");
+  }
+  if (!columns.some((column) => column.name === "message_translations")) {
+    requireSqliteDb().exec("ALTER TABLE admin_broadcast_notifications ADD COLUMN message_translations TEXT NOT NULL DEFAULT '{}'");
+  }
+  if (!columns.some((column) => column.name === "translation_status")) {
+    requireSqliteDb().exec("ALTER TABLE admin_broadcast_notifications ADD COLUMN translation_status TEXT NOT NULL DEFAULT '{}'");
+  }
 }
 
 async function dismissNotificationRecord(ownerId: number, eventId: string): Promise<void> {
@@ -3691,14 +4047,27 @@ async function createAdminBroadcastNotificationRecord(input: {
     }
   }
 
+  const translations = await buildContentTranslations({ title, message });
+  const titleTranslations = stringifyTranslationMap(translations.title.translations);
+  const messageTranslations = stringifyTranslationMap(translations.message.translations);
+  const translationStatus = stringifyTranslationMap(translations.status);
+
   if (pgPool) {
     const result = await pgPool.query<{ id: number | string }>(
       `
-        INSERT INTO admin_broadcast_notifications (title, message, product_id, created_by)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO admin_broadcast_notifications (
+          title,
+          message,
+          title_translations,
+          message_translations,
+          translation_status,
+          product_id,
+          created_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
       `,
-      [title, message, productId, createdBy],
+      [title, message, titleTranslations, messageTranslations, translationStatus, productId, createdBy],
     );
     return toRequiredNumber(result.rows[0]?.id);
   }
@@ -3707,11 +4076,29 @@ async function createAdminBroadcastNotificationRecord(input: {
   const result = requireSqliteDb()
     .prepare(
       `
-        INSERT INTO admin_broadcast_notifications (title, message, product_id, created_by, created_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO admin_broadcast_notifications (
+          title,
+          message,
+          title_translations,
+          message_translations,
+          translation_status,
+          product_id,
+          created_by,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
     )
-    .run(title, message, productId, createdBy, now);
+    .run(
+      title,
+      message,
+      titleTranslations,
+      messageTranslations,
+      translationStatus,
+      productId,
+      createdBy,
+      now,
+    );
   return Number(result.lastInsertRowid);
 }
 
@@ -3735,6 +4122,9 @@ function rowToAdminBroadcastNotification(row: Record<string, unknown>): AdminBro
     id: toRequiredNumber(row.id),
     title: String(row.title ?? "").trim(),
     message: String(row.message ?? "").trim(),
+    titleTranslations: parseTranslationMap(row.title_translations),
+    messageTranslations: parseTranslationMap(row.message_translations),
+    translationStatus: parseTranslationMap(row.translation_status),
     createdBy: String(row.created_by ?? "").trim(),
     createdAt,
   };
@@ -3761,6 +4151,9 @@ async function selectAdminBroadcastNotificationRows(): Promise<AdminBroadcastNot
           b.id,
           b.title,
           b.message,
+          b.title_translations,
+          b.message_translations,
+          b.translation_status,
           b.product_id,
           p.name AS product_name,
           b.created_by,
@@ -3786,6 +4179,9 @@ async function selectAdminBroadcastNotificationRows(): Promise<AdminBroadcastNot
           b.id,
           b.title,
           b.message,
+          b.title_translations,
+          b.message_translations,
+          b.translation_status,
           b.product_id,
           p.name AS product_name,
           b.created_by,
@@ -3839,7 +4235,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
               WHEN l.created_at::TEXT ~ '^[0-9]+$' THEN l.created_at::TEXT::BIGINT
               ELSE EXTRACT(EPOCH FROM l.created_at::TEXT::TIMESTAMPTZ)::BIGINT
             END AS sort_created_at,
-            'product_like:' || l.user_id::TEXT || ':' || l.product_id::TEXT || ':' || l.created_at::TEXT AS event_id
+            'product_like:' || l.user_id::TEXT || ':' || l.product_id::TEXT || ':' || l.created_at::TEXT AS event_id,
+            NULL::TEXT AS title_translations,
+            NULL::TEXT AS message_translations,
+            NULL::TEXT AS recipient_locale
           FROM product_likes l
           INNER JOIN products p ON p.id = l.product_id
           LEFT JOIN users lu ON lu.id = l.user_id
@@ -3863,7 +4262,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
               WHEN c.created_at::TEXT ~ '^[0-9]+$' THEN c.created_at::TEXT::BIGINT
               ELSE EXTRACT(EPOCH FROM c.created_at::TEXT::TIMESTAMPTZ)::BIGINT
             END AS sort_created_at,
-            'product_cart_interest:' || c.id::TEXT AS event_id
+            'product_cart_interest:' || c.id::TEXT AS event_id,
+            NULL::TEXT AS title_translations,
+            NULL::TEXT AS message_translations,
+            NULL::TEXT AS recipient_locale
           FROM product_cart_notifications c
           INNER JOIN products p ON p.id = c.product_id
           LEFT JOIN users cu ON cu.id = c.actor_user_id
@@ -3888,7 +4290,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
               WHEN c.created_at::TEXT ~ '^[0-9]+$' THEN c.created_at::TEXT::BIGINT
               ELSE EXTRACT(EPOCH FROM c.created_at::TEXT::TIMESTAMPTZ)::BIGINT
             END AS sort_created_at,
-            'product_comment:' || c.id::TEXT AS event_id
+            'product_comment:' || c.id::TEXT AS event_id,
+            NULL::TEXT AS title_translations,
+            NULL::TEXT AS message_translations,
+            NULL::TEXT AS recipient_locale
           FROM product_comments c
           INNER JOIN products p ON p.id = c.product_id
           LEFT JOIN users cu ON cu.id = c.user_id
@@ -3913,7 +4318,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
               WHEN c.created_at::TEXT ~ '^[0-9]+$' THEN c.created_at::TEXT::BIGINT
               ELSE EXTRACT(EPOCH FROM c.created_at::TEXT::TIMESTAMPTZ)::BIGINT
             END AS sort_created_at,
-            'product_comment_reply:' || c.id::TEXT AS event_id
+            'product_comment_reply:' || c.id::TEXT AS event_id,
+            NULL::TEXT AS title_translations,
+            NULL::TEXT AS message_translations,
+            NULL::TEXT AS recipient_locale
           FROM product_comments c
           INNER JOIN product_comments parent_comment ON parent_comment.id = c.parent_comment_id
           INNER JOIN products p ON p.id = c.product_id
@@ -3940,7 +4348,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
               WHEN b.created_at::TEXT ~ '^[0-9]+$' THEN b.created_at::TEXT::BIGINT
               ELSE EXTRACT(EPOCH FROM b.created_at::TEXT::TIMESTAMPTZ)::BIGINT
             END AS sort_created_at,
-            'admin_broadcast:' || b.id::TEXT AS event_id
+            'admin_broadcast:' || b.id::TEXT AS event_id,
+            b.title_translations,
+            b.message_translations,
+            recipient.preferred_locale AS recipient_locale
           FROM admin_broadcast_notifications b
           LEFT JOIN products p ON p.id = b.product_id
           INNER JOIN users recipient ON recipient.id = $4
@@ -3987,7 +4398,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL AS comment_id,
             l.created_at,
             CAST(l.created_at AS INTEGER) AS sort_created_at,
-            'product_like:' || l.user_id || ':' || l.product_id || ':' || l.created_at AS event_id
+            'product_like:' || l.user_id || ':' || l.product_id || ':' || l.created_at AS event_id,
+            NULL AS title_translations,
+            NULL AS message_translations,
+            NULL AS recipient_locale
           FROM product_likes l
           INNER JOIN products p ON p.id = l.product_id
           LEFT JOIN users lu ON lu.id = l.user_id
@@ -4008,7 +4422,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL AS comment_id,
             c.created_at,
             CAST(c.created_at AS INTEGER) AS sort_created_at,
-            'product_cart_interest:' || c.id AS event_id
+            'product_cart_interest:' || c.id AS event_id,
+            NULL AS title_translations,
+            NULL AS message_translations,
+            NULL AS recipient_locale
           FROM product_cart_notifications c
           INNER JOIN products p ON p.id = c.product_id
           LEFT JOIN users cu ON cu.id = c.actor_user_id
@@ -4030,7 +4447,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             c.id AS comment_id,
             c.created_at,
             CAST(c.created_at AS INTEGER) AS sort_created_at,
-            'product_comment:' || c.id AS event_id
+            'product_comment:' || c.id AS event_id,
+            NULL AS title_translations,
+            NULL AS message_translations,
+            NULL AS recipient_locale
           FROM product_comments c
           INNER JOIN products p ON p.id = c.product_id
           LEFT JOIN users cu ON cu.id = c.user_id
@@ -4052,7 +4472,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             c.id AS comment_id,
             c.created_at,
             CAST(c.created_at AS INTEGER) AS sort_created_at,
-            'product_comment_reply:' || c.id AS event_id
+            'product_comment_reply:' || c.id AS event_id,
+            NULL AS title_translations,
+            NULL AS message_translations,
+            NULL AS recipient_locale
           FROM product_comments c
           INNER JOIN product_comments parent_comment ON parent_comment.id = c.parent_comment_id
           INNER JOIN products p ON p.id = c.product_id
@@ -4076,7 +4499,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL AS comment_id,
             b.created_at,
             CAST(b.created_at AS INTEGER) AS sort_created_at,
-            'admin_broadcast:' || b.id AS event_id
+            'admin_broadcast:' || b.id AS event_id,
+            b.title_translations,
+            b.message_translations,
+            recipient.preferred_locale AS recipient_locale
           FROM admin_broadcast_notifications b
           LEFT JOIN products p ON p.id = b.product_id
           INNER JOIN users recipient ON recipient.id = ?
@@ -4110,12 +4536,20 @@ async function createProductRecord(
   normalized: NormalizedProductInput,
   userId: number,
 ): Promise<number> {
+  const translations = await buildContentTranslations({
+    name: normalized.name,
+    description: normalized.description,
+  });
+  const nameTranslations = stringifyTranslationMap(translations.name.translations);
+  const descriptionTranslations = stringifyTranslationMap(translations.description.translations);
+
   if (pgPool) {
     const result = await pgPool.query<{ id: number | string }>(
       `
         INSERT INTO products (
           title,
           name,
+          name_translations,
           category,
           price,
           price_negotiable,
@@ -4125,6 +4559,7 @@ async function createProductRecord(
           image_url,
           image_urls,
           description,
+          description_translations,
           details,
           user_id,
           latitude,
@@ -4132,12 +4567,13 @@ async function createProductRecord(
           lat,
           lng
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
         RETURNING id
       `,
       [
         normalized.name,
         normalized.name,
+        nameTranslations,
         normalized.category,
         normalized.price,
         normalized.priceNegotiable,
@@ -4147,6 +4583,7 @@ async function createProductRecord(
         normalized.image,
         normalized.images,
         normalized.description,
+        descriptionTranslations,
         normalized.details,
         userId,
         normalized.latitude,
@@ -4172,6 +4609,7 @@ async function createProductRecord(
       `
         INSERT INTO products (
           name,
+          name_translations,
           category,
           price,
           price_negotiable,
@@ -4179,6 +4617,7 @@ async function createProductRecord(
           image,
           images,
           description,
+          description_translations,
           details,
           user_id,
           latitude,
@@ -4186,6 +4625,7 @@ async function createProductRecord(
         )
         VALUES (
           @name,
+          @name_translations,
           @category,
           @price,
           @price_negotiable,
@@ -4193,6 +4633,7 @@ async function createProductRecord(
           @image,
           @images,
           @description,
+          @description_translations,
           @details,
           @user_id,
           @latitude,
@@ -4202,6 +4643,8 @@ async function createProductRecord(
     )
     .run({
       ...normalized,
+      name_translations: nameTranslations,
+      description_translations: descriptionTranslations,
       price_negotiable: normalized.priceNegotiable ? 1 : 0,
       user_id: userId,
     });
@@ -4218,6 +4661,13 @@ async function createProductRecord(
 }
 
 async function updateProductRecord(id: number, normalized: NormalizedProductInput): Promise<void> {
+  const translations = await buildContentTranslations({
+    name: normalized.name,
+    description: normalized.description,
+  });
+  const nameTranslations = stringifyTranslationMap(translations.name.translations);
+  const descriptionTranslations = stringifyTranslationMap(translations.description.translations);
+
   if (pgPool) {
     await pgPool.query(
       `
@@ -4225,25 +4675,28 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
         SET
           title = $1,
           name = $2,
-          category = $3,
-          price = $4,
-          price_negotiable = $5,
-          quantity = $6,
-          image = $7,
-          images = $8,
-          image_url = $9,
-          image_urls = $10,
-          description = $11,
-          details = $12,
-          latitude = $13,
-          longitude = $14,
-          lat = $15,
-          lng = $16
-        WHERE id = $17
+          name_translations = $3,
+          category = $4,
+          price = $5,
+          price_negotiable = $6,
+          quantity = $7,
+          image = $8,
+          images = $9,
+          image_url = $10,
+          image_urls = $11,
+          description = $12,
+          description_translations = $13,
+          details = $14,
+          latitude = $15,
+          longitude = $16,
+          lat = $17,
+          lng = $18
+        WHERE id = $19
       `,
       [
         normalized.name,
         normalized.name,
+        nameTranslations,
         normalized.category,
         normalized.price,
         normalized.priceNegotiable,
@@ -4253,6 +4706,7 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
         normalized.image,
         normalized.images,
         normalized.description,
+        descriptionTranslations,
         normalized.details,
         normalized.latitude,
         normalized.longitude,
@@ -4278,6 +4732,7 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
         UPDATE products
         SET
           name = @name,
+          name_translations = @name_translations,
           category = @category,
           price = @price,
           price_negotiable = @price_negotiable,
@@ -4285,6 +4740,7 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
           image = @image,
           images = @images,
           description = @description,
+          description_translations = @description_translations,
           details = @details,
           latitude = @latitude,
           longitude = @longitude
@@ -4294,6 +4750,8 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
     .run({
       id,
       ...normalized,
+      name_translations: nameTranslations,
+      description_translations: descriptionTranslations,
       price_negotiable: normalized.priceNegotiable ? 1 : 0,
     });
   try {
@@ -4966,6 +5424,17 @@ async function updateUserLocationRecord(
     });
 }
 
+async function updateUserPreferredLocaleRecord(userId: number, locale: AppLocale): Promise<void> {
+  if (pgPool) {
+    await pgPool.query("UPDATE users SET preferred_locale = $1 WHERE id = $2", [locale, userId]);
+    return;
+  }
+
+  requireSqliteDb()
+    .prepare("UPDATE users SET preferred_locale = ? WHERE id = ?")
+    .run(locale, userId);
+}
+
 async function selectUserNewProductDraftDefaultsRecord(
   userId: number,
 ): Promise<NewProductDraftDefaults> {
@@ -5220,13 +5689,13 @@ function normalizeImages(images: unknown, fallbackImage: string): string[] {
   return image ? [image] : [DEFAULT_IMAGE];
 }
 
-function rowToProduct(row: ProductRow): ProductRecord {
+function rowToProduct(row: ProductRow, locale?: AppLocale): ProductRecord {
   const images = safeJsonParse<string[]>(row.images, []);
   const details = safeJsonParse<Record<string, string>>(row.details, {});
 
   const product: ProductRecord = {
     id: row.id,
-    name: row.name,
+    name: locale ? getLocalizedText(row.name, row.name_translations, locale) : row.name,
     category: row.category,
     clickCount: toRequiredNonNegativeInteger(row.click_count, 0),
     price: toBooleanValue(row.price_negotiable, false)
@@ -5236,7 +5705,9 @@ function rowToProduct(row: ProductRow): ProductRecord {
     quantity: row.quantity,
     image: row.image,
     images: images.length > 0 ? images : [row.image || DEFAULT_IMAGE],
-    description: row.description ?? "",
+    description: locale
+      ? getLocalizedText(row.description ?? "", row.description_translations, locale)
+      : (row.description ?? ""),
     details,
   };
 
@@ -5305,12 +5776,15 @@ function rowToAdminProduct(row: ProductRow): AdminProductRecord {
   return product;
 }
 
-function rowToProductComment(row: ProductCommentRow): ProductCommentRecord {
+function rowToProductComment(
+  row: ProductCommentRow,
+  locale?: AppLocale,
+): ProductCommentRecord {
   const normalized: ProductCommentRecord = {
     id: row.id,
     productId: row.product_id,
     userId: row.user_id,
-    body: row.body,
+    body: locale ? getLocalizedText(row.body, row.body_translations, locale) : row.body,
     createdAt: row.created_at,
     authorName: row.author_name.trim() || `Usuário ${row.user_id}`,
     authorAvatarUrl: row.author_avatar_url ?? "",
@@ -5327,12 +5801,15 @@ function rowToProductComment(row: ProductCommentRow): ProductCommentRecord {
   return normalized;
 }
 
-function buildProductCommentsThread(rows: ProductCommentRow[]): ProductCommentRecord[] {
+function buildProductCommentsThread(
+  rows: ProductCommentRow[],
+  locale?: AppLocale,
+): ProductCommentRecord[] {
   const commentsById = new globalThis.Map<number, ProductCommentRecord>();
   const topLevelComments: ProductCommentRecord[] = [];
 
   for (const row of rows) {
-    commentsById.set(row.id, rowToProductComment(row));
+    commentsById.set(row.id, rowToProductComment(row, locale));
   }
 
   for (const row of rows) {
@@ -5397,11 +5874,18 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
     ? row.created_at
     : Math.floor(Date.now() / 1000);
   if (row.type === "admin_broadcast") {
+    const recipientLocale = normalizeAppLocale(row.recipient_locale) ?? DEFAULT_APP_LOCALE;
+    const title = getLocalizedText(actorName || "TempleSale", row.title_translations, recipientLocale);
+    const message = getLocalizedText(
+      productName || "Atualização TempleSale",
+      row.message_translations,
+      recipientLocale,
+    );
     const normalized: NotificationRecord = {
       id: row.event_id,
       type: row.type,
-      title: actorName || "TempleSale",
-      message: productName || "Atualização TempleSale",
+      title,
+      message,
       createdAt,
       actorName: "TempleSale",
     };
@@ -6575,6 +7059,7 @@ function sanitizeUser(
     | "whatsapp_number"
     | "location_latitude"
     | "location_longitude"
+    | "preferred_locale"
   >,
 ): SessionUser {
   const locationLatitude = toNullableNumber(user.location_latitude);
@@ -6591,6 +7076,7 @@ function sanitizeUser(
     street: user.street ?? "",
     whatsappCountryIso: user.whatsapp_country_iso ?? "IT",
     whatsappNumber: user.whatsapp_number ?? "",
+    preferredLocale: normalizeAppLocale(user.preferred_locale) ?? DEFAULT_APP_LOCALE,
     ...(locationLatitude !== null ? { locationLatitude } : {}),
     ...(locationLongitude !== null ? { locationLongitude } : {}),
   };
@@ -7611,7 +8097,7 @@ async function bootstrap() {
       }
 
       const products = await selectProductsByOwnerRows(userId);
-      res.json(products.map(rowToProduct));
+      res.json(products.map((row) => rowToProduct(row)));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao listar produtos do usuário.";
       res.status(500).json({ error: message });
@@ -8206,6 +8692,34 @@ async function bootstrap() {
     }
   });
 
+  app.put(["/api/profile/locale", "/api/auth/locale"], async (req, res) => {
+    const sessionUser = await requireAuth(req, res);
+    if (!sessionUser) {
+      return;
+    }
+
+    try {
+      const body = req.body as Record<string, unknown>;
+      const locale = normalizeAppLocale(body.locale ?? body.language ?? body.lang);
+      if (!locale) {
+        res.status(400).json({ error: "Idioma inválido." });
+        return;
+      }
+
+      await updateUserPreferredLocaleRecord(sessionUser.id, locale);
+      const updatedUser = await selectUserByIdRow(sessionUser.id);
+      if (!updatedUser) {
+        res.status(500).json({ error: "Falha ao atualizar idioma." });
+        return;
+      }
+
+      res.json(sanitizeUser(updatedUser));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao atualizar idioma.";
+      res.status(400).json({ error: message });
+    }
+  });
+
   app.get("/api/profile/new-product-defaults", async (req, res) => {
     const sessionUser = await requireAuth(req, res);
     if (!sessionUser) {
@@ -8282,6 +8796,7 @@ async function bootstrap() {
 
   app.get("/api/products", async (req, res) => {
     try {
+      const locale = getRequestLocale(req);
       const hasPaginationQuery =
         req.query.limit !== undefined ||
         req.query.offset !== undefined ||
@@ -8304,7 +8819,7 @@ async function bootstrap() {
         });
 
         res.json({
-          products: page.rows.map(rowToProduct),
+          products: page.rows.map((row) => rowToProduct(row, locale)),
           pagination: {
             limit,
             offset,
@@ -8317,7 +8832,7 @@ async function bootstrap() {
       }
 
       const rows = await selectAllProductsRows();
-      res.json(rows.map(rowToProduct));
+      res.json(rows.map((row) => rowToProduct(row, locale)));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao listar produtos.";
       res.status(500).json({ error: message });
@@ -8332,12 +8847,13 @@ async function bootstrap() {
     }
 
     try {
+      const locale = getRequestLocale(req);
       const product = await selectProductByIdRow(productId);
       if (!product) {
         res.status(404).json({ error: "Produto não encontrado." });
         return;
       }
-      res.json(rowToProduct(product));
+      res.json(rowToProduct(product, locale));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao carregar produto.";
       res.status(500).json({ error: message });
@@ -8375,6 +8891,7 @@ async function bootstrap() {
     }
 
     try {
+      const locale = getRequestLocale(req);
       const product = await selectProductByIdRow(productId);
       if (!product) {
         res.status(404).json({ error: "Produto não encontrado." });
@@ -8382,7 +8899,7 @@ async function bootstrap() {
       }
 
       const comments = await selectProductCommentsRows(productId);
-      res.json({ comments: buildProductCommentsThread(comments) });
+      res.json({ comments: buildProductCommentsThread(comments, locale) });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao carregar comentários do produto.";
@@ -8403,6 +8920,7 @@ async function bootstrap() {
     }
 
     try {
+      const locale = getRequestLocale(req);
       const product = await selectProductByIdRow(productId);
       if (!product) {
         res.status(404).json({ error: "Produto não encontrado." });
@@ -8457,7 +8975,7 @@ async function bootstrap() {
       }
 
       const comments = await selectProductCommentsRows(productId);
-      res.status(201).json({ comments: buildProductCommentsThread(comments) });
+      res.status(201).json({ comments: buildProductCommentsThread(comments, locale) });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao salvar comentário do produto.";
@@ -8479,6 +8997,7 @@ async function bootstrap() {
     }
 
     try {
+      const locale = getRequestLocale(req);
       const comment = await selectProductCommentByIdRow(commentId);
       if (!comment || comment.product_id !== productId) {
         res.status(404).json({ error: "Comentário não encontrado." });
@@ -8501,7 +9020,7 @@ async function bootstrap() {
       }
 
       const comments = await selectProductCommentsRows(productId);
-      res.json({ comments: buildProductCommentsThread(comments) });
+      res.json({ comments: buildProductCommentsThread(comments, locale) });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao editar comentário.";
       res.status(400).json({ error: message });
@@ -8522,6 +9041,7 @@ async function bootstrap() {
     }
 
     try {
+      const locale = getRequestLocale(req);
       const comment = await selectProductCommentByIdRow(commentId);
       if (!comment || comment.product_id !== productId) {
         res.status(404).json({ error: "Comentário não encontrado." });
@@ -8539,7 +9059,7 @@ async function bootstrap() {
       }
 
       const comments = await selectProductCommentsRows(productId);
-      res.json({ comments: buildProductCommentsThread(comments) });
+      res.json({ comments: buildProductCommentsThread(comments, locale) });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao excluir comentário.";
       res.status(400).json({ error: message });
@@ -8582,6 +9102,7 @@ async function bootstrap() {
   });
 
   app.get("/api/vendors/:id/products", async (req, res) => {
+    const locale = getRequestLocale(req);
     const vendorId = Number(req.params.id);
     if (!Number.isInteger(vendorId) || vendorId <= 0) {
       res.status(400).json({ error: "ID de vendedor inválido." });
@@ -8605,7 +9126,7 @@ async function bootstrap() {
 
       res.json({
         vendor: vendorRecord,
-        products: vendorProducts.map(rowToProduct),
+        products: vendorProducts.map((row) => rowToProduct(row, locale)),
       });
     } catch (error) {
       const message =
@@ -8619,10 +9140,11 @@ async function bootstrap() {
     if (!user) {
       return;
     }
+    const locale = getRequestLocale(req);
 
     try {
       const rows = await selectProductsByOwnerRows(user.id);
-      res.json(rows.map(rowToProduct));
+      res.json(rows.map((row) => rowToProduct(row, locale)));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao listar seus produtos.";
       res.status(500).json({ error: message });
@@ -8634,10 +9156,11 @@ async function bootstrap() {
     if (!user) {
       return;
     }
+    const locale = getRequestLocale(req);
 
     try {
       const rows = await selectLikedProductsByUserRows(user.id);
-      res.json(rows.map(rowToProduct));
+      res.json(rows.map((row) => rowToProduct(row, locale)));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao listar curtidas.";
       res.status(500).json({ error: message });
@@ -8789,6 +9312,7 @@ async function bootstrap() {
     }
 
     try {
+      const locale = getRequestLocale(req);
       const normalized = normalizeIncomingProduct(req.body);
       const productId = await createProductRecord(normalized, user.id);
       const created = await selectProductByIdRow(productId);
@@ -8798,7 +9322,7 @@ async function bootstrap() {
         return;
       }
 
-      res.status(201).json(rowToProduct(created));
+      res.status(201).json(rowToProduct(created, locale));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao criar produto.";
       res.status(400).json({ error: message });
@@ -8818,6 +9342,7 @@ async function bootstrap() {
     }
 
     try {
+      const locale = getRequestLocale(req);
       const existing = await selectProductByIdRow(id);
       if (!existing) {
         res.status(404).json({ error: "Produto não encontrado." });
@@ -8837,7 +9362,7 @@ async function bootstrap() {
         return;
       }
 
-      res.json(rowToProduct(updated));
+      res.json(rowToProduct(updated, locale));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao atualizar produto.";
       res.status(400).json({ error: message });

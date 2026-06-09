@@ -87,6 +87,7 @@ type AdminBroadcastNotificationV2 = {
   id: number;
   title: string;
   message: string;
+  translationStatus?: Record<string, string>;
   productId?: number;
   productName?: string;
   createdBy?: string;
@@ -846,6 +847,15 @@ function normalizeAdminBroadcastNotification(item: unknown): AdminBroadcastNotif
   const createdBy = String(record.createdBy ?? record.created_by ?? "").trim();
   if (createdBy) {
     notification.createdBy = createdBy;
+  }
+
+  const rawTranslationStatus = asRecord(record.translationStatus ?? record.translation_status);
+  if (rawTranslationStatus) {
+    notification.translationStatus = Object.fromEntries(
+      Object.entries(rawTranslationStatus)
+        .map(([locale, status]) => [locale, String(status ?? "").trim()])
+        .filter(([, status]) => status.length > 0),
+    );
   }
 
   return notification;
@@ -3044,6 +3054,27 @@ export default function AdminPanelV2() {
                                 <span>Admin: {notification.createdBy}</span>
                               ) : null}
                             </div>
+                            {notification.translationStatus &&
+                              Object.keys(notification.translationStatus).length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                                  {["it-IT", "pt-BR", "ar-SA"].map((locale) => {
+                                    const status = notification.translationStatus?.[locale] ?? "";
+                                    const translated = status === "translated";
+                                    return (
+                                      <span
+                                        key={locale}
+                                        className={`border px-2 py-1 ${
+                                          translated
+                                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                            : "border-amber-200 bg-amber-50 text-amber-700"
+                                        }`}
+                                      >
+                                        {translated ? "✓" : "!"} {locale}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
                           </div>
                           <button
                             type="button"

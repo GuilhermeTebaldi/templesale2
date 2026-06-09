@@ -10,6 +10,9 @@ import {
   isNegotiablePriceValue,
 } from "./negotiable-price";
 
+const LOCALE_STORAGE_KEY = "templesale_locale";
+const SUPPORTED_API_LOCALES = new Set(["it-IT", "pt-BR", "ar-SA"]);
+
 export interface ProductDto {
   id: number;
   slug?: string;
@@ -1501,6 +1504,12 @@ async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
   const headers = new Headers(fetchInit.headers ?? {});
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
+  }
+  if (!headers.has("X-TempleSale-Locale") && typeof window !== "undefined") {
+    const locale = window.localStorage.getItem(LOCALE_STORAGE_KEY) || "";
+    if (SUPPORTED_API_LOCALES.has(locale)) {
+      headers.set("X-TempleSale-Locale", locale);
+    }
   }
 
   const token = useAdminToken ? readAdminToken() : skipAuthToken ? "" : readAuthToken();
