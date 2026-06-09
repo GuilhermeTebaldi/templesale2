@@ -622,8 +622,12 @@ async function buildTranslationsForText(
   await Promise.all(
     SUPPORTED_APP_LOCALES.map(async (locale) => {
       const translated = await translateTextToLocale(normalizedText, locale);
-      translations[locale] = translated || normalizedText;
-      status[locale] = translated ? "translated" : "fallback";
+      if (!translated) {
+  throw new Error(`Falha ao traduzir conteúdo para ${locale}. A notificação não foi enviada.`);
+}
+
+translations[locale] = translated;
+status[locale] = "translated";
     }),
   );
 
