@@ -548,15 +548,27 @@ async function translateWithMyMemory(text: string, target: string): Promise<stri
   try {
     const url = new URL("https://api.mymemory.translated.net/get");
     url.searchParams.set("q", text.slice(0, 5000));
-    url.searchParams.set("langpair", `auto|${target}`);
+    url.searchParams.set("langpair", `en|${target}`);
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) {
       return null;
     }
     const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     const responseData = data?.responseData as Record<string, unknown> | undefined;
-    const translated = String(responseData?.translatedText ?? "").trim();
-    return translated || null;
+   const translated = String(responseData?.translatedText ?? "").trim();
+
+const invalidTranslation =
+  !translated ||
+  translated.includes("INVALID SOURCE LANGUAGE") ||
+  translated.includes("LANGPAIR=") ||
+  translated.includes("NO CONTENT") ||
+  translated.includes("MYMEMORY WARNING");
+
+if (invalidTranslation) {
+  return null;
+}
+
+return translated;
   } catch {
     return null;
   } finally {

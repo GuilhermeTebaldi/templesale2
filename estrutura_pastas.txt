@@ -1,0 +1,100 @@
+.
+├── .DS_Store
+├── .env
+├── .env.example
+├── .env.remote.backup
+├── .github
+│   └── workflows
+│       ├── ci.yml
+│       ├── deploy-render-backend.yml
+│       └── deploy-vercel.yml
+├── .gitignore
+├── DEPLOY_AUTOMATICO.md
+├── backup_saleday.sql
+├── backup_saleday_templesale.sql
+├── data
+│   ├── local.db
+│   ├── local.db-shm
+│   └── local.db-wal
+├── dist
+│   ├── .well-known
+│   │   └── security.txt
+│   ├── assets
+│   │   ├── index-B7Ihc3NA.css
+│   │   ├── index-DcR2ouFT.js
+│   │   ├── logo-cropped-1772137225501-otUKBnii.png
+│   │   └── logo-cropped-1772137553672-BFDwaHxT.png
+│   └── index.html
+├── estrutura_pastas.txt
+├── index.html
+├── logo-cropped-1772137225501.png
+├── logo-cropped-1772137553672.png
+├── metadata.json
+├── package-lock.json
+├── package.json
+├── public
+│   └── .well-known
+│       └── security.txt
+├── seguranca.md
+├── server.ts
+├── src
+│   ├── App.tsx
+│   ├── components
+│   │   ├── AdminPanelV2.tsx
+│   │   ├── Auth.tsx
+│   │   ├── Carrinho.tsx
+│   │   ├── Curtidas.tsx
+│   │   ├── EditePerfil.tsx
+│   │   ├── FrameStudio.tsx
+│   │   ├── GlobalLoadingOverlay.tsx
+│   │   ├── LeafletMapPicker.tsx
+│   │   ├── MeusAnuncios.tsx
+│   │   ├── NewProduct.tsx
+│   │   ├── ProductCard.tsx
+│   │   ├── ProductDetails.tsx
+│   │   ├── ProductMap.tsx
+│   │   └── Vendedores.tsx
+│   ├── i18n
+│   │   ├── categories.ts
+│   │   ├── formatters.ts
+│   │   ├── index.ts
+│   │   ├── locales
+│   │   │   ├── ar-SA.ts
+│   │   │   ├── it-IT.ts
+│   │   │   └── pt-BR.ts
+│   │   └── provider.tsx
+│   ├── index.css
+│   ├── lib
+│   │   ├── api.ts
+│   │   ├── auth0-config.ts
+│   │   ├── currency.ts
+│   │   ├── negotiable-price.ts
+│   │   ├── networkActivity.ts
+│   │   ├── product-details.ts
+│   │   ├── product-images.ts
+│   │   ├── security-scanner.ts
+│   │   └── whatsapp.ts
+│   ├── main.tsx
+│   ├── server.js
+│   ├── services
+│   └── styles
+│       └── leaflet-critical.css
+├── templesale-frame-generator
+│   ├── .env.example
+│   ├── .gitignore
+│   ├── README.md
+│   ├── index.html
+│   ├── metadata.json
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── src
+│   │   ├── App.tsx
+│   │   ├── index.css
+│   │   └── main.tsx
+│   ├── tsconfig.json
+│   └── vite.config.ts
+├── tsconfig.json
+├── vercel.json
+└── vite.config.ts
+
+18 directories, 80 files
