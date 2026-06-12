@@ -546,29 +546,26 @@ async function translateWithMyMemory(text: string, target: string): Promise<stri
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TRANSLATE_PROVIDER_TIMEOUT_MS);
   try {
+    const normalizedTarget = target.trim().toLowerCase();
+    const sourceLanguage = normalizedTarget === "pt" ? "it" : "en";
     const url = new URL("https://api.mymemory.translated.net/get");
     url.searchParams.set("q", text.slice(0, 5000));
-    url.searchParams.set("langpair", `en|${target}`);
+    url.searchParams.set("langpair", `${sourceLanguage}|${normalizedTarget}`);
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) {
       return null;
     }
     const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     const responseData = data?.responseData as Record<string, unknown> | undefined;
-   const translated = String(responseData?.translatedText ?? "").trim();
-
-const invalidTranslation =
-  !translated ||
-  translated.includes("INVALID SOURCE LANGUAGE") ||
-  translated.includes("LANGPAIR=") ||
-  translated.includes("NO CONTENT") ||
-  translated.includes("MYMEMORY WARNING");
-
-if (invalidTranslation) {
-  return null;
-}
-
-return translated;
+    const translated = String(responseData?.translatedText ?? "").trim();
+    const normalizedTranslated = translated.toUpperCase();
+    const invalidTranslation =
+      !translated ||
+      normalizedTranslated.includes("INVALID SOURCE LANGUAGE") ||
+      normalizedTranslated.includes("LANGPAIR=") ||
+      normalizedTranslated.includes("NO CONTENT") ||
+      normalizedTranslated.includes("MYMEMORY WARNING");
+    return invalidTranslation ? null : translated;
   } catch {
     return null;
   } finally {
