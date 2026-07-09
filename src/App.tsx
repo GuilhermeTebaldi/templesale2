@@ -1,7 +1,7 @@
 import React from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, ShoppingBag, Menu, ArrowRight, Instagram, Twitter, Facebook, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, Heart, Plus, Minus, Share2, Bell, Filter, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown, ImagePlus, LoaderCircle, Trash2, Users } from "lucide-react";
+import { Search, ShoppingBag, Menu, ArrowRight, Instagram, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, Heart, Plus, Minus, Share2, Bell, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown, ImagePlus, LoaderCircle, Trash2, Users, Mail } from "lucide-react";
 import ProductCard, { ProgressiveProductImage, type Product } from "./components/ProductCard";
 import ProductDetails from "./components/ProductDetails";
 import NewProduct from "./components/NewProduct";
@@ -13,6 +13,7 @@ import Curtidas from "./components/Curtidas";
 import Carrinho, { type CartItem } from "./components/Carrinho";
 import Vendedores from "./components/Vendedores";
 import ElegantProductFilter from "./components/ElegantProductFilter";
+import ArtGalleryProductCard from "./components/ArtGalleryProductCard";
 import {
   api,
   type NotificationDto,
@@ -58,11 +59,12 @@ const CATEGORIES = [
   "Outros"
 ];
 const USE_ELEGANT_PRODUCT_FILTER = true;
+const USE_ART_GALLERY_PRODUCT_GRID = true;
 const BRAND_NAME = "TempleSale";
 const HOME_HERO_FALLBACK_IMAGE =
   "https://i.pinimg.com/1200x/47/38/db/4738dbf78874192b8e38d5eadf13717f.jpg";
-const INSTAGRAM_PROFILE_URL =
-  "https://www.instagram.com/templesale_?igsh=MWVndTY4Z3d6aHV0MA%3D%3D&utm_source=qr";
+const INSTAGRAM_PROFILE_URL = "https://www.instagram.com/the.templesale/";
+const CONTACT_EMAIL = "thetemplesale@gmail.com";
 const PARTNER_PROMO_URL = "https://www.puntoescort.com/";
 const PARTNER_PROMO_LOGO =
   "https://i.pinimg.com/736x/db/b4/39/dbb4391fea99581de1a5e4d2f02d2c7c.jpg";
@@ -240,7 +242,6 @@ export default function App() {
   } = useAuth0();
   const [activeCategory, setActiveCategory] = React.useState("All");
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
-  const [isFilterMenuOpen, setIsFilterMenuOpen] = React.useState(false);
   const [isLanguageMenuOpen, setIsLanguageMenuOpen] = React.useState(false);
   const [isUserOpen, setIsUserOpen] = React.useState(false);
   const [isMapOpen, setIsMapOpen] = React.useState(false);
@@ -306,6 +307,8 @@ export default function App() {
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = React.useState(false);
   const [isPriceDropdownOpen, setIsPriceDropdownOpen] = React.useState(false);
   const [maxPriceFilter, setMaxPriceFilter] = React.useState<number | null>(null);
+  const [mobileProductGridColumns, setMobileProductGridColumns] = React.useState<1 | 2>(1);
+  const [desktopProductGridColumns, setDesktopProductGridColumns] = React.useState<2 | 3 | 4>(3);
   const cartToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const productsRequestSequenceRef = React.useRef(0);
   const auth0SyncAttemptedRef = React.useRef(false);
@@ -934,7 +937,6 @@ export default function App() {
   React.useEffect(() => {
     if (!hasMemberAccess) {
       setIsMenuOpen(false);
-      setIsFilterMenuOpen(false);
       setIsLanguageMenuOpen(false);
       setIsUserOpen(false);
       setIsMapOpen(false);
@@ -1035,7 +1037,6 @@ export default function App() {
     setEditingProduct(null);
     setIsUserOpen(false);
     setIsMenuOpen(false);
-    setIsFilterMenuOpen(false);
     setIsLanguageMenuOpen(false);
     setIsMapOpen(false);
     setIsCurtidasOpen(false);
@@ -1796,7 +1797,6 @@ export default function App() {
       setMapOpenWithResults(true);
       setMapAutoFocusPanelSearch(true);
       setIsMenuOpen(false);
-      setIsFilterMenuOpen(false);
       setIsMapOpen(true);
     },
     [activeCategory],
@@ -1808,7 +1808,6 @@ export default function App() {
     setMapOpenWithResults(false);
     setMapAutoFocusPanelSearch(false);
     setIsMenuOpen(false);
-    setIsFilterMenuOpen(false);
     setIsMapOpen(true);
   }, [activeCategory]);
 
@@ -1849,10 +1848,12 @@ export default function App() {
     [scrollPageToTop],
   );
 
+  const catalogProducts = products;
+
   const availableCategoryFilters = React.useMemo(() => {
     const knownCategories = CATEGORIES.filter((category) => category !== "All");
     const categoryCounts = new globalThis.Map<string, number>();
-    products.forEach((product) => {
+    catalogProducts.forEach((product) => {
       const category = String(product.category ?? "").trim();
       if (!category) {
         return;
@@ -1869,7 +1870,7 @@ export default function App() {
     return [
       {
         key: "All",
-        count: products.length,
+        count: catalogProducts.length,
       },
       ...knownCategories.map((category) => ({
         key: category,
@@ -1880,10 +1881,10 @@ export default function App() {
         count: categoryCounts.get(category) ?? 0,
       })),
     ];
-  }, [products, locale]);
+  }, [catalogProducts, locale]);
 
   const priceSliderMax = React.useMemo(() => {
-    const rawMaxPrice = products.reduce((highest, product) => {
+    const rawMaxPrice = catalogProducts.reduce((highest, product) => {
       if (product.priceNegotiable) {
         return highest;
       }
@@ -1905,7 +1906,7 @@ export default function App() {
     const roundingBase =
       resolvedMaxPrice <= 100 ? 10 : resolvedMaxPrice <= 1000 ? 50 : resolvedMaxPrice <= 5000 ? 100 : 500;
     return Math.ceil(resolvedMaxPrice / roundingBase) * roundingBase;
-  }, [products, maxPriceFilter]);
+  }, [catalogProducts, maxPriceFilter]);
 
   const priceSliderStep = React.useMemo(() => {
     if (priceSliderMax <= 100) {
@@ -1936,7 +1937,7 @@ export default function App() {
     const normalizedSearch = searchQuery.trim().toLowerCase();
     const resolvedMaxPriceFilter = hasMaxPriceFilter ? maxPriceFilter : null;
 
-    return products
+    return catalogProducts
       .filter((product) => {
         const matchesCategory =
           activeCategory === "All" || product.category === activeCategory;
@@ -1964,12 +1965,34 @@ export default function App() {
         }
         return right.id - left.id;
       });
-  }, [products, activeCategory, searchQuery, hasMaxPriceFilter, maxPriceFilter]);
+  }, [catalogProducts, activeCategory, searchQuery, hasMaxPriceFilter, maxPriceFilter]);
+
+  const productGridClassName = React.useMemo(() => {
+    if (!USE_ART_GALLERY_PRODUCT_GRID) {
+      return "grid grid-cols-2 items-stretch gap-x-3 gap-y-6 sm:gap-x-5 sm:gap-y-10 lg:grid-cols-4";
+    }
+    if (mobileProductGridColumns === 1 && desktopProductGridColumns === 2) {
+      return "grid grid-cols-1 items-stretch gap-x-3 gap-y-8 sm:gap-x-8 sm:gap-y-12 lg:grid-cols-2";
+    }
+    if (mobileProductGridColumns === 1 && desktopProductGridColumns === 3) {
+      return "grid grid-cols-1 items-stretch gap-x-3 gap-y-8 sm:gap-x-8 sm:gap-y-12 lg:grid-cols-3";
+    }
+    if (mobileProductGridColumns === 1 && desktopProductGridColumns === 4) {
+      return "grid grid-cols-1 items-stretch gap-x-3 gap-y-8 sm:gap-x-8 sm:gap-y-12 md:grid-cols-3 lg:grid-cols-4";
+    }
+    if (mobileProductGridColumns === 2 && desktopProductGridColumns === 2) {
+      return "grid grid-cols-2 items-stretch gap-x-3 gap-y-8 sm:gap-x-8 sm:gap-y-12 lg:grid-cols-2";
+    }
+    if (mobileProductGridColumns === 2 && desktopProductGridColumns === 3) {
+      return "grid grid-cols-2 items-stretch gap-x-3 gap-y-8 sm:gap-x-8 sm:gap-y-12 lg:grid-cols-3";
+    }
+    return "grid grid-cols-2 items-stretch gap-x-3 gap-y-8 sm:gap-x-8 sm:gap-y-12 md:grid-cols-3 lg:grid-cols-4";
+  }, [desktopProductGridColumns, mobileProductGridColumns]);
 
   const randomProductsByCategory = React.useMemo(() => {
     const productsByCategory = new globalThis.Map<string, Product[]>();
 
-    products.forEach((product) => {
+    catalogProducts.forEach((product) => {
       const category = String(product.category ?? "").trim();
       if (!category) {
         return;
@@ -1996,7 +2019,7 @@ export default function App() {
     return picked.sort((left, right) =>
       getCategoryLabel(left.category, locale).localeCompare(getCategoryLabel(right.category, locale), locale),
     );
-  }, [products, locale]);
+  }, [catalogProducts, locale]);
 
   return (
     <div className="min-h-[100dvh] flex flex-col">
@@ -2067,7 +2090,6 @@ export default function App() {
         }`}
         onClick={() => {
           setIsMenuOpen(false);
-          setIsFilterMenuOpen(false);
           setIsLanguageMenuOpen(false);
           setIsUserOpen(false);
           setIsAvatarPickerOpen(false);
@@ -2619,7 +2641,6 @@ export default function App() {
           <button
             onClick={() => {
               setIsMenuOpen(false);
-              setIsFilterMenuOpen(false);
               setIsLanguageMenuOpen(false);
             }}
             className="p-2 hover:bg-stone-50 rounded-full transition-colors"
@@ -2630,57 +2651,6 @@ export default function App() {
         
         <div className="grow overflow-y-auto p-8 flex flex-col gap-8">
           <nav className="flex flex-col gap-4">
-            <button
-              className="flex items-center justify-between text-xl font-serif italic text-stone-800 hover:translate-x-2 transition-transform duration-300 group"
-              onClick={() => setIsFilterMenuOpen((current) => !current)}
-            >
-              <span className="flex items-center gap-4">
-                <Filter className="w-5 h-5 text-stone-300 group-hover:text-stone-800 transition-colors" />
-                {t("Filtro")}
-              </span>
-              <ChevronDown
-                className={`w-4 h-4 text-stone-300 group-hover:text-stone-600 transition-all ${
-                  isFilterMenuOpen ? "rotate-180" : ""
-                }`}
-              />
-            </button>
-
-            <AnimatePresence initial={false}>
-              {isFilterMenuOpen && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden bg-stone-50/50 border border-stone-100 rounded-sm"
-                >
-                  <div className="max-h-56 overflow-y-auto">
-                    {availableCategoryFilters.map((category) => (
-                      <button
-                        key={category.key}
-                        onClick={() => {
-                          handleCategorySelect(category.key);
-                          setSearchQuery("");
-                          openMapWithSearch(category.key);
-                        }}
-                        className={`w-full flex items-center justify-between gap-4 px-4 py-3 border-b border-stone-100 last:border-b-0 transition-colors ${
-                          activeCategory === category.key ? "bg-stone-100" : "hover:bg-stone-100/70"
-                        }`}
-                      >
-                        <span
-                          className={`text-[11px] uppercase tracking-[0.2em] ${
-                            activeCategory === category.key ? "text-stone-900" : "text-stone-600"
-                          }`}
-                        >
-                          {category.key === "All" ? t("Todos") : getCategoryLabel(category.key, locale)}
-                        </span>
-                        <span className="text-[10px] font-mono text-stone-400">{category.count}</span>
-                      </button>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             <button
               className="flex items-center gap-4 text-xl font-serif italic text-stone-800 hover:translate-x-2 transition-transform duration-300 group"
               onClick={() => {
@@ -2694,7 +2664,6 @@ export default function App() {
             <button
               className="flex items-center justify-between gap-4 text-xl font-serif italic text-stone-800 hover:translate-x-2 transition-transform duration-300 group"
               onClick={() => {
-                setIsFilterMenuOpen(false);
                 setIsMenuOpen(false);
                 setIsCartOpen(true);
               }}
@@ -2718,7 +2687,6 @@ export default function App() {
             <button
               className="flex items-center gap-4 text-xl font-serif italic text-stone-800 hover:translate-x-2 transition-transform duration-300 group"
               onClick={() => {
-                setIsFilterMenuOpen(false);
                 setIsMenuOpen(false);
                 setIsVendedoresOpen(true);
               }}
@@ -2728,6 +2696,53 @@ export default function App() {
             </button>
           </nav>
           
+          <div className="h-px bg-stone-100 my-4" />
+
+          <div className="space-y-3">
+            <h3 className="text-[10px] font-bold uppercase tracking-[0.18em] text-stone-400">
+              {t("Visualização de Colunas")}
+            </h3>
+            <div className="space-y-3">
+              <div className="lg:hidden">
+                <div className="grid grid-cols-2 gap-2 rounded-md border border-stone-100 bg-stone-50 p-1">
+                  {([1, 2] as const).map((columns) => (
+                    <button
+                      key={columns}
+                      type="button"
+                      onClick={() => setMobileProductGridColumns(columns)}
+                      className={`h-9 rounded text-[10px] font-bold uppercase tracking-[0.12em] transition-colors ${
+                        mobileProductGridColumns === columns
+                          ? "bg-white text-stone-950 shadow-sm ring-1 ring-stone-200"
+                          : "text-stone-400 hover:text-stone-800"
+                      }`}
+                    >
+                      {columns} {t("Colunas")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="hidden lg:block">
+                <div className="grid grid-cols-3 gap-2 rounded-md border border-stone-100 bg-stone-50 p-1">
+                  {([2, 3, 4] as const).map((columns) => (
+                    <button
+                      key={columns}
+                      type="button"
+                      onClick={() => setDesktopProductGridColumns(columns)}
+                      className={`h-9 rounded text-[10px] font-bold uppercase tracking-[0.12em] transition-colors ${
+                        desktopProductGridColumns === columns
+                          ? "bg-white text-stone-950 shadow-sm ring-1 ring-stone-200"
+                          : "text-stone-400 hover:text-stone-800"
+                      }`}
+                    >
+                      {columns} {t("Colunas")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="h-px bg-stone-100 my-4" />
           
           <div className="flex flex-col gap-4 text-[10px] uppercase tracking-[0.2em] font-medium text-stone-400">
@@ -2748,9 +2763,20 @@ export default function App() {
             >
               <Instagram className="w-5 h-5 text-stone-400 hover:text-black transition-colors cursor-pointer" />
             </a>
-            <Twitter className="w-5 h-5 text-stone-400 hover:text-black transition-colors cursor-pointer" />
-            <Facebook className="w-5 h-5 text-stone-400 hover:text-black transition-colors cursor-pointer" />
+            <a
+              href={`mailto:${CONTACT_EMAIL}`}
+              aria-label="Email TempleSale"
+              title={CONTACT_EMAIL}
+            >
+              <Mail className="w-5 h-5 text-stone-400 hover:text-black transition-colors cursor-pointer" />
+            </a>
           </div>
+          <a
+            href={`mailto:${CONTACT_EMAIL}`}
+            className="mt-4 block break-all text-[10px] font-medium tracking-[0.08em] text-stone-400 transition-colors hover:text-black"
+          >
+            {CONTACT_EMAIL}
+          </a>
         </div>
       </motion.div>
 
@@ -3318,22 +3344,38 @@ export default function App() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 items-stretch gap-x-3 gap-y-6 sm:gap-x-5 sm:gap-y-10 lg:grid-cols-4">
+              <div className={productGridClassName}>
                 {filteredProducts.map((product, index) => (
                   <div key={product.id} className="h-full">
-                    <ProductCard 
-                      product={product} 
-                      imageLoading={index < 8 ? "eager" : "lazy"}
-                      imageFetchPriority={index < 8 ? "high" : "auto"}
-                      onClick={() => openProductDetails(product)}
-                      isLiked={likedProductIds.has(product.id)}
-                      onToggleLike={() => {
-                        void handleToggleLike(product);
-                      }}
-                      onAddToCart={() => {
-                        handleAddToCart(product, 1);
-                      }}
-                    />
+                    {USE_ART_GALLERY_PRODUCT_GRID ? (
+                      <ArtGalleryProductCard
+                        product={product}
+                        imageLoading={index < 8 ? "eager" : "lazy"}
+                        imageFetchPriority={index < 8 ? "high" : "auto"}
+                        onClick={() => openProductDetails(product)}
+                        isLiked={likedProductIds.has(product.id)}
+                        onToggleLike={() => {
+                          void handleToggleLike(product);
+                        }}
+                        onAddToCart={() => {
+                          handleAddToCart(product, 1);
+                        }}
+                      />
+                    ) : (
+                      <ProductCard
+                        product={product}
+                        imageLoading={index < 8 ? "eager" : "lazy"}
+                        imageFetchPriority={index < 8 ? "high" : "auto"}
+                        onClick={() => openProductDetails(product)}
+                        isLiked={likedProductIds.has(product.id)}
+                        onToggleLike={() => {
+                          void handleToggleLike(product);
+                        }}
+                        onAddToCart={() => {
+                          handleAddToCart(product, 1);
+                        }}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
@@ -3360,25 +3402,15 @@ export default function App() {
           )}
         </section>
 
-        {/* Newsletter / CTA */}
-        <section className="bg-stone-100 py-32 px-6">
-          <div className="max-w-3xl mx-auto text-center">
-            <h3 className="text-3xl md:text-5xl font-serif italic mb-6 notranslate" translate="no">
-              {t("Junte-se ao TempleSale")}
-            </h3>
-            <p className="text-stone-500 mb-10 text-sm tracking-wide leading-relaxed">
-              {t("Inscreva-se para receber acesso antecipado às novas coleções, lançamentos exclusivos do arquivo e histórias dos nossos artesãos.")}
-            </p>
-            <form className="flex flex-col sm:flex-row gap-4">
-              <input
-                type="email"
-                placeholder={t("Endereço de email")}
-                className="grow bg-white border-none px-6 py-4 text-sm focus:ring-1 focus:ring-stone-400 outline-none transition-all"
-              />
-              <button className="px-10 py-4 bg-stone-900 text-white text-xs uppercase tracking-[0.2em] font-medium hover:bg-black transition-colors">
-                {t("Inscrever-se")}
-              </button>
-            </form>
+        {/* Brand CTA */}
+        <section className="bg-stone-100 px-6 py-28 sm:py-32">
+          <div className="mx-auto max-w-5xl text-center notranslate" translate="no">
+            <span className="text-[clamp(2.6rem,10vw,8rem)] font-extrabold leading-none tracking-[0.18em] text-stone-950">
+              TEMPLE
+            </span>
+            <span className="text-[clamp(2.6rem,10vw,8rem)] font-light leading-none tracking-[0.18em] text-stone-400">
+              SALE
+            </span>
           </div>
         </section>
       </main>
@@ -3397,8 +3429,6 @@ export default function App() {
           <div>
             <h4 className="text-[10px] uppercase tracking-[0.2em] font-bold mb-6">{t("Informações")}</h4>
             <ul className="space-y-4 text-stone-500 text-sm">
-              <li><a href="#" className="hover:text-black transition-colors">{t("Frete e devoluções")}</a></li>
-              <li><a href="#" className="hover:text-black transition-colors">{t("Política de privacidade")}</a></li>
               <li><a href="#" className="hover:text-black transition-colors">{t("Termos de serviço")}</a></li>
               <li><a href="#" className="hover:text-black transition-colors">{t("Contato")}</a></li>
             </ul>
@@ -3415,13 +3445,21 @@ export default function App() {
               >
                 <Instagram className="w-4 h-4 text-stone-600" />
               </a>
-              <a href="#" className="p-2 bg-stone-50 rounded-full hover:bg-stone-100 transition-colors">
-                <Twitter className="w-4 h-4 text-stone-600" />
-              </a>
-              <a href="#" className="p-2 bg-stone-50 rounded-full hover:bg-stone-100 transition-colors">
-                <Facebook className="w-4 h-4 text-stone-600" />
+              <a
+                href={`mailto:${CONTACT_EMAIL}`}
+                aria-label="Email TempleSale"
+                title={CONTACT_EMAIL}
+                className="p-2 bg-stone-50 rounded-full hover:bg-stone-100 transition-colors"
+              >
+                <Mail className="w-4 h-4 text-stone-600" />
               </a>
             </div>
+            <a
+              href={`mailto:${CONTACT_EMAIL}`}
+              className="mt-4 block break-all text-xs text-stone-400 transition-colors hover:text-black"
+            >
+              {CONTACT_EMAIL}
+            </a>
           </div>
         </div>
         <div className="max-w-7xl mx-auto mt-14">

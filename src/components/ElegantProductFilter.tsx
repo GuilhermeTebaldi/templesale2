@@ -55,6 +55,23 @@ export default function ElegantProductFilter({
   const activeCategoryFilter = activeCategory !== "All" ? activeCategory : "";
   const hasActiveFilters = Boolean(activeCategoryFilter) || hasMaxPriceFilter;
 
+  React.useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const body = document.body;
+    const previousOverflow = body.style.overflow;
+
+    if (isOpen) {
+      body.style.overflow = "hidden";
+    }
+
+    return () => {
+      body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
+
   const visibleCategories = React.useMemo(
     () => categories.filter((category) => category.key !== "All"),
     [categories],
@@ -304,6 +321,7 @@ export default function ElegantProductFilter({
                       </button>
                     )}
                   </div>
+
                 </div>
               </div>
 
