@@ -12,6 +12,7 @@ import ProductMap from "./components/ProductMap";
 import Curtidas from "./components/Curtidas";
 import Carrinho, { type CartItem } from "./components/Carrinho";
 import Vendedores from "./components/Vendedores";
+import ElegantProductFilter from "./components/ElegantProductFilter";
 import {
   api,
   type NotificationDto,
@@ -56,6 +57,7 @@ const CATEGORIES = [
   "Empregos",
   "Outros"
 ];
+const USE_ELEGANT_PRODUCT_FILTER = true;
 const BRAND_NAME = "TempleSale";
 const HOME_HERO_FALLBACK_IMAGE =
   "https://i.pinimg.com/1200x/47/38/db/4738dbf78874192b8e38d5eadf13717f.jpg";
@@ -2771,10 +2773,15 @@ export default function App() {
           <button
             type="button"
             onClick={scrollPageToTop}
-            className="text-[22px] sm:text-[32px] font-serif font-semibold tracking-[0.08em] text-stone-900 text-center grow px-2 whitespace-nowrap notranslate bg-transparent cursor-pointer leading-none [font-variant:small-caps]"
+            className="text-center grow px-2 whitespace-nowrap notranslate bg-transparent cursor-pointer leading-none"
             translate="no"
           >
-            {BRAND_NAME}
+            <span className="text-[18px] sm:text-[26px] font-extrabold tracking-[0.22em] text-stone-950">
+              TEMPLE
+            </span>
+            <span className="text-[18px] sm:text-[26px] font-light tracking-[0.22em] text-stone-400">
+              SALE
+            </span>
           </button>
 
           <div className="flex items-center justify-end gap-1 sm:gap-4 w-auto sm:w-1/3 shrink-0">
@@ -3066,6 +3073,48 @@ export default function App() {
         </section>
 
         {/* Filter Bar */}
+        {USE_ELEGANT_PRODUCT_FILTER ? (
+          <ElegantProductFilter
+            activeCategory={activeCategory}
+            categories={availableCategoryFilters}
+            effectivePriceSliderValue={effectivePriceSliderValue}
+            hasMaxPriceFilter={hasMaxPriceFilter}
+            priceSliderMax={priceSliderMax}
+            priceSliderStep={priceSliderStep}
+            resultsCount={filteredProducts.length}
+            formatPrice={formatSliderEuro}
+            getCategoryName={(category) =>
+              category === "All" ? t("Todos") : getCategoryLabel(category, locale)
+            }
+            onCategorySelect={(category) => {
+              handleCategorySelect(category);
+              setIsCategoryDropdownOpen(false);
+              setIsPriceDropdownOpen(false);
+            }}
+            onClearAll={() => {
+              handleCategorySelect("All");
+              setSearchQuery("");
+              setMaxPriceFilter(null);
+              setIsCategoryDropdownOpen(false);
+              setIsPriceDropdownOpen(false);
+            }}
+            onMaxPriceChange={setMaxPriceFilter}
+            labels={{
+              all: "TUTTI",
+              apply: t("Aplicar"),
+              category: t("Categoria"),
+              clear: t("Limpar"),
+              clearAll: t("Limpar tudo"),
+              filter: t("Filtro"),
+              filters: t("Filtros"),
+              maxPrice: t("Até qual valor (€)"),
+              noActiveFilters: t("Sem filtros ativos"),
+              price: t("Preço"),
+              results: t("resultados"),
+              selectedFilters: t("Filtros ativos"),
+            }}
+          />
+        ) : (
         <section className="bg-[#fdfcfb] border-b border-stone-100">
           <div ref={categoryDropdownRef} className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 sm:py-3">
             <div className="flex items-center gap-2">
@@ -3226,6 +3275,7 @@ export default function App() {
             </AnimatePresence>
           </div>
         </section>
+        )}
 
         {searchQuery.trim().length === 0 && !hasMaxPriceFilter && randomProductsByCategory.length > 0 && (
           <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-5">
