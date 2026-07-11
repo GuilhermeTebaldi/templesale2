@@ -375,9 +375,5 @@ export const arSATranslations: Record<string, string> = {
   "Você pode enviar no máximo {count} imagens.": "يمكنك إرسال {count} صور كحد أقصى.",
   "Carregar mais": "تحميل المزيد",
   "Carregando...": "جارٍ التحميل...",
-  "Falha ao carregar produtos.": "فشل في تحميل المنتجات.",
-  "Escolha uma foto de perfil rápida": "اختر صورة ملف شخصي سريعة",
-  "Escolher avatar": "اختر الصورة الرمزية",
-  "Avatar rápido": "صورة رمزية سريعة",
-  "Falha ao atualizar foto de perfil.": "فشل في تحديث صورة الملف الشخصي."
+  "Falha ao carregar produtos.": "فشل في تحميل المنتجات."
 };

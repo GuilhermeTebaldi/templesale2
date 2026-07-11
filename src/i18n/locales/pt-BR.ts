@@ -101,8 +101,4 @@ export const ptBRTranslations: Record<string, string> = {
   "Carregar mais": "Carregar mais",
   "Carregando...": "Carregando...",
   "Falha ao carregar produtos.": "Falha ao carregar produtos.",
-  "Escolha uma foto de perfil rápida": "Escolha uma foto de perfil rápida",
-  "Escolher avatar": "Escolher avatar",
-  "Avatar rápido": "Avatar rápido",
-  "Falha ao atualizar foto de perfil.": "Falha ao atualizar foto de perfil.",
 };

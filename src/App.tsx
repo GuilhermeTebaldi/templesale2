@@ -76,18 +76,6 @@ const MOBILE_MORE_PRODUCT_LIMIT = 20;
 const DESKTOP_PRODUCT_LIMIT = 36;
 const NOTIFICATIONS_POLL_INTERVAL_MS = 120000;
 const NOTIFICATION_UNDO_TIMEOUT_MS = 5000;
-const DICEBEAR_PROFILE_AVATAR_SEEDS = [
-  "templesale-aurora",
-  "templesale-luna",
-  "templesale-milo",
-  "templesale-nova",
-  "templesale-rio",
-  "templesale-sage",
-];
-
-function getDiceBearProfileAvatarUrl(seed: string): string {
-  return `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(seed)}`;
-}
 
 function isMobileProductViewport(): boolean {
   if (typeof window === "undefined") {
@@ -365,19 +353,9 @@ export default function App() {
   }, [currentUser]);
   const memberName = currentUser?.name || t("Membro cadastrado");
   const memberEmail = String(currentUser?.email ?? "").trim();
-  const fallbackAvatarSeed = React.useMemo(() => {
-    const stableSeed = [currentUser?.id, memberEmail, memberName]
-      .map((value) => String(value ?? "").trim())
-      .find((value) => value.length > 0);
-    if (stableSeed) {
-      return stableSeed;
-    }
-    const randomIndex = Math.floor(Math.random() * DICEBEAR_PROFILE_AVATAR_SEEDS.length);
-    return DICEBEAR_PROFILE_AVATAR_SEEDS[randomIndex] ?? "templesale";
-  }, [currentUser?.id, memberEmail, memberName]);
   const memberAvatar =
     String(currentUser?.avatarUrl ?? "").trim() ||
-    getDiceBearProfileAvatarUrl(fallbackAvatarSeed);
+    "https://picsum.photos/seed/avatar/200/200";
   const avatarInputRef = React.useRef<HTMLInputElement | null>(null);
   const avatarButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const avatarPickerPanelRef = React.useRef<HTMLDivElement | null>(null);
@@ -1785,38 +1763,10 @@ export default function App() {
         avatarUrl: updatedUser.avatarUrl || uploadResult.url,
       };
       setCurrentUser(mergedUser);
-      syncSellerProfileAcrossProducts(mergedUser);
       setIsAvatarPickerOpen(false);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : t("Falha ao enviar foto de perfil.");
-      setAvatarUploadError(message);
-    } finally {
-      setIsAvatarUploading(false);
-    }
-  };
-
-  const handleSelectQuickProfileAvatar = async (seed: string) => {
-    if (!currentUser) {
-      return;
-    }
-
-    const avatarUrl = getDiceBearProfileAvatarUrl(seed);
-    setIsAvatarUploading(true);
-    setAvatarUploadError("");
-    try {
-      const updatedUser = await api.updateProfileAvatar(avatarUrl);
-      const mergedUser: SessionUser = {
-        ...(currentUser ?? updatedUser),
-        ...updatedUser,
-        avatarUrl: updatedUser.avatarUrl || avatarUrl,
-      };
-      setCurrentUser(mergedUser);
-      syncSellerProfileAcrossProducts(mergedUser);
-      setIsAvatarPickerOpen(false);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : t("Falha ao atualizar foto de perfil.");
       setAvatarUploadError(message);
     } finally {
       setIsAvatarUploading(false);
@@ -2202,46 +2152,12 @@ export default function App() {
                     initial={{ opacity: 0, y: -6, scale: 0.96 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -6, scale: 0.96 }}
-                    className="absolute top-[calc(100%+0.5rem)] left-0 z-90 w-64 bg-white border border-stone-200 shadow-lg rounded-sm p-3"
+                    className="absolute top-[calc(100%+0.5rem)] left-0 z-90 min-w-[180px] bg-white border border-stone-200 shadow-lg rounded-sm p-2"
                   >
-                    <div className="mb-3">
-                      <p className="mb-2 text-[9px] font-bold uppercase tracking-[0.18em] text-stone-400">
-                        {t("Escolha uma foto de perfil rápida")}
-                      </p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {DICEBEAR_PROFILE_AVATAR_SEEDS.map((seed) => {
-                          const avatarUrl = getDiceBearProfileAvatarUrl(seed);
-                          const isSelected = String(currentUser?.avatarUrl ?? "").trim() === avatarUrl;
-
-                          return (
-                            <button
-                              key={seed}
-                              type="button"
-                              disabled={isAvatarUploading}
-                              onClick={() => {
-                                void handleSelectQuickProfileAvatar(seed);
-                              }}
-                              className={`aspect-square overflow-hidden rounded-full border bg-stone-50 p-0.5 transition-all disabled:opacity-60 ${
-                                isSelected
-                                  ? "border-stone-900 ring-2 ring-stone-900/10"
-                                  : "border-stone-200 hover:border-stone-500"
-                              }`}
-                              aria-label={t("Escolher avatar")}
-                            >
-                              <img
-                                src={avatarUrl}
-                                alt={t("Avatar rápido")}
-                                className="h-full w-full rounded-full object-cover"
-                              />
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
                     <button
                       disabled={isAvatarUploading}
                       onClick={() => avatarInputRef.current?.click()}
-                      className="w-full flex items-center justify-center gap-2 border-t border-stone-100 px-3 py-2 pt-3 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-700 hover:bg-stone-100 disabled:text-stone-300 disabled:hover:bg-transparent transition-colors"
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-700 hover:bg-stone-100 disabled:text-stone-300 disabled:hover:bg-transparent transition-colors"
                     >
                       <ImagePlus className="w-3.5 h-3.5" />
                       {isAvatarUploading ? t("Enviando foto...") : t("Escolher foto")}
@@ -2254,9 +2170,6 @@ export default function App() {
               <h3 className="font-serif italic text-xl text-stone-800">{memberName}</h3>
               <p className="text-[10px] uppercase tracking-widest text-stone-400">
                 {t("Membro cadastrado")}
-              </p>
-              <p className="mt-1 max-w-[12rem] truncate text-[11px] font-medium text-stone-500">
-                {memberEmail || t("Sem email cadastrado")}
               </p>
               {avatarUploadError && (
                 <p className="text-[11px] text-red-500 mt-1">{avatarUploadError}</p>
