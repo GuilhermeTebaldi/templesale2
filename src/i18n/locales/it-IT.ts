@@ -350,5 +350,9 @@ export const itITTranslations: Record<string, string> = {
   "Produto compartilhado.": "Prodotto condiviso.",
   "Carregar mais": "Carica altro",
   "Carregando...": "Caricamento...",
-  "Falha ao carregar produtos.": "Errore durante il caricamento dei prodotti."
+  "Falha ao carregar produtos.": "Errore durante il caricamento dei prodotti.",
+  "Escolha uma foto de perfil rápida": "Scegli una foto del profilo rapida",
+  "Escolher avatar": "Scegli avatar",
+  "Avatar rápido": "Avatar rapido",
+  "Falha ao atualizar foto de perfil.": "Errore durante l'aggiornamento della foto profilo."
 };
