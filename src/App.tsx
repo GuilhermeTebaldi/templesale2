@@ -2268,7 +2268,7 @@ export default function App() {
     [selectedEstablishment],
   );
   const selectedEstablishmentProductCategories = React.useMemo(() => {
-    const labels = new Map<string, string>();
+    const labels = new globalThis.Map<string, string>();
     for (const product of selectedEstablishmentProducts) {
       const label = String(product.category ?? "").trim();
       const key = label.toLowerCase();
