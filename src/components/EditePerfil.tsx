@@ -59,6 +59,18 @@ export default function EditePerfil({
     city: initialEstablishment?.city || initialData?.city || "",
     neighborhood: initialData?.neighborhood || "",
     street: initialEstablishment?.address || initialData?.street || "",
+    latitude:
+      typeof initialEstablishment?.latitude === "number"
+        ? String(initialEstablishment.latitude)
+        : typeof initialData?.locationLatitude === "number"
+          ? String(initialData.locationLatitude)
+          : "",
+    longitude:
+      typeof initialEstablishment?.longitude === "number"
+        ? String(initialEstablishment.longitude)
+        : typeof initialData?.locationLongitude === "number"
+          ? String(initialData.locationLongitude)
+          : "",
   });
 
   React.useEffect(() => {
@@ -75,6 +87,18 @@ export default function EditePerfil({
       city: initialEstablishment?.city || initialData?.city || "",
       neighborhood: initialData?.neighborhood || "",
       street: initialEstablishment?.address || initialData?.street || "",
+      latitude:
+        typeof initialEstablishment?.latitude === "number"
+          ? String(initialEstablishment.latitude)
+          : typeof initialData?.locationLatitude === "number"
+            ? String(initialData.locationLatitude)
+            : "",
+      longitude:
+        typeof initialEstablishment?.longitude === "number"
+          ? String(initialEstablishment.longitude)
+          : typeof initialData?.locationLongitude === "number"
+            ? String(initialData.locationLongitude)
+            : "",
     });
     setErrorMessage(initialErrorMessage);
   }, [initialData, initialEstablishment, initialErrorMessage]);
@@ -139,6 +163,8 @@ export default function EditePerfil({
               city: normalizedCity || prev.city || "Roma",
               neighborhood: normalizedNeighborhood || prev.neighborhood,
               street: normalizedStreet || prev.street,
+              latitude: String(latitude),
+              longitude: String(longitude),
             }));
           } catch {
             setFormData((prev) => ({
@@ -146,8 +172,10 @@ export default function EditePerfil({
               country: prev.country || "Italia",
               state: prev.state || "Lazio",
               city: prev.city || "Roma",
+              latitude: String(latitude),
+              longitude: String(longitude),
             }));
-            setErrorMessage(t("Nao foi possivel capturar sua localizacao neste momento."));
+            setErrorMessage("");
           } finally {
             window.clearTimeout(timeoutId);
             setIsResolvingLocation(false);
@@ -156,7 +184,9 @@ export default function EditePerfil({
       },
       () => {
         setIsResolvingLocation(false);
-        setErrorMessage(t("Nao foi possivel capturar sua localizacao neste momento."));
+        setErrorMessage(
+          t("Nao foi possivel capturar sua localizacao neste momento. Preencha cidade/endereco manualmente."),
+        );
       },
       { enableHighAccuracy: true, timeout: 10000 },
     );
@@ -210,6 +240,8 @@ export default function EditePerfil({
         openingHours: formData.establishmentOpeningHours.trim(),
         city: profilePayload.city,
         address: profilePayload.street,
+        latitude: Number.isFinite(Number(formData.latitude)) ? Number(formData.latitude) : undefined,
+        longitude: Number.isFinite(Number(formData.longitude)) ? Number(formData.longitude) : undefined,
         whatsappCountryIso: profilePayload.whatsappCountryIso,
         whatsappNumber: profilePayload.whatsappNumber,
         phone: profilePayload.whatsappNumber,

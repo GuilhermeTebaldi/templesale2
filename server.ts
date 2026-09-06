@@ -389,6 +389,16 @@ type NewProductDraftDefaults = {
   details: Record<string, string>;
 };
 
+type GeoLookupResult = {
+  latitude: number;
+  longitude: number;
+  country: string;
+  state: string;
+  city: string;
+  neighborhood: string;
+  street: string;
+};
+
 type VendorRow = {
   id: number;
   name: string;
@@ -7680,6 +7690,50 @@ function getRequestHeaderTokenValue(value: string | string[] | undefined): strin
   return String(value ?? "").trim();
 }
 
+function normalizeNominatimAddress(record: Record<string, unknown>, latitude: number, longitude: number): GeoLookupResult {
+  const address =
+    record.address && typeof record.address === "object"
+      ? (record.address as Record<string, unknown>)
+      : {};
+  const city = String(
+    address.city ??
+      address.town ??
+      address.village ??
+      address.municipality ??
+      address.county ??
+      "",
+  ).trim();
+  const street = [address.road, address.house_number]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+
+  return {
+    latitude,
+    longitude,
+    country: String(address.country_code ?? address.country ?? "").trim(),
+    state: String(address.state ?? address.region ?? "").trim(),
+    city,
+    neighborhood: String(address.suburb ?? address.neighbourhood ?? address.quarter ?? "").trim(),
+    street,
+  };
+}
+
+async function fetchNominatimJson(pathname: string, params: URLSearchParams): Promise<unknown> {
+  params.set("format", "jsonv2");
+  params.set("addressdetails", "1");
+  const response = await fetch(`https://nominatim.openstreetmap.org/${pathname}?${params.toString()}`, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "TempleSale/1.0 (https://www.templesale.com)",
+    },
+  });
+  if (!response.ok) {
+    throw new Error("Falha ao consultar geocoding.");
+  }
+  return response.json();
+}
+
 function createAdminSessionToken(): string {
   const expiresAt = Math.floor(Date.now() / 1000) + ADMIN_SESSION_TTL_SECONDS;
   const nonce = crypto.randomBytes(16).toString("hex");
@@ -9284,6 +9338,78 @@ async function bootstrap() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao excluir usuário.";
       res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/geo/reverse", async (req, res) => {
+    try {
+      const latitude = toNullableNumber(req.query.lat ?? req.query.latitude);
+      const longitude = toNullableNumber(req.query.lng ?? req.query.lon ?? req.query.longitude);
+      if (
+        latitude === null ||
+        longitude === null ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180
+      ) {
+        res.status(400).json({ success: false, message: "Localizacao invalida." });
+        return;
+      }
+
+      const payload = await fetchNominatimJson(
+        "reverse",
+        new URLSearchParams({
+          lat: String(latitude),
+          lon: String(longitude),
+          zoom: "18",
+        }),
+      );
+      const data =
+        payload && typeof payload === "object"
+          ? normalizeNominatimAddress(payload as Record<string, unknown>, latitude, longitude)
+          : { latitude, longitude };
+      res.json({ success: true, data });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao buscar localizacao.";
+      res.status(502).json({ success: false, message });
+    }
+  });
+
+  app.get("/api/geo/search", async (req, res) => {
+    try {
+      const query = normalizeTextField(req.query.q ?? req.query.query ?? "", "Busca", 240);
+      if (!query) {
+        res.status(400).json({ success: false, message: "Informe um endereco ou cidade." });
+        return;
+      }
+
+      const payload = await fetchNominatimJson(
+        "search",
+        new URLSearchParams({
+          q: query,
+          limit: "1",
+        }),
+      );
+      const firstResult = Array.isArray(payload) ? payload[0] : null;
+      if (!firstResult || typeof firstResult !== "object") {
+        res.status(404).json({ success: false, message: "Localizacao nao encontrada." });
+        return;
+      }
+      const record = firstResult as Record<string, unknown>;
+      const latitude = toNullableNumber(record.lat ?? record.latitude);
+      const longitude = toNullableNumber(record.lon ?? record.lng ?? record.longitude);
+      if (latitude === null || longitude === null) {
+        res.status(404).json({ success: false, message: "Localizacao nao encontrada." });
+        return;
+      }
+      res.json({
+        success: true,
+        data: normalizeNominatimAddress(record, latitude, longitude),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao buscar localizacao.";
+      res.status(502).json({ success: false, message });
     }
   });
 

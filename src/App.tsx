@@ -379,6 +379,7 @@ export default function App() {
   const memberName = currentUser?.name || t("Membro cadastrado");
   const memberEmail = String(currentUser?.email ?? "").trim();
   const memberAvatar =
+    String(myEstablishment?.logoUrl ?? "").trim() ||
     String(currentUser?.avatarUrl ?? "").trim() ||
     "https://picsum.photos/seed/avatar/200/200";
   const avatarInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -609,19 +610,28 @@ export default function App() {
     }
     const normalizedActivityName = String(myEstablishment.name ?? "").trim();
     const normalizedUserName = String(currentUser.name ?? "").trim();
+    const missingActivityFields = [
+      normalizedActivityName.length < 2 || normalizedActivityName === normalizedUserName
+        ? t("nome da attività")
+        : "",
+      myEstablishment.category === "Altro" ? t("categoria") : "",
+      !String(myEstablishment.city ?? "").trim() ? t("cidade") : "",
+      !String(myEstablishment.whatsappNumber ?? "").replace(/\D/g, "").trim()
+        ? t("WhatsApp")
+        : "",
+    ].filter(Boolean);
     const needsActivityProfile =
-      normalizedActivityName.length < 2 ||
-      normalizedActivityName === normalizedUserName ||
-      myEstablishment.category === "Altro" ||
-      !String(myEstablishment.city ?? "").trim() ||
-      !String(myEstablishment.whatsappNumber ?? "").replace(/\D/g, "").trim();
+      missingActivityFields.length > 0;
 
     if (!needsActivityProfile) {
       return;
     }
 
     activityOnboardingShownRef.current = currentUser.id;
-    setProfileCompletionMessage(t("Complete i dati della tua attività per pubblicare e apparire nella Home."));
+    setProfileCompletionMessage(
+      t("Complete i dati della tua attività per pubblicare e apparire nella Home.") +
+        ` ${t("Falta")}: ${missingActivityFields.join(", ")}.`,
+    );
     setIsEditePerfilOpen(true);
     setIsUserOpen(false);
   }, [currentUser, myEstablishment, t]);
@@ -1875,6 +1885,50 @@ export default function App() {
         updatedUser.whatsappCountryIso || profileData.whatsappCountryIso,
       whatsappNumber: updatedUser.whatsappNumber || profileData.whatsappNumber,
     };
+    let establishmentLatitude =
+      typeof establishmentData?.latitude === "number" && Number.isFinite(establishmentData.latitude)
+        ? establishmentData.latitude
+        : myEstablishment?.latitude;
+    let establishmentLongitude =
+      typeof establishmentData?.longitude === "number" && Number.isFinite(establishmentData.longitude)
+        ? establishmentData.longitude
+        : myEstablishment?.longitude;
+    if (
+      (typeof establishmentLatitude !== "number" || typeof establishmentLongitude !== "number") &&
+      (establishmentData?.address || establishmentData?.city || profileData.city)
+    ) {
+      const lookupQuery = [
+        establishmentData?.address,
+        establishmentData?.city ?? profileData.city,
+        profileData.state,
+        profileData.country || "Italia",
+      ]
+        .map((part) => String(part ?? "").trim())
+        .filter(Boolean)
+        .join(", ");
+      const geocoded = lookupQuery ? await api.geocodeLocation(lookupQuery).catch(() => null) : null;
+      if (geocoded) {
+        establishmentLatitude = geocoded.latitude;
+        establishmentLongitude = geocoded.longitude;
+      }
+    }
+
+    if (
+      typeof establishmentLatitude === "number" &&
+      typeof establishmentLongitude === "number"
+    ) {
+      const updatedLocationUser = await api.updateProfileLocation(
+        establishmentLatitude,
+        establishmentLongitude,
+      ).catch(() => null);
+      if (updatedLocationUser) {
+        mergedUser.locationLatitude = updatedLocationUser.locationLatitude;
+        mergedUser.locationLongitude = updatedLocationUser.locationLongitude;
+      } else {
+        mergedUser.locationLatitude = establishmentLatitude;
+        mergedUser.locationLongitude = establishmentLongitude;
+      }
+    }
 
     setCurrentUser(mergedUser);
     syncSellerProfileAcrossProducts(mergedUser);
@@ -1888,6 +1942,8 @@ export default function App() {
       address:
         establishmentData?.address ??
         [mergedUser.street, mergedUser.neighborhood].filter(Boolean).join(", "),
+      latitude: establishmentLatitude,
+      longitude: establishmentLongitude,
       whatsappCountryIso: establishmentData?.whatsappCountryIso ?? mergedUser.whatsappCountryIso,
       whatsappNumber: establishmentData?.whatsappNumber ?? mergedUser.whatsappNumber,
       phone: establishmentData?.phone ?? mergedUser.whatsappNumber,
@@ -1933,7 +1989,30 @@ export default function App() {
         ...updatedUser,
         avatarUrl: updatedUser.avatarUrl || uploadResult.url,
       };
+      const savedEstablishment = await api.saveEstablishment({
+        id: myEstablishment?.id,
+        name: myEstablishment?.name || mergedUser.name,
+        category: myEstablishment?.category || "Altro",
+        logoUrl: uploadResult.url,
+        coverUrl: myEstablishment?.coverUrl || "",
+        description: myEstablishment?.description || "",
+        openingHours: myEstablishment?.openingHours || "",
+        city: myEstablishment?.city || mergedUser.city || "",
+        address:
+          myEstablishment?.address ||
+          [mergedUser.street, mergedUser.neighborhood].filter(Boolean).join(", "),
+        latitude: myEstablishment?.latitude,
+        longitude: myEstablishment?.longitude,
+        whatsappCountryIso: myEstablishment?.whatsappCountryIso || mergedUser.whatsappCountryIso || "IT",
+        whatsappNumber: myEstablishment?.whatsappNumber || mergedUser.whatsappNumber || "",
+        phone: myEstablishment?.phone || mergedUser.whatsappNumber || "",
+      });
       setCurrentUser(mergedUser);
+      setMyEstablishment(savedEstablishment);
+      setEstablishments((current) => {
+        const withoutCurrent = current.filter((item) => item.id !== savedEstablishment.id);
+        return [savedEstablishment, ...withoutCurrent];
+      });
       setIsAvatarPickerOpen(false);
     } catch (error) {
       const message =

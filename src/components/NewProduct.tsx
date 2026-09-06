@@ -697,8 +697,8 @@ export default function NewProduct({
       formData.category.trim() ||
       GENERIC_PRODUCT_CATEGORY;
     const normalizedDescription = formData.description.trim();
-    const latitude = Number(formData.latitude);
-    const longitude = Number(formData.longitude);
+    let latitude = Number(formData.latitude);
+    let longitude = Number(formData.longitude);
     const parsedPrice = parsePriceToNumber(formData.price);
     const parsedQuantity = Number(formData.quantity);
 
@@ -707,8 +707,36 @@ export default function NewProduct({
       return;
     }
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      setErrorMessage(t("Informe latitude e longitude válidas."));
-      return;
+      const lookupQuery = [
+        establishment?.address,
+        establishment?.city,
+        "Italia",
+      ]
+        .map((part) => String(part ?? "").trim())
+        .filter(Boolean)
+        .join(", ");
+      try {
+        const geocoded = lookupQuery ? await api.geocodeLocation(lookupQuery) : null;
+        latitude = geocoded?.latitude ?? DEFAULT_MAP_CENTER.latitude;
+        longitude = geocoded?.longitude ?? DEFAULT_MAP_CENTER.longitude;
+        setFormData((current) => ({
+          ...current,
+          latitude: latitude.toFixed(6),
+          longitude: longitude.toFixed(6),
+        }));
+        setMapCenter({ latitude, longitude });
+        setSelectedMapPoint({ latitude, longitude });
+      } catch {
+        latitude = DEFAULT_MAP_CENTER.latitude;
+        longitude = DEFAULT_MAP_CENTER.longitude;
+        setFormData((current) => ({
+          ...current,
+          latitude: latitude.toFixed(6),
+          longitude: longitude.toFixed(6),
+        }));
+        setMapCenter({ latitude, longitude });
+        setSelectedMapPoint({ latitude, longitude });
+      }
     }
     if (latitude < -90 || latitude > 90) {
       setErrorMessage(t("Latitude deve estar entre -90 e 90."));
@@ -832,30 +860,12 @@ export default function NewProduct({
 
   const handleOpenMapPicker = () => {
     setErrorMessage("");
-    requestCurrentLocation(
-      (nextPoint) => {
-        const savedLocation = parseCoordinateStrings(formData.latitude, formData.longitude);
-        setMapCenter(nextPoint);
-        setSelectedMapPoint(savedLocation ?? nextPoint);
-        setIsMapPickerOpen(true);
-      },
-      (message) => {
-        const savedLocation = parseCoordinateStrings(formData.latitude, formData.longitude);
-        if (savedLocation) {
-          setMapCenter(savedLocation);
-          setSelectedMapPoint(savedLocation);
-        } else {
-          setMapCenter(DEFAULT_MAP_CENTER);
-          setSelectedMapPoint(null);
-        }
-        setErrorMessage(
-          t("{message} Você ainda pode escolher manualmente no mapa.", {
-            message,
-          }),
-        );
-        setIsMapPickerOpen(true);
-      },
-    );
+    const savedLocation =
+      parseCoordinateStrings(formData.latitude, formData.longitude) ??
+      getEstablishmentLocationPoint(establishment);
+    setMapCenter(savedLocation ?? DEFAULT_MAP_CENTER);
+    setSelectedMapPoint(savedLocation);
+    setIsMapPickerOpen(true);
   };
 
   const handleCloseMapPicker = () => {

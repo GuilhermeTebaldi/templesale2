@@ -239,6 +239,16 @@ export interface EstablishmentDto {
   sections?: StorefrontSectionDto[];
 }
 
+export interface GeocodeResultDto {
+  latitude: number;
+  longitude: number;
+  city?: string;
+  state?: string;
+  country?: string;
+  street?: string;
+  neighborhood?: string;
+}
+
 export interface UpdateProfileInput {
   name: string;
   country: string;
@@ -2600,6 +2610,35 @@ export const api = {
       throw new Error("Resposta inválida ao salvar attivita.");
     }
     return establishment;
+  },
+  async geocodeLocation(query: string) {
+    const normalizedQuery = toStringValue(query);
+    if (!normalizedQuery) {
+      return null;
+    }
+    const params = new URLSearchParams({ q: normalizedQuery });
+    const payload = await request<unknown>(`/api/geo/search?${params.toString()}`);
+    const parsed = parseJsonIfNeeded(payload);
+    const record = isRecord(parsed)
+      ? firstDefined(parsed, ["data", "location", "result"]) ?? parsed
+      : null;
+    if (!isRecord(record)) {
+      return null;
+    }
+    const latitude = toOptionalNumber(firstDefined(record, ["latitude", "lat"]));
+    const longitude = toOptionalNumber(firstDefined(record, ["longitude", "lng", "lon"]));
+    if (latitude === undefined || longitude === undefined) {
+      return null;
+    }
+    return {
+      latitude,
+      longitude,
+      city: toStringValue(firstDefined(record, ["city"])),
+      state: toStringValue(firstDefined(record, ["state"])),
+      country: toStringValue(firstDefined(record, ["country"])),
+      street: toStringValue(firstDefined(record, ["street"])),
+      neighborhood: toStringValue(firstDefined(record, ["neighborhood"])),
+    } satisfies GeocodeResultDto;
   },
   async createStorefrontSection(establishmentId: number, name: string) {
     const payload = await request<unknown>(`/api/establishments/${establishmentId}/sections`, {
