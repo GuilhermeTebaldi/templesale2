@@ -289,6 +289,7 @@ export default function App() {
   const [isEstablishmentPageOpen, setIsEstablishmentPageOpen] = React.useState(false);
   const [activeStorefrontSectionId, setActiveStorefrontSectionId] = React.useState<number | null>(null);
   const [isLoadingEstablishments, setIsLoadingEstablishments] = React.useState(false);
+  const activityOnboardingShownRef = React.useRef<number | null>(null);
   const [cartQuantitiesByProductId, setCartQuantitiesByProductId] = React.useState<Record<number, number>>(
     () =>
       readCartStorage(getScopedStorageKey(CART_STORAGE_KEY), [
@@ -581,6 +582,7 @@ export default function App() {
     let cancelled = false;
     if (!currentUser) {
       setMyEstablishment(null);
+      activityOnboardingShownRef.current = null;
       return;
     }
     void (async () => {
@@ -597,6 +599,32 @@ export default function App() {
       cancelled = true;
     };
   }, [currentUser?.id]);
+
+  React.useEffect(() => {
+    if (!currentUser || !myEstablishment) {
+      return;
+    }
+    if (activityOnboardingShownRef.current === currentUser.id) {
+      return;
+    }
+    const normalizedActivityName = String(myEstablishment.name ?? "").trim();
+    const normalizedUserName = String(currentUser.name ?? "").trim();
+    const needsActivityProfile =
+      normalizedActivityName.length < 2 ||
+      normalizedActivityName === normalizedUserName ||
+      myEstablishment.category === "Altro" ||
+      !String(myEstablishment.city ?? "").trim() ||
+      !String(myEstablishment.whatsappNumber ?? "").replace(/\D/g, "").trim();
+
+    if (!needsActivityProfile) {
+      return;
+    }
+
+    activityOnboardingShownRef.current = currentUser.id;
+    setProfileCompletionMessage(t("Complete i dati della tua attività per pubblicare e apparire nella Home."));
+    setIsEditePerfilOpen(true);
+    setIsUserOpen(false);
+  }, [currentUser, myEstablishment, t]);
 
   const handleLoadMoreProducts = React.useCallback(() => {
     if (isLoadingProducts || isLoadingMoreProducts || !hasMoreProducts) {
@@ -1834,7 +1862,10 @@ export default function App() {
     });
   };
 
-  const handleProfileSave = async (profileData: UpdateProfileInput) => {
+  const handleProfileSave = async (
+    profileData: UpdateProfileInput,
+    establishmentData?: Partial<EstablishmentDto>,
+  ) => {
     const updatedUser = await api.updateProfile(profileData);
     const mergedUser: SessionUser = {
       ...(currentUser ?? updatedUser),
@@ -1847,19 +1878,25 @@ export default function App() {
 
     setCurrentUser(mergedUser);
     syncSellerProfileAcrossProducts(mergedUser);
-    if (myEstablishment) {
-      void api
-        .saveEstablishment({
-          id: myEstablishment.id,
-          city: mergedUser.city,
-          address: [mergedUser.street, mergedUser.neighborhood].filter(Boolean).join(", "),
-          whatsappCountryIso: mergedUser.whatsappCountryIso,
-          whatsappNumber: mergedUser.whatsappNumber,
-          phone: mergedUser.whatsappNumber,
-        })
-        .then(setMyEstablishment)
-        .catch((error) => console.error("Error syncing establishment profile:", error));
-    }
+    const savedEstablishment = await api.saveEstablishment({
+      id: establishmentData?.id ?? myEstablishment?.id,
+      name: establishmentData?.name ?? myEstablishment?.name ?? mergedUser.name,
+      category: establishmentData?.category ?? myEstablishment?.category ?? "Altro",
+      description: establishmentData?.description ?? myEstablishment?.description ?? "",
+      openingHours: establishmentData?.openingHours ?? myEstablishment?.openingHours ?? "",
+      city: establishmentData?.city ?? mergedUser.city,
+      address:
+        establishmentData?.address ??
+        [mergedUser.street, mergedUser.neighborhood].filter(Boolean).join(", "),
+      whatsappCountryIso: establishmentData?.whatsappCountryIso ?? mergedUser.whatsappCountryIso,
+      whatsappNumber: establishmentData?.whatsappNumber ?? mergedUser.whatsappNumber,
+      phone: establishmentData?.phone ?? mergedUser.whatsappNumber,
+    });
+    setMyEstablishment(savedEstablishment);
+    setEstablishments((current) => {
+      const withoutCurrent = current.filter((item) => item.id !== savedEstablishment.id);
+      return [savedEstablishment, ...withoutCurrent];
+    });
     setProfileCompletionMessage("");
   };
 
@@ -2970,6 +3007,7 @@ export default function App() {
             onClose={() => setIsEditePerfilOpen(false)}
             onSave={handleProfileSave}
             initialData={currentUser}
+            initialEstablishment={myEstablishment}
             initialErrorMessage={profileCompletionMessage}
           />
         )}

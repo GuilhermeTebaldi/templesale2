@@ -1,7 +1,7 @@
 import React from "react";
 import { motion } from "motion/react";
-import { X, User, Save, Navigation, Mail } from "lucide-react";
-import { type SessionUser, type UpdateProfileInput } from "../lib/api";
+import { X, User, Save, Navigation, Mail, Store } from "lucide-react";
+import { type EstablishmentDto, type SessionUser, type UpdateProfileInput } from "../lib/api";
 import { trackedFetch } from "../lib/networkActivity";
 import {
   getWhatsappCountryLabel,
@@ -11,15 +11,34 @@ import { useI18n } from "../i18n/provider";
 
 interface EditePerfilProps {
   onClose: () => void;
-  onSave: (data: UpdateProfileInput) => Promise<void>;
+  onSave: (
+    data: UpdateProfileInput,
+    establishmentData?: Partial<EstablishmentDto>,
+  ) => Promise<void>;
   initialData?: SessionUser | null;
+  initialEstablishment?: EstablishmentDto | null;
   initialErrorMessage?: string;
 }
+
+const ESTABLISHMENT_CATEGORIES = [
+  "Ristorante",
+  "Bar",
+  "Negozi",
+  "Barbieri",
+  "Palestre",
+  "Officine",
+  "Mercati",
+  "Arredamento",
+  "Elettronica",
+  "Hotel",
+  "Altro",
+];
 
 export default function EditePerfil({
   onClose,
   onSave,
   initialData,
+  initialEstablishment,
   initialErrorMessage = "",
 }: EditePerfilProps) {
   const { t } = useI18n();
@@ -29,28 +48,36 @@ export default function EditePerfil({
   const [errorMessage, setErrorMessage] = React.useState("");
   const [formData, setFormData] = React.useState({
     name: initialData?.name || "",
+    establishmentName: initialEstablishment?.name || "",
+    establishmentCategory: initialEstablishment?.category || "Altro",
+    establishmentDescription: initialEstablishment?.description || "",
+    establishmentOpeningHours: initialEstablishment?.openingHours || "",
     whatsappCountryIso: initialData?.whatsappCountryIso || "IT",
     whatsappNumber: initialData?.whatsappNumber || "",
     country: initialData?.country || "",
     state: initialData?.state || "",
-    city: initialData?.city || "",
+    city: initialEstablishment?.city || initialData?.city || "",
     neighborhood: initialData?.neighborhood || "",
-    street: initialData?.street || "",
+    street: initialEstablishment?.address || initialData?.street || "",
   });
 
   React.useEffect(() => {
     setFormData({
       name: initialData?.name || "",
+      establishmentName: initialEstablishment?.name || "",
+      establishmentCategory: initialEstablishment?.category || "Altro",
+      establishmentDescription: initialEstablishment?.description || "",
+      establishmentOpeningHours: initialEstablishment?.openingHours || "",
       whatsappCountryIso: initialData?.whatsappCountryIso || "IT",
       whatsappNumber: initialData?.whatsappNumber || "",
       country: initialData?.country || "",
       state: initialData?.state || "",
-      city: initialData?.city || "",
+      city: initialEstablishment?.city || initialData?.city || "",
       neighborhood: initialData?.neighborhood || "",
-      street: initialData?.street || "",
+      street: initialEstablishment?.address || initialData?.street || "",
     });
     setErrorMessage(initialErrorMessage);
-  }, [initialData, initialErrorMessage]);
+  }, [initialData, initialEstablishment, initialErrorMessage]);
 
   const handleUseLocation = () => {
     setErrorMessage("");
@@ -140,8 +167,13 @@ export default function EditePerfil({
     setErrorMessage("");
 
     const normalizedName = formData.name.trim();
+    const normalizedEstablishmentName = formData.establishmentName.trim();
     if (normalizedName.length < 2) {
       setErrorMessage(t("Nome deve ter pelo menos 2 caracteres."));
+      return;
+    }
+    if (normalizedEstablishmentName.length < 2) {
+      setErrorMessage(t("Nome attività deve ter pelo menos 2 caracteres."));
       return;
     }
 
@@ -160,7 +192,7 @@ export default function EditePerfil({
 
     setIsSaving(true);
     try {
-      await onSave({
+      const profilePayload = {
         name: normalizedName,
         whatsappCountryIso: formData.whatsappCountryIso,
         whatsappNumber: normalizedWhatsapp,
@@ -169,6 +201,18 @@ export default function EditePerfil({
         city: formData.city.trim(),
         neighborhood: formData.neighborhood.trim(),
         street: formData.street.trim(),
+      };
+      await onSave(profilePayload, {
+        id: initialEstablishment?.id,
+        name: normalizedEstablishmentName,
+        category: formData.establishmentCategory,
+        description: formData.establishmentDescription.trim(),
+        openingHours: formData.establishmentOpeningHours.trim(),
+        city: profilePayload.city,
+        address: profilePayload.street,
+        whatsappCountryIso: profilePayload.whatsappCountryIso,
+        whatsappNumber: profilePayload.whatsappNumber,
+        phone: profilePayload.whatsappNumber,
       });
       onClose();
     } catch (error) {
@@ -217,6 +261,79 @@ export default function EditePerfil({
                 <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-700">
                   <Mail className="h-4 w-4" />
                 </span>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-stone-200 bg-white p-5">
+              <div className="mb-5 flex items-center gap-3">
+                <Store className="h-4 w-4 text-stone-700" />
+                <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-stone-800">
+                  {t("Dati attività")}
+                </h3>
+              </div>
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
+                    {t("Nome attività")}
+                  </label>
+                  <input
+                    required
+                    minLength={2}
+                    type="text"
+                    placeholder={t("Ex: Casa Tebaldi")}
+                    className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
+                    value={formData.establishmentName}
+                    onChange={(e) =>
+                      setFormData({ ...formData, establishmentName: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
+                    {t("Categoria attività")}
+                  </label>
+                  <select
+                    required
+                    className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
+                    value={formData.establishmentCategory}
+                    onChange={(e) =>
+                      setFormData({ ...formData, establishmentCategory: e.target.value })
+                    }
+                  >
+                    {ESTABLISHMENT_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
+                    {t("Descrizione")}
+                  </label>
+                  <textarea
+                    rows={3}
+                    className="w-full resize-none bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-sm leading-6 text-stone-700"
+                    value={formData.establishmentDescription}
+                    onChange={(e) =>
+                      setFormData({ ...formData, establishmentDescription: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
+                    {t("Orari")}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={t("Ex: Lun-Sab 18:00-23:00")}
+                    className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
+                    value={formData.establishmentOpeningHours}
+                    onChange={(e) =>
+                      setFormData({ ...formData, establishmentOpeningHours: e.target.value })
+                    }
+                  />
+                </div>
               </div>
             </div>
 

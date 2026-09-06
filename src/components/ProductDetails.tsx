@@ -4,10 +4,7 @@ import {
   X,
   Heart,
   Share2,
-  ShoppingBag,
   ChevronRight,
-  Minus,
-  Plus,
   ChevronLeft,
   Maximize2,
   MapPin,
@@ -282,7 +279,7 @@ export default function ProductDetails({
   if (!product) return null;
 
   const images = resolveProductImages(product);
-  const description = product.description?.trim() || t("Descrição não informada pelo vendedor.");
+  const description = product.description?.trim() || t("Descrizione non informata dall'attività.");
   const relatedProductCategoryTextClass = "text-[8px] sm:text-[9px] uppercase tracking-[0.12em] text-stone-400 line-clamp-1";
   const allowedDetailKeys = getAllowedDetailKeys(product.category);
   const normalizedDetails = normalizeProductDetailsRecord(product.details ?? {});
@@ -494,7 +491,7 @@ export default function ProductDetails({
           });
         }
       } catch {
-        // Keep fallback UI when public endpoints don't expose seller contact.
+        // Keep fallback UI when public endpoints don't expose contact data.
       }
     };
 
@@ -631,7 +628,7 @@ export default function ProductDetails({
     }
     onAddToCart?.(selectedQuantity);
     setCartFeedback(
-      t("{count} item(s) adicionado(s) ao carrinho.", {
+      t("Interesse enviado para l'attività.", {
         count: String(selectedQuantity),
       }),
     );
@@ -1442,13 +1439,13 @@ export default function ProductDetails({
                 {relatedProductsHeadline}
               </h2>
               <p className="text-sm text-stone-500">
-                {t("Mostrando outros anúncios para você explorar rapidamente.")}
+                {t("Altri prodotti e servizi da esplorare.")}
               </p>
             </div>
 
             {relatedProducts.length === 0 ? (
               <p className="mt-6 text-sm text-stone-500">
-                {t("Ainda não existem outros anúncios disponíveis.")}
+                {t("Ainda não existem outros produtos disponíveis.")}
               </p>
             ) : (
               <div className="mt-8 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">

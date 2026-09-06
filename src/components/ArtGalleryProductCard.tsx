@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "motion/react";
-import { Heart, MapPin, ShoppingBag } from "lucide-react";
+import { Heart, MapPin, MessageCircle } from "lucide-react";
 import { getCategoryLabel } from "../i18n/categories";
 import { useI18n } from "../i18n/provider";
 import { formatCompactPriceFromUnknown } from "../lib/currency";
@@ -63,19 +63,21 @@ export default function ArtGalleryProductCard({
           <Heart className={`h-4 w-4 ${isLiked ? "fill-red-500 text-red-500" : ""}`} />
         </button>
 
-        <div className="absolute bottom-6 left-1/2 w-[calc(100%-3rem)] -translate-x-1/2 opacity-100 transition-opacity duration-300 ease-out sm:bottom-7 sm:w-[calc(100%-3.5rem)] md:opacity-0 md:group-hover:opacity-100">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onAddToCart?.();
-            }}
-            className="mx-auto flex w-full max-w-[15rem] items-center justify-center gap-1.5 bg-yellow-400 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-black shadow-[0_8px_20px_rgba(0,0,0,0.16)] transition-colors hover:bg-yellow-300 md:px-4 md:py-2 md:text-xs md:tracking-widest"
-          >
-            <ShoppingBag className="h-2.5 w-2.5 md:h-3 md:w-3" />
-            {t("Adicionar ao carrinho")}
-          </button>
-        </div>
+        {onAddToCart && (
+          <div className="absolute bottom-6 left-1/2 w-[calc(100%-3rem)] -translate-x-1/2 opacity-100 transition-opacity duration-300 ease-out sm:bottom-7 sm:w-[calc(100%-3.5rem)] md:opacity-0 md:group-hover:opacity-100">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onAddToCart();
+              }}
+              className="mx-auto flex w-full max-w-[15rem] items-center justify-center gap-1.5 bg-stone-950 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white shadow-[0_8px_20px_rgba(0,0,0,0.16)] transition-colors hover:bg-black md:px-4 md:py-2 md:text-xs md:tracking-widest"
+            >
+              <MessageCircle className="h-2.5 w-2.5 md:h-3 md:w-3" />
+              {t("Contatta")}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="mt-4 flex grow flex-col items-center gap-1.5 text-center sm:mt-5">

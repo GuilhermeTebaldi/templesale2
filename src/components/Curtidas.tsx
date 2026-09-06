@@ -45,7 +45,7 @@ export default function Curtidas({
       <div className="p-8 flex justify-between items-center border-b border-stone-100">
         <div className="flex items-center gap-4">
           <Heart className="w-6 h-6 text-stone-800" />
-          <h2 className="text-2xl font-serif tracking-widest uppercase">{t("Curtidas")}</h2>
+          <h2 className="text-2xl font-serif tracking-widest uppercase">{t("Preferiti")}</h2>
         </div>
         <button onClick={onClose} className="p-2 hover:bg-stone-50 rounded-full transition-colors">
           <X className="w-6 h-6 text-stone-600" />
@@ -58,7 +58,7 @@ export default function Curtidas({
             <div className="text-center py-20">
               <Heart className="w-12 h-12 text-stone-200 mx-auto mb-4" />
               <p className="text-stone-400 uppercase tracking-widest text-xs">
-                {t("Você ainda não curtiu nenhum produto.")}
+                {t("Non hai ancora salvato prodotti o attività.")}
               </p>
             </div>
           ) : (
@@ -88,6 +88,7 @@ export default function Curtidas({
                         </div>
                         <p className="text-[10px] uppercase tracking-widest text-stone-400 mt-1">
                           {getCategoryLabel(product.category, locale)}
+                          {product.establishmentName ? ` · ${product.establishmentName}` : ""}
                         </p>
                       </div>
 
@@ -97,7 +98,7 @@ export default function Curtidas({
                           className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-stone-400 hover:text-stone-800 transition-colors"
                         >
                           <ExternalLink className="w-3 h-3" />
-                          {t("Ver produto")}
+                          {t("Apri prodotto")}
                         </button>
                         <button
                           disabled={isRemoving}
@@ -107,7 +108,7 @@ export default function Curtidas({
                           className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-stone-400 hover:text-red-500 disabled:text-stone-300 transition-colors"
                         >
                           <Trash2 className="w-3 h-3" />
-                          {isRemoving ? t("Removendo...") : t("Remover curtida")}
+                          {isRemoving ? t("Removendo...") : t("Rimuovi")}
                         </button>
                       </div>
                     </div>

@@ -30,6 +30,8 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
       return (
         product.name.toLowerCase().includes(normalizedSearch) ||
         product.category.toLowerCase().includes(normalizedSearch) ||
+        String(product.sectionName ?? "").toLowerCase().includes(normalizedSearch) ||
+        String(product.establishmentName ?? "").toLowerCase().includes(normalizedSearch) ||
         localizedCategory.includes(normalizedSearch)
       );
     });
@@ -40,7 +42,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
       return;
     }
 
-    const confirmed = window.confirm(t("Tem certeza que deseja excluir este anúncio?"));
+    const confirmed = window.confirm(t("Vuoi eliminare questo prodotto o servizio?"));
     if (!confirmed) {
       return;
     }
@@ -51,7 +53,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
       await onDelete(id);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : t("Falha ao excluir o anúncio.");
+        error instanceof Error ? error.message : t("Falha ao excluir o produto.");
       setErrorMessage(message);
     } finally {
       setDeletingId(null);
@@ -69,7 +71,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
       <div className="p-8 flex justify-between items-center border-b border-stone-100">
         <div className="flex items-center gap-4">
           <Package className="w-6 h-6 text-stone-800" />
-          <h2 className="text-2xl font-serif tracking-widest uppercase">{t("Meus Anúncios")}</h2>
+          <h2 className="text-2xl font-serif tracking-widest uppercase">{t("Prodotti")}</h2>
         </div>
         <button onClick={onClose} className="p-2 hover:bg-stone-50 rounded-full transition-colors">
           <X className="w-6 h-6 text-stone-600" />
@@ -85,7 +87,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
           {products.length === 0 ? (
             <div className="text-center py-20">
               <Package className="w-12 h-12 text-stone-200 mx-auto mb-4" />
-              <p className="text-stone-400 uppercase tracking-widest text-xs">{t("Você ainda não possui anúncios.")}</p>
+              <p className="text-stone-400 uppercase tracking-widest text-xs">{t("La tua attività non ha ancora prodotti o servizi.")}</p>
             </div>
           ) : (
             <div className="grid gap-6">
@@ -95,7 +97,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
                   type="search"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder={t("Buscar produtos ou categorias...")}
+                  placeholder={t("Cerca prodotti, servizi o sezioni...")}
                   className="grow bg-transparent outline-none text-sm text-stone-700 placeholder:text-stone-400"
                 />
               </div>
@@ -103,7 +105,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
               {filteredProducts.length === 0 ? (
                 <div className="text-center py-16">
                   <p className="text-stone-400 uppercase tracking-widest text-xs">
-                    {t("Nenhum produto encontrado")}
+                    {t("Nessun prodotto trovato")}
                   </p>
                 </div>
               ) : (
@@ -129,6 +131,7 @@ export default function MeusAnuncios({ products, onClose, onEdit, onDelete }: Me
                         </div>
                         <p className="text-[10px] uppercase tracking-widest text-stone-400 mt-1">
                           {getCategoryLabel(product.category, locale)}
+                          {product.sectionName ? ` · ${product.sectionName}` : ""}
                         </p>
                       </div>
 
