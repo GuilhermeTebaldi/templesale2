@@ -317,42 +317,6 @@ export default function EditePerfil({
     );
   };
 
-  const handleGeocodeTypedLocation = async () => {
-    const query = [formData.street, formData.neighborhood, formData.city, formData.state, formData.country || "Italia"]
-      .map((part) => String(part ?? "").trim())
-      .filter(Boolean)
-      .join(", ");
-    if (!query) {
-      setLocationStatus("error");
-      setErrorMessage(t("Preencha cidade ou endereço para registrar a localização."));
-      return;
-    }
-
-    setIsResolvingLocation(true);
-    setErrorMessage("");
-    try {
-      const location = await api.geocodeLocation(query);
-      if (!location) {
-        throw new Error(t("Localização não encontrada."));
-      }
-      await applyLocationPoint(
-        { latitude: location.latitude, longitude: location.longitude },
-        {
-          country: location.country || formData.country || "Italia",
-          state: location.state || formData.state,
-          city: location.city || formData.city,
-          neighborhood: location.neighborhood || formData.neighborhood,
-          street: location.street || formData.street,
-        },
-      );
-    } catch (error) {
-      setLocationStatus("error");
-      setErrorMessage(error instanceof Error ? error.message : t("Localização não encontrada."));
-    } finally {
-      setIsResolvingLocation(false);
-    }
-  };
-
   const handleConfirmMapLocation = (point: GeoPoint) => {
     void applyLocationPoint(point, {
       country: formData.country || "Italia",
@@ -619,7 +583,7 @@ export default function EditePerfil({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <button 
                   type="button"
                   disabled={isResolvingLocation}
@@ -627,16 +591,7 @@ export default function EditePerfil({
                   className="inline-flex items-center justify-center gap-2 border border-stone-200 px-3 py-3 text-[10px] uppercase tracking-[0.16em] font-bold text-stone-800 hover:border-stone-500 transition-colors disabled:text-stone-300"
                 >
                   <Navigation className="w-4 h-4" />
-                  {isResolvingLocation ? t("Processando...") : t("GPS")}
-                </button>
-                <button
-                  type="button"
-                  disabled={isResolvingLocation}
-                  onClick={() => void handleGeocodeTypedLocation()}
-                  className="inline-flex items-center justify-center gap-2 border border-stone-200 px-3 py-3 text-[10px] uppercase tracking-[0.16em] font-bold text-stone-800 hover:border-stone-500 transition-colors disabled:text-stone-300"
-                >
-                  <MapPin className="w-4 h-4" />
-                  {t("Registrar endereço")}
+                  {isResolvingLocation ? t("Processando...") : t("Localização atual")}
                 </button>
                 <button
                   type="button"

@@ -36,7 +36,8 @@ type LeafletMarkerInstance = {
 type LeafletGlobal = {
   map: (container: HTMLElement, options?: unknown) => LeafletMapInstance;
   tileLayer: (url: string, options?: unknown) => { addTo: (map: LeafletMapInstance) => void };
-  marker: (coords: [number, number]) => LeafletMarkerInstance;
+  marker: (coords: [number, number], options?: unknown) => LeafletMarkerInstance;
+  divIcon: (options: unknown) => unknown;
   Icon: {
     Default: {
       prototype: Record<string, unknown>;
@@ -207,7 +208,14 @@ export default function LeafletMapPicker({
 
     const coords: [number, number] = [selectedPoint.latitude, selectedPoint.longitude];
     if (!markerRef.current) {
-      markerRef.current = window.L.marker(coords).addTo(mapRef.current);
+      markerRef.current = window.L.marker(coords, {
+        icon: window.L.divIcon({
+          className: "templesale-map-picker-marker",
+          html: '<div style="width:22px;height:22px;border-radius:9999px;background:#111827;border:4px solid #ffffff;box-shadow:0 8px 24px rgba(0,0,0,0.35);"></div>',
+          iconSize: [22, 22],
+          iconAnchor: [11, 11],
+        }),
+      }).addTo(mapRef.current);
       return;
     }
     markerRef.current.setLatLng(coords);

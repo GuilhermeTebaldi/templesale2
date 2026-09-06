@@ -16,6 +16,7 @@ interface ProductMapProps {
   openResultsByDefault?: boolean;
   autoFocusPanelSearch?: boolean;
   onOpenProduct?: (product: Product) => void;
+  onOpenEstablishment?: (idOrSlug: number | string) => void;
   onAddToCart?: (product: Product) => void;
   googleMapsUrl?: string;
   currentUser?: SessionUser | null;
@@ -81,6 +82,26 @@ function buildFocusedBalloonMarkerHtml(
   `;
 }
 
+function buildStoreMarkerHtml(product: Product): string {
+  const storeName = String(product.establishmentName || product.sellerName || product.name || "Attività").trim();
+  const imageUrl = String(product.establishmentLogoUrl || product.image || "").trim();
+  const safeStoreName = escapeHtml(storeName);
+  const safeImageUrl = escapeHtml(imageUrl);
+  const imageMarkup = safeImageUrl
+    ? `<img src="${safeImageUrl}" alt="" style="width:34px;height:34px;border-radius:9999px;object-fit:cover;background:#f5f5f4;" />`
+    : `<div style="width:34px;height:34px;border-radius:9999px;background:#e7e5e4;color:#78716c;display:flex;align-items:center;justify-content:center;font-family:serif;font-size:18px;">${safeStoreName.slice(0, 1).toUpperCase()}</div>`;
+  return `
+    <div style="position:relative;width:164px;height:64px;display:flex;justify-content:center;pointer-events:none;">
+      <div style="display:flex;align-items:center;gap:8px;max-width:156px;height:44px;padding:5px 10px 5px 5px;background:#ffffff;border:1.5px solid #111111;border-radius:9999px;box-shadow:0 10px 24px rgba(0,0,0,0.24);">
+        ${imageMarkup}
+        <div style="min-width:0;max-width:92px;font-size:11px;font-weight:700;color:#111111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${safeStoreName}</div>
+      </div>
+      <div style="position:absolute;top:39px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:14px solid #111111;"></div>
+      <div style="position:absolute;top:38px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:13px solid #ffffff;"></div>
+    </div>
+  `;
+}
+
 function matchesProductSearch(
   product: Product,
   normalizedQuery: string,
@@ -93,6 +114,9 @@ function matchesProductSearch(
   const searchableFields = [
     product.name,
     product.category,
+    product.establishmentName ?? "",
+    product.establishmentCategory ?? "",
+    product.sectionName ?? "",
     getCategoryLabel(product.category, locale),
     product.description ?? "",
   ];
@@ -133,6 +157,30 @@ function toLocatedProduct(product: Product): LocatedProduct | null {
     latitude: clamp(latitude, -90, 90),
     longitude: clamp(longitude, -180, 180),
   };
+}
+
+function groupLocatedProductsByEstablishment(products: LocatedProduct[]): LocatedProduct[] {
+  const grouped = new globalThis.Map<string, LocatedProduct>();
+  for (const product of products) {
+    const groupKey =
+      product.establishmentId !== undefined && product.establishmentId !== null
+        ? `establishment:${product.establishmentId}`
+        : `product:${product.id}`;
+    const existing = grouped.get(groupKey);
+    if (existing) {
+      continue;
+    }
+    grouped.set(groupKey, {
+      ...product,
+      name: product.establishmentName || product.sellerName || product.name,
+      category: product.establishmentCategory || product.category,
+      image: product.establishmentLogoUrl || product.image,
+      description: product.establishmentName
+        ? `${product.establishmentName} - prodotti e servizi`
+        : product.description,
+    });
+  }
+  return [...grouped.values()];
 }
 
 function isPointInPolygon(point: GeoPoint, polygon: GeoPoint[]): boolean {
@@ -438,6 +486,7 @@ export default function ProductMap({
   onClose,
   initialFocusProductId,
   onOpenProduct,
+  onOpenEstablishment,
   currentUser,
   onUserLocationSaved,
   googleMapsUrl,
@@ -445,9 +494,11 @@ export default function ProductMap({
   const { t, locale } = useI18n();
   const productsWithLocation = React.useMemo(
     () =>
-      products
-        .map(toLocatedProduct)
-        .filter((product): product is LocatedProduct => product !== null),
+      groupLocatedProductsByEstablishment(
+        products
+          .map(toLocatedProduct)
+          .filter((product): product is LocatedProduct => product !== null),
+      ),
     [products],
   );
   const hasProductsWithLocation = productsWithLocation.length > 0;

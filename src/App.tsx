@@ -2718,6 +2718,9 @@ export default function App() {
             onOpenProduct={(product) => {
               openProductDetails(product);
             }}
+            onOpenEstablishment={(idOrSlug) => {
+              void openEstablishmentPage(idOrSlug);
+            }}
             currentUser={currentUser}
             onUserLocationSaved={(updatedUser) => {
               setCurrentUser((current) => ({

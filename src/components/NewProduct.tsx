@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   ArrowLeft,
   ArrowRight,
-  Navigation,
   MapPin,
   Star,
 } from "lucide-react";
@@ -920,57 +919,6 @@ export default function NewProduct({
     }
   };
 
-  const requestCurrentLocation = (
-    onSuccess: (point: GeoPoint) => void,
-    onFailure?: (message: string) => void,
-  ) => {
-    if (!("geolocation" in navigator)) {
-      onFailure?.(t("Geolocalização não suportada neste navegador."));
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const nextPoint = {
-          latitude: clampNumber(
-            position.coords.latitude,
-            -MAX_COORDINATE_LATITUDE,
-            MAX_COORDINATE_LATITUDE,
-          ),
-          longitude: clampNumber(
-            position.coords.longitude,
-            -MAX_COORDINATE_LONGITUDE,
-            MAX_COORDINATE_LONGITUDE,
-          ),
-        };
-        onSuccess(nextPoint);
-      },
-      () => {
-        onFailure?.(t("Não foi possível capturar a localização atual."));
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
-  };
-
-  const handleUseCurrentLocation = () => {
-    setErrorMessage("");
-    requestCurrentLocation(
-      (nextPoint) => {
-        setFormData((prev) => ({
-          ...prev,
-          latitude: nextPoint.latitude.toFixed(6),
-          longitude: nextPoint.longitude.toFixed(6),
-        }));
-        setMapCenter(nextPoint);
-        setSelectedMapPoint(nextPoint);
-        setLocationSource("current");
-      },
-      (message) => {
-        setErrorMessage(message);
-      },
-    );
-  };
-
   const handleOpenMapPicker = () => {
     setErrorMessage("");
     const savedLocation =
@@ -1436,12 +1384,12 @@ export default function NewProduct({
 
             <div className="space-y-3 border border-stone-200 rounded-sm bg-stone-50/60 p-4">
               <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-500">
-                {t("Posizione attività")}
+                {t("Localização da loja")}
               </p>
               <p className="text-sm text-stone-500">
                 {hasLocationSelected
-                  ? t("Este item usará a posição da sua attività.")
-                  : t("Nenhuma posição definida para a attività.")}
+                  ? t("Este produto usará automaticamente a localização cadastrada na loja.")
+                  : t("Nenhuma localização definida para a loja.")}
               </p>
 
               <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-8">
@@ -1465,22 +1413,9 @@ export default function NewProduct({
                     className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-600 transition-colors hover:text-stone-900"
                   >
                     <MapPin className="w-4 h-4" />
-                    {t("Usar posição da attività")}
+                    {t("Localização da loja")}
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={handleUseCurrentLocation}
-                  className={`inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold transition-colors ${
-                    locationSource === "current"
-                      ? "text-emerald-600"
-                      : "text-stone-600 hover:text-stone-900"
-                  }`}
-                >
-                  <Navigation className="w-4 h-4" />
-                  {t("Usar localização atual")}
-                </button>
-
                 <button
                   type="button"
                   onClick={handleOpenMapPicker}
@@ -1491,7 +1426,7 @@ export default function NewProduct({
                   }`}
                 >
                   <MapPin className="w-4 h-4" />
-                  {t("Escolher local no mapa")}
+                  {t("Mapa")}
                 </button>
               </div>
             </div>
