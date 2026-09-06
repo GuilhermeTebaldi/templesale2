@@ -17,6 +17,7 @@ import {
   type EstablishmentDto,
   type NewProductDraftDefaults,
   type StorefrontSectionDto,
+  type TaxonomySuggestionDto,
 } from "../lib/api";
 import { type Product } from "./ProductCard";
 import LeafletMapPicker from "./LeafletMapPicker";
@@ -35,11 +36,17 @@ interface NewProductProps {
   establishment?: EstablishmentDto | null;
   sections?: StorefrontSectionDto[];
   onCreateSection?: (name: string) => Promise<StorefrontSectionDto>;
+  onDeleteSection?: (sectionId: number) => Promise<void>;
 }
 
 type FormState = {
   name: string;
   category: string;
+  family: string;
+  subcategory: string;
+  brand: string;
+  attributeValue: string;
+  attributeUnit: string;
   sectionId: string;
   price: string;
   isPriceNegotiable: boolean;
@@ -72,6 +79,31 @@ const EURO_AMOUNT_FORMATTER = new Intl.NumberFormat("it-IT", {
   maximumFractionDigits: 2,
 });
 const GENERIC_PRODUCT_CATEGORY = "Prodotti e servizi";
+
+function normalizeTaxonomyLabel(value: string): string {
+  return String(value ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isUsableTaxonomyLabel(value: string): boolean {
+  const label = String(value ?? "").trim();
+  const key = normalizeTaxonomyLabel(label);
+  if (!label || !key || key.length < 2) {
+    return false;
+  }
+  return !(
+    /^www(?:\.|$)/i.test(label) ||
+    /^https?:\/\//i.test(label) ||
+    /[a-z0-9][a-z0-9-]*\.(?:com|it|net|org|io|app|shop|store)(?:\b|\/)/i.test(label.toLowerCase()) ||
+    ["www", "http", "https"].includes(key)
+  );
+}
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -151,6 +183,11 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
     return {
       name: "",
       category: GENERIC_PRODUCT_CATEGORY,
+      family: "",
+      subcategory: "",
+      brand: "",
+      attributeValue: "",
+      attributeUnit: "",
       sectionId: "",
       price: "",
       isPriceNegotiable: false,
@@ -167,6 +204,11 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
   return {
     name: product.name ?? "",
     category: product.category ?? GENERIC_PRODUCT_CATEGORY,
+    family: String(product.details?.family ?? ""),
+    subcategory: String(product.details?.subcategory ?? ""),
+    brand: String(product.details?.brand ?? ""),
+    attributeValue: String(product.details?.attributeValue ?? ""),
+    attributeUnit: String(product.details?.attributeUnit ?? ""),
     sectionId: product.sectionId ? String(product.sectionId) : "",
     price: hasNegotiablePrice ? "" : normalizePriceValue(product.price ?? ""),
     isPriceNegotiable: hasNegotiablePrice,
@@ -210,6 +252,11 @@ function applyDraftDefaultsToForm(
     ...currentForm,
     name: String(defaults.name ?? "").trim(),
     category: currentForm.category || GENERIC_PRODUCT_CATEGORY,
+    family: currentForm.family,
+    subcategory: currentForm.subcategory,
+    brand: currentForm.brand,
+    attributeValue: currentForm.attributeValue,
+    attributeUnit: currentForm.attributeUnit,
     latitude: currentForm.latitude,
     longitude: currentForm.longitude,
     description: String(defaults.description ?? "").trim(),
@@ -270,6 +317,7 @@ export default function NewProduct({
   establishment = null,
   sections = [],
   onCreateSection,
+  onDeleteSection,
 }: NewProductProps) {
   const { t } = useI18n();
   const initialLocation = React.useMemo(
@@ -310,6 +358,8 @@ export default function NewProduct({
   const [draftSaveFeedback, setDraftSaveFeedback] = React.useState<DraftSaveFeedback | null>(null);
   const [newSectionName, setNewSectionName] = React.useState("");
   const [isCreatingSection, setIsCreatingSection] = React.useState(false);
+  const [isDeletingSectionId, setIsDeletingSectionId] = React.useState<number | null>(null);
+  const [productCategorySuggestions, setProductCategorySuggestions] = React.useState<TaxonomySuggestionDto[]>([]);
   const hasAutoUncheckedDraftSaveRef = React.useRef(false);
 
   React.useEffect(() => {
@@ -445,9 +495,32 @@ export default function NewProduct({
     setFormData((current) => ({
       ...current,
       sectionId: String(sections[0].id),
-      category: sections[0].name || GENERIC_PRODUCT_CATEGORY,
+      family: current.family || sections[0].name || "",
     }));
   }, [formData.sectionId, isEditing, sections]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const search = formData.category === GENERIC_PRODUCT_CATEGORY ? "" : formData.category;
+    void api
+      .getProductCategorySuggestions({
+        businessCategory: establishment?.category,
+        search,
+      })
+      .then((suggestions) => {
+        if (!cancelled) {
+          setProductCategorySuggestions(suggestions.slice(0, 8));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProductCategorySuggestions([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [establishment?.category, formData.category]);
 
   React.useEffect(() => {
     if (isEditing || hasLocationSelected) {
@@ -668,6 +741,10 @@ export default function NewProduct({
     if (!name || !onCreateSection) {
       return;
     }
+    if (!isUsableTaxonomyLabel(name)) {
+      setErrorMessage(t("Informe uma sezione válida, sem links ou texto inválido."));
+      return;
+    }
     setIsCreatingSection(true);
     setErrorMessage("");
     try {
@@ -678,6 +755,26 @@ export default function NewProduct({
       setErrorMessage(error instanceof Error ? error.message : t("Falha ao salvar sezione."));
     } finally {
       setIsCreatingSection(false);
+    }
+  };
+
+  const handleDeleteSection = async () => {
+    const selectedSectionId = Number(formData.sectionId);
+    if (!Number.isInteger(selectedSectionId) || selectedSectionId <= 0 || !onDeleteSection) {
+      return;
+    }
+    setIsDeletingSectionId(selectedSectionId);
+    setErrorMessage("");
+    try {
+      await onDeleteSection(selectedSectionId);
+      setFormData((current) => ({
+        ...current,
+        sectionId: "",
+      }));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("Falha ao excluir sezione."));
+    } finally {
+      setIsDeletingSectionId(null);
     }
   };
 
@@ -693,7 +790,6 @@ export default function NewProduct({
     const normalizedName = formData.name.trim();
     const selectedSectionId = Number(formData.sectionId);
     const normalizedCategory =
-      selectedSection?.name?.trim() ||
       formData.category.trim() ||
       GENERIC_PRODUCT_CATEGORY;
     const normalizedDescription = formData.description.trim();
@@ -704,6 +800,14 @@ export default function NewProduct({
 
     if (!normalizedName) {
       setErrorMessage(t("Nome do produto é obrigatório."));
+      return;
+    }
+    if (!formData.category.trim() || formData.category === GENERIC_PRODUCT_CATEGORY) {
+      setErrorMessage(t("Categoria prodotto é obbligatoria."));
+      return;
+    }
+    if (!isUsableTaxonomyLabel(normalizedCategory)) {
+      setErrorMessage(t("Informe uma categoria produto válida, sem links ou texto inválido."));
       return;
     }
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
@@ -771,6 +875,15 @@ export default function NewProduct({
         : parsedPrice !== null
           ? parsedPrice.toFixed(2)
           : "";
+      const taxonomyDetails = Object.fromEntries(
+        Object.entries({
+          family: formData.family.trim(),
+          subcategory: formData.subcategory.trim(),
+          brand: formData.brand.trim(),
+          attributeValue: formData.attributeValue.trim(),
+          attributeUnit: formData.attributeUnit.trim(),
+        }).filter(([, value]) => value.length > 0),
+      );
       const newProduct: CreateProductInput = {
         name: normalizedName,
         category: normalizedCategory,
@@ -786,7 +899,7 @@ export default function NewProduct({
         image: images[0],
         images: [...images],
         description: normalizedDescription,
-        details: {},
+        details: taxonomyDetails,
       };
       await onPublish(newProduct);
       setIsSuccess(true);
@@ -1086,11 +1199,9 @@ export default function NewProduct({
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-600 appearance-none cursor-pointer"
                   value={formData.sectionId}
                   onChange={(e) => {
-                    const nextSection = sections.find((section) => String(section.id) === e.target.value);
                     setFormData({
                       ...formData,
                       sectionId: e.target.value,
-                      category: nextSection?.name || GENERIC_PRODUCT_CATEGORY,
                     });
                   }}
                 >
@@ -1101,6 +1212,17 @@ export default function NewProduct({
                     </option>
                   ))}
                 </select>
+                {selectedSection && onDeleteSection && (
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteSection()}
+                    disabled={isDeletingSectionId === selectedSection.id}
+                    className="mt-2 inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-red-500 transition-colors hover:text-red-700 disabled:opacity-40"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {isDeletingSectionId === selectedSection.id ? t("Excluindo...") : t("Elimina sezione")}
+                  </button>
+                )}
                 {onCreateSection && (
                   <div className="mt-3 flex gap-2">
                     <input
@@ -1113,13 +1235,105 @@ export default function NewProduct({
                     <button
                       type="button"
                       onClick={() => void handleCreateSection()}
-                      disabled={isCreatingSection || newSectionName.trim().length < 2}
+                      disabled={isCreatingSection || !isUsableTaxonomyLabel(newSectionName)}
                       className="inline-flex h-10 items-center justify-center rounded-lg border border-stone-300 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-stone-700 disabled:opacity-40"
                     >
                       {isCreatingSection ? t("Salvando...") : t("Crea")}
                     </button>
                   </div>
                 )}
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Famiglia")}</label>
+                <input
+                  type="text"
+                  placeholder={t("Ex: Bevande, Servizi, Arredamento")}
+                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
+                  value={formData.family}
+                  onChange={(e) => setFormData({ ...formData, family: e.target.value })}
+                  list="product-family-suggestions"
+                />
+                <datalist id="product-family-suggestions">
+                  {sections.map((section) => (
+                    <option key={section.id} value={section.name} />
+                  ))}
+                </datalist>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Categoria prodotto")}</label>
+                <input
+                  required
+                  type="text"
+                  placeholder={t("Ex: Birra, Taglio, Sedie")}
+                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
+                  value={formData.category === GENERIC_PRODUCT_CATEGORY ? "" : formData.category}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      category: e.target.value || GENERIC_PRODUCT_CATEGORY,
+                    })
+                  }
+                  list="product-category-suggestions"
+                />
+                <datalist id="product-category-suggestions">
+                  {productCategorySuggestions.map((suggestion) => (
+                    <option key={suggestion.key} value={suggestion.label} />
+                  ))}
+                </datalist>
+                {formData.category.trim() && formData.category !== GENERIC_PRODUCT_CATEGORY && (
+                  <p className="text-[11px] text-stone-400">
+                    {productCategorySuggestions.some(
+                      (suggestion) =>
+                        suggestion.label.localeCompare(formData.category, undefined, {
+                          sensitivity: "accent",
+                        }) === 0,
+                    )
+                      ? t("Categoria già presente nella tassonomia.")
+                      : t('+ Crea "{value}"', { value: formData.category.trim() })}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Sottocategoria")}</label>
+                <input
+                  type="text"
+                  placeholder={t("Ex: Lager, taglio uomo, sedie da ufficio")}
+                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
+                  value={formData.subcategory}
+                  onChange={(e) => setFormData({ ...formData, subcategory: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Marca")}</label>
+                <input
+                  type="text"
+                  placeholder={t("Ex: Heineken")}
+                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
+                  value={formData.brand}
+                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-[1fr_0.7fr] gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Attributo")}</label>
+                  <input
+                    type="text"
+                    placeholder={t("Ex: 330, XL, rosso")}
+                    className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
+                    value={formData.attributeValue}
+                    onChange={(e) => setFormData({ ...formData, attributeValue: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Unità")}</label>
+                  <input
+                    type="text"
+                    placeholder={t("ml")}
+                    className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
+                    value={formData.attributeUnit}
+                    onChange={(e) => setFormData({ ...formData, attributeUnit: e.target.value })}
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Preço")}</label>

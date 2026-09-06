@@ -265,8 +265,8 @@ const DEFAULT_MAP_CENTER: LeafletLatLng = {
   lng: -46.633308,
 };
 const SAVED_MAP_LOCATION_STORAGE_KEY = "templesale_map_user_location";
-const PRIMARY_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-const SECONDARY_TILE_URL = "/api/map-tiles/{z}/{x}/{y}.png";
+const PRIMARY_TILE_URL = "/api/map-tiles/{z}/{x}/{y}.png";
+const SECONDARY_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const TERTIARY_TILE_URL =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
 const QUATERNARY_TILE_URL = "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png";
@@ -816,7 +816,7 @@ export default function ProductMap({
         map.setView(mapCenter, focusedProduct ? 15 : savedUserLocation || firstProduct ? 13 : 12);
         setMapInteractionForDrawing(map, isDrawingRef.current);
 
-        const tileProviders = [PRIMARY_TILE_URL];
+        const tileProviders = [PRIMARY_TILE_URL, SECONDARY_TILE_URL];
 
         const loadTileProvider = (nextIndex: number) => {
           if (nextIndex > 0 && hasLoadedAnyTileRef.current) {

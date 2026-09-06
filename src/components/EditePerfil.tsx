@@ -1,7 +1,13 @@
 import React from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { CheckCircle2, Mail, MapPin, Navigation, Save, Store, User, X } from "lucide-react";
-import { api, type EstablishmentDto, type SessionUser, type UpdateProfileInput } from "../lib/api";
+import {
+  api,
+  type EstablishmentDto,
+  type SessionUser,
+  type TaxonomySuggestionDto,
+  type UpdateProfileInput,
+} from "../lib/api";
 import { trackedFetch } from "../lib/networkActivity";
 import {
   getWhatsappCountryLabel,
@@ -20,20 +26,6 @@ interface EditePerfilProps {
   initialEstablishment?: EstablishmentDto | null;
   initialErrorMessage?: string;
 }
-
-const ESTABLISHMENT_CATEGORIES = [
-  "Ristorante",
-  "Bar",
-  "Negozi",
-  "Barbieri",
-  "Palestre",
-  "Officine",
-  "Mercati",
-  "Arredamento",
-  "Elettronica",
-  "Hotel",
-  "Altro",
-];
 
 type GeoPoint = {
   latitude: number;
@@ -57,6 +49,31 @@ function parseGeoPoint(latitude: string, longitude: string): GeoPoint | null {
   return { latitude: lat, longitude: lng };
 }
 
+function normalizeTaxonomyLabel(value: string): string {
+  return String(value ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isUsableTaxonomyLabel(value: string): boolean {
+  const label = String(value ?? "").trim();
+  const key = normalizeTaxonomyLabel(label);
+  if (!label || !key || key.length < 2) {
+    return false;
+  }
+  return !(
+    /^www(?:\.|$)/i.test(label) ||
+    /^https?:\/\//i.test(label) ||
+    /[a-z0-9][a-z0-9-]*\.(?:com|it|net|org|io|app|shop|store)(?:\b|\/)/i.test(label.toLowerCase()) ||
+    ["www", "http", "https"].includes(key)
+  );
+}
+
 export default function EditePerfil({
   onClose,
   onSave,
@@ -70,6 +87,7 @@ export default function EditePerfil({
   const [isResolvingLocation, setIsResolvingLocation] = React.useState(false);
   const [isMapPickerOpen, setIsMapPickerOpen] = React.useState(false);
   const [locationStatus, setLocationStatus] = React.useState<"success" | "error" | null>(null);
+  const [businessCategorySuggestions, setBusinessCategorySuggestions] = React.useState<TaxonomySuggestionDto[]>([]);
   const [errorMessage, setErrorMessage] = React.useState("");
   const [formData, setFormData] = React.useState({
     name: initialData?.name || "",
@@ -150,6 +168,25 @@ export default function EditePerfil({
   );
 
   const mapCenter = selectedLocation ?? DEFAULT_MAP_CENTER;
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void api
+      .getBusinessCategorySuggestions(formData.establishmentCategory)
+      .then((suggestions) => {
+        if (!cancelled) {
+          setBusinessCategorySuggestions(suggestions.slice(0, 10));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setBusinessCategorySuggestions([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.establishmentCategory]);
 
   const applyLocationPoint = React.useCallback(
     async (point: GeoPoint, fallback?: Partial<typeof formData>) => {
@@ -341,6 +378,10 @@ export default function EditePerfil({
       setErrorMessage(t("Nome attività deve ter pelo menos 2 caracteres."));
       return;
     }
+    if (!isUsableTaxonomyLabel(formData.establishmentCategory)) {
+      setErrorMessage(t("Informe uma categoria attività válida, sem links ou texto inválido."));
+      return;
+    }
 
     const normalizedWhatsapp = normalizeWhatsappLocalNumber(
       formData.whatsappNumber,
@@ -459,20 +500,33 @@ export default function EditePerfil({
                   <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
                     {t("Categoria attività")}
                   </label>
-                  <select
+                  <input
                     required
                     className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
                     value={formData.establishmentCategory}
                     onChange={(e) =>
                       setFormData({ ...formData, establishmentCategory: e.target.value })
                     }
-                  >
-                    {ESTABLISHMENT_CATEGORIES.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
+                    list="business-category-suggestions"
+                    placeholder={t("Ex: Bar, Ristorante, Enoteca")}
+                  />
+                  <datalist id="business-category-suggestions">
+                    {businessCategorySuggestions.map((category) => (
+                      <option key={category.key} value={category.label} />
                     ))}
-                  </select>
+                  </datalist>
+                  {formData.establishmentCategory.trim() && (
+                    <p className="text-[11px] text-stone-400">
+                      {businessCategorySuggestions.some(
+                        (suggestion) =>
+                          suggestion.label.localeCompare(formData.establishmentCategory, undefined, {
+                            sensitivity: "accent",
+                          }) === 0,
+                      )
+                        ? t("Categoria già presente nella tassonomia.")
+                        : t('+ Crea "{value}"', { value: formData.establishmentCategory.trim() })}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">

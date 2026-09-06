@@ -249,6 +249,13 @@ export interface GeocodeResultDto {
   neighborhood?: string;
 }
 
+export interface TaxonomySuggestionDto {
+  label: string;
+  key: string;
+  usageCount: number;
+  source: "system" | "user";
+}
+
 export interface UpdateProfileInput {
   name: string;
   country: string;
@@ -1266,6 +1273,28 @@ function normalizeStorefrontSectionList(value: unknown): StorefrontSectionDto[] 
   return items
     .map((item) => normalizeStorefrontSectionItem(item))
     .filter((item): item is StorefrontSectionDto => item !== null);
+}
+
+function normalizeTaxonomySuggestionList(value: unknown): TaxonomySuggestionDto[] {
+  return extractArrayPayload(value, ["suggestions", "data", "items", "rows", "results"])
+    .map((item) => {
+      const parsed = parseJsonIfNeeded(item);
+      if (!isRecord(parsed)) {
+        return null;
+      }
+      const label = toStringValue(firstDefined(parsed, ["label", "name", "category"]));
+      if (!label) {
+        return null;
+      }
+      return {
+        label,
+        key: toStringValue(firstDefined(parsed, ["key", "slug"])) || label.toLowerCase(),
+        usageCount:
+          toNonNegativeInteger(firstDefined(parsed, ["usageCount", "usage_count", "count"])) ?? 0,
+        source: firstDefined(parsed, ["source"]) === "system" ? "system" : "user",
+      } satisfies TaxonomySuggestionDto;
+    })
+    .filter((item): item is TaxonomySuggestionDto => item !== null);
 }
 
 function normalizeEstablishmentItem(value: unknown): EstablishmentDto | null {
@@ -2640,6 +2669,25 @@ export const api = {
       neighborhood: toStringValue(firstDefined(record, ["neighborhood"])),
     } satisfies GeocodeResultDto;
   },
+  async getBusinessCategorySuggestions(search = "") {
+    const params = new URLSearchParams();
+    if (search.trim()) {
+      params.set("search", search.trim());
+    }
+    const payload = await request<unknown>(`/api/taxonomy/business-categories?${params.toString()}`);
+    return normalizeTaxonomySuggestionList(payload);
+  },
+  async getProductCategorySuggestions(input: { businessCategory?: string; search?: string } = {}) {
+    const params = new URLSearchParams();
+    if (String(input.businessCategory ?? "").trim()) {
+      params.set("businessCategory", String(input.businessCategory).trim());
+    }
+    if (String(input.search ?? "").trim()) {
+      params.set("search", String(input.search).trim());
+    }
+    const payload = await request<unknown>(`/api/taxonomy/product-categories?${params.toString()}`);
+    return normalizeTaxonomySuggestionList(payload);
+  },
   async createStorefrontSection(establishmentId: number, name: string) {
     const payload = await request<unknown>(`/api/establishments/${establishmentId}/sections`, {
       method: "POST",
@@ -2650,6 +2698,13 @@ export const api = {
       throw new Error("Resposta inválida ao salvar sezione.");
     }
     return section;
+  },
+  async deleteStorefrontSection(establishmentId: number, sectionId: number) {
+    await request<{ success: boolean }>(
+      `/api/establishments/${establishmentId}/sections/${sectionId}`,
+      { method: "DELETE" },
+    );
+    return true;
   },
   async getProductComments(productId: number) {
     if (!Number.isInteger(productId) || productId <= 0) {

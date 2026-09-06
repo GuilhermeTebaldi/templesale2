@@ -1311,6 +1311,38 @@ function normalizeProductSlugSegment(value: unknown): string {
   return normalized;
 }
 
+function normalizeTaxonomyKey(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function assertUsableTaxonomyLabel(value: unknown, fieldName: string): string {
+  const label = String(value ?? "").trim().replace(/\s+/g, " ");
+  const key = normalizeTaxonomyKey(label);
+  if (!label || !key) {
+    throw new Error(`${fieldName} é obrigatória.`);
+  }
+  const lowered = label.toLowerCase();
+  const hasUrlPattern =
+    /^www(?:\.|$)/i.test(label) ||
+    /^https?:\/\//i.test(label) ||
+    /[a-z0-9][a-z0-9-]*\.(?:com|it|net|org|io|app|shop|store)(?:\b|\/)/i.test(lowered);
+  const blockedKeys = new Set(["www", "http", "https"]);
+  if (hasUrlPattern || blockedKeys.has(key)) {
+    throw new Error(`${fieldName} não pode ser site, link ou texto inválido.`);
+  }
+  if (!/[a-z0-9]/i.test(key) || key.length < 2) {
+    throw new Error(`${fieldName} muito curta.`);
+  }
+  return label;
+}
+
 function sanitizeProductSlugForStorage(rawSlug: unknown): string {
   const normalized = normalizeProductSlugSegment(rawSlug);
   if (!normalized) {
@@ -3189,6 +3221,11 @@ async function createEstablishmentRecord(input: {
   phone?: string;
   openingHours?: string;
 }): Promise<number> {
+  const name = String(input.name ?? "").trim();
+  const category = assertUsableTaxonomyLabel(input.category || "Altro", "Categoria attivita");
+  if (name.length < 2) {
+    throw new Error("Nome attivita obbligatorio.");
+  }
   if (pgPool) {
     const result = await pgPool.query<{ id: number | string }>(
       `
@@ -3202,8 +3239,8 @@ async function createEstablishmentRecord(input: {
       `,
       [
         input.ownerId,
-        input.name,
-        input.category,
+        name,
+        category,
         input.logoUrl ?? "",
         input.coverUrl ?? "",
         input.description ?? "",
@@ -3219,7 +3256,7 @@ async function createEstablishmentRecord(input: {
     );
     const id = toRequiredNumber(result.rows[0]?.id);
     await pgPool.query("UPDATE establishments SET slug = $1 WHERE id = $2", [
-      buildEntitySlug(input.name, id, "attivita"),
+      buildEntitySlug(name, id, "attivita"),
       id,
     ]);
     return id;
@@ -3242,8 +3279,8 @@ async function createEstablishmentRecord(input: {
     )
     .run({
       owner_user_id: input.ownerId,
-      name: input.name,
-      category: input.category,
+      name,
+      category,
       logo_url: input.logoUrl ?? "",
       cover_url: input.coverUrl ?? "",
       description: input.description ?? "",
@@ -3259,7 +3296,7 @@ async function createEstablishmentRecord(input: {
   const id = Number(result.lastInsertRowid);
   requireSqliteDb()
     .prepare("UPDATE establishments SET slug = ? WHERE id = ?")
-    .run(buildEntitySlug(input.name, id, "attivita"), id);
+    .run(buildEntitySlug(name, id, "attivita"), id);
   return id;
 }
 
@@ -3427,6 +3464,7 @@ async function selectEstablishmentsRows(input: {
           OR LOWER(COALESCE(p.title, '')) LIKE ${like}
           OR LOWER(COALESCE(p.category, '')) LIKE ${like}
           OR LOWER(COALESCE(p.description, '')) LIKE ${like}
+          OR LOWER(COALESCE(p.details, '')) LIKE ${like}
         )
       `);
     }
@@ -3478,9 +3516,10 @@ async function selectEstablishmentsRows(input: {
         OR LOWER(COALESCE(p.title, '')) LIKE ?
         OR LOWER(COALESCE(p.category, '')) LIKE ?
         OR LOWER(COALESCE(p.description, '')) LIKE ?
+        OR LOWER(COALESCE(p.details, '')) LIKE ?
       )
     `);
-    values.push(...Array(9).fill(`%${search}%`));
+    values.push(...Array(10).fill(`%${search}%`));
   }
   values.push(limit);
   const rows = requireSqliteDb()
@@ -3506,13 +3545,166 @@ async function selectEstablishmentsRows(input: {
   return rows.map(normalizeEstablishmentRow);
 }
 
+type TaxonomySuggestionRecord = {
+  label: string;
+  key: string;
+  usageCount: number;
+  source: "system" | "user";
+};
+
+const SYSTEM_BUSINESS_CATEGORIES = [
+  "Bar",
+  "Ristorante",
+  "Pizzeria",
+  "Barbiere",
+  "Palestra",
+  "Officina",
+  "Negozio",
+  "Mercato",
+  "Arredamento",
+  "Elettronica",
+  "Hotel",
+  "Enoteca",
+  "Altro",
+];
+const GENERIC_PRODUCT_CATEGORY_LABEL = "Prodotti e servizi";
+
+async function selectBusinessCategorySuggestions(searchValue: string): Promise<TaxonomySuggestionRecord[]> {
+  const searchKey = normalizeTaxonomyKey(searchValue);
+  const suggestions = new Map<string, TaxonomySuggestionRecord>();
+  for (const label of SYSTEM_BUSINESS_CATEGORIES) {
+    const key = normalizeTaxonomyKey(label);
+    if (searchKey && !key.includes(searchKey)) {
+      continue;
+    }
+    suggestions.set(key, { label, key, usageCount: 0, source: "system" });
+  }
+
+  const rows = pgPool
+    ? (
+        await pgPool.query<Record<string, unknown>>(
+          `
+            SELECT category AS label, COUNT(*)::INT AS usage_count
+            FROM establishments
+            WHERE COALESCE(NULLIF(BTRIM(category), ''), '') <> ''
+            GROUP BY category
+          `,
+        )
+      ).rows
+    : (requireSqliteDb()
+        .prepare(
+          `
+            SELECT category AS label, COUNT(*) AS usage_count
+            FROM establishments
+            WHERE COALESCE(NULLIF(TRIM(category), ''), '') <> ''
+            GROUP BY category
+          `,
+        )
+        .all() as Array<Record<string, unknown>>);
+
+  for (const row of rows) {
+    const label = String(row.label ?? "").trim();
+    const key = normalizeTaxonomyKey(label);
+    if (!label || !key || (searchKey && !key.includes(searchKey))) {
+      continue;
+    }
+    const usageCount = Math.max(0, Number(row.usage_count ?? 0) || 0);
+    const current = suggestions.get(key);
+    suggestions.set(key, {
+      label: current?.source === "system" ? current.label : label,
+      key,
+      usageCount: Math.max(current?.usageCount ?? 0, usageCount),
+      source: current?.source ?? "user",
+    });
+  }
+
+  return Array.from(suggestions.values()).sort((left, right) => {
+    if (right.usageCount !== left.usageCount) {
+      return right.usageCount - left.usageCount;
+    }
+    if (left.source !== right.source) {
+      return left.source === "system" ? -1 : 1;
+    }
+    return left.label.localeCompare(right.label, "it");
+  });
+}
+
+async function selectProductCategorySuggestions(
+  businessCategoryValue: string,
+  searchValue: string,
+): Promise<TaxonomySuggestionRecord[]> {
+  const businessKey = normalizeTaxonomyKey(businessCategoryValue);
+  const searchKey = normalizeTaxonomyKey(searchValue);
+  const rows = pgPool
+    ? (
+        await pgPool.query<Record<string, unknown>>(
+          `
+            SELECT
+              p.category AS label,
+              e.category AS business_category,
+              COUNT(*)::INT AS usage_count
+            FROM products p
+            LEFT JOIN establishments e ON e.id = p.establishment_id
+            WHERE COALESCE(NULLIF(BTRIM(p.category), ''), '') <> ''
+            GROUP BY p.category, e.category
+          `,
+        )
+      ).rows
+    : (requireSqliteDb()
+        .prepare(
+          `
+            SELECT
+              p.category AS label,
+              e.category AS business_category,
+              COUNT(*) AS usage_count
+            FROM products p
+            LEFT JOIN establishments e ON e.id = p.establishment_id
+            WHERE COALESCE(NULLIF(TRIM(p.category), ''), '') <> ''
+            GROUP BY p.category, e.category
+          `,
+        )
+        .all() as Array<Record<string, unknown>>);
+
+  const suggestions = new Map<string, TaxonomySuggestionRecord & { contextCount: number }>();
+  for (const row of rows) {
+    const label = String(row.label ?? "").trim();
+    const key = normalizeTaxonomyKey(label);
+    if (!label || !key || label === GENERIC_PRODUCT_CATEGORY_LABEL || (searchKey && !key.includes(searchKey))) {
+      continue;
+    }
+    const usageCount = Math.max(0, Number(row.usage_count ?? 0) || 0);
+    const contextKey = normalizeTaxonomyKey(row.business_category);
+    const current = suggestions.get(key);
+    suggestions.set(key, {
+      label: current?.label ?? label,
+      key,
+      usageCount: (current?.usageCount ?? 0) + usageCount,
+      contextCount:
+        (current?.contextCount ?? 0) + (businessKey && businessKey === contextKey ? usageCount : 0),
+      source: "user",
+    });
+  }
+
+  return Array.from(suggestions.values())
+    .sort((left, right) => {
+      if (right.contextCount !== left.contextCount) {
+        return right.contextCount - left.contextCount;
+      }
+      if (right.usageCount !== left.usageCount) {
+        return right.usageCount - left.usageCount;
+      }
+      return left.label.localeCompare(right.label, "it");
+    })
+    .map(({ contextCount: _contextCount, ...suggestion }) => suggestion);
+}
+
 async function updateEstablishmentRecord(establishmentId: number, ownerId: number, input: Partial<EstablishmentRecord>) {
   const current = await selectEstablishmentByIdOrSlugRow(String(establishmentId));
   if (!current || current.ownerId !== ownerId) {
     return false;
   }
   const name = String(input.name ?? current.name).trim();
-  const category = String(input.category ?? current.category).trim() || "Altro";
+  const category = assertUsableTaxonomyLabel(input.category ?? current.category ?? "Altro", "Categoria attivita");
   if (name.length < 2) {
     throw new Error("Nome attivita obbligatorio.");
   }
@@ -3607,10 +3799,7 @@ async function createStorefrontSectionRecord(
   if (!establishment || establishment.ownerId !== ownerId) {
     throw new Error("Attivita non autorizzata.");
   }
-  const name = String(nameValue ?? "").trim();
-  if (name.length < 2) {
-    throw new Error("Nome sezione obbligatorio.");
-  }
+  const name = assertUsableTaxonomyLabel(nameValue, "Nome sezione");
   const slug = normalizeProductSlugSegment(name) || "sezione";
   const nextPosition = (await selectStorefrontSectionsRows(establishmentId)).length;
 
@@ -3642,6 +3831,44 @@ async function createStorefrontSectionRecord(
     .prepare("SELECT *, 0 AS product_count FROM storefront_sections WHERE establishment_id = ? AND slug = ?")
     .get(establishmentId, slug) as Record<string, unknown>;
   return normalizeStorefrontSectionRow(row);
+}
+
+async function deleteStorefrontSectionRecord(
+  establishmentId: number,
+  sectionId: number,
+  ownerId: number,
+): Promise<boolean> {
+  const establishment = await selectEstablishmentByIdOrSlugRow(String(establishmentId));
+  if (!establishment || establishment.ownerId !== ownerId) {
+    throw new Error("Attivita non autorizzata.");
+  }
+  if (pgPool) {
+    const section = await pgPool.query(
+      "SELECT id FROM storefront_sections WHERE id = $1 AND establishment_id = $2",
+      [sectionId, establishmentId],
+    );
+    if ((section.rowCount ?? 0) === 0) {
+      return false;
+    }
+    await pgPool.query("UPDATE products SET section_id = NULL WHERE section_id = $1", [sectionId]);
+    await pgPool.query("DELETE FROM storefront_sections WHERE id = $1 AND establishment_id = $2", [
+      sectionId,
+      establishmentId,
+    ]);
+    return true;
+  }
+
+  const section = requireSqliteDb()
+    .prepare("SELECT id FROM storefront_sections WHERE id = ? AND establishment_id = ?")
+    .get(sectionId, establishmentId);
+  if (!section) {
+    return false;
+  }
+  requireSqliteDb().prepare("UPDATE products SET section_id = NULL WHERE section_id = ?").run(sectionId);
+  requireSqliteDb()
+    .prepare("DELETE FROM storefront_sections WHERE id = ? AND establishment_id = ?")
+    .run(sectionId, establishmentId);
+  return true;
 }
 
 async function selectProductsByEstablishmentRows(establishmentId: number): Promise<ProductRow[]> {
@@ -3760,6 +3987,7 @@ async function selectProductsPageRows(query: ProductPageQuery): Promise<{
           OR COALESCE(p.title, '') ILIKE ${searchParam}
           OR COALESCE(p.category, '') ILIKE ${searchParam}
           OR COALESCE(p.description, '') ILIKE ${searchParam}
+          OR COALESCE(p.details, '') ILIKE ${searchParam}
           OR COALESCE(e.name, '') ILIKE ${searchParam}
           OR COALESCE(e.category, '') ILIKE ${searchParam}
           OR COALESCE(e.city, '') ILIKE ${searchParam}
@@ -3819,6 +4047,7 @@ async function selectProductsPageRows(query: ProductPageQuery): Promise<{
         OR LOWER(COALESCE(p.title, '')) LIKE ?
         OR LOWER(COALESCE(p.category, '')) LIKE ?
         OR LOWER(COALESCE(p.description, '')) LIKE ?
+        OR LOWER(COALESCE(p.details, '')) LIKE ?
         OR LOWER(COALESCE(e.name, '')) LIKE ?
         OR LOWER(COALESCE(e.category, '')) LIKE ?
         OR LOWER(COALESCE(e.city, '')) LIKE ?
@@ -3830,6 +4059,7 @@ async function selectProductsPageRows(query: ProductPageQuery): Promise<{
       )
     `);
     values.push(
+      searchParam,
       searchParam,
       searchParam,
       searchParam,
@@ -7002,7 +7232,7 @@ function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
 
   const body = payload as Record<string, unknown>;
   const name = String(body.name ?? "").trim();
-  const category = String(body.category ?? "").trim();
+  const category = assertUsableTaxonomyLabel(body.category, "Categoria prodotto");
   const sectionId = toOptionalPositiveInteger(body.sectionId ?? body.section_id);
   const normalizedPrice = normalizeIncomingPrice(
     body.price,
@@ -7022,9 +7252,6 @@ function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
 
   if (!name) {
     throw new Error("Nome do produto é obrigatório.");
-  }
-  if (!category) {
-    throw new Error("Categoria é obrigatória.");
   }
   if (!description) {
     throw new Error("Descrição é obrigatória.");
@@ -9413,6 +9640,33 @@ async function bootstrap() {
     }
   });
 
+  app.get("/api/taxonomy/business-categories", async (req, res) => {
+    try {
+      const search = normalizeTextField(req.query.search ?? req.query.q ?? "", "Busca", 120);
+      const suggestions = await selectBusinessCategorySuggestions(search);
+      res.json({ suggestions });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao carregar categorias.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/taxonomy/product-categories", async (req, res) => {
+    try {
+      const search = normalizeTextField(req.query.search ?? req.query.q ?? "", "Busca", 120);
+      const businessCategory = normalizeTextField(
+        req.query.businessCategory ?? req.query.business_category ?? "",
+        "Categoria attivita",
+        120,
+      );
+      const suggestions = await selectProductCategorySuggestions(businessCategory, search);
+      res.json({ suggestions });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao carregar categorias.";
+      res.status(500).json({ error: message });
+    }
+  });
+
   app.post("/api/auth/auth0/sync", async (req, res) => {
     let auth0Token = "";
     try {
@@ -10015,6 +10269,30 @@ async function bootstrap() {
       res.status(201).json({ section });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao salvar sezione.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.delete("/api/establishments/:id/sections/:sectionId", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+    const id = Number(req.params.id);
+    const sectionId = Number(req.params.sectionId);
+    if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(sectionId) || sectionId <= 0) {
+      res.status(400).json({ error: "ID sezione invalido." });
+      return;
+    }
+    try {
+      const deleted = await deleteStorefrontSectionRecord(id, sectionId, user.id);
+      if (!deleted) {
+        res.status(404).json({ error: "Sezione non trovata." });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao excluir sezione.";
       res.status(400).json({ error: message });
     }
   });

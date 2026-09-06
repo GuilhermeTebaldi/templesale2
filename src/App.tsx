@@ -288,6 +288,7 @@ export default function App() {
   const [selectedEstablishmentProducts, setSelectedEstablishmentProducts] = React.useState<Product[]>([]);
   const [isEstablishmentPageOpen, setIsEstablishmentPageOpen] = React.useState(false);
   const [activeStorefrontSectionId, setActiveStorefrontSectionId] = React.useState<number | null>(null);
+  const [establishmentSearchQuery, setEstablishmentSearchQuery] = React.useState("");
   const [isLoadingEstablishments, setIsLoadingEstablishments] = React.useState(false);
   const activityOnboardingShownRef = React.useRef<number | null>(null);
   const [cartQuantitiesByProductId, setCartQuantitiesByProductId] = React.useState<Record<number, number>>(
@@ -373,9 +374,24 @@ export default function App() {
     const normalizedWhatsapp = String(currentUser.whatsappNumber ?? "")
       .replace(/\D/g, "")
       .trim();
+    const activityName = String(myEstablishment?.name ?? "").trim();
+    const activityCategory = String(myEstablishment?.category ?? "").trim();
+    const activityCity = String(myEstablishment?.city ?? "").trim();
+    const activityWhatsapp = String(myEstablishment?.whatsappNumber ?? currentUser.whatsappNumber ?? "")
+      .replace(/\D/g, "")
+      .trim();
 
-    return normalizedName.length >= 2 && normalizedWhatsapp.length >= 6;
-  }, [currentUser]);
+    return (
+      normalizedName.length >= 2 &&
+      normalizedWhatsapp.length >= 6 &&
+      activityName.length >= 2 &&
+      activityName !== normalizedName &&
+      activityCategory.length >= 2 &&
+      activityCategory !== "Altro" &&
+      activityCity.length >= 2 &&
+      activityWhatsapp.length >= 6
+    );
+  }, [currentUser, myEstablishment]);
   const memberName = currentUser?.name || t("Membro cadastrado");
   const memberEmail = String(currentUser?.email ?? "").trim();
   const memberAvatar =
@@ -1465,11 +1481,34 @@ export default function App() {
       typeof establishment === "object"
         ? establishment.slug || establishment.id
         : establishment;
+    const cachedEstablishment =
+      typeof establishment === "object"
+        ? establishment
+        : establishments.find(
+            (item) =>
+              String(item.id) === String(establishment) ||
+              String(item.slug ?? "") === String(establishment),
+          ) ?? null;
+    if (cachedEstablishment) {
+      setSelectedEstablishment(cachedEstablishment);
+      setSelectedEstablishmentProducts([]);
+      setActiveStorefrontSectionId(null);
+      setEstablishmentSearchQuery("");
+      setIsEstablishmentPageOpen(true);
+      if (typeof window !== "undefined") {
+        window.history.pushState(
+          { establishmentId: cachedEstablishment.id },
+          "",
+          `/attivita/${encodeURIComponent(cachedEstablishment.slug || String(cachedEstablishment.id))}`,
+        );
+      }
+    }
     try {
       const payload = await api.getEstablishment(idOrSlug);
       setSelectedEstablishment(payload.establishment);
       setSelectedEstablishmentProducts(payload.products as Product[]);
       setActiveStorefrontSectionId(null);
+      setEstablishmentSearchQuery("");
       setIsEstablishmentPageOpen(true);
       if (typeof window !== "undefined") {
         window.history.pushState(
@@ -1481,13 +1520,14 @@ export default function App() {
     } catch (error) {
       console.error("Error opening establishment:", error);
     }
-  }, []);
+  }, [establishments]);
 
   const closeEstablishmentPage = React.useCallback(() => {
     setIsEstablishmentPageOpen(false);
     setSelectedEstablishment(null);
     setSelectedEstablishmentProducts([]);
     setActiveStorefrontSectionId(null);
+    setEstablishmentSearchQuery("");
     if (typeof window !== "undefined" && window.location.pathname.startsWith("/attivita/")) {
       window.history.replaceState({}, "", "/");
     }
@@ -2029,7 +2069,7 @@ export default function App() {
     if (!hasRequiredProfileForPublishing) {
       setIsNewProductOpen(false);
       setProfileCompletionMessage(
-        t("Para anunciar um produto, preencha nome e telefone no seu perfil."),
+        t("Complete nome, categoria, cidade e WhatsApp da sua attività antes de publicar."),
       );
       setIsEditePerfilOpen(true);
       return;
@@ -2224,17 +2264,45 @@ export default function App() {
 
   const visibleEstablishments = React.useMemo(() => establishments, [establishments]);
   const selectedEstablishmentSections = React.useMemo(
-    () => selectedEstablishment?.sections ?? [],
+    () => (selectedEstablishment?.sections ?? []).filter((section) => Math.max(0, Number(section.productCount ?? 0)) > 0),
     [selectedEstablishment],
   );
-  const visibleSelectedEstablishmentProducts = React.useMemo(() => {
-    if (!activeStorefrontSectionId) {
-      return selectedEstablishmentProducts;
+  const selectedEstablishmentProductCategories = React.useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const product of selectedEstablishmentProducts) {
+      const label = String(product.category ?? "").trim();
+      const key = label.toLowerCase();
+      if (label && !labels.has(key)) {
+        labels.set(key, label);
+      }
     }
-    return selectedEstablishmentProducts.filter(
-      (product) => product.sectionId === activeStorefrontSectionId,
-    );
-  }, [activeStorefrontSectionId, selectedEstablishmentProducts]);
+    return [...labels.values()].sort((left: string, right: string) => left.localeCompare(right, locale));
+  }, [locale, selectedEstablishmentProducts]);
+  const visibleSelectedEstablishmentProducts = React.useMemo(() => {
+    const normalizedQuery = establishmentSearchQuery.trim().toLowerCase();
+    return selectedEstablishmentProducts.filter((product) => {
+      if (activeStorefrontSectionId && product.sectionId !== activeStorefrontSectionId) {
+        return false;
+      }
+      if (!normalizedQuery) {
+        return true;
+      }
+      const detailValues =
+        product.details && typeof product.details === "object"
+          ? Object.values(product.details).join(" ")
+          : "";
+      const searchable = [
+        product.name,
+        product.category,
+        product.sectionName,
+        product.description,
+        detailValues,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return searchable.includes(normalizedQuery);
+    });
+  }, [activeStorefrontSectionId, establishmentSearchQuery, selectedEstablishmentProducts]);
 
   const productGridClassName = React.useMemo(() => {
     if (!USE_ART_GALLERY_PRODUCT_GRID) {
@@ -2710,6 +2778,8 @@ export default function App() {
                       <ProgressiveProductImage
                         src={selectedEstablishment.coverUrl || selectedEstablishment.logoUrl || ""}
                         alt={selectedEstablishment.name}
+                        loading="eager"
+                        fetchPriority="high"
                         variant="full"
                         className="relative h-full w-full object-cover"
                       />
@@ -2749,6 +2819,7 @@ export default function App() {
                             selectedEstablishment.whatsappCountryIso || "IT",
                             selectedEstablishment.whatsappNumber,
                             selectedEstablishment.name,
+                            { kind: "establishment" },
                           ) ?? "#"
                         }
                         target="_blank"
@@ -2782,32 +2853,61 @@ export default function App() {
                 </div>
               </section>
               <section className="mt-12">
-                <div className="mb-6 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setActiveStorefrontSectionId(null)}
-                    className={`rounded-full border px-4 py-2 text-xs uppercase tracking-[0.16em] ${
-                      activeStorefrontSectionId === null
-                        ? "border-stone-900 bg-stone-900 text-white"
-                        : "border-stone-200 text-stone-600"
-                    }`}
-                  >
-                    {t("Tutti")}
-                  </button>
-                  {selectedEstablishmentSections.map((section) => (
+                <div className="sticky top-[72px] z-20 mb-7 border-y border-stone-200 bg-[#f8f7f4]/95 py-4 backdrop-blur-md">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+                    <input
+                      type="search"
+                      value={establishmentSearchQuery}
+                      onChange={(event) => setEstablishmentSearchQuery(event.target.value)}
+                      placeholder={t("Cerca in questa attività...")}
+                      className="w-full border-0 border-b border-stone-300 bg-transparent py-3 pl-7 pr-3 font-serif text-xl italic text-stone-900 outline-none transition-colors placeholder:text-stone-400 focus:border-stone-900"
+                    />
+                  </div>
+                  <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
                     <button
-                      key={section.id}
                       type="button"
-                      onClick={() => setActiveStorefrontSectionId(section.id)}
-                      className={`rounded-full border px-4 py-2 text-xs uppercase tracking-[0.16em] ${
-                        activeStorefrontSectionId === section.id
+                      onClick={() => {
+                        setActiveStorefrontSectionId(null);
+                        setEstablishmentSearchQuery("");
+                      }}
+                      className={`shrink-0 rounded-full border px-4 py-2 text-xs uppercase tracking-[0.16em] ${
+                        activeStorefrontSectionId === null && !establishmentSearchQuery.trim()
                           ? "border-stone-900 bg-stone-900 text-white"
-                          : "border-stone-200 text-stone-600"
+                          : "border-stone-200 bg-white/70 text-stone-600"
                       }`}
                     >
-                      {section.name}
+                      {t("Tutti")}
                     </button>
-                  ))}
+                    {selectedEstablishmentSections.map((section) => (
+                      <button
+                        key={section.id}
+                        type="button"
+                        onClick={() => setActiveStorefrontSectionId(section.id)}
+                        className={`shrink-0 rounded-full border px-4 py-2 text-xs uppercase tracking-[0.16em] ${
+                          activeStorefrontSectionId === section.id
+                            ? "border-stone-900 bg-stone-900 text-white"
+                            : "border-stone-200 bg-white/70 text-stone-600"
+                        }`}
+                      >
+                        {section.name}
+                      </button>
+                    ))}
+                    {selectedEstablishmentProductCategories.map((category) => (
+                      <button
+                        key={category}
+                        type="button"
+                        onClick={() => setEstablishmentSearchQuery(category)}
+                        className={`shrink-0 rounded-full border px-4 py-2 text-xs uppercase tracking-[0.16em] ${
+                          establishmentSearchQuery.trim().toLowerCase() === category.toLowerCase()
+                            ? "border-stone-900 bg-stone-900 text-white"
+                            : "border-stone-200 bg-white/70 text-stone-600"
+                        }`}
+                      >
+                        {category}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className={productGridClassName}>
                   {visibleSelectedEstablishmentProducts.map((product, index) => (
@@ -2954,6 +3054,18 @@ export default function App() {
               );
               return section;
             }}
+            onDeleteSection={async (sectionId) => {
+              const establishment = myEstablishment ?? (await api.getMyEstablishment());
+              await api.deleteStorefrontSection(establishment.id, sectionId);
+              setMyEstablishment((current) =>
+                current
+                  ? {
+                      ...current,
+                      sections: (current.sections ?? []).filter((section) => section.id !== sectionId),
+                    }
+                  : current,
+              );
+            }}
             onPublish={async (newProd) => {
               const sellerPhone = String(currentUser?.whatsappNumber ?? "").replace(/\D/g, "");
               const published = await api.createProduct({
@@ -2990,6 +3102,18 @@ export default function App() {
                   : { ...establishment, sections: [...(establishment.sections ?? []), section] },
               );
               return section;
+            }}
+            onDeleteSection={async (sectionId) => {
+              const establishment = myEstablishment ?? (await api.getMyEstablishment());
+              await api.deleteStorefrontSection(establishment.id, sectionId);
+              setMyEstablishment((current) =>
+                current
+                  ? {
+                      ...current,
+                      sections: (current.sections ?? []).filter((section) => section.id !== sectionId),
+                    }
+                  : current,
+              );
             }}
             onClose={() => setEditingProduct(null)}
             onPublish={async (updatedInput) => {
@@ -3783,7 +3907,7 @@ export default function App() {
           ) : (
             <>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {visibleEstablishments.map((establishment) => (
+                {visibleEstablishments.map((establishment, index) => (
                   <button
                     key={establishment.id}
                     type="button"
@@ -3795,6 +3919,8 @@ export default function App() {
                         <ProgressiveProductImage
                           src={establishment.coverUrl || establishment.logoUrl || ""}
                           alt={establishment.name}
+                          loading={index < 6 ? "eager" : "lazy"}
+                          fetchPriority={index < 6 ? "high" : "low"}
                           variant="card"
                           className="relative h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                         />

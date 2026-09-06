@@ -54,7 +54,8 @@ export function normalizeWhatsappLocalNumber(rawNumber: string, countryIso?: str
 export function buildWhatsappUrl(
   countryIso: string | undefined,
   rawNumber: string | undefined,
-  productName: string,
+  subjectName: string,
+  options: { kind?: "product" | "establishment" } = {},
 ): string | null {
   const country = getWhatsappCountry(countryIso);
   const localNumber = normalizeWhatsappLocalNumber(rawNumber ?? "", country.iso);
@@ -63,7 +64,15 @@ export function buildWhatsappUrl(
   }
 
   const fullNumber = `${country.dialDigits}${localNumber}`;
-  const text = `Ola! Tenho interesse no produto "${productName}".`;
+  const kind = options.kind ?? "product";
+  const text =
+    country.iso === "IT"
+      ? kind === "establishment"
+        ? `Ciao! Vorrei contattare l'attività "${subjectName}".`
+        : `Ciao! Sono interessato/a al prodotto "${subjectName}".`
+      : kind === "establishment"
+        ? `Ola! Tenho interesse na atividade "${subjectName}".`
+        : `Ola! Tenho interesse no produto "${subjectName}".`;
   return `https://wa.me/${fullNumber}?text=${encodeURIComponent(text)}`;
 }
 
