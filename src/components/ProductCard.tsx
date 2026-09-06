@@ -15,6 +15,8 @@ export interface Product {
   slug?: string;
   name: string;
   category: string;
+  sectionId?: number;
+  sectionName?: string;
   clickCount?: number;
   price: string;
   priceNegotiable?: boolean;
@@ -30,6 +32,13 @@ export interface Product {
   sellerName?: string;
   sellerWhatsappCountryIso?: string;
   sellerWhatsappNumber?: string;
+  establishmentId?: number;
+  establishmentSlug?: string;
+  establishmentName?: string;
+  establishmentCategory?: string;
+  establishmentLogoUrl?: string;
+  establishmentWhatsappCountryIso?: string;
+  establishmentWhatsappNumber?: string;
 }
 
 interface ProductCardProps {
@@ -230,18 +239,20 @@ export default function ProductCard({
             />
           </button>
         </div>
-        <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4 translate-y-full opacity-0 pointer-events-none transition-all duration-300 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-hover:pointer-events-auto bg-linear-to-t from-black/25 to-transparent">
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onAddToCart?.();
-            }}
-            className="mx-auto w-auto max-w-full px-3 py-1.5 md:w-full md:px-4 md:py-2 bg-yellow-400 text-black text-[10px] md:text-xs font-semibold uppercase tracking-[0.12em] md:tracking-widest flex items-center justify-center gap-1.5 md:gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.16)] hover:bg-yellow-300 transition-colors"
-          >
-            <ShoppingBag className="w-2.5 h-2.5 md:w-3 md:h-3" />
-            {t("Adicionar ao carrinho")}
-          </button>
-        </div>
+        {onAddToCart && (
+          <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4 translate-y-full opacity-0 pointer-events-none transition-all duration-300 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-hover:pointer-events-auto bg-linear-to-t from-black/25 to-transparent">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddToCart();
+              }}
+              className="mx-auto w-auto max-w-full px-3 py-1.5 md:w-full md:px-4 md:py-2 bg-stone-950 text-white text-[10px] md:text-xs font-semibold uppercase tracking-[0.12em] md:tracking-widest flex items-center justify-center gap-1.5 md:gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.16)] hover:bg-black transition-colors"
+            >
+              <ShoppingBag className="w-2.5 h-2.5 md:w-3 md:h-3" />
+              {t("Contatta")}
+            </button>
+          </div>
+        )}
       </div>
       
       <div className="flex min-w-0 grow flex-col gap-2 px-3 py-3 sm:px-4 sm:py-4">

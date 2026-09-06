@@ -18,6 +18,8 @@ export interface ProductDto {
   slug?: string;
   name: string;
   category: string;
+  sectionId?: number;
+  sectionName?: string;
   clickCount?: number;
   price: string;
   priceNegotiable?: boolean;
@@ -33,6 +35,13 @@ export interface ProductDto {
   sellerName?: string;
   sellerWhatsappCountryIso?: string;
   sellerWhatsappNumber?: string;
+  establishmentId?: number;
+  establishmentSlug?: string;
+  establishmentName?: string;
+  establishmentCategory?: string;
+  establishmentLogoUrl?: string;
+  establishmentWhatsappCountryIso?: string;
+  establishmentWhatsappNumber?: string;
 }
 
 export interface ProductPageDto {
@@ -131,6 +140,7 @@ export interface PublicLikerDto {
 export interface CreateProductInput {
   name: string;
   category: string;
+  sectionId?: number | null;
   price: string;
   priceNegotiable?: boolean;
   quantity: number;
@@ -191,6 +201,42 @@ export interface VendorDto {
   name: string;
   avatarUrl?: string;
   productCount: number;
+  slug?: string;
+  category?: string;
+  city?: string;
+  whatsappCountryIso?: string;
+  whatsappNumber?: string;
+}
+
+export interface StorefrontSectionDto {
+  id: number;
+  establishmentId: number;
+  name: string;
+  slug: string;
+  position: number;
+  productCount?: number;
+}
+
+export interface EstablishmentDto {
+  id: number;
+  ownerId: number;
+  name: string;
+  slug: string;
+  category: string;
+  logoUrl?: string;
+  coverUrl?: string;
+  description?: string;
+  city?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  whatsappCountryIso?: string;
+  whatsappNumber?: string;
+  phone?: string;
+  openingHours?: string;
+  isActive?: boolean;
+  productCount: number;
+  sections?: StorefrontSectionDto[];
 }
 
 export interface UpdateProfileInput {
@@ -796,6 +842,49 @@ function normalizeProductItem(value: unknown): ProductDto | null {
     product.ownerId = ownerId;
   }
 
+  const establishmentId = toOptionalNumber(
+    firstDefined(parsed, ["establishmentId", "establishment_id", "businessId", "business_id"]),
+  );
+  if (establishmentId !== undefined) {
+    product.establishmentId = establishmentId;
+  }
+  const sectionId = toOptionalNumber(firstDefined(parsed, ["sectionId", "section_id"]));
+  if (sectionId !== undefined) {
+    product.sectionId = sectionId;
+  }
+  const sectionName = toStringValue(firstDefined(parsed, ["sectionName", "section_name"]));
+  if (sectionName) {
+    product.sectionName = sectionName;
+  }
+  const establishmentRecord = (() => {
+    const candidate = firstDefined(parsed, ["establishment", "business", "storefront"]);
+    return isRecord(candidate) ? candidate : null;
+  })();
+  const establishmentSlug =
+    toStringValue(firstDefined(parsed, ["establishmentSlug", "establishment_slug"])) ||
+    (establishmentRecord ? toStringValue(firstDefined(establishmentRecord, ["slug"])) : "");
+  if (establishmentSlug) {
+    product.establishmentSlug = establishmentSlug;
+  }
+  const establishmentName =
+    toStringValue(firstDefined(parsed, ["establishmentName", "establishment_name", "businessName", "business_name"])) ||
+    (establishmentRecord ? toStringValue(firstDefined(establishmentRecord, ["name"])) : "");
+  if (establishmentName) {
+    product.establishmentName = establishmentName;
+  }
+  const establishmentCategory =
+    toStringValue(firstDefined(parsed, ["establishmentCategory", "establishment_category", "businessCategory", "business_category"])) ||
+    (establishmentRecord ? toStringValue(firstDefined(establishmentRecord, ["category"])) : "");
+  if (establishmentCategory) {
+    product.establishmentCategory = establishmentCategory;
+  }
+  const establishmentLogoUrl =
+    toStringValue(firstDefined(parsed, ["establishmentLogoUrl", "establishment_logo_url", "logoUrl", "logo_url"])) ||
+    (establishmentRecord ? toStringValue(firstDefined(establishmentRecord, ["logoUrl", "logo_url"])) : "");
+  if (establishmentLogoUrl) {
+    product.establishmentLogoUrl = establishmentLogoUrl;
+  }
+
   const latitude = toOptionalNumber(firstDefined(parsed, ["latitude", "lat"]));
   if (latitude !== undefined) {
     product.latitude = latitude;
@@ -917,6 +1006,25 @@ function normalizeProductItem(value: unknown): ProductDto | null {
     normalizePhoneDigits(sellerWhatsappNumberRaw) || toStringValue(sellerWhatsappNumberRaw);
   if (sellerWhatsappNumberRaw) {
     product.sellerWhatsappNumber = sellerWhatsappNumber;
+  }
+
+  const establishmentWhatsappCountryIso =
+    normalizeCountryIso(firstDefined(parsed, ["establishmentWhatsappCountryIso", "establishment_whatsapp_country_iso"])) ||
+    (establishmentRecord
+      ? normalizeCountryIso(firstDefined(establishmentRecord, ["whatsappCountryIso", "whatsapp_country_iso"]))
+      : undefined);
+  if (establishmentWhatsappCountryIso) {
+    product.establishmentWhatsappCountryIso = establishmentWhatsappCountryIso;
+  }
+  const establishmentWhatsappNumberRaw =
+    firstDefined(parsed, ["establishmentWhatsappNumber", "establishment_whatsapp_number"]) ??
+    (establishmentRecord
+      ? firstDefined(establishmentRecord, ["whatsappNumber", "whatsapp_number", "phone"])
+      : undefined);
+  if (establishmentWhatsappNumberRaw) {
+    product.establishmentWhatsappNumber =
+      normalizePhoneDigits(establishmentWhatsappNumberRaw) ||
+      toStringValue(establishmentWhatsappNumberRaw);
   }
 
   return product;
@@ -1095,6 +1203,13 @@ function normalizeVendorItem(value: unknown): VendorDto | null {
     name,
     avatarUrl,
     productCount,
+    slug: toStringValue(firstDefined(parsed, ["slug"])),
+    category: toStringValue(firstDefined(parsed, ["category"])),
+    city: toStringValue(firstDefined(parsed, ["city"])),
+    whatsappCountryIso: normalizeCountryIso(firstDefined(parsed, ["whatsappCountryIso", "whatsapp_country_iso"])),
+    whatsappNumber:
+      normalizePhoneDigits(firstDefined(parsed, ["whatsappNumber", "whatsapp_number"])) ||
+      toStringValue(firstDefined(parsed, ["whatsappNumber", "whatsapp_number"])),
   };
 }
 
@@ -1103,6 +1218,105 @@ function normalizeVendorList(value: unknown): VendorDto[] {
   return items
     .map((item) => normalizeVendorItem(item))
     .filter((item): item is VendorDto => item !== null);
+}
+
+function normalizeStorefrontSectionItem(value: unknown): StorefrontSectionDto | null {
+  const parsed = parseJsonIfNeeded(value);
+  if (!isRecord(parsed)) {
+    return null;
+  }
+  const nested = firstDefined(parsed, ["section", "storefrontSection", "storefront_section"]);
+  if (nested && nested !== parsed) {
+    const normalizedNested = normalizeStorefrontSectionItem(nested);
+    if (normalizedNested) {
+      return normalizedNested;
+    }
+  }
+  const id = toOptionalNumber(firstDefined(parsed, ["id", "sectionId", "section_id"]));
+  const establishmentId = toOptionalNumber(
+    firstDefined(parsed, ["establishmentId", "establishment_id"]),
+  );
+  const name = toStringValue(firstDefined(parsed, ["name", "title"]));
+  if (id === undefined || establishmentId === undefined || !name) {
+    return null;
+  }
+  return {
+    id,
+    establishmentId,
+    name,
+    slug: toStringValue(firstDefined(parsed, ["slug"])) || String(id),
+    position: toNonNegativeInteger(firstDefined(parsed, ["position", "sort_order"])) ?? 0,
+    productCount:
+      toNonNegativeInteger(firstDefined(parsed, ["productCount", "product_count", "count"])) ?? 0,
+  };
+}
+
+function normalizeStorefrontSectionList(value: unknown): StorefrontSectionDto[] {
+  const items = extractArrayPayload(value, ["sections", "data", "items", "rows", "results"]);
+  return items
+    .map((item) => normalizeStorefrontSectionItem(item))
+    .filter((item): item is StorefrontSectionDto => item !== null);
+}
+
+function normalizeEstablishmentItem(value: unknown): EstablishmentDto | null {
+  const parsed = parseJsonIfNeeded(value);
+  if (!isRecord(parsed)) {
+    return null;
+  }
+  const nested = firstDefined(parsed, ["establishment", "business", "attivita"]);
+  if (nested && nested !== parsed) {
+    const normalizedNested = normalizeEstablishmentItem(nested);
+    if (normalizedNested) {
+      return normalizedNested;
+    }
+  }
+  const id = toOptionalNumber(firstDefined(parsed, ["id", "establishmentId", "establishment_id"]));
+  const ownerId = toOptionalNumber(firstDefined(parsed, ["ownerId", "owner_id", "ownerUserId", "owner_user_id"]));
+  const name = toStringValue(firstDefined(parsed, ["name", "businessName", "business_name"]));
+  if (id === undefined || ownerId === undefined || !name) {
+    return null;
+  }
+  const latitude = toOptionalNumber(firstDefined(parsed, ["latitude", "lat"]));
+  const longitude = toOptionalNumber(firstDefined(parsed, ["longitude", "lng"]));
+  const establishment: EstablishmentDto = {
+    id,
+    ownerId,
+    name,
+    slug: toStringValue(firstDefined(parsed, ["slug"])) || String(id),
+    category: toStringValue(firstDefined(parsed, ["category", "businessCategory", "business_category"])) || "Altro",
+    logoUrl: toStringValue(firstDefined(parsed, ["logoUrl", "logo_url", "avatarUrl", "avatar_url"])),
+    coverUrl: toStringValue(firstDefined(parsed, ["coverUrl", "cover_url"])),
+    description: toStringValue(firstDefined(parsed, ["description"])),
+    city: toStringValue(firstDefined(parsed, ["city"])),
+    address: toStringValue(firstDefined(parsed, ["address", "street"])),
+    whatsappCountryIso:
+      normalizeCountryIso(firstDefined(parsed, ["whatsappCountryIso", "whatsapp_country_iso"])) ?? "IT",
+    whatsappNumber:
+      normalizePhoneDigits(firstDefined(parsed, ["whatsappNumber", "whatsapp_number"])) ||
+      toStringValue(firstDefined(parsed, ["whatsappNumber", "whatsapp_number"])),
+    phone:
+      normalizePhoneDigits(firstDefined(parsed, ["phone"])) ||
+      toStringValue(firstDefined(parsed, ["phone"])),
+    openingHours: toStringValue(firstDefined(parsed, ["openingHours", "opening_hours"])),
+    isActive: firstDefined(parsed, ["isActive", "is_active"]) !== false,
+    productCount:
+      toNonNegativeInteger(firstDefined(parsed, ["productCount", "product_count", "count"])) ?? 0,
+    sections: normalizeStorefrontSectionList(firstDefined(parsed, ["sections"]) ?? []),
+  };
+  if (latitude !== undefined) {
+    establishment.latitude = latitude;
+  }
+  if (longitude !== undefined) {
+    establishment.longitude = longitude;
+  }
+  return establishment;
+}
+
+function normalizeEstablishmentList(value: unknown): EstablishmentDto[] {
+  const items = extractArrayPayload(value, ["establishments", "businesses", "data", "items", "rows", "results"]);
+  return items
+    .map((item) => normalizeEstablishmentItem(item))
+    .filter((item): item is EstablishmentDto => item !== null);
 }
 
 function buildVendorsFromProducts(products: ProductDto[]): VendorDto[] {
@@ -2171,6 +2385,27 @@ export const api = {
   async getVendors(search = "", limit = 60) {
     const normalizedSearch = search.trim();
     const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 100);
+    try {
+      const establishments = await this.getEstablishments({
+        search: normalizedSearch,
+        limit: safeLimit,
+      });
+      return establishments.map((establishment) => ({
+        id: establishment.id,
+        name: establishment.name,
+        avatarUrl: establishment.logoUrl,
+        productCount: establishment.productCount,
+        slug: establishment.slug,
+        category: establishment.category,
+        city: establishment.city,
+        whatsappCountryIso: establishment.whatsappCountryIso,
+        whatsappNumber: establishment.whatsappNumber,
+      }));
+    } catch (error) {
+      if (!isMissingApiRouteError(error)) {
+        throw error;
+      }
+    }
 
     if (supportsVendorsApi !== false) {
       const query = new URLSearchParams();
@@ -2205,6 +2440,28 @@ export const api = {
   async getVendorProducts(vendorId: number): Promise<{ vendor: VendorDto; products: ProductDto[] }> {
     if (!Number.isInteger(vendorId) || vendorId <= 0) {
       throw new Error("ID de vendedor inválido.");
+    }
+
+    try {
+      const payload = await this.getEstablishment(vendorId);
+      return {
+        vendor: {
+          id: payload.establishment.id,
+          name: payload.establishment.name,
+          avatarUrl: payload.establishment.logoUrl,
+          productCount: payload.establishment.productCount,
+          slug: payload.establishment.slug,
+          category: payload.establishment.category,
+          city: payload.establishment.city,
+          whatsappCountryIso: payload.establishment.whatsappCountryIso,
+          whatsappNumber: payload.establishment.whatsappNumber,
+        },
+        products: payload.products,
+      };
+    } catch (error) {
+      if (!isMissingApiRouteError(error)) {
+        throw error;
+      }
     }
 
     if (supportsVendorsApi !== false) {
@@ -2283,6 +2540,77 @@ export const api = {
       throw new Error("Resposta inválida ao carregar produto.");
     }
     return normalized;
+  },
+  async getEstablishments(input: {
+    search?: string;
+    category?: string;
+    city?: string;
+    limit?: number;
+  } = {}) {
+    const query = new URLSearchParams();
+    const search = String(input.search ?? "").trim();
+    const category = String(input.category ?? "").trim();
+    const city = String(input.city ?? "").trim();
+    const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 60)), 1), 100);
+    if (search) {
+      query.set("search", search);
+    }
+    if (category && category !== "All") {
+      query.set("category", category);
+    }
+    if (city) {
+      query.set("city", city);
+    }
+    query.set("limit", String(limit));
+    const payload = await request<unknown>(`/api/establishments?${query.toString()}`, {
+      skipAuthToken: true,
+    });
+    return normalizeEstablishmentList(payload);
+  },
+  async getMyEstablishment() {
+    const payload = await request<unknown>("/api/establishments/me");
+    const establishment = normalizeEstablishmentItem(payload);
+    if (!establishment) {
+      throw new Error("Resposta inválida ao carregar attivita.");
+    }
+    return establishment;
+  },
+  async getEstablishment(idOrSlug: number | string) {
+    const payload = await request<unknown>(
+      `/api/establishments/${encodeURIComponent(String(idOrSlug))}`,
+      { skipAuthToken: true },
+    );
+    const parsed = parseJsonIfNeeded(payload);
+    const establishment = normalizeEstablishmentItem(parsed);
+    const products = normalizeProductList(isRecord(parsed) ? firstDefined(parsed, ["products", "items"]) ?? [] : []);
+    if (!establishment) {
+      throw new Error("Resposta inválida ao carregar attivita.");
+    }
+    return { establishment, products };
+  },
+  async saveEstablishment(input: Partial<EstablishmentDto>) {
+    const method = input.id ? "PUT" : "POST";
+    const path = input.id ? `/api/establishments/${input.id}` : "/api/establishments";
+    const payload = await request<unknown>(path, {
+      method,
+      body: JSON.stringify(input),
+    });
+    const establishment = normalizeEstablishmentItem(payload);
+    if (!establishment) {
+      throw new Error("Resposta inválida ao salvar attivita.");
+    }
+    return establishment;
+  },
+  async createStorefrontSection(establishmentId: number, name: string) {
+    const payload = await request<unknown>(`/api/establishments/${establishmentId}/sections`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    const section = normalizeStorefrontSectionItem(payload);
+    if (!section) {
+      throw new Error("Resposta inválida ao salvar sezione.");
+    }
+    return section;
   },
   async getProductComments(productId: number) {
     if (!Number.isInteger(productId) || productId <= 0) {

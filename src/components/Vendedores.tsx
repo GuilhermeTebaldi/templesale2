@@ -153,7 +153,7 @@ export default function Vendedores({ onClose, onOpenProduct }: VendedoresProps) 
       <div className="p-6 sm:p-8 flex items-center justify-between border-b border-stone-100">
         <div className="flex items-center gap-4">
           <Store className="w-6 h-6 text-stone-800" />
-          <h2 className="text-2xl font-serif tracking-widest uppercase">{t("Vendedores")}</h2>
+          <h2 className="text-2xl font-serif tracking-widest uppercase">{t("Attività")}</h2>
         </div>
         <button
           onClick={onClose}
@@ -171,7 +171,7 @@ export default function Vendedores({ onClose, onOpenProduct }: VendedoresProps) 
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={t("Buscar vendedores...")}
+              placeholder={t("Cerca attività, prodotti, servizi o città...")}
               className="grow bg-transparent outline-none text-sm text-stone-700 placeholder:text-stone-400"
             />
           </div>
@@ -185,7 +185,7 @@ export default function Vendedores({ onClose, onOpenProduct }: VendedoresProps) 
               <p className="text-sm text-red-500">{vendorsError}</p>
             ) : vendors.length === 0 ? (
               <div className="py-12 text-center text-stone-400 text-xs uppercase tracking-[0.2em]">
-                {t("Nenhum vendedor encontrado.")}
+                {t("Nessuna attività trovata.")}
               </div>
             ) : (
               <div className="flex flex-col gap-2">
@@ -221,7 +221,8 @@ export default function Vendedores({ onClose, onOpenProduct }: VendedoresProps) 
                       <div className="min-w-0">
                         <p className="font-serif italic text-stone-800 truncate text-base">{vendor.name}</p>
                         <p className="text-[10px] uppercase tracking-[0.2em] text-stone-400">
-                          {t("{count} anúncio(s)", { count: String(vendor.productCount) })}
+                          {[vendor.category, vendor.city].filter(Boolean).join(" · ") ||
+                            t("{count} prodotti", { count: String(vendor.productCount) })}
                         </p>
                       </div>
                     </button>
@@ -237,7 +238,7 @@ export default function Vendedores({ onClose, onOpenProduct }: VendedoresProps) 
             <div className="h-full min-h-[280px] flex flex-col items-center justify-center text-stone-400 gap-4">
               <Store className="w-10 h-10 text-stone-200" />
               <p className="text-xs uppercase tracking-[0.2em] text-center">
-                {t("Selecione um vendedor para ver os produtos.")}
+                {t("Seleziona un'attività per vedere prodotti e servizi.")}
               </p>
             </div>
           ) : (
@@ -245,7 +246,7 @@ export default function Vendedores({ onClose, onOpenProduct }: VendedoresProps) 
               <div className="flex items-center gap-3">
                 <Package className="w-4 h-4 text-stone-500" />
                 <h3 className="text-sm uppercase tracking-[0.2em] text-stone-500">
-                  {t("Produtos de {vendor}", { vendor: selectedVendor.name })}
+                  {t("Prodotti di {vendor}", { vendor: selectedVendor.name })}
                 </h3>
               </div>
 
@@ -257,7 +258,7 @@ export default function Vendedores({ onClose, onOpenProduct }: VendedoresProps) 
                 <p className="text-sm text-red-500">{vendorProductsError}</p>
               ) : vendorProducts.length === 0 ? (
                 <div className="py-16 text-center text-xs uppercase tracking-[0.2em] text-stone-400">
-                  {t("Este vendedor ainda não publicou produtos.")}
+                  {t("Questa attività non ha ancora pubblicato prodotti.")}
                 </div>
               ) : (
                 <div className="grid grid-cols-2 xl:grid-cols-3 gap-x-4 sm:gap-x-6 gap-y-10">

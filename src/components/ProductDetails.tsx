@@ -37,6 +37,7 @@ interface ProductDetailsProps {
   isLiked?: boolean;
   onToggleLike?: () => void;
   onAddToCart?: (quantity: number) => void;
+  onOpenEstablishment?: (establishmentIdOrSlug: number | string) => void;
   currentUser?: SessionUser | null;
   onRequireAuth?: () => void;
   focusCommentId?: number | null;
@@ -227,6 +228,7 @@ export default function ProductDetails({
   isLiked = false,
   onToggleLike,
   onAddToCart,
+  onOpenEstablishment,
   currentUser = null,
   onRequireAuth,
   focusCommentId = null,
@@ -307,9 +309,13 @@ export default function ProductDetails({
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${latitude},${longitude}`)}`;
   }, [hasCoordinates, product.latitude, product.longitude]);
   const sellerWhatsappCountryIso =
-    resolvedSellerContact?.sellerWhatsappCountryIso || product.sellerWhatsappCountryIso;
+    product.establishmentWhatsappCountryIso ||
+    resolvedSellerContact?.sellerWhatsappCountryIso ||
+    product.sellerWhatsappCountryIso;
   const sellerWhatsappNumber =
-    resolvedSellerContact?.sellerWhatsappNumber || product.sellerWhatsappNumber;
+    product.establishmentWhatsappNumber ||
+    resolvedSellerContact?.sellerWhatsappNumber ||
+    product.sellerWhatsappNumber;
   const whatsappUrl = buildWhatsappUrl(
     sellerWhatsappCountryIso,
     sellerWhatsappNumber,
@@ -329,6 +335,8 @@ export default function ProductDetails({
     return normalized >= 0 ? normalized : 0;
   }, [product.quantity]);
   const canAddToCart = availableQuantity > 0 && selectedQuantity > 0;
+  const publicSellerName = product.establishmentName || product.sellerName || "";
+  const publicSellerCategory = product.establishmentCategory || product.category || "";
   const canComment = Boolean(currentUser?.id);
   const canReplyAsOwner = Boolean(
     currentUser?.id &&
@@ -986,52 +994,41 @@ export default function ProductDetails({
               </div>
 
               <div className="space-y-8">
-                {/* Quantity Selector */}
-                <div className="flex flex-col gap-3">
-                  <span className="text-[10px] uppercase tracking-widest text-stone-400 font-bold">{t("Quantidade")}</span>
-                  <div className="flex items-center w-32 border border-stone-200 rounded-sm">
-                    <button 
-                      onClick={() =>
-                        setSelectedQuantity((current) =>
-                          availableQuantity === 0 ? 0 : Math.max(1, current - 1),
-                        )
-                      }
-                      disabled={availableQuantity === 0}
-                      className="p-3 hover:bg-stone-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <Minus className="w-3 h-3" />
-                    </button>
-                    <span className="grow text-center font-mono text-sm">{selectedQuantity}</span>
-                    <button 
-                      onClick={() =>
-                        setSelectedQuantity((current) =>
-                          Math.min(availableQuantity, Math.max(1, current + 1)),
-                        )
-                      }
-                      disabled={availableQuantity === 0 || selectedQuantity >= availableQuantity}
-                      className="p-3 hover:bg-stone-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <Plus className="w-3 h-3" />
-                    </button>
+                {publicSellerName && (
+                  <div className="rounded-lg border border-stone-200 bg-white p-4">
+                    <span className="text-[10px] uppercase tracking-widest text-stone-400 font-bold">
+                      {t("Proposto da")}
+                    </span>
+                    <div className="mt-3 flex items-center gap-3">
+                      {product.establishmentLogoUrl ? (
+                        <img
+                          src={product.establishmentLogoUrl}
+                          alt={publicSellerName}
+                          className="h-12 w-12 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-stone-100 font-serif text-stone-500">
+                          {publicSellerName.slice(0, 1).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate font-serif text-lg text-stone-900">{publicSellerName}</p>
+                        <p className="text-xs uppercase tracking-[0.14em] text-stone-500">
+                          {[publicSellerCategory, product.city].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                    </div>
+                    {product.establishmentId && onOpenEstablishment && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenEstablishment(product.establishmentSlug || product.establishmentId!)}
+                        className="mt-4 inline-flex h-10 items-center justify-center rounded-lg border border-stone-300 px-4 text-[10px] font-bold uppercase tracking-[0.16em] text-stone-800 hover:border-stone-800"
+                      >
+                        {t("Visita l'attività")}
+                      </button>
+                    )}
                   </div>
-                  <span className="text-[10px] uppercase tracking-[0.15em] text-stone-400">
-                    {availableQuantity > 0
-                      ? t("Disponível: {count}", { count: String(availableQuantity) })
-                      : t("Produto esgotado")}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleAddToCart}
-                    disabled={!canAddToCart}
-                    className="inline-flex items-center justify-center gap-2 px-3 py-2.5 sm:px-4 sm:py-3 border border-stone-300 text-[9px] sm:text-[10px] uppercase tracking-[0.14em] sm:tracking-[0.15em] font-bold text-stone-700 hover:border-stone-800 hover:text-stone-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <ShoppingBag className="w-4 h-4" />
-                    {t("Adicionar ao carrinho")}
-                  </button>
-                  {cartFeedback && (
-                    <p className="text-xs text-stone-500">{cartFeedback}</p>
-                  )}
-                </div>
+                )}
 
                 {/* Actions */}
                 <div className="flex flex-col sm:flex-row gap-4">
@@ -1044,7 +1041,7 @@ export default function ProductDetails({
                     >
                       <MessageCircle className="w-4 h-4" />
                       <span className="flex flex-col">
-                        <span>{t("Falar com vendedor")}</span>
+                        <span>{t("Contatta l'attività")}</span>
                         <span className="text-[10px] tracking-[0.12em] text-white/80 normal-case">
                           {whatsappDisplay}
                         </span>
@@ -1057,7 +1054,7 @@ export default function ProductDetails({
                     >
                       <MessageCircle className="w-4 h-4" />
                       <span className="flex flex-col">
-                        <span>{t("Falar com vendedor")}</span>
+                        <span>{t("Contatta l'attività")}</span>
                         <span className="text-[10px] tracking-[0.12em] text-white/80 normal-case">
                           {t("WhatsApp não informado")}
                         </span>

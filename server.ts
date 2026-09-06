@@ -18,6 +18,8 @@ type ProductRecord = {
   slug?: string;
   name: string;
   category: string;
+  sectionId?: number;
+  sectionName?: string;
   clickCount?: number;
   price: string;
   priceNegotiable?: boolean;
@@ -33,6 +35,13 @@ type ProductRecord = {
   sellerName?: string;
   sellerWhatsappCountryIso?: string;
   sellerWhatsappNumber?: string;
+  establishmentId?: number;
+  establishmentSlug?: string;
+  establishmentName?: string;
+  establishmentCategory?: string;
+  establishmentLogoUrl?: string;
+  establishmentWhatsappCountryIso?: string;
+  establishmentWhatsappNumber?: string;
 };
 
 type ProductRow = {
@@ -51,6 +60,9 @@ type ProductRow = {
   description_translations: string | null;
   details: string | null;
   user_id: number | null;
+  establishment_id: number | null;
+  section_id: number | null;
+  section_name: string | null;
   latitude: number | null;
   longitude: number | null;
   city: string | null;
@@ -60,6 +72,13 @@ type ProductRow = {
   seller_state: string | null;
   seller_whatsapp_country_iso: string | null;
   seller_whatsapp_number: string | null;
+  establishment_slug: string | null;
+  establishment_name: string | null;
+  establishment_category: string | null;
+  establishment_logo_url: string | null;
+  establishment_city: string | null;
+  establishment_whatsapp_country_iso: string | null;
+  establishment_whatsapp_number: string | null;
 };
 
 type AdminProductRecord = ProductRecord & {
@@ -222,6 +241,37 @@ type PublicVendorRecord = {
   productCount: number;
 };
 
+type EstablishmentRecord = {
+  id: number;
+  ownerId: number;
+  name: string;
+  slug: string;
+  category: string;
+  logoUrl?: string;
+  coverUrl?: string;
+  description?: string;
+  city?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  whatsappCountryIso?: string;
+  whatsappNumber?: string;
+  phone?: string;
+  openingHours?: string;
+  isActive: boolean;
+  productCount: number;
+  sections?: StorefrontSectionRecord[];
+};
+
+type StorefrontSectionRecord = {
+  id: number;
+  establishmentId: number;
+  name: string;
+  slug: string;
+  position: number;
+  productCount?: number;
+};
+
 type AdminSessionUser = {
   email: string;
 };
@@ -306,6 +356,7 @@ type SecurityMonitorEvent = {
 type NormalizedProductInput = {
   name: string;
   category: string;
+  sectionId: number | null;
   price: string;
   priceNegotiable: boolean;
   quantity: number;
@@ -371,8 +422,10 @@ const __dirname = path.dirname(__filename);
 const DB_DIR = path.join(__dirname, "data");
 const DB_PATH = path.join(DB_DIR, "local.db");
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const USE_SQLITE_DATABASE =
+  String(process.env.USE_SQLITE_DATABASE ?? "false").toLowerCase() === "true";
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
-if (!DATABASE_URL) {
+if (!DATABASE_URL && !USE_SQLITE_DATABASE) {
   throw new Error(
     "DATABASE_URL is required. Configure the Render PostgreSQL URL to start the backend.",
   );
@@ -721,7 +774,7 @@ function timingSafeEquals(left: string, right: string): boolean {
 
 const DATABASE_HOSTNAME = extractDatabaseHostname(DATABASE_URL);
 const IS_REMOTE_DATABASE = !isLocalDatabaseHost(DATABASE_HOSTNAME);
-const IS_DEV_REMOTE_DATABASE = !IS_PRODUCTION && IS_REMOTE_DATABASE;
+const IS_DEV_REMOTE_DATABASE = !USE_SQLITE_DATABASE && !IS_PRODUCTION && IS_REMOTE_DATABASE;
 const IS_DEV_REMOTE_READ_ONLY =
   IS_DEV_REMOTE_DATABASE && ALLOW_REMOTE_DATABASE_IN_DEV && DEV_REMOTE_READ_ONLY;
 if (IS_DEV_REMOTE_DATABASE && !ALLOW_REMOTE_DATABASE_IN_DEV) {
@@ -1093,15 +1146,25 @@ const PRODUCT_SELECT_FIELDS = `
   COALESCE(p.description_translations, '{}') AS description_translations,
   COALESCE(p.details, '{}') AS details,
   p.user_id,
+  p.establishment_id,
+  p.section_id,
+  s.name AS section_name,
   COALESCE(p.latitude, p.lat) AS latitude,
   COALESCE(p.longitude, p.lng) AS longitude,
-  u.city AS city,
-  u.name AS seller_name,
+  COALESCE(e.city, u.city) AS city,
+  COALESCE(e.name, u.name) AS seller_name,
   u.email AS seller_email,
   u.country AS seller_country,
   u.state AS seller_state,
-  u.whatsapp_country_iso AS seller_whatsapp_country_iso,
-  u.whatsapp_number AS seller_whatsapp_number
+  COALESCE(e.whatsapp_country_iso, u.whatsapp_country_iso) AS seller_whatsapp_country_iso,
+  COALESCE(e.whatsapp_number, u.whatsapp_number) AS seller_whatsapp_number,
+  e.slug AS establishment_slug,
+  e.name AS establishment_name,
+  e.category AS establishment_category,
+  e.logo_url AS establishment_logo_url,
+  e.city AS establishment_city,
+  e.whatsapp_country_iso AS establishment_whatsapp_country_iso,
+  e.whatsapp_number AS establishment_whatsapp_number
 `;
 
 const USER_SELECT_FIELDS = `
@@ -1147,13 +1210,15 @@ const SESSION_USER_SELECT_FIELDS = `
 let sqliteDb: Database.Database | null = null;
 let pgPool: Pool | null = null;
 
-pgPool = new Pool({
-  connectionString: DATABASE_URL,
-  options: `-c search_path=${DATABASE_SEARCH_PATH}`,
-  ssl: String(process.env.PGSSL ?? "").toLowerCase() === "false"
-    ? false
-    : { rejectUnauthorized: false },
-});
+if (!USE_SQLITE_DATABASE) {
+  pgPool = new Pool({
+    connectionString: DATABASE_URL,
+    options: `-c search_path=${DATABASE_SEARCH_PATH}`,
+    ssl: String(process.env.PGSSL ?? "").toLowerCase() === "false"
+      ? false
+      : { rejectUnauthorized: false },
+  });
+}
 if (IS_DEV_REMOTE_READ_ONLY && pgPool) {
   pgPool.on("connect", (client) => {
     void client.query("SET default_transaction_read_only = on").catch((error) => {
@@ -1266,6 +1331,48 @@ function buildProductSlug(name: string, productId: number): string {
   return `${truncatedBase}-${suffix}`;
 }
 
+function buildEntitySlug(name: string, id: number, fallbackBase: string): string {
+  const normalizedId = toRequiredNonNegativeInteger(id, 0);
+  const normalizedBase = normalizeProductSlugSegment(name) || fallbackBase;
+  return `${normalizedBase}-${normalizedId}`;
+}
+
+function normalizeEstablishmentRow(row: Record<string, unknown>): EstablishmentRecord {
+  const latitude = toNullableNumber(row.latitude);
+  const longitude = toNullableNumber(row.longitude);
+  return {
+    id: toRequiredNumber(row.id),
+    ownerId: toRequiredNumber(row.owner_user_id),
+    name: String(row.name ?? "").trim() || `Attivita ${row.id}`,
+    slug: String(row.slug ?? "").trim(),
+    category: String(row.category ?? "").trim() || "Altro",
+    logoUrl: toNullableString(row.logo_url) ?? "",
+    coverUrl: toNullableString(row.cover_url) ?? "",
+    description: toNullableString(row.description) ?? "",
+    city: toNullableString(row.city) ?? "",
+    address: toNullableString(row.address) ?? "",
+    ...(latitude !== null ? { latitude } : {}),
+    ...(longitude !== null ? { longitude } : {}),
+    whatsappCountryIso: toNullableString(row.whatsapp_country_iso) ?? "IT",
+    whatsappNumber: toNullableString(row.whatsapp_number) ?? "",
+    phone: toNullableString(row.phone) ?? "",
+    openingHours: toNullableString(row.opening_hours) ?? "",
+    isActive: toBooleanValue(row.is_active, true),
+    productCount: toRequiredNonNegativeInteger(row.product_count, 0),
+  };
+}
+
+function normalizeStorefrontSectionRow(row: Record<string, unknown>): StorefrontSectionRecord {
+  return {
+    id: toRequiredNumber(row.id),
+    establishmentId: toRequiredNumber(row.establishment_id),
+    name: String(row.name ?? "").trim(),
+    slug: String(row.slug ?? "").trim(),
+    position: toRequiredNonNegativeInteger(row.position, 0),
+    productCount: toRequiredNonNegativeInteger(row.product_count, 0),
+  };
+}
+
 function normalizeProductRow(row: Record<string, unknown>): ProductRow {
   return {
     id: toRequiredNumber(row.id),
@@ -1283,6 +1390,9 @@ function normalizeProductRow(row: Record<string, unknown>): ProductRow {
     description_translations: toNullableString(row.description_translations),
     details: toNullableString(row.details),
     user_id: toNullableNumber(row.user_id),
+    establishment_id: toNullableNumber(row.establishment_id),
+    section_id: toNullableNumber(row.section_id),
+    section_name: toNullableString(row.section_name),
     latitude: toNullableNumber(row.latitude),
     longitude: toNullableNumber(row.longitude),
     city: toNullableString(row.city),
@@ -1292,6 +1402,13 @@ function normalizeProductRow(row: Record<string, unknown>): ProductRow {
     seller_state: toNullableString(row.seller_state),
     seller_whatsapp_country_iso: toNullableString(row.seller_whatsapp_country_iso),
     seller_whatsapp_number: toNullableString(row.seller_whatsapp_number),
+    establishment_slug: toNullableString(row.establishment_slug),
+    establishment_name: toNullableString(row.establishment_name),
+    establishment_category: toNullableString(row.establishment_category),
+    establishment_logo_url: toNullableString(row.establishment_logo_url),
+    establishment_city: toNullableString(row.establishment_city),
+    establishment_whatsapp_country_iso: toNullableString(row.establishment_whatsapp_country_iso),
+    establishment_whatsapp_number: toNullableString(row.establishment_whatsapp_number),
   };
 }
 
@@ -2010,6 +2127,41 @@ function initializeSqliteDatabase() {
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
     );
 
+    CREATE TABLE IF NOT EXISTS establishments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'Altro',
+      logo_url TEXT NOT NULL DEFAULT '',
+      cover_url TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      address TEXT NOT NULL DEFAULT '',
+      latitude REAL,
+      longitude REAL,
+      whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT',
+      whatsapp_number TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      opening_hours TEXT NOT NULL DEFAULT '',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS storefront_sections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      establishment_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      FOREIGN KEY (establishment_id) REFERENCES establishments(id) ON DELETE CASCADE,
+      UNIQUE(establishment_id, slug)
+    );
+
     CREATE TABLE IF NOT EXISTS sessions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
@@ -2109,6 +2261,10 @@ function initializeSqliteDatabase() {
     CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_establishments_slug_unique ON establishments(slug);
+    CREATE INDEX IF NOT EXISTS idx_establishments_owner ON establishments(owner_user_id);
+    CREATE INDEX IF NOT EXISTS idx_establishments_category_city ON establishments(category, city);
+    CREATE INDEX IF NOT EXISTS idx_storefront_sections_establishment ON storefront_sections(establishment_id, position);
     CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_owner_created
       ON product_cart_notifications(owner_user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_product_id
@@ -2137,6 +2293,12 @@ function initializeSqliteDatabase() {
   }
   if (!productColumns.some((column) => column.name === "user_id")) {
     db.exec("ALTER TABLE products ADD COLUMN user_id INTEGER");
+  }
+  if (!productColumns.some((column) => column.name === "establishment_id")) {
+    db.exec("ALTER TABLE products ADD COLUMN establishment_id INTEGER");
+  }
+  if (!productColumns.some((column) => column.name === "section_id")) {
+    db.exec("ALTER TABLE products ADD COLUMN section_id INTEGER");
   }
   if (!productColumns.some((column) => column.name === "image_url")) {
     db.exec("ALTER TABLE products ADD COLUMN image_url TEXT");
@@ -2338,6 +2500,8 @@ function initializeSqliteDatabase() {
   }
 
   db.exec("CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_products_establishment_id ON products(establishment_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_products_section_id ON products(section_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_products_click_id ON products(click_count DESC, id DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_users_city ON users(city)");
@@ -2425,6 +2589,41 @@ async function initializePostgresDatabase() {
         latitude DOUBLE PRECISION,
         longitude DOUBLE PRECISION,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS establishments (
+        id BIGSERIAL PRIMARY KEY,
+        owner_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'Altro',
+        logo_url TEXT NOT NULL DEFAULT '',
+        cover_url TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        city TEXT NOT NULL DEFAULT '',
+        address TEXT NOT NULL DEFAULT '',
+        latitude DOUBLE PRECISION,
+        longitude DOUBLE PRECISION,
+        whatsapp_country_iso TEXT NOT NULL DEFAULT 'IT',
+        whatsapp_number TEXT NOT NULL DEFAULT '',
+        phone TEXT NOT NULL DEFAULT '',
+        opening_hours TEXT NOT NULL DEFAULT '',
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+        updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
+      )
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS storefront_sections (
+        id BIGSERIAL PRIMARY KEY,
+        establishment_id BIGINT NOT NULL REFERENCES establishments(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+        updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+        UNIQUE(establishment_id, slug)
       )
     `,
     `
@@ -2532,6 +2731,8 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS ban_reason TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_locale TEXT NOT NULL DEFAULT 'it-IT'",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id BIGINT",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS establishment_id BIGINT REFERENCES establishments(id) ON DELETE SET NULL",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS section_id BIGINT REFERENCES storefront_sections(id) ON DELETE SET NULL",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS name TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS title TEXT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS name_translations TEXT NOT NULL DEFAULT '{}'",
@@ -2649,6 +2850,10 @@ async function initializePostgresDatabase() {
     "CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)",
     "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_establishments_slug_unique ON establishments(slug)",
+    "CREATE INDEX IF NOT EXISTS idx_establishments_owner ON establishments(owner_user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_establishments_category_city ON establishments(category, city)",
+    "CREATE INDEX IF NOT EXISTS idx_storefront_sections_establishment ON storefront_sections(establishment_id, position)",
     "CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_owner_created ON product_cart_notifications(owner_user_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_product_id ON product_cart_notifications(product_id)",
     "CREATE INDEX IF NOT EXISTS idx_product_comments_product_created ON product_comments(product_id, created_at DESC)",
@@ -2659,6 +2864,8 @@ async function initializePostgresDatabase() {
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth0_sub_unique ON users(auth0_sub) WHERE auth0_sub IS NOT NULL AND auth0_sub <> ''",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_product_likes_user_product_unique ON product_likes(user_id, product_id)",
     "CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_products_establishment_id ON products(establishment_id)",
+    "CREATE INDEX IF NOT EXISTS idx_products_section_id ON products(section_id)",
     "CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)",
     "CREATE INDEX IF NOT EXISTS idx_products_click_id ON products(click_count DESC, id DESC)",
     "CREATE INDEX IF NOT EXISTS idx_users_city ON users(city)",
@@ -2690,7 +2897,11 @@ async function initializePostgresDatabase() {
 }
 
 async function initializeDatabase() {
-  await initializePostgresDatabase();
+  if (USE_SQLITE_DATABASE) {
+    initializeSqliteDatabase();
+  } else {
+    await initializePostgresDatabase();
+  }
   if (!RUN_DATABASE_MIGRATIONS) {
     return;
   }
@@ -2701,6 +2912,11 @@ async function initializeDatabase() {
     await backfillMissingProductSlugs();
   } catch (error) {
     console.error("Failed to backfill product slugs:", error);
+  }
+  try {
+    await backfillDefaultEstablishments();
+  } catch (error) {
+    console.error("Failed to backfill establishments:", error);
   }
 }
 
@@ -2838,6 +3054,509 @@ async function backfillMissingProductSlugs(): Promise<void> {
   }
 }
 
+async function createEstablishmentRecord(input: {
+  ownerId: number;
+  name: string;
+  category: string;
+  logoUrl?: string;
+  coverUrl?: string;
+  description?: string;
+  city?: string;
+  address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  whatsappCountryIso?: string;
+  whatsappNumber?: string;
+  phone?: string;
+  openingHours?: string;
+}): Promise<number> {
+  if (pgPool) {
+    const result = await pgPool.query<{ id: number | string }>(
+      `
+        INSERT INTO establishments (
+          owner_user_id, name, slug, category, logo_url, cover_url, description,
+          city, address, latitude, longitude, whatsapp_country_iso,
+          whatsapp_number, phone, opening_hours
+        )
+        VALUES ($1, $2, '', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING id
+      `,
+      [
+        input.ownerId,
+        input.name,
+        input.category,
+        input.logoUrl ?? "",
+        input.coverUrl ?? "",
+        input.description ?? "",
+        input.city ?? "",
+        input.address ?? "",
+        input.latitude ?? null,
+        input.longitude ?? null,
+        input.whatsappCountryIso ?? "IT",
+        input.whatsappNumber ?? "",
+        input.phone ?? input.whatsappNumber ?? "",
+        input.openingHours ?? "",
+      ],
+    );
+    const id = toRequiredNumber(result.rows[0]?.id);
+    await pgPool.query("UPDATE establishments SET slug = $1 WHERE id = $2", [
+      buildEntitySlug(input.name, id, "attivita"),
+      id,
+    ]);
+    return id;
+  }
+
+  const result = requireSqliteDb()
+    .prepare(
+      `
+        INSERT INTO establishments (
+          owner_user_id, name, slug, category, logo_url, cover_url, description,
+          city, address, latitude, longitude, whatsapp_country_iso,
+          whatsapp_number, phone, opening_hours
+        )
+        VALUES (
+          @owner_user_id, @name, '', @category, @logo_url, @cover_url, @description,
+          @city, @address, @latitude, @longitude, @whatsapp_country_iso,
+          @whatsapp_number, @phone, @opening_hours
+        )
+      `,
+    )
+    .run({
+      owner_user_id: input.ownerId,
+      name: input.name,
+      category: input.category,
+      logo_url: input.logoUrl ?? "",
+      cover_url: input.coverUrl ?? "",
+      description: input.description ?? "",
+      city: input.city ?? "",
+      address: input.address ?? "",
+      latitude: input.latitude ?? null,
+      longitude: input.longitude ?? null,
+      whatsapp_country_iso: input.whatsappCountryIso ?? "IT",
+      whatsapp_number: input.whatsappNumber ?? "",
+      phone: input.phone ?? input.whatsappNumber ?? "",
+      opening_hours: input.openingHours ?? "",
+    });
+  const id = Number(result.lastInsertRowid);
+  requireSqliteDb()
+    .prepare("UPDATE establishments SET slug = ? WHERE id = ?")
+    .run(buildEntitySlug(input.name, id, "attivita"), id);
+  return id;
+}
+
+async function ensureDefaultEstablishmentForUser(userId: number): Promise<EstablishmentRecord | null> {
+  const existing = await selectMyEstablishmentRow(userId);
+  if (existing) {
+    return existing;
+  }
+
+  const user = await selectUserByIdRow(userId);
+  if (!user) {
+    return null;
+  }
+
+  const name = String(user.name ?? "").trim() || `Attivita ${user.id}`;
+  const establishmentId = await createEstablishmentRecord({
+    ownerId: user.id,
+    name,
+    category: "Altro",
+    logoUrl: user.avatar_url ?? "",
+    city: user.city ?? "",
+    address: [user.street, user.neighborhood].filter(Boolean).join(", "),
+    latitude: user.location_latitude,
+    longitude: user.location_longitude,
+    whatsappCountryIso: user.whatsapp_country_iso ?? "IT",
+    whatsappNumber: user.whatsapp_number ?? "",
+    phone: user.whatsapp_number ?? "",
+  });
+
+  await assignProductsWithoutEstablishmentToUserDefault(user.id, establishmentId);
+  return selectEstablishmentByIdOrSlugRow(String(establishmentId));
+}
+
+async function assignProductsWithoutEstablishmentToUserDefault(userId: number, establishmentId: number) {
+  if (pgPool) {
+    await pgPool.query(
+      "UPDATE products SET establishment_id = $1 WHERE user_id = $2 AND establishment_id IS NULL",
+      [establishmentId, userId],
+    );
+    return;
+  }
+  requireSqliteDb()
+    .prepare("UPDATE products SET establishment_id = ? WHERE user_id = ? AND establishment_id IS NULL")
+    .run(establishmentId, userId);
+}
+
+async function backfillDefaultEstablishments(): Promise<void> {
+  if (pgPool) {
+    const users = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT DISTINCT u.id
+        FROM users u
+        INNER JOIN products p ON p.user_id = u.id
+        LEFT JOIN establishments e ON e.owner_user_id = u.id
+        WHERE e.id IS NULL OR p.establishment_id IS NULL
+      `,
+    );
+    for (const row of users.rows) {
+      await ensureDefaultEstablishmentForUser(toRequiredNumber(row.id));
+    }
+    return;
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT DISTINCT u.id
+        FROM users u
+        INNER JOIN products p ON p.user_id = u.id
+        LEFT JOIN establishments e ON e.owner_user_id = u.id
+        WHERE e.id IS NULL OR p.establishment_id IS NULL
+      `,
+    )
+    .all() as Array<Record<string, unknown>>;
+  for (const row of rows) {
+    await ensureDefaultEstablishmentForUser(toRequiredNumber(row.id));
+  }
+}
+
+async function selectMyEstablishmentRow(userId: number): Promise<EstablishmentRecord | null> {
+  const rows = await selectEstablishmentsRows({ ownerId: userId, limit: 1 });
+  return rows[0] ?? null;
+}
+
+async function selectEstablishmentByIdOrSlugRow(idOrSlug: string): Promise<EstablishmentRecord | null> {
+  const normalized = String(idOrSlug ?? "").trim();
+  if (!normalized) {
+    return null;
+  }
+  const numericId = Number(normalized);
+  const isNumericId = Number.isInteger(numericId) && numericId > 0;
+  const where = isNumericId ? "e.id = $1" : "e.slug = $1";
+  const sqliteWhere = isNumericId ? "e.id = ?" : "e.slug = ?";
+  const value = isNumericId ? numericId : normalized;
+
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT e.*, COUNT(p.id)::INT AS product_count
+        FROM establishments e
+        LEFT JOIN products p ON p.establishment_id = e.id
+        WHERE ${where}
+        GROUP BY e.id
+        LIMIT 1
+      `,
+      [value],
+    );
+    const row = result.rows[0];
+    return row ? normalizeEstablishmentRow(row) : null;
+  }
+
+  const row = requireSqliteDb()
+    .prepare(
+      `
+        SELECT e.*, COUNT(p.id) AS product_count
+        FROM establishments e
+        LEFT JOIN products p ON p.establishment_id = e.id
+        WHERE ${sqliteWhere}
+        GROUP BY e.id
+        LIMIT 1
+      `,
+    )
+    .get(value) as Record<string, unknown> | undefined;
+  return row ? normalizeEstablishmentRow(row) : null;
+}
+
+async function selectEstablishmentsRows(input: {
+  search?: string;
+  category?: string;
+  city?: string;
+  ownerId?: number;
+  limit?: number;
+}): Promise<EstablishmentRecord[]> {
+  const search = String(input.search ?? "").trim().toLowerCase();
+  const category = String(input.category ?? "").trim();
+  const city = String(input.city ?? "").trim();
+  const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 60)), 1), 100);
+
+  if (pgPool) {
+    const values: unknown[] = [];
+    const whereParts = ["COALESCE(e.is_active, TRUE) = TRUE"];
+    const addValue = (value: unknown) => {
+      values.push(value);
+      return `$${values.length}`;
+    };
+    if (input.ownerId) {
+      whereParts.push(`e.owner_user_id = ${addValue(input.ownerId)}`);
+    }
+    if (category && category !== "All") {
+      whereParts.push(`e.category = ${addValue(category)}`);
+    }
+    if (city) {
+      whereParts.push(`LOWER(COALESCE(e.city, '')) LIKE ${addValue(`%${city.toLowerCase()}%`)}`);
+    }
+    if (search) {
+      const like = addValue(`%${search}%`);
+      whereParts.push(`
+        (
+          LOWER(COALESCE(e.name, '')) LIKE ${like}
+          OR LOWER(COALESCE(e.category, '')) LIKE ${like}
+          OR LOWER(COALESCE(e.city, '')) LIKE ${like}
+          OR LOWER(COALESCE(e.description, '')) LIKE ${like}
+          OR LOWER(COALESCE(s.name, '')) LIKE ${like}
+          OR LOWER(COALESCE(p.name, '')) LIKE ${like}
+          OR LOWER(COALESCE(p.title, '')) LIKE ${like}
+          OR LOWER(COALESCE(p.category, '')) LIKE ${like}
+          OR LOWER(COALESCE(p.description, '')) LIKE ${like}
+        )
+      `);
+    }
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          e.*,
+          (
+            SELECT COUNT(*)::INT
+            FROM products pc
+            WHERE pc.establishment_id = e.id
+          ) AS product_count
+        FROM establishments e
+        LEFT JOIN products p ON p.establishment_id = e.id
+        LEFT JOIN storefront_sections s ON s.establishment_id = e.id
+        WHERE ${whereParts.join(" AND ")}
+        GROUP BY e.id
+        ORDER BY product_count DESC, e.id DESC
+        LIMIT ${addValue(limit)}
+      `,
+      values,
+    );
+    return result.rows.map(normalizeEstablishmentRow);
+  }
+
+  const values: unknown[] = [];
+  const whereParts = ["COALESCE(e.is_active, 1) = 1"];
+  if (input.ownerId) {
+    whereParts.push("e.owner_user_id = ?");
+    values.push(input.ownerId);
+  }
+  if (category && category !== "All") {
+    whereParts.push("e.category = ?");
+    values.push(category);
+  }
+  if (city) {
+    whereParts.push("LOWER(COALESCE(e.city, '')) LIKE ?");
+    values.push(`%${city.toLowerCase()}%`);
+  }
+  if (search) {
+    whereParts.push(`
+      (
+        LOWER(COALESCE(e.name, '')) LIKE ?
+        OR LOWER(COALESCE(e.category, '')) LIKE ?
+        OR LOWER(COALESCE(e.city, '')) LIKE ?
+        OR LOWER(COALESCE(e.description, '')) LIKE ?
+        OR LOWER(COALESCE(s.name, '')) LIKE ?
+        OR LOWER(COALESCE(p.name, '')) LIKE ?
+        OR LOWER(COALESCE(p.title, '')) LIKE ?
+        OR LOWER(COALESCE(p.category, '')) LIKE ?
+        OR LOWER(COALESCE(p.description, '')) LIKE ?
+      )
+    `);
+    values.push(...Array(9).fill(`%${search}%`));
+  }
+  values.push(limit);
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          e.*,
+          (
+            SELECT COUNT(*)
+            FROM products pc
+            WHERE pc.establishment_id = e.id
+          ) AS product_count
+        FROM establishments e
+        LEFT JOIN products p ON p.establishment_id = e.id
+        LEFT JOIN storefront_sections s ON s.establishment_id = e.id
+        WHERE ${whereParts.join(" AND ")}
+        GROUP BY e.id
+        ORDER BY product_count DESC, e.id DESC
+        LIMIT ?
+      `,
+    )
+    .all(...values) as Array<Record<string, unknown>>;
+  return rows.map(normalizeEstablishmentRow);
+}
+
+async function updateEstablishmentRecord(establishmentId: number, ownerId: number, input: Partial<EstablishmentRecord>) {
+  const current = await selectEstablishmentByIdOrSlugRow(String(establishmentId));
+  if (!current || current.ownerId !== ownerId) {
+    return false;
+  }
+  const name = String(input.name ?? current.name).trim();
+  const category = String(input.category ?? current.category).trim() || "Altro";
+  if (name.length < 2) {
+    throw new Error("Nome attivita obbligatorio.");
+  }
+  const values = {
+    id: establishmentId,
+    name,
+    slug: current.name === name ? current.slug : buildEntitySlug(name, establishmentId, "attivita"),
+    category,
+    logo_url: String(input.logoUrl ?? current.logoUrl ?? "").trim(),
+    cover_url: String(input.coverUrl ?? current.coverUrl ?? "").trim(),
+    description: String(input.description ?? current.description ?? "").trim(),
+    city: String(input.city ?? current.city ?? "").trim(),
+    address: String(input.address ?? current.address ?? "").trim(),
+    latitude: toNullableNumber(input.latitude ?? current.latitude),
+    longitude: toNullableNumber(input.longitude ?? current.longitude),
+    whatsapp_country_iso: String(input.whatsappCountryIso ?? current.whatsappCountryIso ?? "IT").trim() || "IT",
+    whatsapp_number: String(input.whatsappNumber ?? current.whatsappNumber ?? "").replace(/\D/g, ""),
+    phone: String(input.phone ?? current.phone ?? "").replace(/\D/g, ""),
+    opening_hours: String(input.openingHours ?? current.openingHours ?? "").trim(),
+  };
+  if (pgPool) {
+    await pgPool.query(
+      `
+        UPDATE establishments
+        SET name = $1, slug = $2, category = $3, logo_url = $4, cover_url = $5,
+          description = $6, city = $7, address = $8, latitude = $9, longitude = $10,
+          whatsapp_country_iso = $11, whatsapp_number = $12, phone = $13,
+          opening_hours = $14, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT
+        WHERE id = $15 AND owner_user_id = $16
+      `,
+      [
+        values.name, values.slug, values.category, values.logo_url, values.cover_url,
+        values.description, values.city, values.address, values.latitude, values.longitude,
+        values.whatsapp_country_iso, values.whatsapp_number, values.phone, values.opening_hours,
+        establishmentId, ownerId,
+      ],
+    );
+  } else {
+    requireSqliteDb()
+      .prepare(
+        `
+          UPDATE establishments
+          SET name = @name, slug = @slug, category = @category, logo_url = @logo_url,
+            cover_url = @cover_url, description = @description, city = @city,
+            address = @address, latitude = @latitude, longitude = @longitude,
+            whatsapp_country_iso = @whatsapp_country_iso, whatsapp_number = @whatsapp_number,
+            phone = @phone, opening_hours = @opening_hours, updated_at = strftime('%s', 'now')
+          WHERE id = @id
+        `,
+      )
+      .run(values);
+  }
+  return true;
+}
+
+async function selectStorefrontSectionsRows(establishmentId: number): Promise<StorefrontSectionRecord[]> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT s.*, COUNT(p.id)::INT AS product_count
+        FROM storefront_sections s
+        LEFT JOIN products p ON p.section_id = s.id
+        WHERE s.establishment_id = $1
+        GROUP BY s.id
+        ORDER BY s.position ASC, s.id ASC
+      `,
+      [establishmentId],
+    );
+    return result.rows.map(normalizeStorefrontSectionRow);
+  }
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT s.*, COUNT(p.id) AS product_count
+        FROM storefront_sections s
+        LEFT JOIN products p ON p.section_id = s.id
+        WHERE s.establishment_id = ?
+        GROUP BY s.id
+        ORDER BY s.position ASC, s.id ASC
+      `,
+    )
+    .all(establishmentId) as Array<Record<string, unknown>>;
+  return rows.map(normalizeStorefrontSectionRow);
+}
+
+async function createStorefrontSectionRecord(
+  establishmentId: number,
+  ownerId: number,
+  nameValue: string,
+): Promise<StorefrontSectionRecord> {
+  const establishment = await selectEstablishmentByIdOrSlugRow(String(establishmentId));
+  if (!establishment || establishment.ownerId !== ownerId) {
+    throw new Error("Attivita non autorizzata.");
+  }
+  const name = String(nameValue ?? "").trim();
+  if (name.length < 2) {
+    throw new Error("Nome sezione obbligatorio.");
+  }
+  const slug = normalizeProductSlugSegment(name) || "sezione";
+  const nextPosition = (await selectStorefrontSectionsRows(establishmentId)).length;
+
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        INSERT INTO storefront_sections (establishment_id, name, slug, position)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT(establishment_id, slug)
+        DO UPDATE SET name = EXCLUDED.name
+        RETURNING *, 0::INT AS product_count
+      `,
+      [establishmentId, name, slug, nextPosition],
+    );
+    return normalizeStorefrontSectionRow(result.rows[0]);
+  }
+
+  requireSqliteDb()
+    .prepare(
+      `
+        INSERT INTO storefront_sections (establishment_id, name, slug, position)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(establishment_id, slug)
+        DO UPDATE SET name = excluded.name
+      `,
+    )
+    .run(establishmentId, name, slug, nextPosition);
+  const row = requireSqliteDb()
+    .prepare("SELECT *, 0 AS product_count FROM storefront_sections WHERE establishment_id = ? AND slug = ?")
+    .get(establishmentId, slug) as Record<string, unknown>;
+  return normalizeStorefrontSectionRow(row);
+}
+
+async function selectProductsByEstablishmentRows(establishmentId: number): Promise<ProductRow[]> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT ${PRODUCT_SELECT_FIELDS}
+        FROM products p
+        LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN establishments e ON e.id = p.establishment_id
+        LEFT JOIN storefront_sections s ON s.id = p.section_id
+        WHERE p.establishment_id = $1
+        ORDER BY p.id DESC
+      `,
+      [establishmentId],
+    );
+    return result.rows.map(normalizeProductRow);
+  }
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT ${PRODUCT_SELECT_FIELDS}
+        FROM products p
+        LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN establishments e ON e.id = p.establishment_id
+        LEFT JOIN storefront_sections s ON s.id = p.section_id
+        WHERE p.establishment_id = ?
+        ORDER BY p.id DESC
+      `,
+    )
+    .all(establishmentId) as Array<Record<string, unknown>>;
+  return rows.map(normalizeProductRow);
+}
+
 async function selectAllProductsRows(): Promise<ProductRow[]> {
   if (pgPool) {
     const result = await pgPool.query<Record<string, unknown>>(
@@ -2845,6 +3564,8 @@ async function selectAllProductsRows(): Promise<ProductRow[]> {
         SELECT ${PRODUCT_SELECT_FIELDS}
         FROM products p
         LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN establishments e ON e.id = p.establishment_id
+        LEFT JOIN storefront_sections s ON s.id = p.section_id
         ORDER BY p.id DESC
       `,
     );
@@ -2857,6 +3578,8 @@ async function selectAllProductsRows(): Promise<ProductRow[]> {
         SELECT ${PRODUCT_SELECT_FIELDS}
         FROM products p
         LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN establishments e ON e.id = p.establishment_id
+        LEFT JOIN storefront_sections s ON s.id = p.section_id
         ORDER BY p.id DESC
       `,
     )
@@ -2918,6 +3641,10 @@ async function selectProductsPageRows(query: ProductPageQuery): Promise<{
           OR COALESCE(p.title, '') ILIKE ${searchParam}
           OR COALESCE(p.category, '') ILIKE ${searchParam}
           OR COALESCE(p.description, '') ILIKE ${searchParam}
+          OR COALESCE(e.name, '') ILIKE ${searchParam}
+          OR COALESCE(e.category, '') ILIKE ${searchParam}
+          OR COALESCE(e.city, '') ILIKE ${searchParam}
+          OR COALESCE(s.name, '') ILIKE ${searchParam}
           OR COALESCE(u.name, '') ILIKE ${searchParam}
           OR COALESCE(u.email, '') ILIKE ${searchParam}
           OR COALESCE(u.whatsapp_number, '') ILIKE ${searchParam}
@@ -2946,6 +3673,8 @@ async function selectProductsPageRows(query: ProductPageQuery): Promise<{
         SELECT ${PRODUCT_SELECT_FIELDS}
         FROM products p
         LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN establishments e ON e.id = p.establishment_id
+        LEFT JOIN storefront_sections s ON s.id = p.section_id
         ${whereClause}
         ORDER BY COALESCE(p.click_count, 0) DESC, p.id DESC
         LIMIT ${addValue(limitPlusOne)}
@@ -2971,6 +3700,10 @@ async function selectProductsPageRows(query: ProductPageQuery): Promise<{
         OR LOWER(COALESCE(p.title, '')) LIKE ?
         OR LOWER(COALESCE(p.category, '')) LIKE ?
         OR LOWER(COALESCE(p.description, '')) LIKE ?
+        OR LOWER(COALESCE(e.name, '')) LIKE ?
+        OR LOWER(COALESCE(e.category, '')) LIKE ?
+        OR LOWER(COALESCE(e.city, '')) LIKE ?
+        OR LOWER(COALESCE(s.name, '')) LIKE ?
         OR LOWER(COALESCE(u.name, '')) LIKE ?
         OR LOWER(COALESCE(u.email, '')) LIKE ?
         OR LOWER(COALESCE(u.whatsapp_number, '')) LIKE ?
@@ -2978,6 +3711,10 @@ async function selectProductsPageRows(query: ProductPageQuery): Promise<{
       )
     `);
     values.push(
+      searchParam,
+      searchParam,
+      searchParam,
+      searchParam,
       searchParam,
       searchParam,
       searchParam,
@@ -3007,6 +3744,8 @@ async function selectProductsPageRows(query: ProductPageQuery): Promise<{
         SELECT ${PRODUCT_SELECT_FIELDS}
         FROM products p
         LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN establishments e ON e.id = p.establishment_id
+        LEFT JOIN storefront_sections s ON s.id = p.section_id
         ${whereClause}
         ORDER BY COALESCE(p.click_count, 0) DESC, p.id DESC
         LIMIT ?
@@ -3028,6 +3767,8 @@ async function selectProductsByOwnerRows(ownerId: number): Promise<ProductRow[]>
         SELECT ${PRODUCT_SELECT_FIELDS}
         FROM products p
         LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN establishments e ON e.id = p.establishment_id
+        LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE p.user_id = $1
         ORDER BY p.id DESC
       `,
@@ -3042,6 +3783,8 @@ async function selectProductsByOwnerRows(ownerId: number): Promise<ProductRow[]>
         SELECT ${PRODUCT_SELECT_FIELDS}
         FROM products p
         LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN establishments e ON e.id = p.establishment_id
+        LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE p.user_id = ?
         ORDER BY p.id DESC
       `,
@@ -3537,6 +4280,8 @@ async function selectProductByIdRow(productId: number): Promise<ProductRow | und
         SELECT ${PRODUCT_SELECT_FIELDS}
         FROM products p
         LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN establishments e ON e.id = p.establishment_id
+        LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE p.id = $1
       `,
       [productId],
@@ -3551,6 +4296,8 @@ async function selectProductByIdRow(productId: number): Promise<ProductRow | und
         SELECT ${PRODUCT_SELECT_FIELDS}
         FROM products p
         LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN establishments e ON e.id = p.establishment_id
+        LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE p.id = ?
       `,
     )
@@ -3821,6 +4568,8 @@ async function selectLikedProductsByUserRows(userId: number): Promise<ProductRow
         FROM product_likes l
         INNER JOIN products p ON p.id = l.product_id
         LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN establishments e ON e.id = p.establishment_id
+        LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE l.user_id = $1
         ORDER BY l.created_at DESC, p.id DESC
       `,
@@ -3836,6 +4585,8 @@ async function selectLikedProductsByUserRows(userId: number): Promise<ProductRow
         FROM product_likes l
         INNER JOIN products p ON p.id = l.product_id
         LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN establishments e ON e.id = p.establishment_id
+        LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE l.user_id = ?
         ORDER BY l.created_at DESC, p.id DESC
       `,
@@ -4549,6 +5300,17 @@ async function createProductRecord(
   normalized: NormalizedProductInput,
   userId: number,
 ): Promise<number> {
+  const establishment = await ensureDefaultEstablishmentForUser(userId);
+  if (!establishment) {
+    throw new Error("Crie uma attivita antes de publicar.");
+  }
+  const sectionId = normalized.sectionId;
+  if (sectionId !== null) {
+    const sections = await selectStorefrontSectionsRows(establishment.id);
+    if (!sections.some((section) => section.id === sectionId)) {
+      throw new Error("Sezione non valida per questa attivita.");
+    }
+  }
   const translations = await buildContentTranslations({
     name: normalized.name,
     description: normalized.description,
@@ -4575,12 +5337,14 @@ async function createProductRecord(
           description_translations,
           details,
           user_id,
+          establishment_id,
+          section_id,
           latitude,
           longitude,
           lat,
           lng
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         RETURNING id
       `,
       [
@@ -4599,6 +5363,8 @@ async function createProductRecord(
         descriptionTranslations,
         normalized.details,
         userId,
+        establishment.id,
+        sectionId,
         normalized.latitude,
         normalized.longitude,
         normalized.latitude,
@@ -4633,6 +5399,8 @@ async function createProductRecord(
           description_translations,
           details,
           user_id,
+          establishment_id,
+          section_id,
           latitude,
           longitude
         )
@@ -4649,6 +5417,8 @@ async function createProductRecord(
           @description_translations,
           @details,
           @user_id,
+          @establishment_id,
+          @section_id,
           @latitude,
           @longitude
         )
@@ -4660,6 +5430,8 @@ async function createProductRecord(
       description_translations: descriptionTranslations,
       price_negotiable: normalized.priceNegotiable ? 1 : 0,
       user_id: userId,
+      establishment_id: establishment.id,
+      section_id: sectionId,
     });
   const createdId = Number(result.lastInsertRowid);
   try {
@@ -4700,11 +5472,12 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
           description = $12,
           description_translations = $13,
           details = $14,
-          latitude = $15,
-          longitude = $16,
-          lat = $17,
-          lng = $18
-        WHERE id = $19
+          section_id = $15,
+          latitude = $16,
+          longitude = $17,
+          lat = $18,
+          lng = $19
+        WHERE id = $20
       `,
       [
         normalized.name,
@@ -4721,6 +5494,7 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
         normalized.description,
         descriptionTranslations,
         normalized.details,
+        normalized.sectionId,
         normalized.latitude,
         normalized.longitude,
         normalized.latitude,
@@ -4755,6 +5529,7 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
           description = @description,
           description_translations = @description_translations,
           details = @details,
+          section_id = @section_id,
           latitude = @latitude,
           longitude = @longitude
         WHERE id = @id
@@ -4766,6 +5541,7 @@ async function updateProductRecord(id: number, normalized: NormalizedProductInpu
       name_translations: nameTranslations,
       description_translations: descriptionTranslations,
       price_negotiable: normalized.priceNegotiable ? 1 : 0,
+      section_id: normalized.sectionId,
     });
   try {
     await ensureProductSlugRecord(id, normalized.name);
@@ -5731,6 +6507,33 @@ function rowToProduct(row: ProductRow, locale?: AppLocale): ProductRecord {
   if (row.user_id !== null) {
     product.ownerId = row.user_id;
   }
+  if (row.establishment_id !== null) {
+    product.establishmentId = row.establishment_id;
+  }
+  if (row.establishment_slug) {
+    product.establishmentSlug = row.establishment_slug;
+  }
+  if (row.establishment_name) {
+    product.establishmentName = row.establishment_name;
+  }
+  if (row.establishment_category) {
+    product.establishmentCategory = row.establishment_category;
+  }
+  if (row.establishment_logo_url) {
+    product.establishmentLogoUrl = row.establishment_logo_url;
+  }
+  if (row.establishment_whatsapp_country_iso) {
+    product.establishmentWhatsappCountryIso = row.establishment_whatsapp_country_iso;
+  }
+  if (row.establishment_whatsapp_number) {
+    product.establishmentWhatsappNumber = row.establishment_whatsapp_number;
+  }
+  if (row.section_id !== null) {
+    product.sectionId = row.section_id;
+  }
+  if (row.section_name) {
+    product.sectionName = row.section_name;
+  }
   if (row.latitude !== null) {
     product.latitude = row.latitude;
   }
@@ -6081,6 +6884,7 @@ function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
   const body = payload as Record<string, unknown>;
   const name = String(body.name ?? "").trim();
   const category = String(body.category ?? "").trim();
+  const sectionId = toOptionalPositiveInteger(body.sectionId ?? body.section_id);
   const normalizedPrice = normalizeIncomingPrice(
     body.price,
     body.priceNegotiable ?? body.price_negotiable,
@@ -6119,6 +6923,7 @@ function normalizeIncomingProduct(payload: unknown): NormalizedProductInput {
   return {
     name,
     category,
+    sectionId,
     price: normalizedPrice.price,
     priceNegotiable: normalizedPrice.priceNegotiable,
     quantity,
@@ -7466,7 +8271,7 @@ async function bootstrap() {
     res.json({
       ok: true,
       mode: isProduction ? "production" : "development",
-      database: "postgres",
+      database: USE_SQLITE_DATABASE ? "sqlite" : "postgres",
       cloudinary:
         CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET
           ? "configured"
@@ -8807,6 +9612,178 @@ async function bootstrap() {
     }
   });
 
+  app.get("/api/establishments", async (req, res) => {
+    try {
+      const rows = await selectEstablishmentsRows({
+        search: normalizeTextField(req.query.search ?? "", "Busca", 120),
+        category: normalizeTextField(req.query.category ?? "All", "Categoria", 120),
+        city: normalizeTextField(req.query.city ?? "", "Cidade", 120),
+        limit: Number(req.query.limit ?? 60),
+      });
+      res.json({ establishments: rows });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar attivita.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/establishments/me", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+    try {
+      const establishment = await ensureDefaultEstablishmentForUser(user.id);
+      if (!establishment) {
+        res.status(404).json({ error: "Attivita non trovata." });
+        return;
+      }
+      const sections = await selectStorefrontSectionsRows(establishment.id);
+      res.json({ establishment: { ...establishment, sections } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao carregar attivita.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/establishments", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+    try {
+      const body = req.body as Record<string, unknown>;
+      const existing = await selectMyEstablishmentRow(user.id);
+      if (existing) {
+        await updateEstablishmentRecord(existing.id, user.id, {
+          name: String(body.name ?? existing.name),
+          category: String(body.category ?? existing.category),
+          logoUrl: String(body.logoUrl ?? body.logo_url ?? existing.logoUrl ?? ""),
+          coverUrl: String(body.coverUrl ?? body.cover_url ?? existing.coverUrl ?? ""),
+          description: String(body.description ?? existing.description ?? ""),
+          city: String(body.city ?? existing.city ?? ""),
+          address: String(body.address ?? existing.address ?? ""),
+          latitude: toNullableNumber(body.latitude ?? existing.latitude) ?? undefined,
+          longitude: toNullableNumber(body.longitude ?? existing.longitude) ?? undefined,
+          whatsappCountryIso: String(body.whatsappCountryIso ?? existing.whatsappCountryIso ?? "IT"),
+          whatsappNumber: String(body.whatsappNumber ?? existing.whatsappNumber ?? ""),
+          phone: String(body.phone ?? existing.phone ?? ""),
+          openingHours: String(body.openingHours ?? existing.openingHours ?? ""),
+        });
+        const updated = await selectEstablishmentByIdOrSlugRow(String(existing.id));
+        res.json({ establishment: updated });
+        return;
+      }
+
+      const name = normalizeTextField(body.name ?? "", "Nome attivita", 120);
+      if (name.length < 2) {
+        res.status(400).json({ error: "Nome attivita obbligatorio." });
+        return;
+      }
+      const id = await createEstablishmentRecord({
+        ownerId: user.id,
+        name,
+        category: normalizeTextField(body.category ?? "Altro", "Categoria", 120) || "Altro",
+        logoUrl: normalizeAvatarUrl(body.logoUrl ?? body.logo_url ?? ""),
+        coverUrl: normalizeAvatarUrl(body.coverUrl ?? body.cover_url ?? ""),
+        description: normalizeTextField(body.description ?? "", "Descrizione", 2000),
+        city: normalizeTextField(body.city ?? "", "Citta", 120),
+        address: normalizeTextField(body.address ?? "", "Indirizzo", 240),
+        latitude: toNullableNumber(body.latitude),
+        longitude: toNullableNumber(body.longitude),
+        whatsappCountryIso: String(body.whatsappCountryIso ?? user.whatsappCountryIso ?? "IT"),
+        whatsappNumber: String(body.whatsappNumber ?? user.whatsappNumber ?? "").replace(/\D/g, ""),
+        phone: String(body.phone ?? body.whatsappNumber ?? user.whatsappNumber ?? "").replace(/\D/g, ""),
+        openingHours: normalizeTextField(body.openingHours ?? "", "Orari", 500),
+      });
+      const establishment = await selectEstablishmentByIdOrSlugRow(String(id));
+      res.status(201).json({ establishment });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao salvar attivita.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.put("/api/establishments/:id", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID attivita invalido." });
+      return;
+    }
+    try {
+      const ok = await updateEstablishmentRecord(id, user.id, req.body as Partial<EstablishmentRecord>);
+      if (!ok) {
+        res.status(403).json({ error: "Non puoi modificare questa attivita." });
+        return;
+      }
+      const establishment = await selectEstablishmentByIdOrSlugRow(String(id));
+      res.json({ establishment });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao atualizar attivita.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.get("/api/establishments/:idOrSlug", async (req, res) => {
+    try {
+      const locale = getRequestLocale(req);
+      const establishment = await selectEstablishmentByIdOrSlugRow(req.params.idOrSlug);
+      if (!establishment) {
+        res.status(404).json({ error: "Attivita non trovata." });
+        return;
+      }
+      const [sections, products] = await Promise.all([
+        selectStorefrontSectionsRows(establishment.id),
+        selectProductsByEstablishmentRows(establishment.id),
+      ]);
+      res.json({
+        establishment: { ...establishment, sections },
+        products: products.map((row) => rowToProduct(row, locale)),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao carregar attivita.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/establishments/:id/sections", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID attivita invalido." });
+      return;
+    }
+    try {
+      res.json({ sections: await selectStorefrontSectionsRows(id) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar sezioni.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/establishments/:id/sections", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID attivita invalido." });
+      return;
+    }
+    try {
+      const body = req.body as Record<string, unknown>;
+      const section = await createStorefrontSectionRecord(id, user.id, String(body.name ?? ""));
+      res.status(201).json({ section });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao salvar sezione.";
+      res.status(400).json({ error: message });
+    }
+  });
+
   app.get("/api/products", async (req, res) => {
     try {
       const locale = getRequestLocale(req);
@@ -9327,6 +10304,11 @@ async function bootstrap() {
     try {
       const locale = getRequestLocale(req);
       const normalized = normalizeIncomingProduct(req.body);
+      const establishment = await ensureDefaultEstablishmentForUser(user.id);
+      if (!establishment) {
+        res.status(400).json({ error: "Crie uma attivita antes de publicar." });
+        return;
+      }
       const productId = await createProductRecord(normalized, user.id);
       const created = await selectProductByIdRow(productId);
 
@@ -9367,6 +10349,23 @@ async function bootstrap() {
       }
 
       const normalized = normalizeIncomingProduct(req.body);
+      const establishment = existing.establishment_id
+        ? await selectEstablishmentByIdOrSlugRow(String(existing.establishment_id))
+        : await ensureDefaultEstablishmentForUser(user.id);
+      if (!establishment || establishment.ownerId !== user.id) {
+        res.status(403).json({ error: "Non puoi modificare questa attivita." });
+        return;
+      }
+      if (!existing.establishment_id) {
+        await assignProductsWithoutEstablishmentToUserDefault(user.id, establishment.id);
+      }
+      if (normalized.sectionId !== null) {
+        const sections = await selectStorefrontSectionsRows(establishment.id);
+        if (!sections.some((section) => section.id === normalized.sectionId)) {
+          res.status(400).json({ error: "Sezione non valida per questa attivita." });
+          return;
+        }
+      }
       await updateProductRecord(id, normalized);
 
       const updated = await selectProductByIdRow(id);
@@ -9486,8 +10485,10 @@ async function bootstrap() {
   app.listen(port, () => {
     const mode = isProduction ? "production" : "development";
     console.log(`Server running at http://localhost:${port} (${mode})`);
-    console.log("Database: PostgreSQL via DATABASE_URL");
-    console.log(`Database search_path: ${DATABASE_SEARCH_PATH}`);
+    console.log(USE_SQLITE_DATABASE ? `Database: SQLite at ${DB_PATH}` : "Database: PostgreSQL via DATABASE_URL");
+    if (!USE_SQLITE_DATABASE) {
+      console.log(`Database search_path: ${DATABASE_SEARCH_PATH}`);
+    }
     if (IS_DEV_REMOTE_READ_ONLY) {
       console.log("Remote database dev mode: READ ONLY");
     }

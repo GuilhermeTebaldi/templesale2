@@ -1,7 +1,7 @@
 import React from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, ShoppingBag, Menu, ArrowRight, Instagram, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, Heart, Plus, Minus, Share2, Bell, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown, ImagePlus, LoaderCircle, Trash2, Users, Mail } from "lucide-react";
+import { Search, ShoppingBag, Menu, ArrowRight, Instagram, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, Heart, Plus, Minus, Share2, Bell, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown, ImagePlus, LoaderCircle, Trash2, Users, Mail, MessageCircle } from "lucide-react";
 import ProductCard, { ProgressiveProductImage, type Product } from "./components/ProductCard";
 import ProductDetails from "./components/ProductDetails";
 import NewProduct from "./components/NewProduct";
@@ -20,12 +20,15 @@ import {
   type PublicLikerDto,
   type SessionUser,
   type UpdateProfileInput,
+  type EstablishmentDto,
+  type StorefrontSectionDto,
 } from "./lib/api";
 import { useI18n } from "./i18n/provider";
 import { localeOptions, type AppLocale } from "./i18n";
 import { formatCollectionDate, formatRelativeTime } from "./i18n/formatters";
 import { getCategoryLabel } from "./i18n/categories";
 import { parsePriceToNumber } from "./lib/currency";
+import { buildWhatsappUrl } from "./lib/whatsapp";
 import {
   AUTH0_AUDIENCE,
   AUTH0_DEBUG_LOGS,
@@ -57,6 +60,20 @@ const CATEGORIES = [
   "Serviços",
   "Empregos",
   "Outros"
+];
+const ESTABLISHMENT_CATEGORIES = [
+  "All",
+  "Ristorante",
+  "Bar",
+  "Negozi",
+  "Barbieri",
+  "Palestre",
+  "Officine",
+  "Mercati",
+  "Arredamento",
+  "Elettronica",
+  "Hotel",
+  "Altro",
 ];
 const USE_ELEGANT_PRODUCT_FILTER = true;
 const USE_ART_GALLERY_PRODUCT_GRID = true;
@@ -265,6 +282,13 @@ export default function App() {
   const [products, setProducts] = React.useState<Product[]>([]);
   const [myProducts, setMyProducts] = React.useState<Product[]>([]);
   const [likedProducts, setLikedProducts] = React.useState<Product[]>([]);
+  const [establishments, setEstablishments] = React.useState<EstablishmentDto[]>([]);
+  const [myEstablishment, setMyEstablishment] = React.useState<EstablishmentDto | null>(null);
+  const [selectedEstablishment, setSelectedEstablishment] = React.useState<EstablishmentDto | null>(null);
+  const [selectedEstablishmentProducts, setSelectedEstablishmentProducts] = React.useState<Product[]>([]);
+  const [isEstablishmentPageOpen, setIsEstablishmentPageOpen] = React.useState(false);
+  const [activeStorefrontSectionId, setActiveStorefrontSectionId] = React.useState<number | null>(null);
+  const [isLoadingEstablishments, setIsLoadingEstablishments] = React.useState(false);
   const [cartQuantitiesByProductId, setCartQuantitiesByProductId] = React.useState<Record<number, number>>(
     () =>
       readCartStorage(getScopedStorageKey(CART_STORAGE_KEY), [
@@ -523,6 +547,56 @@ export default function App() {
   React.useEffect(() => {
     void loadProductsPage({ append: false });
   }, [loadProductsPage]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setIsLoadingEstablishments(true);
+      try {
+        const list = await api.getEstablishments({
+          search: debouncedSearchQuery,
+          category: activeCategory,
+          limit: 80,
+        });
+        if (!cancelled) {
+          setEstablishments(list);
+        }
+      } catch (error) {
+        console.error("Error fetching establishments:", error);
+        if (!cancelled) {
+          setEstablishments([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingEstablishments(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCategory, debouncedSearchQuery]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!currentUser) {
+      setMyEstablishment(null);
+      return;
+    }
+    void (async () => {
+      try {
+        const establishment = await api.getMyEstablishment();
+        if (!cancelled) {
+          setMyEstablishment(establishment);
+        }
+      } catch (error) {
+        console.error("Error fetching my establishment:", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id]);
 
   const handleLoadMoreProducts = React.useCallback(() => {
     if (isLoadingProducts || isLoadingMoreProducts || !hasMoreProducts) {
@@ -1348,6 +1422,39 @@ export default function App() {
     });
   }, []);
 
+  const openEstablishmentPage = React.useCallback(async (establishment: EstablishmentDto | number | string) => {
+    const idOrSlug =
+      typeof establishment === "object"
+        ? establishment.slug || establishment.id
+        : establishment;
+    try {
+      const payload = await api.getEstablishment(idOrSlug);
+      setSelectedEstablishment(payload.establishment);
+      setSelectedEstablishmentProducts(payload.products as Product[]);
+      setActiveStorefrontSectionId(null);
+      setIsEstablishmentPageOpen(true);
+      if (typeof window !== "undefined") {
+        window.history.pushState(
+          { establishmentId: payload.establishment.id },
+          "",
+          `/attivita/${encodeURIComponent(payload.establishment.slug || String(payload.establishment.id))}`,
+        );
+      }
+    } catch (error) {
+      console.error("Error opening establishment:", error);
+    }
+  }, []);
+
+  const closeEstablishmentPage = React.useCallback(() => {
+    setIsEstablishmentPageOpen(false);
+    setSelectedEstablishment(null);
+    setSelectedEstablishmentProducts([]);
+    setActiveStorefrontSectionId(null);
+    if (typeof window !== "undefined" && window.location.pathname.startsWith("/attivita/")) {
+      window.history.replaceState({}, "", "/");
+    }
+  }, []);
+
   const handleProductDetailsClose = React.useCallback(() => {
     setSelectedProduct(null);
     setFocusedCommentId(null);
@@ -1366,6 +1473,13 @@ export default function App() {
       return;
     }
     if (products.length === 0 || typeof window === "undefined") {
+      return;
+    }
+
+    const establishmentMatch = window.location.pathname.match(/^\/attivita\/([^/]+)\/?$/);
+    if (establishmentMatch?.[1]) {
+      hasResolvedProductFromUrl.current = true;
+      void openEstablishmentPage(decodeURIComponent(establishmentMatch[1]));
       return;
     }
 
@@ -1400,7 +1514,7 @@ export default function App() {
     }
 
     hasResolvedProductFromUrl.current = true;
-  }, [products]);
+  }, [products, openEstablishmentPage]);
 
   React.useEffect(() => {
     if (typeof window === "undefined") {
@@ -1408,6 +1522,13 @@ export default function App() {
     }
 
     const syncSelectedProductFromUrl = () => {
+      const establishmentMatch = window.location.pathname.match(/^\/attivita\/([^/]+)\/?$/);
+      if (establishmentMatch?.[1]) {
+        setSelectedProduct(null);
+        void openEstablishmentPage(decodeURIComponent(establishmentMatch[1]));
+        return;
+      }
+
       const slugFromPathname = resolveProductSlugFromPathname(window.location.pathname);
       if (slugFromPathname) {
         const sharedBySlug = products.find(
@@ -1437,7 +1558,7 @@ export default function App() {
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [products]);
+  }, [products, openEstablishmentPage]);
 
   const handleToggleLike = async (product: Product) => {
     if (!currentUser) {
@@ -1726,6 +1847,19 @@ export default function App() {
 
     setCurrentUser(mergedUser);
     syncSellerProfileAcrossProducts(mergedUser);
+    if (myEstablishment) {
+      void api
+        .saveEstablishment({
+          id: myEstablishment.id,
+          city: mergedUser.city,
+          address: [mergedUser.street, mergedUser.neighborhood].filter(Boolean).join(", "),
+          whatsappCountryIso: mergedUser.whatsappCountryIso,
+          whatsappNumber: mergedUser.whatsappNumber,
+          phone: mergedUser.whatsappNumber,
+        })
+        .then(setMyEstablishment)
+        .catch((error) => console.error("Error syncing establishment profile:", error));
+    }
     setProfileCompletionMessage("");
   };
 
@@ -1851,10 +1985,10 @@ export default function App() {
   const catalogProducts = products;
 
   const availableCategoryFilters = React.useMemo(() => {
-    const knownCategories = CATEGORIES.filter((category) => category !== "All");
+    const knownCategories = ESTABLISHMENT_CATEGORIES.filter((category) => category !== "All");
     const categoryCounts = new globalThis.Map<string, number>();
-    catalogProducts.forEach((product) => {
-      const category = String(product.category ?? "").trim();
+    establishments.forEach((establishment) => {
+      const category = String(establishment.category ?? "").trim();
       if (!category) {
         return;
       }
@@ -1870,7 +2004,7 @@ export default function App() {
     return [
       {
         key: "All",
-        count: catalogProducts.length,
+        count: establishments.length,
       },
       ...knownCategories.map((category) => ({
         key: category,
@@ -1881,7 +2015,7 @@ export default function App() {
         count: categoryCounts.get(category) ?? 0,
       })),
     ];
-  }, [catalogProducts, locale]);
+  }, [establishments, locale]);
 
   const priceSliderMax = React.useMemo(() => {
     const rawMaxPrice = catalogProducts.reduce((highest, product) => {
@@ -1940,11 +2074,16 @@ export default function App() {
     return catalogProducts
       .filter((product) => {
         const matchesCategory =
-          activeCategory === "All" || product.category === activeCategory;
+          activeCategory === "All" ||
+          product.establishmentCategory === activeCategory ||
+          product.category === activeCategory;
         const matchesSearch =
           normalizedSearch === "" ||
           product.name.toLowerCase().includes(normalizedSearch) ||
           product.category.toLowerCase().includes(normalizedSearch) ||
+          String(product.sectionName ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(product.establishmentName ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(product.establishmentCategory ?? "").toLowerCase().includes(normalizedSearch) ||
           String(product.description ?? "").toLowerCase().includes(normalizedSearch) ||
           String(product.city ?? "").toLowerCase().includes(normalizedSearch) ||
           String(product.sellerName ?? "").toLowerCase().includes(normalizedSearch);
@@ -1966,6 +2105,20 @@ export default function App() {
         return right.id - left.id;
       });
   }, [catalogProducts, activeCategory, searchQuery, hasMaxPriceFilter, maxPriceFilter]);
+
+  const visibleEstablishments = React.useMemo(() => establishments, [establishments]);
+  const selectedEstablishmentSections = React.useMemo(
+    () => selectedEstablishment?.sections ?? [],
+    [selectedEstablishment],
+  );
+  const visibleSelectedEstablishmentProducts = React.useMemo(() => {
+    if (!activeStorefrontSectionId) {
+      return selectedEstablishmentProducts;
+    }
+    return selectedEstablishmentProducts.filter(
+      (product) => product.sectionId === activeStorefrontSectionId,
+    );
+  }, [activeStorefrontSectionId, selectedEstablishmentProducts]);
 
   const productGridClassName = React.useMemo(() => {
     if (!USE_ART_GALLERY_PRODUCT_GRID) {
@@ -2167,9 +2320,13 @@ export default function App() {
               </AnimatePresence>
             </div>
             <div>
-              <h3 className="font-serif italic text-xl text-stone-800">{memberName}</h3>
+              <h3 className="font-serif italic text-xl text-stone-800">
+                {myEstablishment?.name || memberName}
+              </h3>
               <p className="text-[10px] uppercase tracking-widest text-stone-400">
-                {t("Membro cadastrado")}
+                {myEstablishment
+                  ? [myEstablishment.category, myEstablishment.city].filter(Boolean).join(" · ")
+                  : t("Membro cadastrado")}
               </p>
               {avatarUploadError && (
                 <p className="text-[11px] text-red-500 mt-1">{avatarUploadError}</p>
@@ -2195,7 +2352,7 @@ export default function App() {
               <div className="flex items-center gap-4">
                 <Plus className="w-4 h-4 text-white/70 group-hover:text-white transition-colors" />
                 <span className="text-xs uppercase tracking-widest font-bold">
-                  {t("Novo Produto")}
+                  {t("Nuovo prodotto")}
                 </span>
               </div>
               <ArrowRight className="w-3 h-3 text-white/50 group-hover:text-white transition-colors" />
@@ -2212,7 +2369,7 @@ export default function App() {
               <div className="flex items-center gap-4">
                 <User className="w-4 h-4 text-stone-400 group-hover:text-stone-800 transition-colors" />
                 <span className="text-xs uppercase tracking-widest font-medium text-stone-600 group-hover:text-stone-800 transition-colors">
-                  {t("Editar perfil")}
+                  {t("Profilo attività")}
                 </span>
               </div>
               <ChevronRight className="w-3 h-3 text-stone-300 group-hover:text-stone-500 transition-colors" />
@@ -2228,7 +2385,7 @@ export default function App() {
               <div className="flex items-center gap-4">
                 <Heart className="w-4 h-4 text-stone-400 group-hover:text-stone-800 transition-colors" />
                 <span className="text-xs uppercase tracking-widest font-medium text-stone-600 group-hover:text-stone-800 transition-colors">
-                  {t("Curtidas")}
+                  {t("Preferiti")}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -2247,7 +2404,7 @@ export default function App() {
               <div className="flex items-center gap-4">
                 <Package className="w-4 h-4 text-stone-400 group-hover:text-stone-800 transition-colors" />
                 <span className="text-xs uppercase tracking-widest font-medium text-stone-600 group-hover:text-stone-800 transition-colors">
-                  {t("Meus anúncios")}
+                  {t("Prodotti")}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -2409,6 +2566,155 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {isEstablishmentPageOpen && selectedEstablishment && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            transition={{ duration: 0.24 }}
+            className="fixed inset-0 z-160 overflow-y-auto bg-[#fdfcfb]"
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-100 bg-[#fdfcfb]/95 px-5 py-4 backdrop-blur-md">
+              <button
+                type="button"
+                onClick={closeEstablishmentPage}
+                className="rounded-full p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+                aria-label={t("Fechar")}
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <span className="text-xs uppercase tracking-[0.22em] text-stone-500">
+                {t("Attività")}
+              </span>
+              <span className="h-9 w-9" />
+            </div>
+            <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
+              <section className="grid gap-8 lg:grid-cols-[22rem_1fr]">
+                <div>
+                  <div className="relative aspect-[4/3] overflow-hidden rounded-lg border border-stone-200 bg-stone-100">
+                    {selectedEstablishment.coverUrl || selectedEstablishment.logoUrl ? (
+                      <ProgressiveProductImage
+                        src={selectedEstablishment.coverUrl || selectedEstablishment.logoUrl || ""}
+                        alt={selectedEstablishment.name}
+                        variant="full"
+                        className="relative h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center font-serif text-7xl text-stone-300">
+                        {selectedEstablishment.name.slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-col justify-center">
+                  <h1 className="font-serif text-4xl text-stone-950 sm:text-6xl">
+                    {selectedEstablishment.name}
+                  </h1>
+                  <p className="mt-3 text-xs uppercase tracking-[0.2em] text-stone-500">
+                    {[selectedEstablishment.category, selectedEstablishment.city].filter(Boolean).join(" · ")}
+                  </p>
+                  {selectedEstablishment.description && (
+                    <p className="mt-6 max-w-2xl text-sm leading-7 text-stone-600">
+                      {selectedEstablishment.description}
+                    </p>
+                  )}
+                  <div className="mt-6 space-y-2 text-sm text-stone-600">
+                    {selectedEstablishment.address && (
+                      <p className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-stone-400" />
+                        {selectedEstablishment.address}
+                      </p>
+                    )}
+                    {selectedEstablishment.openingHours && <p>{selectedEstablishment.openingHours}</p>}
+                  </div>
+                  <div className="mt-8 flex flex-wrap gap-3">
+                    {selectedEstablishment.whatsappNumber && (
+                      <a
+                        href={
+                          buildWhatsappUrl(
+                            selectedEstablishment.whatsappCountryIso || "IT",
+                            selectedEstablishment.whatsappNumber,
+                            selectedEstablishment.name,
+                          ) ?? "#"
+                        }
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-11 items-center gap-2 rounded-lg bg-stone-950 px-4 text-xs font-semibold uppercase tracking-[0.16em] text-white"
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                        {t("WhatsApp")}
+                      </a>
+                    )}
+                    {selectedEstablishment.phone && (
+                      <a
+                        href={`tel:${selectedEstablishment.phone}`}
+                        className="inline-flex h-11 items-center rounded-lg border border-stone-300 px-4 text-xs font-semibold uppercase tracking-[0.16em] text-stone-800"
+                      >
+                        {t("Chiama")}
+                      </a>
+                    )}
+                    {typeof selectedEstablishment.latitude === "number" && typeof selectedEstablishment.longitude === "number" && (
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${selectedEstablishment.latitude},${selectedEstablishment.longitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-11 items-center gap-2 rounded-lg border border-stone-300 px-4 text-xs font-semibold uppercase tracking-[0.16em] text-stone-800"
+                      >
+                        <MapPin className="h-4 w-4" />
+                        {t("Mappa")}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </section>
+              <section className="mt-12">
+                <div className="mb-6 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveStorefrontSectionId(null)}
+                    className={`rounded-full border px-4 py-2 text-xs uppercase tracking-[0.16em] ${
+                      activeStorefrontSectionId === null
+                        ? "border-stone-900 bg-stone-900 text-white"
+                        : "border-stone-200 text-stone-600"
+                    }`}
+                  >
+                    {t("Tutti")}
+                  </button>
+                  {selectedEstablishmentSections.map((section) => (
+                    <button
+                      key={section.id}
+                      type="button"
+                      onClick={() => setActiveStorefrontSectionId(section.id)}
+                      className={`rounded-full border px-4 py-2 text-xs uppercase tracking-[0.16em] ${
+                        activeStorefrontSectionId === section.id
+                          ? "border-stone-900 bg-stone-900 text-white"
+                          : "border-stone-200 text-stone-600"
+                      }`}
+                    >
+                      {section.name}
+                    </button>
+                  ))}
+                </div>
+                <div className={productGridClassName}>
+                  {visibleSelectedEstablishmentProducts.map((product, index) => (
+                    <div key={product.id} className="h-full">
+                      <ProductCard
+                        product={product}
+                        imageLoading={index < 8 ? "eager" : "lazy"}
+                        onClick={() => openProductDetails(product)}
+                        isLiked={likedProductIds.has(product.id)}
+                        onToggleLike={() => void handleToggleLike(product)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Product Details View */}
       <AnimatePresence>
         {selectedProduct && (
@@ -2423,6 +2729,10 @@ export default function App() {
             }}
             onAddToCart={(quantity) => {
               handleAddToCart(selectedProduct, quantity);
+            }}
+            onOpenEstablishment={(idOrSlug) => {
+              handleProductDetailsClose();
+              void openEstablishmentPage(idOrSlug);
             }}
             currentUser={currentUser}
             focusCommentId={focusedCommentId}
@@ -2513,6 +2823,26 @@ export default function App() {
         {(hasMemberAccess && isNewProductOpen) && (
           <NewProduct 
             onClose={() => setIsNewProductOpen(false)} 
+            sections={myEstablishment?.sections ?? []}
+            onCreateSection={async (name) => {
+              if (!myEstablishment) {
+                const establishment = await api.getMyEstablishment();
+                setMyEstablishment(establishment);
+                const section = await api.createStorefrontSection(establishment.id, name);
+                setMyEstablishment({
+                  ...establishment,
+                  sections: [...(establishment.sections ?? []), section],
+                });
+                return section;
+              }
+              const section = await api.createStorefrontSection(myEstablishment.id, name);
+              setMyEstablishment((current) =>
+                current
+                  ? { ...current, sections: [...(current.sections ?? []), section] }
+                  : current,
+              );
+              return section;
+            }}
             onPublish={async (newProd) => {
               const sellerPhone = String(currentUser?.whatsappNumber ?? "").replace(/\D/g, "");
               const published = await api.createProduct({
@@ -2524,6 +2854,10 @@ export default function App() {
               });
               setProducts((current) => [published, ...current]);
               setMyProducts((current) => [published, ...current]);
+              void api.getMyEstablishment().then(setMyEstablishment).catch(() => null);
+              void api.getEstablishments({ search: debouncedSearchQuery, category: activeCategory, limit: 80 })
+                .then(setEstablishments)
+                .catch(() => null);
             }}
           />
         )}
@@ -2534,6 +2868,17 @@ export default function App() {
           <NewProduct
             mode="edit"
             initialProduct={editingProduct}
+            sections={myEstablishment?.sections ?? []}
+            onCreateSection={async (name) => {
+              const establishment = myEstablishment ?? (await api.getMyEstablishment());
+              const section = await api.createStorefrontSection(establishment.id, name);
+              setMyEstablishment((current) =>
+                current
+                  ? { ...current, sections: [...(current.sections ?? []), section] }
+                  : { ...establishment, sections: [...(establishment.sections ?? []), section] },
+              );
+              return section;
+            }}
             onClose={() => setEditingProduct(null)}
             onPublish={async (updatedInput) => {
               const sellerPhone = String(currentUser?.whatsappNumber ?? "").replace(/\D/g, "");
@@ -2662,29 +3007,6 @@ export default function App() {
             </button>
 
             <button
-              className="flex items-center justify-between gap-4 text-xl font-serif italic text-stone-800 hover:translate-x-2 transition-transform duration-300 group"
-              onClick={() => {
-                setIsMenuOpen(false);
-                setIsCartOpen(true);
-              }}
-            >
-              <span className="flex items-center gap-3">
-                <ShoppingBag className="w-5 h-5 text-stone-300 group-hover:text-stone-800 transition-colors" />
-                {t("Carrinho")}
-                {cartItemsCount > 0 && (
-                  <span
-                    className={`w-2 h-2 rounded-full bg-red-500 ${
-                      hasUnseenCartAlert ? "animate-pulse" : ""
-                    }`}
-                  />
-                )}
-              </span>
-              <span className="text-[10px] font-mono text-stone-400">
-                {cartItemsCount > 0 ? cartItemsCount : 0}
-              </span>
-            </button>
-
-            <button
               className="flex items-center gap-4 text-xl font-serif italic text-stone-800 hover:translate-x-2 transition-transform duration-300 group"
               onClick={() => {
                 setIsMenuOpen(false);
@@ -2692,7 +3014,7 @@ export default function App() {
               }}
             >
               <Store className="w-5 h-5 text-stone-300 group-hover:text-stone-800 transition-colors" />
-              {t("Vendedor")}
+              {t("Attività")}
             </button>
           </nav>
           
@@ -2789,9 +3111,6 @@ export default function App() {
               className="relative p-2 -ml-2 hover:bg-stone-50 rounded-full transition-colors"
             >
               <Menu className="w-5 h-5 text-stone-600" />
-              {hasUnseenCartAlert && cartItemsCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              )}
             </button>
          
           </div>
@@ -3078,7 +3397,7 @@ export default function App() {
                 type="search"
                 value={searchQuery}
                 onChange={(event) => handleSearchQueryChange(event.target.value)}
-                placeholder={t("Buscar produtos, categorias ou cidade (ex.: casa em Ardea)...")}
+                placeholder={t("Cerca attività, prodotti, servizi o città...")}
                 className="w-full h-9 sm:h-10 rounded-full border border-stone-200/70 bg-white/85 pl-9 pr-10 text-[13px] text-stone-800 shadow-[0_1px_10px_rgba(28,25,23,0.035)] placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-400/15 focus:border-stone-400 transition-all"
               />
               {searchQuery.trim().length > 0 && (
@@ -3303,7 +3622,7 @@ export default function App() {
         </section>
         )}
 
-        {searchQuery.trim().length === 0 && !hasMaxPriceFilter && randomProductsByCategory.length > 0 && (
+        {false && searchQuery.trim().length === 0 && !hasMaxPriceFilter && randomProductsByCategory.length > 0 && (
           <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-5">
             <div className="overflow-x-auto no-scrollbar">
               <div className="flex items-center gap-2.5 sm:gap-3 min-w-max">
@@ -3330,55 +3649,88 @@ export default function App() {
           </section>
         )}
 
-        {/* Product Grid */}
+        {/* Establishment Grid */}
         <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-12 sm:pb-20">
-          {isLoadingProducts ? (
-            <div className="py-20 text-center text-stone-400 text-xs uppercase tracking-[0.2em]">
-              {t("Carregando produtos...")}
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.26em] text-stone-400">{t("Attività")}</p>
+              <h2 className="mt-1 font-serif text-2xl text-stone-900">{t("Vetrine locali")}</h2>
             </div>
-          ) : filteredProducts.length === 0 ? (
+          </div>
+          {isLoadingEstablishments ? (
+            <div className="py-20 text-center text-stone-400 text-xs uppercase tracking-[0.2em]">
+              {t("Caricamento attività...")}
+            </div>
+          ) : visibleEstablishments.length === 0 ? (
             <div className="py-20 text-center">
               <p className="text-xs uppercase tracking-[0.2em] text-stone-400">
-                {t("Nenhum produto real publicado ainda.")}
+                {t("Nessuna attività trovata.")}
               </p>
             </div>
           ) : (
             <>
-              <div className={productGridClassName}>
-                {filteredProducts.map((product, index) => (
-                  <div key={product.id} className="h-full">
-                    {USE_ART_GALLERY_PRODUCT_GRID ? (
-                      <ArtGalleryProductCard
-                        product={product}
-                        imageLoading={index < 8 ? "eager" : "lazy"}
-                        imageFetchPriority={index < 8 ? "high" : "auto"}
-                        onClick={() => openProductDetails(product)}
-                        isLiked={likedProductIds.has(product.id)}
-                        onToggleLike={() => {
-                          void handleToggleLike(product);
-                        }}
-                        onAddToCart={() => {
-                          handleAddToCart(product, 1);
-                        }}
-                      />
-                    ) : (
-                      <ProductCard
-                        product={product}
-                        imageLoading={index < 8 ? "eager" : "lazy"}
-                        imageFetchPriority={index < 8 ? "high" : "auto"}
-                        onClick={() => openProductDetails(product)}
-                        isLiked={likedProductIds.has(product.id)}
-                        onToggleLike={() => {
-                          void handleToggleLike(product);
-                        }}
-                        onAddToCart={() => {
-                          handleAddToCart(product, 1);
-                        }}
-                      />
-                    )}
-                  </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {visibleEstablishments.map((establishment) => (
+                  <button
+                    key={establishment.id}
+                    type="button"
+                    onClick={() => void openEstablishmentPage(establishment)}
+                    className="group flex h-full min-h-[9rem] overflow-hidden rounded-lg border border-stone-200/80 bg-white text-left shadow-[0_1px_2px_rgba(28,25,23,0.04),0_14px_34px_rgba(28,25,23,0.04)] transition-all hover:border-stone-300 hover:shadow-[0_12px_32px_rgba(28,25,23,0.10)]"
+                  >
+                    <div className="relative w-32 shrink-0 overflow-hidden bg-stone-100">
+                      {establishment.logoUrl || establishment.coverUrl ? (
+                        <ProgressiveProductImage
+                          src={establishment.coverUrl || establishment.logoUrl || ""}
+                          alt={establishment.name}
+                          variant="card"
+                          className="relative h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center font-serif text-3xl text-stone-300">
+                          {establishment.name.slice(0, 1).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex min-w-0 flex-1 flex-col justify-between p-4">
+                      <div>
+                        <h3 className="truncate font-serif text-xl text-stone-900">{establishment.name}</h3>
+                        <p className="mt-1 text-xs uppercase tracking-[0.16em] text-stone-500">
+                          {[establishment.category, establishment.city].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <span className="text-xs text-stone-500">
+                          {t("{count} prodotti", { count: String(establishment.productCount) })}
+                        </span>
+                        <ArrowRight className="h-4 w-4 text-stone-400 transition-transform group-hover:translate-x-1" />
+                      </div>
+                    </div>
+                  </button>
                 ))}
               </div>
+              {(searchQuery.trim().length > 0 || hasMaxPriceFilter) && filteredProducts.length > 0 && (
+                <div className="mt-12">
+                  <p className="mb-5 text-[10px] uppercase tracking-[0.26em] text-stone-400">
+                    {t("Prodotti e servizi trovati")}
+                  </p>
+                  <div className={productGridClassName}>
+                    {filteredProducts.slice(0, 12).map((product, index) => (
+                      <div key={product.id} className="h-full">
+                        <ProductCard
+                          product={product}
+                          imageLoading={index < 8 ? "eager" : "lazy"}
+                          imageFetchPriority={index < 8 ? "high" : "auto"}
+                          onClick={() => openProductDetails(product)}
+                          isLiked={likedProductIds.has(product.id)}
+                          onToggleLike={() => {
+                            void handleToggleLike(product);
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {productsError && (
                 <p className="mt-8 text-center text-xs uppercase tracking-[0.18em] text-red-500">
@@ -3386,7 +3738,7 @@ export default function App() {
                 </p>
               )}
 
-              {hasMoreProducts && (
+              {(searchQuery.trim().length > 0 || hasMaxPriceFilter) && hasMoreProducts && (
                 <div className="mt-10 flex justify-center">
                   <button
                     type="button"

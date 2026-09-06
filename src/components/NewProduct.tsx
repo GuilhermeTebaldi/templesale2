@@ -15,6 +15,7 @@ import {
   api,
   type CreateProductInput,
   type NewProductDraftDefaults,
+  type StorefrontSectionDto,
 } from "../lib/api";
 import { type Product } from "./ProductCard";
 import LeafletMapPicker from "./LeafletMapPicker";
@@ -32,6 +33,8 @@ interface NewProductProps {
   onPublish: (product: CreateProductInput) => Promise<void>;
   mode?: "create" | "edit";
   initialProduct?: Product | null;
+  sections?: StorefrontSectionDto[];
+  onCreateSection?: (name: string) => Promise<StorefrontSectionDto>;
 }
 
 const DEFAULT_DETAILS: Record<string, string> = {
@@ -49,6 +52,7 @@ const DEFAULT_DETAILS: Record<string, string> = {
 type FormState = {
   name: string;
   category: string;
+  sectionId: string;
   price: string;
   isPriceNegotiable: boolean;
   quantity: string;
@@ -177,6 +181,7 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
     return {
       name: "",
       category: "Imóveis",
+      sectionId: "",
       price: "",
       isPriceNegotiable: false,
       quantity: "1",
@@ -192,6 +197,7 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
   return {
     name: product.name ?? "",
     category: product.category ?? "Imóveis",
+    sectionId: product.sectionId ? String(product.sectionId) : "",
     price: hasNegotiablePrice ? "" : normalizePriceValue(product.price ?? ""),
     isPriceNegotiable: hasNegotiablePrice,
     quantity: (() => {
@@ -316,6 +322,8 @@ export default function NewProduct({
   onPublish,
   mode = "create",
   initialProduct = null,
+  sections = [],
+  onCreateSection,
 }: NewProductProps) {
   const { t, locale } = useI18n();
   const initialLocation = React.useMemo(
@@ -354,6 +362,8 @@ export default function NewProduct({
   const [isSavingDraftDefaults, setIsSavingDraftDefaults] = React.useState(false);
   const [isLoadingDraftDefaults, setIsLoadingDraftDefaults] = React.useState(false);
   const [draftSaveFeedback, setDraftSaveFeedback] = React.useState<DraftSaveFeedback | null>(null);
+  const [newSectionName, setNewSectionName] = React.useState("");
+  const [isCreatingSection, setIsCreatingSection] = React.useState(false);
   const hasAutoUncheckedDraftSaveRef = React.useRef(false);
 
   React.useEffect(() => {
@@ -692,6 +702,24 @@ export default function NewProduct({
     }
   };
 
+  const handleCreateSection = async () => {
+    const name = newSectionName.trim();
+    if (!name || !onCreateSection) {
+      return;
+    }
+    setIsCreatingSection(true);
+    setErrorMessage("");
+    try {
+      const section = await onCreateSection(name);
+      setFormData((current) => ({ ...current, sectionId: String(section.id) }));
+      setNewSectionName("");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("Falha ao salvar sezione."));
+    } finally {
+      setIsCreatingSection(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
@@ -701,8 +729,9 @@ export default function NewProduct({
       return;
     }
 
-    const normalizedName = formData.name.trim();
-    const normalizedCategory = formData.category.trim();
+      const normalizedName = formData.name.trim();
+      const normalizedCategory = formData.category.trim();
+      const selectedSectionId = Number(formData.sectionId);
     const normalizedDescription = formData.description.trim();
     const latitude = Number(formData.latitude);
     const longitude = Number(formData.longitude);
@@ -766,6 +795,10 @@ export default function NewProduct({
       const newProduct: CreateProductInput = {
         name: normalizedName,
         category: normalizedCategory,
+        sectionId:
+          Number.isInteger(selectedSectionId) && selectedSectionId > 0
+            ? selectedSectionId
+            : null,
         price: normalizedPrice,
         priceNegotiable: formData.isPriceNegotiable,
         quantity: parsedQuantity,
@@ -1100,6 +1133,40 @@ export default function NewProduct({
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Sezione")}</label>
+                <select
+                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-600 appearance-none cursor-pointer"
+                  value={formData.sectionId}
+                  onChange={(e) => setFormData({ ...formData, sectionId: e.target.value })}
+                >
+                  <option value="">{t("Tutti")}</option>
+                  {sections.map((section) => (
+                    <option key={section.id} value={section.id}>
+                      {section.name}
+                    </option>
+                  ))}
+                </select>
+                {onCreateSection && (
+                  <div className="mt-3 flex gap-2">
+                    <input
+                      type="text"
+                      value={newSectionName}
+                      onChange={(event) => setNewSectionName(event.target.value)}
+                      placeholder={t("Nuova sezione")}
+                      className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-stone-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleCreateSection()}
+                      disabled={isCreatingSection || newSectionName.trim().length < 2}
+                      className="inline-flex h-10 items-center justify-center rounded-lg border border-stone-300 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-stone-700 disabled:opacity-40"
+                    >
+                      {isCreatingSection ? t("Salvando...") : t("Crea")}
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Preço")}</label>
