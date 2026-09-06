@@ -1,13 +1,14 @@
 import React from "react";
-import { motion } from "motion/react";
-import { X, User, Save, Navigation, Mail, Store } from "lucide-react";
-import { type EstablishmentDto, type SessionUser, type UpdateProfileInput } from "../lib/api";
+import { AnimatePresence, motion } from "motion/react";
+import { CheckCircle2, Mail, MapPin, Navigation, Save, Store, User, X } from "lucide-react";
+import { api, type EstablishmentDto, type SessionUser, type UpdateProfileInput } from "../lib/api";
 import { trackedFetch } from "../lib/networkActivity";
 import {
   getWhatsappCountryLabel,
   normalizeWhatsappLocalNumber,
 } from "../lib/whatsapp";
 import { useI18n } from "../i18n/provider";
+import LeafletMapPicker from "./LeafletMapPicker";
 
 interface EditePerfilProps {
   onClose: () => void;
@@ -34,6 +35,28 @@ const ESTABLISHMENT_CATEGORIES = [
   "Altro",
 ];
 
+type GeoPoint = {
+  latitude: number;
+  longitude: number;
+};
+
+const DEFAULT_MAP_CENTER: GeoPoint = {
+  latitude: 41.6081,
+  longitude: 12.5156,
+};
+
+function parseGeoPoint(latitude: string, longitude: string): GeoPoint | null {
+  const lat = Number(String(latitude ?? "").replace(",", "."));
+  const lng = Number(String(longitude ?? "").replace(",", "."));
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return null;
+  }
+  return { latitude: lat, longitude: lng };
+}
+
 export default function EditePerfil({
   onClose,
   onSave,
@@ -45,6 +68,8 @@ export default function EditePerfil({
   const registeredEmail = String(initialData?.email ?? "").trim();
   const [isSaving, setIsSaving] = React.useState(false);
   const [isResolvingLocation, setIsResolvingLocation] = React.useState(false);
+  const [isMapPickerOpen, setIsMapPickerOpen] = React.useState(false);
+  const [locationStatus, setLocationStatus] = React.useState<"success" | "error" | null>(null);
   const [errorMessage, setErrorMessage] = React.useState("");
   const [formData, setFormData] = React.useState({
     name: initialData?.name || "",
@@ -101,7 +126,87 @@ export default function EditePerfil({
             : "",
     });
     setErrorMessage(initialErrorMessage);
+    setLocationStatus(
+      parseGeoPoint(
+        typeof initialEstablishment?.latitude === "number"
+          ? String(initialEstablishment.latitude)
+          : typeof initialData?.locationLatitude === "number"
+            ? String(initialData.locationLatitude)
+            : "",
+        typeof initialEstablishment?.longitude === "number"
+          ? String(initialEstablishment.longitude)
+          : typeof initialData?.locationLongitude === "number"
+            ? String(initialData.locationLongitude)
+            : "",
+      )
+        ? "success"
+        : null,
+    );
   }, [initialData, initialEstablishment, initialErrorMessage]);
+
+  const selectedLocation = React.useMemo(
+    () => parseGeoPoint(formData.latitude, formData.longitude),
+    [formData.latitude, formData.longitude],
+  );
+
+  const mapCenter = selectedLocation ?? DEFAULT_MAP_CENTER;
+
+  const applyLocationPoint = React.useCallback(
+    async (point: GeoPoint, fallback?: Partial<typeof formData>) => {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+      let nextFields = fallback ?? {};
+
+      try {
+        const params = new URLSearchParams({
+          lat: String(point.latitude),
+          lng: String(point.longitude),
+        });
+        const response = await trackedFetch(`/api/geo/reverse?${params.toString()}`, {
+          credentials: "include",
+          headers: { Accept: "application/json" },
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | { success?: boolean; data?: Record<string, unknown> }
+          | null;
+        const locationData =
+          response.ok && payload?.data && typeof payload.data === "object" ? payload.data : {};
+        const rawCountry = String(locationData.country ?? "").trim();
+        const normalizedCountry = (() => {
+          const upper = rawCountry.toUpperCase();
+          if (upper === "IT") return "Italia";
+          if (upper === "BR") return "Brasil";
+          return rawCountry;
+        })();
+
+        nextFields = {
+          ...nextFields,
+          country: normalizedCountry || fallback?.country,
+          state: String(locationData.state ?? "").trim() || fallback?.state,
+          city: String(locationData.city ?? "").trim() || fallback?.city,
+          neighborhood:
+            String(locationData.neighborhood ?? "").trim() || fallback?.neighborhood,
+          street: String(locationData.street ?? "").trim() || fallback?.street,
+        };
+      } catch {
+        nextFields = fallback ?? {};
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        ...Object.fromEntries(
+          Object.entries(nextFields).filter(([, value]) => String(value ?? "").trim()),
+        ),
+        latitude: String(point.latitude),
+        longitude: String(point.longitude),
+      }));
+      setLocationStatus("success");
+    },
+    [],
+  );
 
   const handleUseLocation = () => {
     setErrorMessage("");
@@ -140,41 +245,23 @@ export default function EditePerfil({
               );
             }
 
-            const locationData =
-              payload && payload.data && typeof payload.data === "object" ? payload.data : {};
-
-            const rawCountry = String(locationData.country ?? "").trim();
-            const normalizedCountry = (() => {
-              const upper = rawCountry.toUpperCase();
-              if (upper === "IT") return "Italia";
-              if (upper === "BR") return "Brasil";
-              return rawCountry;
-            })();
-
-            const normalizedState = String(locationData.state ?? "").trim();
-            const normalizedCity = String(locationData.city ?? "").trim();
-            const normalizedNeighborhood = String(locationData.neighborhood ?? "").trim();
-            const normalizedStreet = String(locationData.street ?? "").trim();
-
-            setFormData((prev) => ({
-              ...prev,
-              country: normalizedCountry || prev.country || "Italia",
-              state: normalizedState || prev.state || "Lazio",
-              city: normalizedCity || prev.city || "Roma",
-              neighborhood: normalizedNeighborhood || prev.neighborhood,
-              street: normalizedStreet || prev.street,
-              latitude: String(latitude),
-              longitude: String(longitude),
-            }));
+            await applyLocationPoint(
+              { latitude, longitude },
+              {
+                country: formData.country || "Italia",
+                state: formData.state || "Lazio",
+                city: formData.city || "Roma",
+              },
+            );
           } catch {
-            setFormData((prev) => ({
-              ...prev,
-              country: prev.country || "Italia",
-              state: prev.state || "Lazio",
-              city: prev.city || "Roma",
-              latitude: String(latitude),
-              longitude: String(longitude),
-            }));
+            await applyLocationPoint(
+              { latitude, longitude },
+              {
+                country: formData.country || "Italia",
+                state: formData.state || "Lazio",
+                city: formData.city || "Roma",
+              },
+            );
             setErrorMessage("");
           } finally {
             window.clearTimeout(timeoutId);
@@ -184,12 +271,60 @@ export default function EditePerfil({
       },
       () => {
         setIsResolvingLocation(false);
+        setLocationStatus("error");
         setErrorMessage(
           t("Nao foi possivel capturar sua localizacao neste momento. Preencha cidade/endereco manualmente."),
         );
       },
       { enableHighAccuracy: true, timeout: 10000 },
     );
+  };
+
+  const handleGeocodeTypedLocation = async () => {
+    const query = [formData.street, formData.neighborhood, formData.city, formData.state, formData.country || "Italia"]
+      .map((part) => String(part ?? "").trim())
+      .filter(Boolean)
+      .join(", ");
+    if (!query) {
+      setLocationStatus("error");
+      setErrorMessage(t("Preencha cidade ou endereço para registrar a localização."));
+      return;
+    }
+
+    setIsResolvingLocation(true);
+    setErrorMessage("");
+    try {
+      const location = await api.geocodeLocation(query);
+      if (!location) {
+        throw new Error(t("Localização não encontrada."));
+      }
+      await applyLocationPoint(
+        { latitude: location.latitude, longitude: location.longitude },
+        {
+          country: location.country || formData.country || "Italia",
+          state: location.state || formData.state,
+          city: location.city || formData.city,
+          neighborhood: location.neighborhood || formData.neighborhood,
+          street: location.street || formData.street,
+        },
+      );
+    } catch (error) {
+      setLocationStatus("error");
+      setErrorMessage(error instanceof Error ? error.message : t("Localização não encontrada."));
+    } finally {
+      setIsResolvingLocation(false);
+    }
+  };
+
+  const handleConfirmMapLocation = (point: GeoPoint) => {
+    void applyLocationPoint(point, {
+      country: formData.country || "Italia",
+      state: formData.state,
+      city: formData.city,
+      neighborhood: formData.neighborhood,
+      street: formData.street,
+    });
+    setIsMapPickerOpen(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -369,20 +504,28 @@ export default function EditePerfil({
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Nome completo")}</label>
-              <input 
-                required
-                minLength={2}
-                type="text"
-                className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
-                value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
-              />
+            <div className="border-t border-stone-100 pt-6">
+              <div className="mb-5 flex items-center gap-3">
+                <User className="h-4 w-4 text-stone-700" />
+                <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-stone-800">
+                  {t("Account")}
+                </h3>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Nome proprietario")}</label>
+                <input 
+                  required
+                  minLength={2}
+                  type="text"
+                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("WhatsApp")}</label>
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("WhatsApp attività")}</label>
               <div className="grid grid-cols-[1fr_2fr] gap-4">
                 <select
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
@@ -406,16 +549,56 @@ export default function EditePerfil({
               </div>
             </div>
 
-            <div className="pt-4">
-              <button 
-                type="button"
-                disabled={isResolvingLocation}
-                onClick={handleUseLocation}
-                className="flex items-center gap-3 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-800 hover:text-stone-500 transition-colors disabled:text-stone-300 disabled:hover:text-stone-300"
-              >
-                <Navigation className="w-4 h-4" />
-                {isResolvingLocation ? t("Processando...") : t("Usar minha localização atual")}
-              </button>
+            <div className="rounded-lg border border-stone-200 bg-white p-5">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  <MapPin className="h-4 w-4 text-stone-700" />
+                  <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-stone-800">
+                    {t("Posizione attività")}
+                  </h3>
+                </div>
+                {locationStatus === "success" && selectedLocation && (
+                  <span className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-600">
+                    <CheckCircle2 className="h-4 w-4" />
+                    {t("Localização registrada")}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <button 
+                  type="button"
+                  disabled={isResolvingLocation}
+                  onClick={handleUseLocation}
+                  className="inline-flex items-center justify-center gap-2 border border-stone-200 px-3 py-3 text-[10px] uppercase tracking-[0.16em] font-bold text-stone-800 hover:border-stone-500 transition-colors disabled:text-stone-300"
+                >
+                  <Navigation className="w-4 h-4" />
+                  {isResolvingLocation ? t("Processando...") : t("GPS")}
+                </button>
+                <button
+                  type="button"
+                  disabled={isResolvingLocation}
+                  onClick={() => void handleGeocodeTypedLocation()}
+                  className="inline-flex items-center justify-center gap-2 border border-stone-200 px-3 py-3 text-[10px] uppercase tracking-[0.16em] font-bold text-stone-800 hover:border-stone-500 transition-colors disabled:text-stone-300"
+                >
+                  <MapPin className="w-4 h-4" />
+                  {t("Registrar endereço")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsMapPickerOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 border border-stone-200 px-3 py-3 text-[10px] uppercase tracking-[0.16em] font-bold text-stone-800 hover:border-stone-500 transition-colors"
+                >
+                  <MapPin className="w-4 h-4" />
+                  {t("Mapa")}
+                </button>
+              </div>
+
+              <p className={`mt-3 text-xs ${locationStatus === "error" ? "text-red-500" : "text-stone-500"}`}>
+                {selectedLocation
+                  ? `${selectedLocation.latitude.toFixed(6)}, ${selectedLocation.longitude.toFixed(6)}`
+                  : t("Nenhuma localização registrada ainda.")}
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-6">
@@ -425,7 +608,10 @@ export default function EditePerfil({
                   type="text"
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
                   value={formData.country}
-                  onChange={(e) => setFormData({...formData, country: e.target.value})}
+                  onChange={(e) => {
+                    setLocationStatus(null);
+                    setFormData({...formData, country: e.target.value});
+                  }}
                 />
               </div>
               <div className="space-y-2">
@@ -434,7 +620,10 @@ export default function EditePerfil({
                   type="text"
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
                   value={formData.state}
-                  onChange={(e) => setFormData({...formData, state: e.target.value})}
+                  onChange={(e) => {
+                    setLocationStatus(null);
+                    setFormData({...formData, state: e.target.value});
+                  }}
                 />
               </div>
             </div>
@@ -446,7 +635,10 @@ export default function EditePerfil({
                   type="text"
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
                   value={formData.city}
-                  onChange={(e) => setFormData({...formData, city: e.target.value})}
+                  onChange={(e) => {
+                    setLocationStatus(null);
+                    setFormData({...formData, city: e.target.value});
+                  }}
                 />
               </div>
               <div className="space-y-2">
@@ -455,7 +647,10 @@ export default function EditePerfil({
                   type="text"
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
                   value={formData.neighborhood}
-                  onChange={(e) => setFormData({...formData, neighborhood: e.target.value})}
+                  onChange={(e) => {
+                    setLocationStatus(null);
+                    setFormData({...formData, neighborhood: e.target.value});
+                  }}
                 />
               </div>
             </div>
@@ -466,7 +661,10 @@ export default function EditePerfil({
                 type="text"
                 className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
                 value={formData.street}
-                onChange={(e) => setFormData({...formData, street: e.target.value})}
+                onChange={(e) => {
+                  setLocationStatus(null);
+                  setFormData({...formData, street: e.target.value});
+                }}
               />
             </div>
           </div>
@@ -485,6 +683,24 @@ export default function EditePerfil({
           </button>
         </form>
       </div>
+      <AnimatePresence>
+        {isMapPickerOpen && (
+          <LeafletMapPicker
+            center={mapCenter}
+            selectedPoint={selectedLocation}
+            onSelectPoint={(point) => {
+              setFormData((current) => ({
+                ...current,
+                latitude: String(point.latitude),
+                longitude: String(point.longitude),
+              }));
+              setLocationStatus("success");
+            }}
+            onClose={() => setIsMapPickerOpen(false)}
+            onConfirm={handleConfirmMapLocation}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
