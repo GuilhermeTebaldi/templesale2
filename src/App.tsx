@@ -2571,9 +2571,6 @@ export default function App() {
             onOpenProduct={(product) => {
               openProductDetails(product);
             }}
-            onAddToCart={(product) => {
-              handleAddToCart(product, 1);
-            }}
             currentUser={currentUser}
             onUserLocationSaved={(updatedUser) => {
               setCurrentUser((current) => ({
@@ -2764,9 +2761,6 @@ export default function App() {
             onToggleLike={() => {
               void handleToggleLike(selectedProduct);
             }}
-            onAddToCart={(quantity) => {
-              handleAddToCart(selectedProduct, quantity);
-            }}
             onOpenEstablishment={(idOrSlug) => {
               handleProductDetailsClose();
               void openEstablishmentPage(idOrSlug);
@@ -2860,6 +2854,7 @@ export default function App() {
         {(hasMemberAccess && isNewProductOpen) && (
           <NewProduct 
             onClose={() => setIsNewProductOpen(false)} 
+            establishment={myEstablishment}
             sections={myEstablishment?.sections ?? []}
             onCreateSection={async (name) => {
               if (!myEstablishment) {
@@ -2905,6 +2900,7 @@ export default function App() {
           <NewProduct
             mode="edit"
             initialProduct={editingProduct}
+            establishment={myEstablishment}
             sections={myEstablishment?.sections ?? []}
             onCreateSection={async (name) => {
               const establishment = myEstablishment ?? (await api.getMyEstablishment());

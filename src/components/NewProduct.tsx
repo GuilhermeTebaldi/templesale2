@@ -14,18 +14,17 @@ import {
 import {
   api,
   type CreateProductInput,
+  type EstablishmentDto,
   type NewProductDraftDefaults,
   type StorefrontSectionDto,
 } from "../lib/api";
 import { type Product } from "./ProductCard";
 import LeafletMapPicker from "./LeafletMapPicker";
 import { useI18n } from "../i18n/provider";
-import { CATEGORY_VALUES, getCategoryLabel } from "../i18n/categories";
 import {
   isNegotiablePrice,
   parsePriceToNumber,
 } from "../lib/currency";
-import { normalizeProductDetailsRecord } from "../lib/product-details";
 import { getCompatibleImageUrl } from "../lib/product-images";
 
 interface NewProductProps {
@@ -33,21 +32,10 @@ interface NewProductProps {
   onPublish: (product: CreateProductInput) => Promise<void>;
   mode?: "create" | "edit";
   initialProduct?: Product | null;
+  establishment?: EstablishmentDto | null;
   sections?: StorefrontSectionDto[];
   onCreateSection?: (name: string) => Promise<StorefrontSectionDto>;
 }
-
-const DEFAULT_DETAILS: Record<string, string> = {
-  type: "",
-  area: "",
-  rooms: "",
-  bathrooms: "",
-  parking: "",
-  brand: "",
-  model: "",
-  color: "",
-  year: "",
-};
 
 type FormState = {
   name: string;
@@ -75,40 +63,15 @@ type DraftSaveFeedback = {
 const MAX_COORDINATE_LATITUDE = 90;
 const MAX_COORDINATE_LONGITUDE = 180;
 const DEFAULT_MAP_CENTER: GeoPoint = {
-  latitude: -23.55052,
-  longitude: -46.633308,
+  latitude: 41.6081,
+  longitude: 12.5156,
 };
 const MAX_PRODUCT_IMAGES = 10;
 const EURO_AMOUNT_FORMATTER = new Intl.NumberFormat("it-IT", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
-const REAL_ESTATE_CATEGORIES = new Set(["Imóveis", "Terreno", "Aluguel"]);
-const DETAILS_KEYS_REAL_ESTATE = new Set(["type", "area", "rooms", "bathrooms", "parking"]);
-const DETAILS_KEYS_VEHICLE = new Set(["brand", "model", "color", "year"]);
-const DETAILS_KEYS_ELECTRONICS = new Set(["brand", "model", "color"]);
-
-function getAllowedDetailKeys(category: string): Set<string> {
-  const normalizedCategory = String(category ?? "").trim();
-  if (REAL_ESTATE_CATEGORIES.has(normalizedCategory)) {
-    return DETAILS_KEYS_REAL_ESTATE;
-  }
-  if (normalizedCategory === "Veículos") {
-    return DETAILS_KEYS_VEHICLE;
-  }
-  if (
-    [
-      "Eletrônicos e Celulares",
-      "Informática e Games",
-      "Moda e Acessórios",
-      "Eletrodomésticos",
-      "Outros",
-    ].includes(normalizedCategory)
-  ) {
-    return DETAILS_KEYS_ELECTRONICS;
-  }
-  return new Set();
-}
+const GENERIC_PRODUCT_CATEGORY = "Prodotti e servizi";
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -140,6 +103,13 @@ function getInitialLocationPoint(product: Product | null | undefined): GeoPoint 
   }
 
   return toGeoPoint(Number(product.latitude), Number(product.longitude));
+}
+
+function getEstablishmentLocationPoint(establishment: EstablishmentDto | null | undefined): GeoPoint | null {
+  if (!establishment) {
+    return null;
+  }
+  return toGeoPoint(Number(establishment.latitude), Number(establishment.longitude));
 }
 
 function normalizeInitialImages(product: Product | null | undefined): string[] {
@@ -180,7 +150,7 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
   if (!product) {
     return {
       name: "",
-      category: "Imóveis",
+      category: GENERIC_PRODUCT_CATEGORY,
       sectionId: "",
       price: "",
       isPriceNegotiable: false,
@@ -188,7 +158,7 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
       latitude: "",
       longitude: "",
       description: "",
-      details: { ...DEFAULT_DETAILS },
+      details: {},
     };
   }
 
@@ -196,7 +166,7 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
 
   return {
     name: product.name ?? "",
-    category: product.category ?? "Imóveis",
+    category: product.category ?? GENERIC_PRODUCT_CATEGORY,
     sectionId: product.sectionId ? String(product.sectionId) : "",
     price: hasNegotiablePrice ? "" : normalizePriceValue(product.price ?? ""),
     isPriceNegotiable: hasNegotiablePrice,
@@ -217,32 +187,18 @@ function buildInitialFormState(product: Product | null | undefined): FormState {
         ? product.longitude.toFixed(6)
         : "",
     description: product.description ?? "",
-    details: {
-      ...DEFAULT_DETAILS,
-      ...normalizeProductDetailsRecord(product.details ?? {}),
-    },
+    details: {},
   };
 }
 
 function buildDraftDefaultsFromForm(formData: FormState): NewProductDraftDefaults {
-  const normalizedCategory = String(formData.category ?? "").trim();
-  const allowedDetailKeys = getAllowedDetailKeys(normalizedCategory);
-  const normalizedDetails = Object.fromEntries(
-    Object.entries(formData.details).filter(
-      (entry): entry is [string, string] =>
-        allowedDetailKeys.has(String(entry[0]).trim().toLowerCase()) &&
-        typeof entry[1] === "string" &&
-        entry[1].trim() !== "",
-    ),
-  );
-
   return {
     name: String(formData.name ?? "").trim(),
-    category: normalizedCategory,
+    category: GENERIC_PRODUCT_CATEGORY,
     latitude: String(formData.latitude ?? "").trim(),
     longitude: String(formData.longitude ?? "").trim(),
     description: String(formData.description ?? "").trim(),
-    details: normalizedDetails,
+    details: {},
   };
 }
 
@@ -250,31 +206,20 @@ function applyDraftDefaultsToForm(
   currentForm: FormState,
   defaults: NewProductDraftDefaults,
 ): FormState {
-  const nextCategory = String(defaults.category ?? "").trim() || currentForm.category || "Imóveis";
-  const detailsByDefaults = Object.fromEntries(
-    Object.entries(defaults.details ?? {})
-      .map(([rawKey, rawValue]) => [String(rawKey).trim().toLowerCase(), String(rawValue ?? "").trim()])
-      .filter(([key, value]) => key.length > 0 && value.length > 0),
-  );
-
   return {
     ...currentForm,
     name: String(defaults.name ?? "").trim(),
-    category: nextCategory,
-    latitude: String(defaults.latitude ?? "").trim(),
-    longitude: String(defaults.longitude ?? "").trim(),
+    category: currentForm.category || GENERIC_PRODUCT_CATEGORY,
+    latitude: currentForm.latitude,
+    longitude: currentForm.longitude,
     description: String(defaults.description ?? "").trim(),
-    details: {
-      ...DEFAULT_DETAILS,
-      ...detailsByDefaults,
-    },
+    details: {},
   };
 }
 
 function hasMeaningfulDraftDefaults(defaults: NewProductDraftDefaults): boolean {
   if (
     String(defaults.name ?? "").trim() ||
-    String(defaults.category ?? "").trim() ||
     String(defaults.latitude ?? "").trim() ||
     String(defaults.longitude ?? "").trim() ||
     String(defaults.description ?? "").trim()
@@ -282,7 +227,7 @@ function hasMeaningfulDraftDefaults(defaults: NewProductDraftDefaults): boolean 
     return true;
   }
 
-  return Object.values(defaults.details ?? {}).some((value) => String(value ?? "").trim().length > 0);
+  return false;
 }
 
 function areDraftDefaultsEqual(
@@ -299,7 +244,7 @@ function areDraftDefaultsEqual(
 
   const normalizedLeft = {
     name: String(left.name ?? "").trim(),
-    category: String(left.category ?? "").trim(),
+    category: GENERIC_PRODUCT_CATEGORY,
     latitude: String(left.latitude ?? "").trim(),
     longitude: String(left.longitude ?? "").trim(),
     description: String(left.description ?? "").trim(),
@@ -307,7 +252,7 @@ function areDraftDefaultsEqual(
   };
   const normalizedRight = {
     name: String(right.name ?? "").trim(),
-    category: String(right.category ?? "").trim(),
+    category: GENERIC_PRODUCT_CATEGORY,
     latitude: String(right.latitude ?? "").trim(),
     longitude: String(right.longitude ?? "").trim(),
     description: String(right.description ?? "").trim(),
@@ -322,13 +267,14 @@ export default function NewProduct({
   onPublish,
   mode = "create",
   initialProduct = null,
+  establishment = null,
   sections = [],
   onCreateSection,
 }: NewProductProps) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const initialLocation = React.useMemo(
-    () => getInitialLocationPoint(initialProduct),
-    [initialProduct],
+    () => getInitialLocationPoint(initialProduct) ?? getEstablishmentLocationPoint(establishment),
+    [establishment, initialProduct],
   );
   const isEditing = mode === "edit";
   const [formData, setFormData] = React.useState<FormState>(() =>
@@ -442,7 +388,9 @@ export default function NewProduct({
         setIsDraftSaveChecked(true);
         setDraftSaveFeedback(null);
 
-        const savedPoint = parseCoordinateStrings(defaults.latitude, defaults.longitude);
+        const savedPoint = getEstablishmentLocationPoint(establishment)
+          ? null
+          : parseCoordinateStrings(defaults.latitude, defaults.longitude);
         if (savedPoint) {
           setMapCenter(savedPoint);
           setSelectedMapPoint(savedPoint);
@@ -466,17 +414,12 @@ export default function NewProduct({
     return () => {
       isMounted = false;
     };
-  }, [isEditing]);
+  }, [establishment, isEditing]);
 
-  const isRealEstate = ["Imóveis", "Terreno", "Aluguel"].includes(formData.category);
-  const isVehicle = formData.category === "Veículos";
-  const isElectronicsOrFashion = [
-    "Eletrônicos e Celulares", 
-    "Informática e Games", 
-    "Moda e Acessórios", 
-    "Eletrodomésticos",
-    "Outros"
-  ].includes(formData.category);
+  const selectedSection = React.useMemo(
+    () => sections.find((section) => String(section.id) === String(formData.sectionId)) ?? null,
+    [formData.sectionId, sections],
+  );
   const hasLocationSelected = Boolean(parseCoordinateStrings(formData.latitude, formData.longitude));
   const uploadBatchProgress = React.useMemo(() => {
     if (uploadBatchTotal <= 0) {
@@ -494,6 +437,34 @@ export default function NewProduct({
     }
     return !areDraftDefaultsEqual(savedDraftDefaults, draftDefaultsFromForm);
   }, [savedDraftDefaults, draftDefaultsFromForm]);
+
+  React.useEffect(() => {
+    if (isEditing || formData.sectionId || sections.length === 0) {
+      return;
+    }
+    setFormData((current) => ({
+      ...current,
+      sectionId: String(sections[0].id),
+      category: sections[0].name || GENERIC_PRODUCT_CATEGORY,
+    }));
+  }, [formData.sectionId, isEditing, sections]);
+
+  React.useEffect(() => {
+    if (isEditing || hasLocationSelected) {
+      return;
+    }
+    const establishmentPoint = getEstablishmentLocationPoint(establishment);
+    if (!establishmentPoint) {
+      return;
+    }
+    setFormData((current) => ({
+      ...current,
+      latitude: establishmentPoint.latitude.toFixed(6),
+      longitude: establishmentPoint.longitude.toFixed(6),
+    }));
+    setMapCenter(establishmentPoint);
+    setSelectedMapPoint(establishmentPoint);
+  }, [establishment, hasLocationSelected, isEditing]);
 
   React.useEffect(() => {
     if (!hasDraftDefaultsPendingSave) {
@@ -645,16 +616,6 @@ export default function NewProduct({
     }
   };
 
-  const handleDetailChange = (field: string, value: string) => {
-    setFormData((current) => ({
-      ...current,
-      details: {
-        ...current.details,
-        [field]: value,
-      },
-    }));
-  };
-
   const handleSaveDraftDefaults = async () => {
     if (!isDraftSaveChecked) {
       return;
@@ -729,9 +690,12 @@ export default function NewProduct({
       return;
     }
 
-      const normalizedName = formData.name.trim();
-      const normalizedCategory = formData.category.trim();
-      const selectedSectionId = Number(formData.sectionId);
+    const normalizedName = formData.name.trim();
+    const selectedSectionId = Number(formData.sectionId);
+    const normalizedCategory =
+      selectedSection?.name?.trim() ||
+      formData.category.trim() ||
+      GENERIC_PRODUCT_CATEGORY;
     const normalizedDescription = formData.description.trim();
     const latitude = Number(formData.latitude);
     const longitude = Number(formData.longitude);
@@ -740,10 +704,6 @@ export default function NewProduct({
 
     if (!normalizedName) {
       setErrorMessage(t("Nome do produto é obrigatório."));
-      return;
-    }
-    if (!normalizedCategory) {
-      setErrorMessage(t("Categoria é obrigatória."));
       return;
     }
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
@@ -763,7 +723,7 @@ export default function NewProduct({
       return;
     }
     if (!Number.isFinite(parsedQuantity) || !Number.isInteger(parsedQuantity) || parsedQuantity < 0) {
-      setErrorMessage(t("Informe uma quantidade válida."));
+      setErrorMessage(t("Informe uma disponibilidade válida."));
       return;
     }
     if (!normalizedDescription) {
@@ -778,15 +738,6 @@ export default function NewProduct({
     setIsPublishing(true);
 
     try {
-      const allowedDetailKeys = getAllowedDetailKeys(normalizedCategory);
-      const details = Object.fromEntries(
-        Object.entries(formData.details).filter(
-          (entry): entry is [string, string] =>
-            allowedDetailKeys.has(String(entry[0]).trim().toLowerCase()) &&
-            typeof entry[1] === "string" &&
-            entry[1].trim() !== "",
-        ),
-      );
       const normalizedPrice = formData.isPriceNegotiable
         ? "0.00"
         : parsedPrice !== null
@@ -807,7 +758,7 @@ export default function NewProduct({
         image: images[0],
         images: [...images],
         description: normalizedDescription,
-        details,
+        details: {},
       };
       await onPublish(newProduct);
       setIsSuccess(true);
@@ -1017,7 +968,7 @@ export default function NewProduct({
           <form onSubmit={handleSubmit} className="space-y-12">
             {/* Image Upload Section */}
             <div className="space-y-4">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Imagens do produto")}</label>
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Immagini prodotto / servizio")}</label>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1101,7 +1052,7 @@ export default function NewProduct({
               </p>
               {images.length > 1 && (
                 <p className="text-xs text-stone-500">
-                  {t("A primeira foto será usada como capa do anúncio.")}
+                  {t("A primeira foto será usada como capa do item.")}
                 </p>
               )}
             </div>
@@ -1109,39 +1060,31 @@ export default function NewProduct({
             {/* Details Section */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Nome do produto")}</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Nome prodotto / servizio")}</label>
                 <input 
                   required
                   type="text"
-                  placeholder={t("Ex: Vaso minimalista")}
+                  placeholder={t("Ex: Margherita, taglio uomo, tavolo artigianale")}
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Categoria")}</label>
-                <select 
-                  required
-                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-600 appearance-none cursor-pointer"
-                  value={formData.category}
-                  onChange={(e) => setFormData({...formData, category: e.target.value})}
-                >
-                  {CATEGORY_VALUES.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {getCategoryLabel(cat, locale)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
                 <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Sezione")}</label>
                 <select
                   className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-600 appearance-none cursor-pointer"
                   value={formData.sectionId}
-                  onChange={(e) => setFormData({ ...formData, sectionId: e.target.value })}
+                  onChange={(e) => {
+                    const nextSection = sections.find((section) => String(section.id) === e.target.value);
+                    setFormData({
+                      ...formData,
+                      sectionId: e.target.value,
+                      category: nextSection?.name || GENERIC_PRODUCT_CATEGORY,
+                    });
+                  }}
                 >
-                  <option value="">{t("Tutti")}</option>
+                  <option value="">{t("Senza sezione")}</option>
                   {sections.map((section) => (
                     <option key={section.id} value={section.id}>
                       {section.name}
@@ -1230,24 +1173,37 @@ export default function NewProduct({
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
-                  {t("Quantidade disponível")}
+                  {t("Disponibilità")}
                 </label>
-                <input
-                  required
-                  type="number"
-                  min={0}
-                  step={1}
-                  inputMode="numeric"
-                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-mono"
-                  value={formData.quantity}
-                  onChange={(e) => {
-                    const digitsOnly = e.target.value.replace(/[^\d]/g, "");
+                <button
+                  type="button"
+                  onClick={() =>
                     setFormData((current) => ({
                       ...current,
-                      quantity: digitsOnly,
-                    }));
-                  }}
-                />
+                      quantity: current.quantity === "0" ? "1" : "0",
+                    }))
+                  }
+                  className={`flex w-full items-center justify-between border-b py-3 text-left transition-colors ${
+                    formData.quantity === "0"
+                      ? "border-stone-200 text-stone-400"
+                      : "border-stone-800 text-stone-800"
+                  }`}
+                >
+                  <span className="text-sm">
+                    {formData.quantity === "0" ? t("Non disponibile") : t("Disponibile")}
+                  </span>
+                  <span
+                    className={`h-5 w-9 rounded-full p-0.5 transition-colors ${
+                      formData.quantity === "0" ? "bg-stone-200" : "bg-stone-900"
+                    }`}
+                  >
+                    <span
+                      className={`block h-4 w-4 rounded-full bg-white transition-transform ${
+                        formData.quantity === "0" ? "translate-x-0" : "translate-x-4"
+                      }`}
+                    />
+                  </span>
+                </button>
               </div>
             </div>
 
@@ -1256,15 +1212,38 @@ export default function NewProduct({
 
             <div className="space-y-3 border border-stone-200 rounded-sm bg-stone-50/60 p-4">
               <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-500">
-                {t("Localização do anúncio")}
+                {t("Posizione attività")}
               </p>
               <p className="text-sm text-stone-500">
                 {hasLocationSelected
-                  ? t("Localização pronta para publicar.")
-                  : t("Nenhuma localização escolhida ainda.")}
+                  ? t("Este item usará a posição da sua attività.")
+                  : t("Nenhuma posição definida para a attività.")}
               </p>
 
               <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-8">
+                {establishment && getEstablishmentLocationPoint(establishment) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const point = getEstablishmentLocationPoint(establishment);
+                      if (!point) {
+                        return;
+                      }
+                      setFormData((current) => ({
+                        ...current,
+                        latitude: point.latitude.toFixed(6),
+                        longitude: point.longitude.toFixed(6),
+                      }));
+                      setMapCenter(point);
+                      setSelectedMapPoint(point);
+                      setLocationSource(null);
+                    }}
+                    className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-600 transition-colors hover:text-stone-900"
+                  >
+                    <MapPin className="w-4 h-4" />
+                    {t("Usar posição da attività")}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleUseCurrentLocation}
@@ -1293,156 +1272,12 @@ export default function NewProduct({
               </div>
             </div>
 
-            {/* Dynamic Fields */}
-            <AnimatePresence mode="wait">
-              {isRealEstate && (
-                <motion.div 
-                  key="real-estate"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 p-6 bg-stone-50 rounded-sm"
-                >
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Tipo de imóvel")}</label>
-                    <input 
-                      type="text" placeholder={t("Ex: Casa, cobertura, sobrado")}
-                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
-                      value={formData.details.type}
-                      onChange={(e) => handleDetailChange('type', e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Área (m²)")}</label>
-                    <input 
-                      type="text" placeholder={t("Ex: 120")}
-                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
-                      value={formData.details.area}
-                      onChange={(e) => handleDetailChange('area', e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Quartos")}</label>
-                    <input 
-                      type="text" placeholder={t("Ex: 3")}
-                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
-                      value={formData.details.rooms}
-                      onChange={(e) => handleDetailChange('rooms', e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Banheiros")}</label>
-                    <input 
-                      type="text" placeholder={t("Ex: 2")}
-                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
-                      value={formData.details.bathrooms}
-                      onChange={(e) => handleDetailChange('bathrooms', e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Vagas")}</label>
-                    <input 
-                      type="text" placeholder={t("Ex: 1")}
-                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
-                      value={formData.details.parking}
-                      onChange={(e) => handleDetailChange('parking', e.target.value)}
-                    />
-                  </div>
-                </motion.div>
-              )}
-
-              {isVehicle && (
-                <motion.div 
-                  key="vehicle"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6 bg-stone-50 rounded-sm"
-                >
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Marca")}</label>
-                    <input 
-                      type="text" placeholder={t("Ex: Toyota")}
-                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
-                      value={formData.details.brand}
-                      onChange={(e) => handleDetailChange('brand', e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Modelo")}</label>
-                    <input 
-                      type="text" placeholder={t("Ex: Corolla XEi")}
-                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
-                      value={formData.details.model}
-                      onChange={(e) => handleDetailChange('model', e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Cor")}</label>
-                    <input 
-                      type="text" placeholder={t("Ex: Prata")}
-                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
-                      value={formData.details.color}
-                      onChange={(e) => handleDetailChange('color', e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Ano")}</label>
-                    <input 
-                      type="text" placeholder={t("Ex: 2022")}
-                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
-                      value={formData.details.year}
-                      onChange={(e) => handleDetailChange('year', e.target.value)}
-                    />
-                  </div>
-                </motion.div>
-              )}
-
-              {isElectronicsOrFashion && (
-                <motion.div 
-                  key="electronics"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 p-6 bg-stone-50 rounded-sm"
-                >
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Marca")}</label>
-                    <input 
-                      type="text" placeholder={t("Ex: Nike, Apple")}
-                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
-                      value={formData.details.brand}
-                      onChange={(e) => handleDetailChange('brand', e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Modelo / Variação")}</label>
-                    <input 
-                      type="text" placeholder={t("Ex: Air Zoom, iPhone 13")}
-                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
-                      value={formData.details.model}
-                      onChange={(e) => handleDetailChange('model', e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Cor")}</label>
-                    <input 
-                      type="text" placeholder={t("Ex: Azul, Preto")}
-                      className="w-full bg-transparent border-b border-stone-200 py-2 outline-none focus:border-stone-800 transition-colors text-sm"
-                      value={formData.details.color}
-                      onChange={(e) => handleDetailChange('color', e.target.value)}
-                    />
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             <div className="space-y-2">
               <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Descrição")}</label>
               <textarea 
                 required
                 rows={4}
-                placeholder={t("Descreva o acabamento, materiais e diferenciais do produto...")}
+                placeholder={t("Descrivi il prodotto o servizio, ingredienti, materiali, durata o dettagli utili...")}
                 className="w-full bg-transparent border border-stone-200 p-4 outline-none focus:border-stone-800 transition-colors text-stone-600 resize-none rounded-sm"
                 value={formData.description}
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
@@ -1463,7 +1298,7 @@ export default function NewProduct({
                     }}
                     className="w-3 h-3 accent-stone-900"
                   />
-                  {t("Salvar informações")}
+                  {t("Salvar informações rápidas")}
                 </label>
 
                 <button
@@ -1518,7 +1353,7 @@ export default function NewProduct({
                 </>
               ) : (
                 <>
-                  {isEditing ? t("Salvar alterações") : t("Publicar produto")}
+                  {isEditing ? t("Salvar alterações") : t("Pubblica")}
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
