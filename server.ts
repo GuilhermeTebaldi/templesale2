@@ -96,7 +96,8 @@ type AdminProductRecord = ProductRecord & {
 
 type ProductCommentRow = {
   id: number;
-  product_id: number;
+  product_id: number | null;
+  publication_id: number | null;
   user_id: number;
   parent_comment_id: number | null;
   rating: number | null;
@@ -109,7 +110,8 @@ type ProductCommentRow = {
 
 type ProductCommentRecord = {
   id: number;
-  productId: number;
+  productId?: number;
+  publicationId?: number;
   userId: number;
   parentCommentId?: number;
   rating?: number;
@@ -124,6 +126,7 @@ type NotificationEventType =
   | "product_like"
   | "product_cart_interest"
   | "product_comment"
+  | "publication_comment"
   | "admin_broadcast";
 
 type NotificationEventRow = {
@@ -134,6 +137,7 @@ type NotificationEventRow = {
   actor_city: string | null;
   actor_country: string | null;
   product_id: number | null;
+  publication_id: number | null;
   product_name: string;
   product_image_url: string | null;
   comment_id: number | null;
@@ -156,6 +160,7 @@ type NotificationRecord = {
   actorCity?: string;
   actorCountry?: string;
   productId?: number;
+  publicationId?: number;
   productName?: string;
   productImageUrl?: string;
   commentId?: number;
@@ -258,9 +263,23 @@ type EstablishmentRecord = {
   whatsappNumber?: string;
   phone?: string;
   openingHours?: string;
+  keywords?: string[];
   isActive: boolean;
   productCount: number;
+  publicationCount?: number;
   sections?: StorefrontSectionRecord[];
+};
+
+type EstablishmentPublicationRecord = {
+  id: number;
+  establishmentId: number;
+  ownerId: number;
+  caption: string;
+  media: string[];
+  imageUrl: string;
+  createdAt: number;
+  updatedAt: number;
+  legacyProductId?: number;
 };
 
 type StorefrontSectionRecord = {
@@ -1382,6 +1401,7 @@ function buildEntitySlug(name: string, id: number, fallbackBase: string): string
 function normalizeEstablishmentRow(row: Record<string, unknown>): EstablishmentRecord {
   const latitude = toNullableNumber(row.latitude);
   const longitude = toNullableNumber(row.longitude);
+  const keywords = normalizeKeywordList(row.keywords);
   return {
     id: toRequiredNumber(row.id),
     ownerId: toRequiredNumber(row.owner_user_id),
@@ -1399,8 +1419,56 @@ function normalizeEstablishmentRow(row: Record<string, unknown>): EstablishmentR
     whatsappNumber: toNullableString(row.whatsapp_number) ?? "",
     phone: toNullableString(row.phone) ?? "",
     openingHours: toNullableString(row.opening_hours) ?? "",
+    keywords,
     isActive: toBooleanValue(row.is_active, true),
     productCount: toRequiredNonNegativeInteger(row.product_count, 0),
+    publicationCount: toRequiredNonNegativeInteger(row.publication_count, 0),
+  };
+}
+
+function normalizeKeywordList(value: unknown, limit = 24): string[] {
+  const rawItems = Array.isArray(value)
+    ? value
+    : typeof value === "string" && value.trim().startsWith("[")
+      ? safeJsonParse<unknown[]>(value, [])
+      : String(value ?? "")
+          .split(",")
+          .map((item) => item.trim());
+  const byKey = new globalThis.Map<string, string>();
+  for (const item of rawItems) {
+    const label = String(item ?? "").trim().replace(/\s+/g, " ");
+    if (!label) {
+      continue;
+    }
+    try {
+      assertUsableTaxonomyLabel(label, "Parola chiave");
+    } catch {
+      continue;
+    }
+    const key = normalizeTaxonomyKey(label);
+    if (!byKey.has(key)) {
+      byKey.set(key, label);
+    }
+    if (byKey.size >= limit) {
+      break;
+    }
+  }
+  return [...byKey.values()];
+}
+
+function normalizePublicationRow(row: Record<string, unknown>): EstablishmentPublicationRecord {
+  const media = normalizeImages(row.media, String(row.image_url ?? ""));
+  const legacyProductId = toNullableNumber(row.legacy_product_id);
+  return {
+    id: toRequiredNumber(row.id),
+    establishmentId: toRequiredNumber(row.establishment_id),
+    ownerId: toRequiredNumber(row.owner_user_id),
+    caption: String(row.caption ?? "").trim(),
+    media,
+    imageUrl: String(row.image_url ?? "").trim() || media[0] || "",
+    createdAt: toRequiredNonNegativeInteger(row.created_at, Math.floor(Date.now() / 1000)),
+    updatedAt: toRequiredNonNegativeInteger(row.updated_at, Math.floor(Date.now() / 1000)),
+    ...(legacyProductId !== null ? { legacyProductId } : {}),
   };
 }
 
@@ -1505,10 +1573,13 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
       ? "product_cart_interest"
       : rawType === "product_comment"
         ? "product_comment"
-        : rawType === "admin_broadcast"
-          ? "admin_broadcast"
-          : "product_like";
+        : rawType === "publication_comment"
+          ? "publication_comment"
+          : rawType === "admin_broadcast"
+            ? "admin_broadcast"
+            : "product_like";
   const productId = toNullableNumber(row.product_id);
+  const publicationId = toNullableNumber(row.publication_id);
   const actorUserId = toNullableNumber(row.actor_user_id);
   const parsedCreatedAt = (() => {
     const numericValue = Number(row.created_at);
@@ -1542,13 +1613,14 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
     actor_city: toNullableString(row.actor_city),
     actor_country: toNullableString(row.actor_country),
     product_id: productId,
+    publication_id: publicationId,
     product_name: String(row.product_name ?? ""),
     product_image_url: toNullableString(row.product_image_url),
     comment_id: toNullableNumber(row.comment_id),
     created_at: parsedCreatedAt,
     event_id:
       String(row.event_id ?? "").trim() ||
-      `${type}:${productId ?? "site"}:${actorUserId ?? "anon"}:${parsedCreatedAt}`,
+      `${type}:${publicationId ?? productId ?? "site"}:${actorUserId ?? "anon"}:${parsedCreatedAt}`,
     title_translations: toNullableString(row.title_translations),
     message_translations: toNullableString(row.message_translations),
     recipient_locale: toNullableString(row.recipient_locale),
@@ -1582,7 +1654,8 @@ function normalizeProductCommentRow(row: Record<string, unknown>): ProductCommen
 
   return {
     id: toRequiredNumber(row.id),
-    product_id: toRequiredNumber(row.product_id),
+    product_id: toNullableNumber(row.product_id),
+    publication_id: toNullableNumber(row.publication_id),
     user_id: toRequiredNumber(row.user_id),
     parent_comment_id: toNullableNumber(row.parent_comment_id),
     rating: toNullableNumber(row.rating),
@@ -2186,6 +2259,7 @@ function initializeSqliteDatabase() {
       whatsapp_number TEXT NOT NULL DEFAULT '',
       phone TEXT NOT NULL DEFAULT '',
       opening_hours TEXT NOT NULL DEFAULT '',
+      keywords TEXT NOT NULL DEFAULT '[]',
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
       updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
@@ -2202,6 +2276,21 @@ function initializeSqliteDatabase() {
       updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
       FOREIGN KEY (establishment_id) REFERENCES establishments(id) ON DELETE CASCADE,
       UNIQUE(establishment_id, slug)
+    );
+
+    CREATE TABLE IF NOT EXISTS establishment_publications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      establishment_id INTEGER NOT NULL,
+      owner_user_id INTEGER NOT NULL,
+      caption TEXT NOT NULL DEFAULT '',
+      media TEXT NOT NULL DEFAULT '[]',
+      image_url TEXT NOT NULL DEFAULT '',
+      legacy_product_id INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      FOREIGN KEY (establishment_id) REFERENCES establishments(id) ON DELETE CASCADE,
+      FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (legacy_product_id) REFERENCES products(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
@@ -2237,6 +2326,7 @@ function initializeSqliteDatabase() {
     CREATE TABLE IF NOT EXISTS product_comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       product_id INTEGER NOT NULL,
+      publication_id INTEGER,
       user_id INTEGER NOT NULL,
       parent_comment_id INTEGER,
       rating INTEGER,
@@ -2244,6 +2334,7 @@ function initializeSqliteDatabase() {
       body_translations TEXT NOT NULL DEFAULT '{}',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+      FOREIGN KEY (publication_id) REFERENCES establishment_publications(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (parent_comment_id) REFERENCES product_comments(id) ON DELETE CASCADE,
       CHECK (rating IS NULL OR (rating >= 1 AND rating <= 5))
@@ -2307,6 +2398,11 @@ function initializeSqliteDatabase() {
     CREATE INDEX IF NOT EXISTS idx_establishments_owner ON establishments(owner_user_id);
     CREATE INDEX IF NOT EXISTS idx_establishments_category_city ON establishments(category, city);
     CREATE INDEX IF NOT EXISTS idx_storefront_sections_establishment ON storefront_sections(establishment_id, position);
+    CREATE INDEX IF NOT EXISTS idx_establishment_publications_establishment_created
+      ON establishment_publications(establishment_id, created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_establishment_publications_legacy_product
+      ON establishment_publications(legacy_product_id)
+      WHERE legacy_product_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_owner_created
       ON product_cart_notifications(owner_user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_product_id
@@ -2398,6 +2494,33 @@ function initializeSqliteDatabase() {
     `,
   );
 
+  const establishmentColumns = db.prepare("PRAGMA table_info(establishments)").all() as Array<{ name: string }>;
+  if (!establishmentColumns.some((column) => column.name === "keywords")) {
+    db.exec("ALTER TABLE establishments ADD COLUMN keywords TEXT NOT NULL DEFAULT '[]'");
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS establishment_publications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      establishment_id INTEGER NOT NULL,
+      owner_user_id INTEGER NOT NULL,
+      caption TEXT NOT NULL DEFAULT '',
+      media TEXT NOT NULL DEFAULT '[]',
+      image_url TEXT NOT NULL DEFAULT '',
+      legacy_product_id INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      FOREIGN KEY (establishment_id) REFERENCES establishments(id) ON DELETE CASCADE,
+      FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (legacy_product_id) REFERENCES products(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_establishment_publications_establishment_created
+      ON establishment_publications(establishment_id, created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_establishment_publications_legacy_product
+      ON establishment_publications(legacy_product_id)
+      WHERE legacy_product_id IS NOT NULL;
+  `);
+
   const userColumns = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
   if (!userColumns.some((column) => column.name === "avatar_url")) {
     db.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''");
@@ -2447,10 +2570,76 @@ function initializeSqliteDatabase() {
 
   const commentColumns = db.prepare("PRAGMA table_info(product_comments)").all() as Array<{
     name: string;
+    notnull?: number;
   }>;
   if (!commentColumns.some((column) => column.name === "body_translations")) {
     db.exec("ALTER TABLE product_comments ADD COLUMN body_translations TEXT NOT NULL DEFAULT '{}'");
   }
+  if (!commentColumns.some((column) => column.name === "publication_id")) {
+    db.exec("ALTER TABLE product_comments ADD COLUMN publication_id INTEGER");
+  }
+  const refreshedCommentColumns = db.prepare("PRAGMA table_info(product_comments)").all() as Array<{
+    name: string;
+    notnull?: number;
+  }>;
+  const productIdCommentColumn = refreshedCommentColumns.find((column) => column.name === "product_id");
+  if (Number(productIdCommentColumn?.notnull ?? 0) > 0) {
+    db.exec(`
+      PRAGMA foreign_keys = OFF;
+      BEGIN TRANSACTION;
+      CREATE TABLE product_comments_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER,
+        publication_id INTEGER,
+        user_id INTEGER NOT NULL,
+        parent_comment_id INTEGER,
+        rating INTEGER,
+        body TEXT NOT NULL,
+        body_translations TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+        FOREIGN KEY (publication_id) REFERENCES establishment_publications(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (parent_comment_id) REFERENCES product_comments_new(id) ON DELETE CASCADE,
+        CHECK (rating IS NULL OR (rating >= 1 AND rating <= 5))
+      );
+      INSERT INTO product_comments_new (
+        id,
+        product_id,
+        publication_id,
+        user_id,
+        parent_comment_id,
+        rating,
+        body,
+        body_translations,
+        created_at
+      )
+      SELECT
+        id,
+        product_id,
+        publication_id,
+        user_id,
+        parent_comment_id,
+        rating,
+        body,
+        COALESCE(body_translations, '{}'),
+        created_at
+      FROM product_comments;
+      DROP TABLE product_comments;
+      ALTER TABLE product_comments_new RENAME TO product_comments;
+      COMMIT;
+      PRAGMA foreign_keys = ON;
+    `);
+  }
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_product_comments_product_created ON product_comments(product_id, created_at DESC)",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_product_comments_publication_created ON product_comments(publication_id, created_at DESC)",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_product_comments_parent ON product_comments(parent_comment_id)",
+  );
 
   const visitorColumns = db.prepare("PRAGMA table_info(site_daily_visitors)").all() as Array<{
     name: string;
@@ -2591,6 +2780,7 @@ async function ensurePostgresEstablishmentSchema() {
         whatsapp_number TEXT NOT NULL DEFAULT '',
         phone TEXT NOT NULL DEFAULT '',
         opening_hours TEXT NOT NULL DEFAULT '',
+        keywords TEXT NOT NULL DEFAULT '[]',
         is_active BOOLEAN NOT NULL DEFAULT TRUE,
         created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
         updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
@@ -2608,12 +2798,36 @@ async function ensurePostgresEstablishmentSchema() {
         UNIQUE(establishment_id, slug)
       )
     `,
+    `
+      CREATE TABLE IF NOT EXISTS establishment_publications (
+        id BIGSERIAL PRIMARY KEY,
+        establishment_id BIGINT NOT NULL REFERENCES establishments(id) ON DELETE CASCADE,
+        owner_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        caption TEXT NOT NULL DEFAULT '',
+        media TEXT NOT NULL DEFAULT '[]',
+        image_url TEXT NOT NULL DEFAULT '',
+        legacy_product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+        updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
+      )
+    `,
+    "ALTER TABLE establishments ADD COLUMN IF NOT EXISTS keywords TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE establishment_publications ADD COLUMN IF NOT EXISTS establishment_id BIGINT REFERENCES establishments(id) ON DELETE CASCADE",
+    "ALTER TABLE establishment_publications ADD COLUMN IF NOT EXISTS owner_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE",
+    "ALTER TABLE establishment_publications ADD COLUMN IF NOT EXISTS caption TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE establishment_publications ADD COLUMN IF NOT EXISTS media TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE establishment_publications ADD COLUMN IF NOT EXISTS image_url TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE establishment_publications ADD COLUMN IF NOT EXISTS legacy_product_id BIGINT REFERENCES products(id) ON DELETE SET NULL",
+    "ALTER TABLE establishment_publications ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
+    "ALTER TABLE establishment_publications ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS establishment_id BIGINT REFERENCES establishments(id) ON DELETE SET NULL",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS section_id BIGINT REFERENCES storefront_sections(id) ON DELETE SET NULL",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_establishments_slug_unique ON establishments(slug)",
     "CREATE INDEX IF NOT EXISTS idx_establishments_owner ON establishments(owner_user_id)",
     "CREATE INDEX IF NOT EXISTS idx_establishments_category_city ON establishments(category, city)",
     "CREATE INDEX IF NOT EXISTS idx_storefront_sections_establishment ON storefront_sections(establishment_id, position)",
+    "CREATE INDEX IF NOT EXISTS idx_establishment_publications_establishment_created ON establishment_publications(establishment_id, created_at DESC)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_establishment_publications_legacy_product ON establishment_publications(legacy_product_id) WHERE legacy_product_id IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_products_establishment_id ON products(establishment_id)",
     "CREATE INDEX IF NOT EXISTS idx_products_section_id ON products(section_id)",
     `
@@ -2807,7 +3021,8 @@ async function initializePostgresDatabase() {
     `
       CREATE TABLE IF NOT EXISTS product_comments (
         id BIGSERIAL PRIMARY KEY,
-        product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        product_id BIGINT REFERENCES products(id) ON DELETE CASCADE,
+        publication_id BIGINT REFERENCES establishment_publications(id) ON DELETE CASCADE,
         user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         parent_comment_id BIGINT REFERENCES product_comments(id) ON DELETE CASCADE,
         rating INTEGER,
@@ -2918,6 +3133,8 @@ async function initializePostgresDatabase() {
     "ALTER TABLE product_cart_notifications ADD COLUMN IF NOT EXISTS product_id BIGINT",
     "ALTER TABLE product_cart_notifications ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS product_id BIGINT",
+    "ALTER TABLE product_comments ALTER COLUMN product_id DROP NOT NULL",
+    "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS publication_id BIGINT REFERENCES establishment_publications(id) ON DELETE CASCADE",
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS user_id BIGINT",
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS parent_comment_id BIGINT",
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS rating INTEGER",
@@ -3008,6 +3225,7 @@ async function initializePostgresDatabase() {
     "CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_owner_created ON product_cart_notifications(owner_user_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_product_cart_notifications_product_id ON product_cart_notifications(product_id)",
     "CREATE INDEX IF NOT EXISTS idx_product_comments_product_created ON product_comments(product_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_product_comments_publication_created ON product_comments(publication_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_product_comments_parent ON product_comments(parent_comment_id)",
     "CREATE INDEX IF NOT EXISTS idx_notification_dismissals_owner ON notification_dismissals(owner_user_id)",
     "CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_created ON admin_broadcast_notifications(created_at DESC)",
@@ -3052,6 +3270,13 @@ async function initializeDatabase() {
     initializeSqliteDatabase();
   } else {
     await initializePostgresDatabase();
+  }
+  if (!IS_DEV_REMOTE_READ_ONLY) {
+    try {
+      await backfillPublicationsFromProducts();
+    } catch (error) {
+      console.error("Failed to backfill publications:", error);
+    }
   }
   if (!RUN_DATABASE_MIGRATIONS) {
     return;
@@ -3220,6 +3445,7 @@ async function createEstablishmentRecord(input: {
   whatsappNumber?: string;
   phone?: string;
   openingHours?: string;
+  keywords?: string[] | string;
 }): Promise<number> {
   const name = String(input.name ?? "").trim();
   const category = assertUsableTaxonomyLabel(input.category || "Altro", "Categoria attivita");
@@ -3232,9 +3458,9 @@ async function createEstablishmentRecord(input: {
         INSERT INTO establishments (
           owner_user_id, name, slug, category, logo_url, cover_url, description,
           city, address, latitude, longitude, whatsapp_country_iso,
-          whatsapp_number, phone, opening_hours
+          whatsapp_number, phone, opening_hours, keywords
         )
-        VALUES ($1, $2, '', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        VALUES ($1, $2, '', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         RETURNING id
       `,
       [
@@ -3252,6 +3478,7 @@ async function createEstablishmentRecord(input: {
         input.whatsappNumber ?? "",
         input.phone ?? input.whatsappNumber ?? "",
         input.openingHours ?? "",
+        JSON.stringify(normalizeKeywordList(input.keywords)),
       ],
     );
     const id = toRequiredNumber(result.rows[0]?.id);
@@ -3268,12 +3495,12 @@ async function createEstablishmentRecord(input: {
         INSERT INTO establishments (
           owner_user_id, name, slug, category, logo_url, cover_url, description,
           city, address, latitude, longitude, whatsapp_country_iso,
-          whatsapp_number, phone, opening_hours
+          whatsapp_number, phone, opening_hours, keywords
         )
         VALUES (
           @owner_user_id, @name, '', @category, @logo_url, @cover_url, @description,
           @city, @address, @latitude, @longitude, @whatsapp_country_iso,
-          @whatsapp_number, @phone, @opening_hours
+          @whatsapp_number, @phone, @opening_hours, @keywords
         )
       `,
     )
@@ -3292,6 +3519,7 @@ async function createEstablishmentRecord(input: {
       whatsapp_number: input.whatsappNumber ?? "",
       phone: input.phone ?? input.whatsappNumber ?? "",
       opening_hours: input.openingHours ?? "",
+      keywords: JSON.stringify(normalizeKeywordList(input.keywords)),
     });
   const id = Number(result.lastInsertRowid);
   requireSqliteDb()
@@ -3395,11 +3623,12 @@ async function selectEstablishmentByIdOrSlugRow(idOrSlug: string): Promise<Estab
   if (pgPool) {
     const result = await pgPool.query<Record<string, unknown>>(
       `
-        SELECT e.*, COUNT(p.id)::INT AS product_count
+        SELECT
+          e.*,
+          (SELECT COUNT(*)::INT FROM products pc WHERE pc.establishment_id = e.id) AS product_count,
+          (SELECT COUNT(*)::INT FROM establishment_publications epc WHERE epc.establishment_id = e.id) AS publication_count
         FROM establishments e
-        LEFT JOIN products p ON p.establishment_id = e.id
         WHERE ${where}
-        GROUP BY e.id
         LIMIT 1
       `,
       [value],
@@ -3411,11 +3640,12 @@ async function selectEstablishmentByIdOrSlugRow(idOrSlug: string): Promise<Estab
   const row = requireSqliteDb()
     .prepare(
       `
-        SELECT e.*, COUNT(p.id) AS product_count
+        SELECT
+          e.*,
+          (SELECT COUNT(*) FROM products pc WHERE pc.establishment_id = e.id) AS product_count,
+          (SELECT COUNT(*) FROM establishment_publications epc WHERE epc.establishment_id = e.id) AS publication_count
         FROM establishments e
-        LEFT JOIN products p ON p.establishment_id = e.id
         WHERE ${sqliteWhere}
-        GROUP BY e.id
         LIMIT 1
       `,
     )
@@ -3459,6 +3689,8 @@ async function selectEstablishmentsRows(input: {
           OR LOWER(COALESCE(e.category, '')) LIKE ${like}
           OR LOWER(COALESCE(e.city, '')) LIKE ${like}
           OR LOWER(COALESCE(e.description, '')) LIKE ${like}
+          OR LOWER(COALESCE(e.keywords, '')) LIKE ${like}
+          OR LOWER(COALESCE(ep.caption, '')) LIKE ${like}
           OR LOWER(COALESCE(s.name, '')) LIKE ${like}
           OR LOWER(COALESCE(p.name, '')) LIKE ${like}
           OR LOWER(COALESCE(p.title, '')) LIKE ${like}
@@ -3474,15 +3706,21 @@ async function selectEstablishmentsRows(input: {
           e.*,
           (
             SELECT COUNT(*)::INT
+            FROM establishment_publications epc
+            WHERE epc.establishment_id = e.id
+          ) AS publication_count,
+          (
+            SELECT COUNT(*)::INT
             FROM products pc
             WHERE pc.establishment_id = e.id
           ) AS product_count
         FROM establishments e
         LEFT JOIN products p ON p.establishment_id = e.id
+        LEFT JOIN establishment_publications ep ON ep.establishment_id = e.id
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
         WHERE ${whereParts.join(" AND ")}
         GROUP BY e.id
-        ORDER BY product_count DESC, e.id DESC
+        ORDER BY publication_count DESC, product_count DESC, e.id DESC
         LIMIT ${addValue(limit)}
       `,
       values,
@@ -3511,6 +3749,8 @@ async function selectEstablishmentsRows(input: {
         OR LOWER(COALESCE(e.category, '')) LIKE ?
         OR LOWER(COALESCE(e.city, '')) LIKE ?
         OR LOWER(COALESCE(e.description, '')) LIKE ?
+        OR LOWER(COALESCE(e.keywords, '')) LIKE ?
+        OR LOWER(COALESCE(ep.caption, '')) LIKE ?
         OR LOWER(COALESCE(s.name, '')) LIKE ?
         OR LOWER(COALESCE(p.name, '')) LIKE ?
         OR LOWER(COALESCE(p.title, '')) LIKE ?
@@ -3519,7 +3759,7 @@ async function selectEstablishmentsRows(input: {
         OR LOWER(COALESCE(p.details, '')) LIKE ?
       )
     `);
-    values.push(...Array(10).fill(`%${search}%`));
+    values.push(...Array(12).fill(`%${search}%`));
   }
   values.push(limit);
   const rows = requireSqliteDb()
@@ -3529,15 +3769,21 @@ async function selectEstablishmentsRows(input: {
           e.*,
           (
             SELECT COUNT(*)
+            FROM establishment_publications epc
+            WHERE epc.establishment_id = e.id
+          ) AS publication_count,
+          (
+            SELECT COUNT(*)
             FROM products pc
             WHERE pc.establishment_id = e.id
           ) AS product_count
         FROM establishments e
         LEFT JOIN products p ON p.establishment_id = e.id
+        LEFT JOIN establishment_publications ep ON ep.establishment_id = e.id
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
         WHERE ${whereParts.join(" AND ")}
         GROUP BY e.id
-        ORDER BY product_count DESC, e.id DESC
+        ORDER BY publication_count DESC, product_count DESC, e.id DESC
         LIMIT ?
       `,
     )
@@ -3724,6 +3970,7 @@ async function updateEstablishmentRecord(establishmentId: number, ownerId: numbe
     whatsapp_number: String(input.whatsappNumber ?? current.whatsappNumber ?? "").replace(/\D/g, ""),
     phone: String(input.phone ?? current.phone ?? "").replace(/\D/g, ""),
     opening_hours: String(input.openingHours ?? current.openingHours ?? "").trim(),
+    keywords: JSON.stringify(normalizeKeywordList(input.keywords ?? current.keywords)),
   };
   if (pgPool) {
     await pgPool.query(
@@ -3732,13 +3979,14 @@ async function updateEstablishmentRecord(establishmentId: number, ownerId: numbe
         SET name = $1, slug = $2, category = $3, logo_url = $4, cover_url = $5,
           description = $6, city = $7, address = $8, latitude = $9, longitude = $10,
           whatsapp_country_iso = $11, whatsapp_number = $12, phone = $13,
-          opening_hours = $14, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT
-        WHERE id = $15 AND owner_user_id = $16
+          opening_hours = $14, keywords = $15, updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT
+        WHERE id = $16 AND owner_user_id = $17
       `,
       [
         values.name, values.slug, values.category, values.logo_url, values.cover_url,
         values.description, values.city, values.address, values.latitude, values.longitude,
         values.whatsapp_country_iso, values.whatsapp_number, values.phone, values.opening_hours,
+        values.keywords,
         establishmentId, ownerId,
       ],
     );
@@ -3751,7 +3999,8 @@ async function updateEstablishmentRecord(establishmentId: number, ownerId: numbe
             cover_url = @cover_url, description = @description, city = @city,
             address = @address, latitude = @latitude, longitude = @longitude,
             whatsapp_country_iso = @whatsapp_country_iso, whatsapp_number = @whatsapp_number,
-            phone = @phone, opening_hours = @opening_hours, updated_at = strftime('%s', 'now')
+            phone = @phone, opening_hours = @opening_hours, keywords = @keywords,
+            updated_at = strftime('%s', 'now')
           WHERE id = @id
         `,
       )
@@ -3869,6 +4118,203 @@ async function deleteStorefrontSectionRecord(
     .prepare("DELETE FROM storefront_sections WHERE id = ? AND establishment_id = ?")
     .run(sectionId, establishmentId);
   return true;
+}
+
+async function selectPublicationsByEstablishmentRows(
+  establishmentId: number,
+  limit = 60,
+): Promise<EstablishmentPublicationRecord[]> {
+  const normalizedLimit = Math.min(Math.max(Math.floor(Number(limit) || 60), 1), 120);
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT *
+        FROM establishment_publications
+        WHERE establishment_id = $1
+        ORDER BY created_at DESC, id DESC
+        LIMIT $2
+      `,
+      [establishmentId, normalizedLimit],
+    );
+    return result.rows.map(normalizePublicationRow);
+  }
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT *
+        FROM establishment_publications
+        WHERE establishment_id = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+      `,
+    )
+    .all(establishmentId, normalizedLimit) as Array<Record<string, unknown>>;
+  return rows.map(normalizePublicationRow);
+}
+
+async function selectPublicationByIdRecord(publicationId: number): Promise<EstablishmentPublicationRecord | null> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      "SELECT * FROM establishment_publications WHERE id = $1 LIMIT 1",
+      [publicationId],
+    );
+    return result.rows[0] ? normalizePublicationRow(result.rows[0]) : null;
+  }
+  const row = requireSqliteDb()
+    .prepare("SELECT * FROM establishment_publications WHERE id = ? LIMIT 1")
+    .get(publicationId) as Record<string, unknown> | undefined;
+  return row ? normalizePublicationRow(row) : null;
+}
+
+async function createPublicationRecord(
+  establishmentId: number,
+  ownerId: number,
+  input: { caption?: string; media?: unknown; imageUrl?: string },
+): Promise<EstablishmentPublicationRecord> {
+  const establishment = await selectEstablishmentByIdOrSlugRow(String(establishmentId));
+  if (!establishment || establishment.ownerId !== ownerId) {
+    throw new Error("Attivita non autorizzata.");
+  }
+  const media = normalizeImages(input.media, String(input.imageUrl ?? ""));
+  const imageUrl = media[0] || "";
+  if (!imageUrl) {
+    throw new Error("Aggiungi almeno una foto.");
+  }
+  const caption = normalizeTextField(input.caption ?? "", "Didascalia", 2200);
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        INSERT INTO establishment_publications (
+          establishment_id, owner_user_id, caption, media, image_url
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+      `,
+      [establishmentId, ownerId, caption, JSON.stringify(media), imageUrl],
+    );
+    return normalizePublicationRow(result.rows[0]);
+  }
+  const result = requireSqliteDb()
+    .prepare(
+      `
+        INSERT INTO establishment_publications (
+          establishment_id, owner_user_id, caption, media, image_url
+        )
+        VALUES (?, ?, ?, ?, ?)
+      `,
+    )
+    .run(establishmentId, ownerId, caption, JSON.stringify(media), imageUrl);
+  const row = requireSqliteDb()
+    .prepare("SELECT * FROM establishment_publications WHERE id = ?")
+    .get(Number(result.lastInsertRowid)) as Record<string, unknown>;
+  return normalizePublicationRow(row);
+}
+
+async function updatePublicationRecord(
+  publicationId: number,
+  ownerId: number,
+  input: { caption?: string; media?: unknown; imageUrl?: string },
+): Promise<EstablishmentPublicationRecord | null> {
+  const caption = normalizeTextField(input.caption ?? "", "Didascalia", 2200);
+  const media = input.media !== undefined ? normalizeImages(input.media, String(input.imageUrl ?? "")) : null;
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        UPDATE establishment_publications
+        SET
+          caption = $1,
+          media = COALESCE($2, media),
+          image_url = COALESCE($3, image_url),
+          updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT
+        WHERE id = $4 AND owner_user_id = $5
+        RETURNING *
+      `,
+      [caption, media ? JSON.stringify(media) : null, media ? media[0] : null, publicationId, ownerId],
+    );
+    return result.rows[0] ? normalizePublicationRow(result.rows[0]) : null;
+  }
+  const existing = requireSqliteDb()
+    .prepare("SELECT * FROM establishment_publications WHERE id = ? AND owner_user_id = ?")
+    .get(publicationId, ownerId) as Record<string, unknown> | undefined;
+  if (!existing) {
+    return null;
+  }
+  requireSqliteDb()
+    .prepare(
+      `
+        UPDATE establishment_publications
+        SET caption = ?, media = COALESCE(?, media), image_url = COALESCE(?, image_url),
+          updated_at = strftime('%s', 'now')
+        WHERE id = ? AND owner_user_id = ?
+      `,
+    )
+    .run(caption, media ? JSON.stringify(media) : null, media ? media[0] : null, publicationId, ownerId);
+  const row = requireSqliteDb()
+    .prepare("SELECT * FROM establishment_publications WHERE id = ?")
+    .get(publicationId) as Record<string, unknown>;
+  return normalizePublicationRow(row);
+}
+
+async function deletePublicationRecord(publicationId: number, ownerId: number): Promise<boolean> {
+  if (pgPool) {
+    const result = await pgPool.query(
+      "DELETE FROM establishment_publications WHERE id = $1 AND owner_user_id = $2",
+      [publicationId, ownerId],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+  const result = requireSqliteDb()
+    .prepare("DELETE FROM establishment_publications WHERE id = ? AND owner_user_id = ?")
+    .run(publicationId, ownerId);
+  return result.changes > 0;
+}
+
+async function backfillPublicationsFromProducts(): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(`
+      INSERT INTO establishment_publications (
+        establishment_id, owner_user_id, caption, media, image_url, legacy_product_id, created_at, updated_at
+      )
+      SELECT
+        p.establishment_id,
+        COALESCE(e.owner_user_id, p.user_id),
+        COALESCE(p.description, ''),
+        COALESCE(NULLIF(p.image_urls, ''), NULLIF(p.images, ''), '[]'),
+        COALESCE(NULLIF(p.image_url, ''), NULLIF(p.image, ''), ''),
+        p.id,
+        EXTRACT(EPOCH FROM NOW())::BIGINT,
+        EXTRACT(EPOCH FROM NOW())::BIGINT
+      FROM products p
+      INNER JOIN establishments e ON e.id = p.establishment_id
+      WHERE p.establishment_id IS NOT NULL
+        AND COALESCE(NULLIF(p.image_url, ''), NULLIF(p.image, ''), '') <> ''
+        AND NOT EXISTS (
+          SELECT 1 FROM establishment_publications ep WHERE ep.legacy_product_id = p.id
+        )
+    `);
+    return;
+  }
+  requireSqliteDb().exec(`
+    INSERT OR IGNORE INTO establishment_publications (
+      establishment_id, owner_user_id, caption, media, image_url, legacy_product_id, created_at, updated_at
+    )
+    SELECT
+      p.establishment_id,
+      COALESCE(e.owner_user_id, p.user_id),
+      COALESCE(p.description, ''),
+      COALESCE(NULLIF(p.image_urls, ''), NULLIF(p.images, ''), '[]'),
+      COALESCE(NULLIF(p.image_url, ''), NULLIF(p.image, ''), ''),
+      p.id,
+      COALESCE(CAST(strftime('%s', p.created_at) AS INTEGER), strftime('%s', 'now')),
+      strftime('%s', 'now')
+    FROM products p
+    INNER JOIN establishments e ON e.id = p.establishment_id
+    WHERE p.establishment_id IS NOT NULL
+      AND COALESCE(NULLIF(p.image_url, ''), NULLIF(p.image, ''), '') <> ''
+      AND NOT EXISTS (
+        SELECT 1 FROM establishment_publications ep WHERE ep.legacy_product_id = p.id
+      )
+  `);
 }
 
 async function selectProductsByEstablishmentRows(establishmentId: number): Promise<ProductRow[]> {
@@ -4705,6 +5151,7 @@ async function selectProductCommentByIdRow(commentId: number): Promise<ProductCo
         SELECT
           c.id,
           c.product_id,
+          c.publication_id,
           c.user_id,
           c.parent_comment_id,
           c.rating,
@@ -4734,6 +5181,7 @@ async function selectProductCommentByIdRow(commentId: number): Promise<ProductCo
         SELECT
           c.id,
           c.product_id,
+          c.publication_id,
           c.user_id,
           c.parent_comment_id,
           c.rating,
@@ -4758,6 +5206,7 @@ async function selectProductCommentsRows(productId: number): Promise<ProductComm
         SELECT
           c.id,
           c.product_id,
+          c.publication_id,
           c.user_id,
           c.parent_comment_id,
           c.rating,
@@ -4787,6 +5236,7 @@ async function selectProductCommentsRows(productId: number): Promise<ProductComm
         SELECT
           c.id,
           c.product_id,
+          c.publication_id,
           c.user_id,
           c.parent_comment_id,
           c.rating,
@@ -4805,33 +5255,97 @@ async function selectProductCommentsRows(productId: number): Promise<ProductComm
   return rows.map(normalizeProductCommentRow);
 }
 
+async function selectPublicationCommentsRows(publicationId: number): Promise<ProductCommentRow[]> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          c.id,
+          c.product_id,
+          c.publication_id,
+          c.user_id,
+          c.parent_comment_id,
+          c.rating,
+          c.body,
+          COALESCE(c.body_translations, '{}') AS body_translations,
+          c.created_at,
+          COALESCE(
+            NULLIF(BTRIM(u.name), ''),
+            NULLIF(BTRIM(u.username), ''),
+            NULLIF(BTRIM(u.email), ''),
+            CONCAT('Usuário ', c.user_id::text)
+          ) AS author_name,
+          NULLIF(BTRIM(u.avatar_url), '') AS author_avatar_url
+        FROM product_comments c
+        INNER JOIN users u ON u.id = c.user_id
+        WHERE c.publication_id = $1
+        ORDER BY c.created_at DESC, c.id DESC
+      `,
+      [publicationId],
+    );
+    return result.rows.map(normalizeProductCommentRow);
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          c.id,
+          c.product_id,
+          c.publication_id,
+          c.user_id,
+          c.parent_comment_id,
+          c.rating,
+          c.body,
+          COALESCE(c.body_translations, '{}') AS body_translations,
+          c.created_at,
+          COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), 'Usuário') AS author_name,
+          NULLIF(TRIM(u.avatar_url), '') AS author_avatar_url
+        FROM product_comments c
+        INNER JOIN users u ON u.id = c.user_id
+        WHERE c.publication_id = ?
+        ORDER BY c.created_at DESC, c.id DESC
+      `,
+    )
+    .all(publicationId) as Array<Record<string, unknown>>;
+  return rows.map(normalizeProductCommentRow);
+}
+
 async function createProductCommentRecord(input: {
-  productId: number;
+  productId?: number | null;
+  publicationId?: number | null;
   userId: number;
   parentCommentId: number | null;
   rating: number | null;
   body: string;
 }): Promise<number> {
   const createdAt = Math.floor(Date.now() / 1000);
-  const translations = await buildContentTranslations({ body: input.body });
-  const bodyTranslations = stringifyTranslationMap(translations.body.translations);
+  let bodyTranslations = "{}";
+  try {
+    const translations = await buildContentTranslations({ body: input.body });
+    bodyTranslations = stringifyTranslationMap(translations.body.translations);
+  } catch (error) {
+    console.warn("Skipping comment translation after provider failure:", error);
+  }
 
   if (pgPool) {
     const result = await pgPool.query<{ id: number | string }>(
       `
         INSERT INTO product_comments (
           product_id,
+          publication_id,
           user_id,
           parent_comment_id,
           rating,
           body,
           body_translations
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
       `,
       [
-        input.productId,
+        input.productId ?? null,
+        input.publicationId ?? null,
         input.userId,
         input.parentCommentId,
         input.rating,
@@ -4847,6 +5361,7 @@ async function createProductCommentRecord(input: {
       `
         INSERT INTO product_comments (
           product_id,
+          publication_id,
           user_id,
           parent_comment_id,
           rating,
@@ -4854,11 +5369,12 @@ async function createProductCommentRecord(input: {
           body_translations,
           created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
     )
     .run(
-      input.productId,
+      input.productId ?? null,
+      input.publicationId ?? null,
       input.userId,
       input.parentCommentId,
       input.rating,
@@ -4872,8 +5388,13 @@ async function createProductCommentRecord(input: {
 
 async function updateProductCommentRecord(commentId: number, userId: number, body: string): Promise<boolean> {
   const normalizedBody = normalizeIncomingProductCommentBody(body);
-  const translations = await buildContentTranslations({ body: normalizedBody });
-  const bodyTranslations = stringifyTranslationMap(translations.body.translations);
+  let bodyTranslations = "{}";
+  try {
+    const translations = await buildContentTranslations({ body: normalizedBody });
+    bodyTranslations = stringifyTranslationMap(translations.body.translations);
+  } catch (error) {
+    console.warn("Skipping comment translation after provider failure:", error);
+  }
 
   if (pgPool) {
     const result = await pgPool.query(
@@ -5340,6 +5861,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(BTRIM(lu.city), '') AS actor_city,
             NULLIF(BTRIM(lu.country), '') AS actor_country,
             p.id AS product_id,
+            NULL::BIGINT AS publication_id,
             p.name AS product_name,
             COALESCE(NULLIF(BTRIM(p.image), ''), NULLIF(BTRIM(p.image_url), '')) AS product_image_url,
             NULL::BIGINT AS comment_id,
@@ -5367,6 +5889,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(BTRIM(cu.city), '') AS actor_city,
             NULLIF(BTRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
+            NULL::BIGINT AS publication_id,
             p.name AS product_name,
             COALESCE(NULLIF(BTRIM(p.image), ''), NULLIF(BTRIM(p.image_url), '')) AS product_image_url,
             NULL::BIGINT AS comment_id,
@@ -5395,6 +5918,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(BTRIM(cu.city), '') AS actor_city,
             NULLIF(BTRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
+            NULL::BIGINT AS publication_id,
             p.name AS product_name,
             COALESCE(NULLIF(BTRIM(p.image), ''), NULLIF(BTRIM(p.image_url), '')) AS product_image_url,
             c.id AS comment_id,
@@ -5423,6 +5947,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(BTRIM(cu.city), '') AS actor_city,
             NULLIF(BTRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
+            NULL::BIGINT AS publication_id,
             p.name AS product_name,
             COALESCE(NULLIF(BTRIM(p.image), ''), NULLIF(BTRIM(p.image_url), '')) AS product_image_url,
             c.id AS comment_id,
@@ -5446,6 +5971,68 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           UNION ALL
 
           SELECT
+            'publication_comment'::TEXT AS type,
+            c.user_id AS actor_user_id,
+            COALESCE(NULLIF(BTRIM(cu.name), ''), 'Alguém') AS actor_name,
+            NULLIF(BTRIM(cu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(BTRIM(cu.city), '') AS actor_city,
+            NULLIF(BTRIM(cu.country), '') AS actor_country,
+            NULL::BIGINT AS product_id,
+            ep.id AS publication_id,
+            COALESCE(NULLIF(BTRIM(ep.caption), ''), NULLIF(BTRIM(e.name), ''), 'pubblicazione') AS product_name,
+            COALESCE(NULLIF(BTRIM(ep.image_url), ''), NULLIF(BTRIM(e.logo_url), ''), NULLIF(BTRIM(e.cover_url), '')) AS product_image_url,
+            c.id AS comment_id,
+            c.created_at::TEXT AS created_at,
+            CASE
+              WHEN c.created_at::TEXT ~ '^[0-9]+$' THEN c.created_at::TEXT::BIGINT
+              ELSE EXTRACT(EPOCH FROM c.created_at::TEXT::TIMESTAMPTZ)::BIGINT
+            END AS sort_created_at,
+            'publication_comment:' || c.id::TEXT AS event_id,
+            NULL::TEXT AS title_translations,
+            NULL::TEXT AS message_translations,
+            NULL::TEXT AS recipient_locale
+          FROM product_comments c
+          INNER JOIN establishment_publications ep ON ep.id = c.publication_id
+          INNER JOIN establishments e ON e.id = ep.establishment_id
+          LEFT JOIN users cu ON cu.id = c.user_id
+          WHERE ep.owner_user_id = $1
+            AND c.user_id <> $2
+
+          UNION ALL
+
+          SELECT
+            'publication_comment'::TEXT AS type,
+            c.user_id AS actor_user_id,
+            COALESCE(NULLIF(BTRIM(cu.name), ''), NULLIF(BTRIM(e.name), ''), 'Attività') AS actor_name,
+            NULLIF(BTRIM(cu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(BTRIM(cu.city), '') AS actor_city,
+            NULLIF(BTRIM(cu.country), '') AS actor_country,
+            NULL::BIGINT AS product_id,
+            ep.id AS publication_id,
+            COALESCE(NULLIF(BTRIM(ep.caption), ''), NULLIF(BTRIM(e.name), ''), 'pubblicazione') AS product_name,
+            COALESCE(NULLIF(BTRIM(ep.image_url), ''), NULLIF(BTRIM(e.logo_url), ''), NULLIF(BTRIM(e.cover_url), '')) AS product_image_url,
+            c.id AS comment_id,
+            c.created_at::TEXT AS created_at,
+            CASE
+              WHEN c.created_at::TEXT ~ '^[0-9]+$' THEN c.created_at::TEXT::BIGINT
+              ELSE EXTRACT(EPOCH FROM c.created_at::TEXT::TIMESTAMPTZ)::BIGINT
+            END AS sort_created_at,
+            'publication_comment_reply:' || c.id::TEXT AS event_id,
+            NULL::TEXT AS title_translations,
+            NULL::TEXT AS message_translations,
+            NULL::TEXT AS recipient_locale
+          FROM product_comments c
+          INNER JOIN product_comments parent_comment ON parent_comment.id = c.parent_comment_id
+          INNER JOIN establishment_publications ep ON ep.id = c.publication_id
+          INNER JOIN establishments e ON e.id = ep.establishment_id
+          LEFT JOIN users cu ON cu.id = c.user_id
+          WHERE parent_comment.user_id = $1
+            AND c.user_id <> $2
+            AND ep.owner_user_id = c.user_id
+
+          UNION ALL
+
+          SELECT
             'admin_broadcast'::TEXT AS type,
             NULL::BIGINT AS actor_user_id,
             COALESCE(NULLIF(BTRIM(b.title), ''), 'TempleSale') AS actor_name,
@@ -5453,6 +6040,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL::TEXT AS actor_city,
             NULL::TEXT AS actor_country,
             p.id AS product_id,
+            NULL::BIGINT AS publication_id,
             COALESCE(NULLIF(BTRIM(b.message), ''), NULLIF(BTRIM(p.name), ''), 'Atualização TempleSale') AS product_name,
             COALESCE(NULLIF(BTRIM(p.image), ''), NULLIF(BTRIM(p.image_url), '')) AS product_image_url,
             NULL::BIGINT AS comment_id,
@@ -5506,6 +6094,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(TRIM(lu.city), '') AS actor_city,
             NULLIF(TRIM(lu.country), '') AS actor_country,
             p.id AS product_id,
+            NULL AS publication_id,
             p.name AS product_name,
             COALESCE(NULLIF(TRIM(p.image), ''), NULLIF(TRIM(p.image_url), '')) AS product_image_url,
             NULL AS comment_id,
@@ -5530,6 +6119,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(TRIM(cu.city), '') AS actor_city,
             NULLIF(TRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
+            NULL AS publication_id,
             p.name AS product_name,
             COALESCE(NULLIF(TRIM(p.image), ''), NULLIF(TRIM(p.image_url), '')) AS product_image_url,
             NULL AS comment_id,
@@ -5555,6 +6145,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(TRIM(cu.city), '') AS actor_city,
             NULLIF(TRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
+            NULL AS publication_id,
             p.name AS product_name,
             COALESCE(NULLIF(TRIM(p.image), ''), NULLIF(TRIM(p.image_url), '')) AS product_image_url,
             c.id AS comment_id,
@@ -5580,6 +6171,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULLIF(TRIM(cu.city), '') AS actor_city,
             NULLIF(TRIM(cu.country), '') AS actor_country,
             p.id AS product_id,
+            NULL AS publication_id,
             p.name AS product_name,
             COALESCE(NULLIF(TRIM(p.image), ''), NULLIF(TRIM(p.image_url), '')) AS product_image_url,
             c.id AS comment_id,
@@ -5600,6 +6192,62 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           UNION ALL
 
           SELECT
+            'publication_comment' AS type,
+            c.user_id AS actor_user_id,
+            COALESCE(NULLIF(TRIM(cu.name), ''), 'Alguém') AS actor_name,
+            NULLIF(TRIM(cu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(TRIM(cu.city), '') AS actor_city,
+            NULLIF(TRIM(cu.country), '') AS actor_country,
+            NULL AS product_id,
+            ep.id AS publication_id,
+            COALESCE(NULLIF(TRIM(ep.caption), ''), NULLIF(TRIM(e.name), ''), 'pubblicazione') AS product_name,
+            COALESCE(NULLIF(TRIM(ep.image_url), ''), NULLIF(TRIM(e.logo_url), ''), NULLIF(TRIM(e.cover_url), '')) AS product_image_url,
+            c.id AS comment_id,
+            c.created_at,
+            CAST(c.created_at AS INTEGER) AS sort_created_at,
+            'publication_comment:' || c.id AS event_id,
+            NULL AS title_translations,
+            NULL AS message_translations,
+            NULL AS recipient_locale
+          FROM product_comments c
+          INNER JOIN establishment_publications ep ON ep.id = c.publication_id
+          INNER JOIN establishments e ON e.id = ep.establishment_id
+          LEFT JOIN users cu ON cu.id = c.user_id
+          WHERE ep.owner_user_id = ?
+            AND c.user_id <> ?
+
+          UNION ALL
+
+          SELECT
+            'publication_comment' AS type,
+            c.user_id AS actor_user_id,
+            COALESCE(NULLIF(TRIM(cu.name), ''), NULLIF(TRIM(e.name), ''), 'Attività') AS actor_name,
+            NULLIF(TRIM(cu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(TRIM(cu.city), '') AS actor_city,
+            NULLIF(TRIM(cu.country), '') AS actor_country,
+            NULL AS product_id,
+            ep.id AS publication_id,
+            COALESCE(NULLIF(TRIM(ep.caption), ''), NULLIF(TRIM(e.name), ''), 'pubblicazione') AS product_name,
+            COALESCE(NULLIF(TRIM(ep.image_url), ''), NULLIF(TRIM(e.logo_url), ''), NULLIF(TRIM(e.cover_url), '')) AS product_image_url,
+            c.id AS comment_id,
+            c.created_at,
+            CAST(c.created_at AS INTEGER) AS sort_created_at,
+            'publication_comment_reply:' || c.id AS event_id,
+            NULL AS title_translations,
+            NULL AS message_translations,
+            NULL AS recipient_locale
+          FROM product_comments c
+          INNER JOIN product_comments parent_comment ON parent_comment.id = c.parent_comment_id
+          INNER JOIN establishment_publications ep ON ep.id = c.publication_id
+          INNER JOIN establishments e ON e.id = ep.establishment_id
+          LEFT JOIN users cu ON cu.id = c.user_id
+          WHERE parent_comment.user_id = ?
+            AND c.user_id <> ?
+            AND ep.owner_user_id = c.user_id
+
+          UNION ALL
+
+          SELECT
             'admin_broadcast' AS type,
             NULL AS actor_user_id,
             COALESCE(NULLIF(TRIM(b.title), ''), 'TempleSale') AS actor_name,
@@ -5607,6 +6255,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL AS actor_city,
             NULL AS actor_country,
             p.id AS product_id,
+            NULL AS publication_id,
             COALESCE(NULLIF(TRIM(b.message), ''), NULLIF(TRIM(p.name), ''), 'Atualização TempleSale') AS product_name,
             COALESCE(NULLIF(TRIM(p.image), ''), NULLIF(TRIM(p.image_url), '')) AS product_image_url,
             NULL AS comment_id,
@@ -5631,6 +6280,10 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
       `,
     )
     .all(
+      ownerId,
+      ownerId,
+      ownerId,
+      ownerId,
       ownerId,
       ownerId,
       ownerId,
@@ -6947,7 +7600,6 @@ function rowToProductComment(
 ): ProductCommentRecord {
   const normalized: ProductCommentRecord = {
     id: row.id,
-    productId: row.product_id,
     userId: row.user_id,
     body: locale ? getLocalizedText(row.body, row.body_translations, locale) : row.body,
     createdAt: row.created_at,
@@ -6956,6 +7608,12 @@ function rowToProductComment(
     replies: [],
   };
 
+  if (row.product_id !== null) {
+    normalized.productId = row.product_id;
+  }
+  if (row.publication_id !== null) {
+    normalized.publicationId = row.publication_id;
+  }
   if (row.parent_comment_id !== null) {
     normalized.parentCommentId = row.parent_comment_id;
   }
@@ -7064,14 +7722,16 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
     return normalized;
   }
 
-  const isProductCommentReply = row.event_id.startsWith("product_comment_reply:");
+  const isProductCommentReply =
+    row.event_id.startsWith("product_comment_reply:") ||
+    row.event_id.startsWith("publication_comment_reply:");
   const title =
     row.type === "product_cart_interest"
       ? "Novo interesse no carrinho"
-      : row.type === "product_comment"
+      : row.type === "product_comment" || row.type === "publication_comment"
         ? isProductCommentReply
-          ? "Resposta do dono do anúncio"
-          : "Novo comentário na publicação"
+          ? "Risposta al tuo commento"
+          : "Nuovo commento"
         : "Nova curtida";
   const message =
     row.type === "product_cart_interest"
@@ -7080,6 +7740,10 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
         ? isProductCommentReply
           ? `${actorName} respondeu seu comentário em "${productName}".`
           : `${actorName} comentou na sua publicação "${productName}".`
+        : row.type === "publication_comment"
+          ? isProductCommentReply
+            ? `${actorName} ha risposto al tuo commento.`
+            : `${actorName} ha commentato la tua pubblicazione.`
         : `${actorName} curtiu seu anúncio "${productName}".`;
 
   const normalized: NotificationRecord = {
@@ -7094,6 +7758,9 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
 
   if (row.product_id) {
     normalized.productId = row.product_id;
+  }
+  if (row.publication_id) {
+    normalized.publicationId = row.publication_id;
   }
   if (row.product_image_url) {
     normalized.productImageUrl = row.product_image_url;
@@ -10158,6 +10825,7 @@ async function bootstrap() {
           whatsappNumber: String(body.whatsappNumber ?? existing.whatsappNumber ?? ""),
           phone: String(body.phone ?? existing.phone ?? ""),
           openingHours: String(body.openingHours ?? existing.openingHours ?? ""),
+          keywords: normalizeKeywordList(body.keywords ?? existing.keywords),
         });
         const updated = await selectEstablishmentByIdOrSlugRow(String(existing.id));
         res.json({ establishment: updated });
@@ -10184,6 +10852,7 @@ async function bootstrap() {
         whatsappNumber: String(body.whatsappNumber ?? user.whatsappNumber ?? "").replace(/\D/g, ""),
         phone: String(body.phone ?? body.whatsappNumber ?? user.whatsappNumber ?? "").replace(/\D/g, ""),
         openingHours: normalizeTextField(body.openingHours ?? "", "Orari", 500),
+        keywords: normalizeKeywordList(body.keywords),
       });
       const establishment = await selectEstablishmentByIdOrSlugRow(String(id));
       res.status(201).json({ establishment });
@@ -10225,17 +10894,134 @@ async function bootstrap() {
         res.status(404).json({ error: "Attivita non trovata." });
         return;
       }
-      const [sections, products] = await Promise.all([
+      const [sections, products, publications] = await Promise.all([
         selectStorefrontSectionsRows(establishment.id),
         selectProductsByEstablishmentRows(establishment.id),
+        selectPublicationsByEstablishmentRows(establishment.id),
       ]);
       res.json({
         establishment: { ...establishment, sections },
         products: products.map((row) => rowToProduct(row, locale)),
+        publications,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao carregar attivita.";
       res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/establishments/:id/publications", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID attivita invalido." });
+      return;
+    }
+    try {
+      const publications = await selectPublicationsByEstablishmentRows(id, Number(req.query.limit ?? 60));
+      res.json({ publications });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar pubblicazioni.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/establishments/:id/publications", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID attivita invalido." });
+      return;
+    }
+    try {
+      const body = req.body as Record<string, unknown>;
+      const publication = await createPublicationRecord(id, user.id, {
+        caption: String(body.caption ?? ""),
+        media: body.media ?? body.images,
+        imageUrl: String(body.imageUrl ?? body.image_url ?? body.image ?? ""),
+      });
+      res.status(201).json({ publication });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao publicar.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.get("/api/publications/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID pubblicazione invalido." });
+      return;
+    }
+    try {
+      const publication = await selectPublicationByIdRecord(id);
+      if (!publication) {
+        res.status(404).json({ error: "Pubblicazione non trovata." });
+        return;
+      }
+      const establishment = await selectEstablishmentByIdOrSlugRow(String(publication.establishmentId));
+      if (!establishment) {
+        res.status(404).json({ error: "Attivita non trovata." });
+        return;
+      }
+      const sections = await selectStorefrontSectionsRows(establishment.id);
+      res.json({ publication, establishment: { ...establishment, sections } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao carregar publicação.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.put("/api/publications/:id", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID pubblicazione invalido." });
+      return;
+    }
+    try {
+      const body = req.body as Record<string, unknown>;
+      const publication = await updatePublicationRecord(id, user.id, {
+        caption: String(body.caption ?? ""),
+        media: body.media ?? body.images,
+        imageUrl: String(body.imageUrl ?? body.image_url ?? body.image ?? ""),
+      });
+      if (!publication) {
+        res.status(403).json({ error: "Non puoi modificare questa pubblicazione." });
+        return;
+      }
+      res.json({ publication });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao atualizar pubblicazione.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.delete("/api/publications/:id", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID pubblicazione invalido." });
+      return;
+    }
+    try {
+      const deleted = await deletePublicationRecord(id, user.id);
+      if (!deleted) {
+        res.status(403).json({ error: "Non puoi eliminare questa pubblicazione." });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao excluir pubblicazione.";
+      res.status(400).json({ error: message });
     }
   });
 
@@ -10562,6 +11348,180 @@ async function bootstrap() {
       }
 
       const comments = await selectProductCommentsRows(productId);
+      res.json({ comments: buildProductCommentsThread(comments, locale) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao excluir comentário.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.get("/api/publications/:id/comments", async (req, res) => {
+    const publicationId = Number(req.params.id);
+    if (!Number.isInteger(publicationId) || publicationId <= 0) {
+      res.status(400).json({ error: "ID pubblicazione invalido." });
+      return;
+    }
+
+    try {
+      const locale = getRequestLocale(req);
+      const publication = await selectPublicationByIdRecord(publicationId);
+      if (!publication) {
+        res.status(404).json({ error: "Pubblicazione non trovata." });
+        return;
+      }
+      const comments = await selectPublicationCommentsRows(publicationId);
+      res.json({ comments: buildProductCommentsThread(comments, locale) });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao carregar comentários da publicação.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/publications/:id/comments", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+
+    const publicationId = Number(req.params.id);
+    if (!Number.isInteger(publicationId) || publicationId <= 0) {
+      res.status(400).json({ error: "ID pubblicazione invalido." });
+      return;
+    }
+
+    try {
+      const locale = getRequestLocale(req);
+      const publication = await selectPublicationByIdRecord(publicationId);
+      if (!publication) {
+        res.status(404).json({ error: "Pubblicazione non trovata." });
+        return;
+      }
+
+      const body = req.body as Record<string, unknown>;
+      const parentCommentId = toOptionalPositiveInteger(
+        body.parentCommentId ?? body.parent_comment_id,
+      );
+      const isReply = parentCommentId !== null;
+      const commentBody = normalizeIncomingProductCommentBody(
+        body.body ?? body.comment ?? body.message,
+      );
+
+      let parentComment: ProductCommentRow | undefined;
+      if (isReply) {
+        parentComment = await selectProductCommentByIdRow(parentCommentId);
+        if (!parentComment || parentComment.publication_id !== publicationId) {
+          res.status(400).json({ error: "Commento padre non valido per questa pubblicazione." });
+          return;
+        }
+
+        if (publication.ownerId !== user.id) {
+          res
+            .status(403)
+            .json({ error: "Solo il proprietario dell'attivita puo rispondere ai commenti." });
+          return;
+        }
+      }
+
+      await createProductCommentRecord({
+        productId: null,
+        publicationId,
+        userId: user.id,
+        parentCommentId,
+        rating: null,
+        body: commentBody,
+      });
+      if (isReply && parentComment?.user_id && parentComment.user_id !== user.id) {
+        notifyUserNotificationsChanged(parentComment.user_id, "publication-comment-reply");
+      } else if (publication.ownerId !== user.id) {
+        notifyUserNotificationsChanged(publication.ownerId, "publication-comment");
+      }
+
+      const comments = await selectPublicationCommentsRows(publicationId);
+      res.status(201).json({ comments: buildProductCommentsThread(comments, locale) });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao salvar comentário da publicação.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.patch("/api/publications/:publicationId/comments/:commentId", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+
+    const publicationId = Number(req.params.publicationId);
+    const commentId = Number(req.params.commentId);
+    if (!Number.isInteger(publicationId) || publicationId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
+      res.status(400).json({ error: "ID inválido." });
+      return;
+    }
+
+    try {
+      const locale = getRequestLocale(req);
+      const comment = await selectProductCommentByIdRow(commentId);
+      if (!comment || comment.publication_id !== publicationId) {
+        res.status(404).json({ error: "Comentário não encontrado." });
+        return;
+      }
+      if (comment.user_id !== user.id) {
+        res.status(403).json({ error: "Você só pode editar seus próprios comentários." });
+        return;
+      }
+
+      const body = req.body as Record<string, unknown>;
+      const updated = await updateProductCommentRecord(
+        commentId,
+        user.id,
+        String(body.body ?? body.comment ?? body.message ?? ""),
+      );
+      if (!updated) {
+        res.status(404).json({ error: "Comentário não encontrado." });
+        return;
+      }
+
+      const comments = await selectPublicationCommentsRows(publicationId);
+      res.json({ comments: buildProductCommentsThread(comments, locale) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao editar comentário.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.delete("/api/publications/:publicationId/comments/:commentId", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+
+    const publicationId = Number(req.params.publicationId);
+    const commentId = Number(req.params.commentId);
+    if (!Number.isInteger(publicationId) || publicationId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
+      res.status(400).json({ error: "ID inválido." });
+      return;
+    }
+
+    try {
+      const locale = getRequestLocale(req);
+      const comment = await selectProductCommentByIdRow(commentId);
+      if (!comment || comment.publication_id !== publicationId) {
+        res.status(404).json({ error: "Comentário não encontrado." });
+        return;
+      }
+      if (comment.user_id !== user.id) {
+        res.status(403).json({ error: "Você só pode excluir seus próprios comentários." });
+        return;
+      }
+
+      const deleted = await deleteProductCommentRecord(commentId, user.id);
+      if (!deleted) {
+        res.status(404).json({ error: "Comentário não encontrado." });
+        return;
+      }
+
+      const comments = await selectPublicationCommentsRows(publicationId);
       res.json({ comments: buildProductCommentsThread(comments, locale) });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao excluir comentário.";

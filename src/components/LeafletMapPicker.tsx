@@ -130,6 +130,7 @@ export default function LeafletMapPicker({
   const mapRef = React.useRef<LeafletMapInstance | null>(null);
   const markerRef = React.useRef<LeafletMarkerInstance | null>(null);
   const [leafletError, setLeafletError] = React.useState("");
+  const [mapReadyVersion, setMapReadyVersion] = React.useState(0);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -164,6 +165,7 @@ export default function LeafletMapPicker({
         });
 
         mapRef.current = map;
+        setMapReadyVersion((current) => current + 1);
       } catch (error) {
         const message =
           error instanceof Error ? t(error.message) : t("Falha ao carregar o mapa.");
@@ -219,7 +221,7 @@ export default function LeafletMapPicker({
       return;
     }
     markerRef.current.setLatLng(coords);
-  }, [selectedPoint]);
+  }, [mapReadyVersion, selectedPoint]);
 
   return (
     <motion.div

@@ -109,6 +109,22 @@ export type NotificationDto =
     }
   | {
       id: string;
+      type: "publication_comment";
+      title: string;
+      message: string;
+      createdAt: number;
+      actorUserId?: number;
+      actorName?: string;
+      actorAvatarUrl?: string;
+      actorCity?: string;
+      actorCountry?: string;
+      productName?: string;
+      productImageUrl?: string;
+      publicationId: number;
+      commentId?: number;
+    }
+  | {
+      id: string;
       type: "admin_broadcast";
       title: string;
       message: string;
@@ -158,7 +174,8 @@ export interface CreateProductInput {
 
 export interface ProductCommentDto {
   id: number;
-  productId: number;
+  productId?: number;
+  publicationId?: number;
   userId: number;
   parentCommentId?: number;
   rating?: number;
@@ -234,9 +251,23 @@ export interface EstablishmentDto {
   whatsappNumber?: string;
   phone?: string;
   openingHours?: string;
+  keywords?: string[];
   isActive?: boolean;
   productCount: number;
+  publicationCount?: number;
   sections?: StorefrontSectionDto[];
+}
+
+export interface PublicationDto {
+  id: number;
+  establishmentId: number;
+  ownerId: number;
+  caption: string;
+  media: string[];
+  imageUrl: string;
+  createdAt: number;
+  updatedAt: number;
+  legacyProductId?: number;
 }
 
 export interface GeocodeResultDto {
@@ -1275,6 +1306,90 @@ function normalizeStorefrontSectionList(value: unknown): StorefrontSectionDto[] 
     .filter((item): item is StorefrontSectionDto => item !== null);
 }
 
+function normalizeKeywordList(value: unknown): string[] {
+  const rawItems = Array.isArray(value)
+    ? value
+    : typeof value === "string" && value.trim().startsWith("[")
+      ? (() => {
+          try {
+            const parsed = JSON.parse(value) as unknown;
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })()
+      : String(value ?? "")
+          .split(",")
+          .map((item) => item.trim());
+  const byKey = new globalThis.Map<string, string>();
+  for (const item of rawItems) {
+    const label = toStringValue(item).replace(/\s+/g, " ");
+    const key = label
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+    if (!label || !key || byKey.has(key)) {
+      continue;
+    }
+    byKey.set(key, label);
+    if (byKey.size >= 24) {
+      break;
+    }
+  }
+  return [...byKey.values()];
+}
+
+function normalizePublicationItem(value: unknown): PublicationDto | null {
+  const parsed = parseJsonIfNeeded(value);
+  if (!isRecord(parsed)) {
+    return null;
+  }
+  const id = toOptionalNumber(firstDefined(parsed, ["id", "publicationId", "publication_id"]));
+  const establishmentId = toOptionalNumber(firstDefined(parsed, ["establishmentId", "establishment_id"]));
+  const ownerId = toOptionalNumber(firstDefined(parsed, ["ownerId", "owner_user_id", "userId", "user_id"]));
+  const rawMedia = firstDefined(parsed, ["media", "images"]);
+  const media = Array.isArray(rawMedia)
+    ? rawMedia.map((item) => toStringValue(item)).filter(Boolean)
+    : typeof rawMedia === "string" && rawMedia.trim().startsWith("[")
+      ? (() => {
+          try {
+            const parsedMedia = JSON.parse(rawMedia) as unknown;
+            return Array.isArray(parsedMedia)
+              ? parsedMedia.map((item) => toStringValue(item)).filter(Boolean)
+              : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+  const imageUrl =
+    toStringValue(firstDefined(parsed, ["imageUrl", "image_url", "image"])) ||
+    media[0] ||
+    "";
+  if (id === undefined || establishmentId === undefined || ownerId === undefined || !imageUrl) {
+    return null;
+  }
+  return {
+    id,
+    establishmentId,
+    ownerId,
+    caption: toStringValue(firstDefined(parsed, ["caption", "description"])),
+    media: media.length > 0 ? media : [imageUrl],
+    imageUrl,
+    createdAt: toNonNegativeInteger(firstDefined(parsed, ["createdAt", "created_at"])) ?? 0,
+    updatedAt: toNonNegativeInteger(firstDefined(parsed, ["updatedAt", "updated_at"])) ?? 0,
+    legacyProductId: toOptionalNumber(firstDefined(parsed, ["legacyProductId", "legacy_product_id"])),
+  };
+}
+
+function normalizePublicationList(value: unknown): PublicationDto[] {
+  return extractArrayPayload(value, ["publications", "posts", "data", "items", "rows", "results"])
+    .map((item) => normalizePublicationItem(item))
+    .filter((item): item is PublicationDto => item !== null);
+}
+
 function normalizeTaxonomySuggestionList(value: unknown): TaxonomySuggestionDto[] {
   return extractArrayPayload(value, ["suggestions", "data", "items", "rows", "results"])
     .map((item) => {
@@ -1337,9 +1452,12 @@ function normalizeEstablishmentItem(value: unknown): EstablishmentDto | null {
       normalizePhoneDigits(firstDefined(parsed, ["phone"])) ||
       toStringValue(firstDefined(parsed, ["phone"])),
     openingHours: toStringValue(firstDefined(parsed, ["openingHours", "opening_hours"])),
+    keywords: normalizeKeywordList(firstDefined(parsed, ["keywords"])),
     isActive: firstDefined(parsed, ["isActive", "is_active"]) !== false,
     productCount:
       toNonNegativeInteger(firstDefined(parsed, ["productCount", "product_count", "count"])) ?? 0,
+    publicationCount:
+      toNonNegativeInteger(firstDefined(parsed, ["publicationCount", "publication_count"])) ?? 0,
     sections: normalizeStorefrontSectionList(firstDefined(parsed, ["sections"]) ?? []),
   };
   if (latitude !== undefined) {
@@ -1543,7 +1661,9 @@ function normalizeProductCommentItem(value: unknown): ProductCommentDto | null {
   }
 
   const productId =
-    toOptionalNumber(firstDefined(parsed, ["productId", "product_id"])) ?? 0;
+    toOptionalNumber(firstDefined(parsed, ["productId", "product_id"])) ?? undefined;
+  const publicationId =
+    toOptionalNumber(firstDefined(parsed, ["publicationId", "publication_id"])) ?? undefined;
   const userId = toOptionalNumber(firstDefined(parsed, ["userId", "user_id"])) ?? 0;
   const parentCommentId = toOptionalNumber(
     firstDefined(parsed, ["parentCommentId", "parent_comment_id"]),
@@ -1576,7 +1696,6 @@ function normalizeProductCommentItem(value: unknown): ProductCommentDto | null {
 
   const comment: ProductCommentDto = {
     id,
-    productId,
     userId,
     body,
     createdAt,
@@ -1584,6 +1703,12 @@ function normalizeProductCommentItem(value: unknown): ProductCommentDto | null {
     replies,
   };
 
+  if (productId !== undefined) {
+    comment.productId = productId;
+  }
+  if (publicationId !== undefined) {
+    comment.publicationId = publicationId;
+  }
   if (parentCommentId !== undefined) {
     comment.parentCommentId = parentCommentId;
   }
@@ -2622,10 +2747,13 @@ export const api = {
     const parsed = parseJsonIfNeeded(payload);
     const establishment = normalizeEstablishmentItem(parsed);
     const products = normalizeProductList(isRecord(parsed) ? firstDefined(parsed, ["products", "items"]) ?? [] : []);
+    const publications = normalizePublicationList(
+      isRecord(parsed) ? firstDefined(parsed, ["publications", "posts"]) ?? [] : [],
+    );
     if (!establishment) {
       throw new Error("Resposta inválida ao carregar attivita.");
     }
-    return { establishment, products };
+    return { establishment, products, publications };
   },
   async saveEstablishment(input: Partial<EstablishmentDto>) {
     const method = input.id ? "PUT" : "POST";
@@ -2639,6 +2767,114 @@ export const api = {
       throw new Error("Resposta inválida ao salvar attivita.");
     }
     return establishment;
+  },
+  async createPublication(establishmentId: number, input: { caption?: string; media: string[] }) {
+    const payload = await request<unknown>(`/api/establishments/${establishmentId}/publications`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    const publication = normalizePublicationItem(payload);
+    if (!publication) {
+      throw new Error("Resposta inválida ao publicar.");
+    }
+    return publication;
+  },
+  async getPublication(publicationId: number) {
+    if (!Number.isInteger(publicationId) || publicationId <= 0) {
+      throw new Error("ID de publicação inválido.");
+    }
+    const payload = await request<unknown>(`/api/publications/${publicationId}`, {
+      skipAuthToken: true,
+    });
+    const parsed = parseJsonIfNeeded(payload);
+    const publication = normalizePublicationItem(isRecord(parsed) ? parsed.publication : parsed);
+    const establishment = normalizeEstablishmentItem(isRecord(parsed) ? parsed.establishment : parsed);
+    if (!publication || !establishment) {
+      throw new Error("Resposta inválida ao carregar publicação.");
+    }
+    return { publication, establishment };
+  },
+  async updatePublication(publicationId: number, input: { caption?: string; media?: string[] }) {
+    const payload = await request<unknown>(`/api/publications/${publicationId}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+    const publication = normalizePublicationItem(payload);
+    if (!publication) {
+      throw new Error("Resposta inválida ao atualizar publicação.");
+    }
+    return publication;
+  },
+  async deletePublication(publicationId: number) {
+    await request<{ success: boolean }>(`/api/publications/${publicationId}`, {
+      method: "DELETE",
+    });
+    return true;
+  },
+  async getPublicationComments(publicationId: number) {
+    if (!Number.isInteger(publicationId) || publicationId <= 0) {
+      throw new Error("ID de publicação inválido.");
+    }
+
+    try {
+      const payload = await request<unknown>(`/api/publications/${publicationId}/comments`, {
+        skipAuthToken: true,
+      });
+      return normalizeProductCommentList(payload);
+    } catch (error) {
+      if (isMissingApiRouteError(error)) {
+        return [];
+      }
+      throw error;
+    }
+  },
+  async createPublicationComment(publicationId: number, input: CreateProductCommentInput) {
+    if (!Number.isInteger(publicationId) || publicationId <= 0) {
+      throw new Error("ID de publicação inválido.");
+    }
+
+    const normalizedBody = toStringValue(input.body).trim();
+    if (!normalizedBody) {
+      throw new Error("Comentário é obrigatório.");
+    }
+
+    const response = await request<unknown>(`/api/publications/${publicationId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({
+        body: normalizedBody,
+        parentCommentId:
+          Number.isInteger(input.parentCommentId) && Number(input.parentCommentId) > 0
+            ? Number(input.parentCommentId)
+            : undefined,
+      }),
+    });
+    return normalizeProductCommentList(response);
+  },
+  async updatePublicationComment(publicationId: number, commentId: number, input: UpdateProductCommentInput) {
+    if (!Number.isInteger(publicationId) || publicationId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
+      throw new Error("ID de comentário inválido.");
+    }
+
+    const normalizedBody = toStringValue(input.body).trim();
+    if (!normalizedBody) {
+      throw new Error("Comentário é obrigatório.");
+    }
+
+    const response = await request<unknown>(`/api/publications/${publicationId}/comments/${commentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ body: normalizedBody }),
+    });
+    return normalizeProductCommentList(response);
+  },
+  async deletePublicationComment(publicationId: number, commentId: number) {
+    if (!Number.isInteger(publicationId) || publicationId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
+      throw new Error("ID de comentário inválido.");
+    }
+
+    const response = await request<unknown>(`/api/publications/${publicationId}/comments/${commentId}`, {
+      method: "DELETE",
+    });
+    return normalizeProductCommentList(response);
   },
   async geocodeLocation(query: string) {
     const normalizedQuery = toStringValue(query);

@@ -74,6 +74,21 @@ function isUsableTaxonomyLabel(value: string): boolean {
   );
 }
 
+function normalizeKeywordList(values: string[]): string[] {
+  const byKey = new Map<string, string>();
+  for (const value of values) {
+    const label = String(value ?? "").trim().replace(/\s+/g, " ");
+    if (!isUsableTaxonomyLabel(label)) {
+      continue;
+    }
+    const key = normalizeTaxonomyLabel(label);
+    if (!byKey.has(key)) {
+      byKey.set(key, label);
+    }
+  }
+  return [...byKey.values()].slice(0, 24);
+}
+
 export default function EditePerfil({
   onClose,
   onSave,
@@ -88,6 +103,7 @@ export default function EditePerfil({
   const [isMapPickerOpen, setIsMapPickerOpen] = React.useState(false);
   const [locationStatus, setLocationStatus] = React.useState<"success" | "error" | null>(null);
   const [businessCategorySuggestions, setBusinessCategorySuggestions] = React.useState<TaxonomySuggestionDto[]>([]);
+  const [keywordInput, setKeywordInput] = React.useState("");
   const [errorMessage, setErrorMessage] = React.useState("");
   const [formData, setFormData] = React.useState({
     name: initialData?.name || "",
@@ -95,6 +111,7 @@ export default function EditePerfil({
     establishmentCategory: initialEstablishment?.category || "Altro",
     establishmentDescription: initialEstablishment?.description || "",
     establishmentOpeningHours: initialEstablishment?.openingHours || "",
+    establishmentKeywords: normalizeKeywordList(initialEstablishment?.keywords ?? []),
     whatsappCountryIso: initialData?.whatsappCountryIso || "IT",
     whatsappNumber: initialData?.whatsappNumber || "",
     country: initialData?.country || "",
@@ -123,6 +140,7 @@ export default function EditePerfil({
       establishmentCategory: initialEstablishment?.category || "Altro",
       establishmentDescription: initialEstablishment?.description || "",
       establishmentOpeningHours: initialEstablishment?.openingHours || "",
+      establishmentKeywords: normalizeKeywordList(initialEstablishment?.keywords ?? []),
       whatsappCountryIso: initialData?.whatsappCountryIso || "IT",
       whatsappNumber: initialData?.whatsappNumber || "",
       country: initialData?.country || "",
@@ -144,6 +162,7 @@ export default function EditePerfil({
             : "",
     });
     setErrorMessage(initialErrorMessage);
+    setKeywordInput("");
     setLocationStatus(
       parseGeoPoint(
         typeof initialEstablishment?.latitude === "number"
@@ -168,6 +187,33 @@ export default function EditePerfil({
   );
 
   const mapCenter = selectedLocation ?? DEFAULT_MAP_CENTER;
+
+  const addKeyword = (rawKeyword: string) => {
+    const keyword = rawKeyword.trim().replace(/\s+/g, " ");
+    if (!keyword) {
+      return;
+    }
+    if (!isUsableTaxonomyLabel(keyword)) {
+      setErrorMessage(t("Use palavras-chave reais, sem links ou texto inválido."));
+      return;
+    }
+    setFormData((current) => ({
+      ...current,
+      establishmentKeywords: normalizeKeywordList([...current.establishmentKeywords, keyword]),
+    }));
+    setKeywordInput("");
+    setErrorMessage("");
+  };
+
+  const removeKeyword = (keyword: string) => {
+    const key = normalizeTaxonomyLabel(keyword);
+    setFormData((current) => ({
+      ...current,
+      establishmentKeywords: current.establishmentKeywords.filter(
+        (item) => normalizeTaxonomyLabel(item) !== key,
+      ),
+    }));
+  };
 
   React.useEffect(() => {
     let cancelled = false;
@@ -378,6 +424,7 @@ export default function EditePerfil({
         category: formData.establishmentCategory,
         description: formData.establishmentDescription.trim(),
         openingHours: formData.establishmentOpeningHours.trim(),
+        keywords: normalizeKeywordList(formData.establishmentKeywords),
         city: profilePayload.city,
         address: profilePayload.street,
         latitude: Number.isFinite(Number(formData.latitude)) ? Number(formData.latitude) : undefined,
@@ -504,6 +551,53 @@ export default function EditePerfil({
                       setFormData({ ...formData, establishmentDescription: e.target.value })
                     }
                   />
+                </div>
+                <div className="space-y-3">
+                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
+                    {t("Parole chiave")}
+                  </label>
+                  {formData.establishmentKeywords.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {formData.establishmentKeywords.map((keyword) => (
+                        <span
+                          key={normalizeTaxonomyLabel(keyword)}
+                          className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-700"
+                        >
+                          {keyword}
+                          <button
+                            type="button"
+                            onClick={() => removeKeyword(keyword)}
+                            className="text-stone-400 transition-colors hover:text-red-600"
+                            aria-label={t("Remover palavra-chave")}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={keywordInput}
+                      onChange={(event) => setKeywordInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          addKeyword(keywordInput);
+                        }
+                      }}
+                      placeholder={t("Ex: aperitivo, cucina romana, consegna")}
+                      className="min-w-0 flex-1 bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => addKeyword(keywordInput)}
+                      className="rounded-lg border border-stone-200 px-4 text-[10px] font-bold uppercase tracking-[0.16em] text-stone-700 transition-colors hover:border-stone-700"
+                    >
+                      {t("Aggiungi")}
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">

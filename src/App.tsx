@@ -5,6 +5,8 @@ import { Search, ShoppingBag, Menu, ArrowRight, Instagram, X, User, Package, Cre
 import ProductCard, { ProgressiveProductImage, type Product } from "./components/ProductCard";
 import ProductDetails from "./components/ProductDetails";
 import NewProduct from "./components/NewProduct";
+import NewPublication from "./components/NewPublication";
+import PublicationViewer from "./components/PublicationViewer";
 import Auth, { type AuthMode, type AuthSubmitPayload } from "./components/Auth";
 import MeusAnuncios from "./components/MeusAnuncios";
 import EditePerfil from "./components/EditePerfil";
@@ -22,6 +24,7 @@ import {
   type UpdateProfileInput,
   type EstablishmentDto,
   type StorefrontSectionDto,
+  type PublicationDto,
 } from "./lib/api";
 import { useI18n } from "./i18n/provider";
 import { localeOptions, type AppLocale } from "./i18n";
@@ -285,10 +288,11 @@ export default function App() {
   const [establishments, setEstablishments] = React.useState<EstablishmentDto[]>([]);
   const [myEstablishment, setMyEstablishment] = React.useState<EstablishmentDto | null>(null);
   const [selectedEstablishment, setSelectedEstablishment] = React.useState<EstablishmentDto | null>(null);
-  const [selectedEstablishmentProducts, setSelectedEstablishmentProducts] = React.useState<Product[]>([]);
+  const [, setSelectedEstablishmentProducts] = React.useState<Product[]>([]);
+  const [selectedEstablishmentPublications, setSelectedEstablishmentPublications] = React.useState<PublicationDto[]>([]);
+  const [selectedPublication, setSelectedPublication] = React.useState<PublicationDto | null>(null);
+  const [focusedPublicationCommentId, setFocusedPublicationCommentId] = React.useState<number | null>(null);
   const [isEstablishmentPageOpen, setIsEstablishmentPageOpen] = React.useState(false);
-  const [activeStorefrontSectionId, setActiveStorefrontSectionId] = React.useState<number | null>(null);
-  const [establishmentSearchQuery, setEstablishmentSearchQuery] = React.useState("");
   const [isLoadingEstablishments, setIsLoadingEstablishments] = React.useState(false);
   const activityOnboardingShownRef = React.useRef<number | null>(null);
   const [cartQuantitiesByProductId, setCartQuantitiesByProductId] = React.useState<Record<number, number>>(
@@ -1382,6 +1386,15 @@ export default function App() {
         };
       }
 
+      if (notification.type === "publication_comment") {
+        return {
+          title: t("Nuovo commento"),
+          message: t("{actor} ha commentato la tua pubblicazione.", {
+            actor: actorName,
+          }),
+        };
+      }
+
       return {
         title: notification.title,
         message: notification.message,
@@ -1492,8 +1505,7 @@ export default function App() {
     if (cachedEstablishment) {
       setSelectedEstablishment(cachedEstablishment);
       setSelectedEstablishmentProducts([]);
-      setActiveStorefrontSectionId(null);
-      setEstablishmentSearchQuery("");
+      setSelectedEstablishmentPublications([]);
       setIsEstablishmentPageOpen(true);
       if (typeof window !== "undefined") {
         window.history.pushState(
@@ -1507,8 +1519,7 @@ export default function App() {
       const payload = await api.getEstablishment(idOrSlug);
       setSelectedEstablishment(payload.establishment);
       setSelectedEstablishmentProducts(payload.products as Product[]);
-      setActiveStorefrontSectionId(null);
-      setEstablishmentSearchQuery("");
+      setSelectedEstablishmentPublications(payload.publications);
       setIsEstablishmentPageOpen(true);
       if (typeof window !== "undefined") {
         window.history.pushState(
@@ -1526,8 +1537,9 @@ export default function App() {
     setIsEstablishmentPageOpen(false);
     setSelectedEstablishment(null);
     setSelectedEstablishmentProducts([]);
-    setActiveStorefrontSectionId(null);
-    setEstablishmentSearchQuery("");
+    setSelectedEstablishmentPublications([]);
+    setSelectedPublication(null);
+    setFocusedPublicationCommentId(null);
     if (typeof window !== "undefined" && window.location.pathname.startsWith("/attivita/")) {
       window.history.replaceState({}, "", "/");
     }
@@ -1828,6 +1840,26 @@ export default function App() {
   const handleNotificationClick = async (notification: NotificationDto) => {
     markNotificationAsRead(notification.id);
     setSwipedNotificationId(null);
+    if (notification.type === "publication_comment" && notification.publicationId) {
+      try {
+        const payload = await api.getPublication(notification.publicationId);
+        setSelectedEstablishment(payload.establishment);
+        setSelectedPublication(payload.publication);
+        setFocusedPublicationCommentId(notification.commentId ?? null);
+        setIsEstablishmentPageOpen(true);
+        setIsNotificationsOpen(false);
+        if (typeof window !== "undefined") {
+          window.history.pushState(
+            { establishmentId: payload.establishment.id, publicationId: payload.publication.id },
+            "",
+            `/attivita/${encodeURIComponent(payload.establishment.slug || String(payload.establishment.id))}`,
+          );
+        }
+      } catch (error) {
+        console.error("Error loading notification publication:", error);
+      }
+      return;
+    }
     if (!("productId" in notification) || !notification.productId) {
       return;
     }
@@ -2263,46 +2295,6 @@ export default function App() {
   }, [catalogProducts, activeCategory, searchQuery, hasMaxPriceFilter, maxPriceFilter]);
 
   const visibleEstablishments = React.useMemo(() => establishments, [establishments]);
-  const selectedEstablishmentSections = React.useMemo(
-    () => (selectedEstablishment?.sections ?? []).filter((section) => Math.max(0, Number(section.productCount ?? 0)) > 0),
-    [selectedEstablishment],
-  );
-  const selectedEstablishmentProductCategories = React.useMemo(() => {
-    const labels = new globalThis.Map<string, string>();
-    for (const product of selectedEstablishmentProducts) {
-      const label = String(product.category ?? "").trim();
-      const key = label.toLowerCase();
-      if (label && !labels.has(key)) {
-        labels.set(key, label);
-      }
-    }
-    return [...labels.values()].sort((left: string, right: string) => left.localeCompare(right, locale));
-  }, [locale, selectedEstablishmentProducts]);
-  const visibleSelectedEstablishmentProducts = React.useMemo(() => {
-    const normalizedQuery = establishmentSearchQuery.trim().toLowerCase();
-    return selectedEstablishmentProducts.filter((product) => {
-      if (activeStorefrontSectionId && product.sectionId !== activeStorefrontSectionId) {
-        return false;
-      }
-      if (!normalizedQuery) {
-        return true;
-      }
-      const detailValues =
-        product.details && typeof product.details === "object"
-          ? Object.values(product.details).join(" ")
-          : "";
-      const searchable = [
-        product.name,
-        product.category,
-        product.sectionName,
-        product.description,
-        detailValues,
-      ]
-        .join(" ")
-        .toLowerCase();
-      return searchable.includes(normalizedQuery);
-    });
-  }, [activeStorefrontSectionId, establishmentSearchQuery, selectedEstablishmentProducts]);
 
   const productGridClassName = React.useMemo(() => {
     if (!USE_ART_GALLERY_PRODUCT_GRID) {
@@ -2536,7 +2528,7 @@ export default function App() {
               <div className="flex items-center gap-4">
                 <Plus className="w-4 h-4 text-white/70 group-hover:text-white transition-colors" />
                 <span className="text-xs uppercase tracking-widest font-bold">
-                  {t("Nuovo prodotto")}
+                  {t("Nuova pubblicazione")}
                 </span>
               </div>
               <ArrowRight className="w-3 h-3 text-white/50 group-hover:text-white transition-colors" />
@@ -2856,78 +2848,86 @@ export default function App() {
                 </div>
               </section>
               <section className="mt-12">
-                <div className="sticky top-[72px] z-20 mb-7 border-y border-stone-200 bg-[#f8f7f4]/95 py-4 backdrop-blur-md">
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
-                    <input
-                      type="search"
-                      value={establishmentSearchQuery}
-                      onChange={(event) => setEstablishmentSearchQuery(event.target.value)}
-                      placeholder={t("Cerca in questa attività...")}
-                      className="w-full border-0 border-b border-stone-300 bg-transparent py-3 pl-7 pr-3 font-serif text-xl italic text-stone-900 outline-none transition-colors placeholder:text-stone-400 focus:border-stone-900"
-                    />
+                {selectedEstablishmentPublications.length === 0 ? (
+                  <div className="border-t border-stone-100 py-16 text-center">
+                    <p className="text-xs uppercase tracking-[0.22em] text-stone-400">
+                      {t("Nessuna pubblicazione ancora.")}
+                    </p>
                   </div>
-                  <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveStorefrontSectionId(null);
-                        setEstablishmentSearchQuery("");
-                      }}
-                      className={`shrink-0 rounded-full border px-4 py-2 text-xs uppercase tracking-[0.16em] ${
-                        activeStorefrontSectionId === null && !establishmentSearchQuery.trim()
-                          ? "border-stone-900 bg-stone-900 text-white"
-                          : "border-stone-200 bg-white/70 text-stone-600"
-                      }`}
-                    >
-                      {t("Tutti")}
-                    </button>
-                    {selectedEstablishmentSections.map((section) => (
+                ) : (
+                  <div className="grid grid-cols-3 gap-1 sm:gap-2">
+                    {selectedEstablishmentPublications.map((publication, index) => (
                       <button
-                        key={section.id}
+                        key={publication.id}
                         type="button"
-                        onClick={() => setActiveStorefrontSectionId(section.id)}
-                        className={`shrink-0 rounded-full border px-4 py-2 text-xs uppercase tracking-[0.16em] ${
-                          activeStorefrontSectionId === section.id
-                            ? "border-stone-900 bg-stone-900 text-white"
-                            : "border-stone-200 bg-white/70 text-stone-600"
-                        }`}
+                        onClick={() => {
+                          setSelectedPublication(publication);
+                          setFocusedPublicationCommentId(null);
+                        }}
+                        className="group relative aspect-square overflow-hidden bg-stone-100"
                       >
-                        {section.name}
-                      </button>
-                    ))}
-                    {selectedEstablishmentProductCategories.map((category) => (
-                      <button
-                        key={category}
-                        type="button"
-                        onClick={() => setEstablishmentSearchQuery(category)}
-                        className={`shrink-0 rounded-full border px-4 py-2 text-xs uppercase tracking-[0.16em] ${
-                          establishmentSearchQuery.trim().toLowerCase() === category.toLowerCase()
-                            ? "border-stone-900 bg-stone-900 text-white"
-                            : "border-stone-200 bg-white/70 text-stone-600"
-                        }`}
-                      >
-                        {category}
+                        <ProgressiveProductImage
+                          src={publication.imageUrl}
+                          alt={selectedEstablishment.name}
+                          loading={index < 9 ? "eager" : "lazy"}
+                          fetchPriority={index < 9 ? "high" : "auto"}
+                          variant="card"
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        />
+                        {publication.caption && (
+                          <div className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/55 to-transparent px-3 pb-3 pt-8 opacity-0 transition-opacity group-hover:opacity-100">
+                            <p className="line-clamp-2 text-left text-xs leading-5 text-white">
+                              {publication.caption}
+                            </p>
+                          </div>
+                        )}
                       </button>
                     ))}
                   </div>
-                </div>
-                <div className={productGridClassName}>
-                  {visibleSelectedEstablishmentProducts.map((product, index) => (
-                    <div key={product.id} className="h-full">
-                      <ProductCard
-                        product={product}
-                        imageLoading={index < 8 ? "eager" : "lazy"}
-                        onClick={() => openProductDetails(product)}
-                        isLiked={likedProductIds.has(product.id)}
-                        onToggleLike={() => void handleToggleLike(product)}
-                      />
-                    </div>
-                  ))}
-                </div>
+                )}
               </section>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedPublication && selectedEstablishment && (
+          <PublicationViewer
+            publication={selectedPublication}
+            establishment={selectedEstablishment}
+            currentUser={currentUser}
+            focusCommentId={focusedPublicationCommentId}
+            onClose={() => {
+              setSelectedPublication(null);
+              setFocusedPublicationCommentId(null);
+            }}
+            onRequireAuth={() => {
+              setAuthModalMode("register");
+              setIsAuthModalOpen(true);
+            }}
+            onUpdated={(publication) => {
+              setSelectedPublication(publication);
+              setSelectedEstablishmentPublications((current) =>
+                current.map((item) => (item.id === publication.id ? publication : item)),
+              );
+            }}
+            onDeleted={(publicationId) => {
+              setSelectedPublication(null);
+              setFocusedPublicationCommentId(null);
+              setSelectedEstablishmentPublications((current) =>
+                current.filter((item) => item.id !== publicationId),
+              );
+              setMyEstablishment((current) =>
+                current
+                  ? { ...current, publicationCount: Math.max(0, (current.publicationCount ?? 1) - 1) }
+                  : current,
+              );
+              void api.getEstablishments({ search: debouncedSearchQuery, category: activeCategory, limit: 80 })
+                .then(setEstablishments)
+                .catch(() => null);
+            }}
+          />
         )}
       </AnimatePresence>
 
@@ -3031,55 +3031,19 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* New Product View */}
+      {/* New Publication View */}
       <AnimatePresence>
-        {(hasMemberAccess && isNewProductOpen) && (
-          <NewProduct 
-            onClose={() => setIsNewProductOpen(false)} 
+        {(hasMemberAccess && isNewProductOpen && myEstablishment) && (
+          <NewPublication
             establishment={myEstablishment}
-            sections={myEstablishment?.sections ?? []}
-            onCreateSection={async (name) => {
-              if (!myEstablishment) {
-                const establishment = await api.getMyEstablishment();
-                setMyEstablishment(establishment);
-                const section = await api.createStorefrontSection(establishment.id, name);
-                setMyEstablishment({
-                  ...establishment,
-                  sections: [...(establishment.sections ?? []), section],
-                });
-                return section;
-              }
-              const section = await api.createStorefrontSection(myEstablishment.id, name);
+            onClose={() => setIsNewProductOpen(false)}
+            onPublished={(publication) => {
+              setSelectedEstablishmentPublications((current) => [publication, ...current]);
               setMyEstablishment((current) =>
                 current
-                  ? { ...current, sections: [...(current.sections ?? []), section] }
+                  ? { ...current, publicationCount: (current.publicationCount ?? 0) + 1 }
                   : current,
               );
-              return section;
-            }}
-            onDeleteSection={async (sectionId) => {
-              const establishment = myEstablishment ?? (await api.getMyEstablishment());
-              await api.deleteStorefrontSection(establishment.id, sectionId);
-              setMyEstablishment((current) =>
-                current
-                  ? {
-                      ...current,
-                      sections: (current.sections ?? []).filter((section) => section.id !== sectionId),
-                    }
-                  : current,
-              );
-            }}
-            onPublish={async (newProd) => {
-              const sellerPhone = String(currentUser?.whatsappNumber ?? "").replace(/\D/g, "");
-              const published = await api.createProduct({
-                ...newProd,
-                phone: sellerPhone || undefined,
-                seller_phone: sellerPhone || undefined,
-                whatsappNumber: sellerPhone || undefined,
-                whatsappCountryIso: currentUser?.whatsappCountryIso || "IT",
-              });
-              setProducts((current) => [published, ...current]);
-              setMyProducts((current) => [published, ...current]);
               void api.getMyEstablishment().then(setMyEstablishment).catch(() => null);
               void api.getEstablishments({ search: debouncedSearchQuery, category: activeCategory, limit: 80 })
                 .then(setEstablishments)
@@ -3942,7 +3906,9 @@ export default function App() {
                       </div>
                       <div className="mt-4 flex items-center justify-between gap-3">
                         <span className="text-xs text-stone-500">
-                          {t("{count} prodotti", { count: String(establishment.productCount) })}
+                          {t("{count} pubblicazioni", {
+                            count: String(establishment.publicationCount ?? establishment.productCount ?? 0),
+                          })}
                         </span>
                         <ArrowRight className="h-4 w-4 text-stone-400 transition-transform group-hover:translate-x-1" />
                       </div>
@@ -3950,7 +3916,7 @@ export default function App() {
                   </button>
                 ))}
               </div>
-              {(searchQuery.trim().length > 0 || hasMaxPriceFilter) && filteredProducts.length > 0 && (
+              {false && (searchQuery.trim().length > 0 || hasMaxPriceFilter) && filteredProducts.length > 0 && (
                 <div className="mt-12">
                   <p className="mb-5 text-[10px] uppercase tracking-[0.26em] text-stone-400">
                     {t("Prodotti e servizi trovati")}

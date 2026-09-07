@@ -4,7 +4,6 @@ import { Search, Pencil, Trash2, Package, X, ExternalLink } from "lucide-react";
 import { type Product } from "./ProductCard";
 import { useI18n } from "../i18n/provider";
 import { type AppLocale } from "../i18n";
-import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 import { api, type SessionUser } from "../lib/api";
 
@@ -257,6 +256,7 @@ type LeafletMapInstance = {
 
 type LeafletMarkerInstance = {
   addTo: (map: LeafletMapInstance) => LeafletMarkerInstance;
+  on: (eventName: string, handler: () => void) => LeafletMarkerInstance;
   remove: () => void;
 };
 
@@ -324,13 +324,6 @@ const MIN_DRAW_POINT_DELTA = 0.00003;
 const DRAW_STATE_SYNC_INTERVAL_MS = 80;
 const TILE_FALLBACK_TIMEOUT_MS = 20000;
 const TILE_ERROR_THRESHOLD = 8;
-const DEFAULT_MARKER_STYLE = {
-  radius: 7,
-  color: "#5d4037",
-  weight: 2,
-  fillColor: "#fbc02d",
-  fillOpacity: 0.85,
-};
 const FOCUSED_POINT_MARKER_STYLE = {
   radius: 8,
   color: "#1b5e20",
@@ -787,13 +780,24 @@ export default function ProductMap({
     setIsTopSearchResultsOpen(false);
   }, [clearDrawingPolygon, clearSelectionPolygon]);
 
+  const openMapItem = React.useCallback(
+    (product: LocatedProduct) => {
+      if (product.establishmentSlug || product.establishmentId) {
+        onOpenEstablishment?.(product.establishmentSlug || product.establishmentId || product.id);
+        return;
+      }
+      onOpenProduct?.(product);
+    },
+    [onOpenEstablishment, onOpenProduct],
+  );
+
   const handleSearchResultSelect = React.useCallback(
     (product: LocatedProduct) => {
       mapRef.current?.setView([product.latitude, product.longitude], 15);
       setIsTopSearchResultsOpen(false);
-      onOpenProduct?.(product);
+      openMapItem(product);
     },
-    [onOpenProduct],
+    [openMapItem],
   );
 
   const handleStartDrawingMode = () => {
@@ -1212,12 +1216,19 @@ export default function ProductMap({
     markersRef.current = orderedProducts.flatMap((product) => {
       const isFocusedProduct = product.id === initialFocusProductId;
       if (!isFocusedProduct) {
-        const defaultMarker = L.circleMarker(
-          [product.latitude, product.longitude],
-          DEFAULT_MARKER_STYLE,
-        );
-        defaultMarker.addTo(map);
-        return [defaultMarker];
+        const storeMarker = L.marker([product.latitude, product.longitude], {
+          icon: L.divIcon({
+            className: "templesale-store-map-marker",
+            html: buildStoreMarkerHtml(product),
+            iconSize: [164, 64],
+            iconAnchor: [82, 54],
+          }),
+        });
+        storeMarker.on("click", () => {
+          openMapItem(product);
+        });
+        storeMarker.addTo(map);
+        return [storeMarker];
       }
 
       const focusedPointMarker = L.circleMarker(
@@ -1242,7 +1253,7 @@ export default function ProductMap({
 
       return [focusedPointMarker, focusedBalloonMarker];
     });
-  }, [clearMarkers, filteredProducts, initialFocusProductId, mapReadyVersion, t]);
+  }, [clearMarkers, filteredProducts, initialFocusProductId, mapReadyVersion, openMapItem, t]);
 
   React.useEffect(() => {
     if (!showResults || currentPolygon.length < 3) {
@@ -1493,10 +1504,7 @@ export default function ProductMap({
                               {product.name}
                             </p>
                             <p className="text-[10px] text-stone-500 truncate">
-                              {getCategoryLabel(product.category, locale)} •{" "}
-                              {formatCompactPriceFromUnknown(product.price, locale, {
-                                priceNegotiable: product.priceNegotiable,
-                              })}
+                              {getCategoryLabel(product.category, locale)}
                             </p>
                           </div>
                         </button>
@@ -1589,7 +1597,7 @@ export default function ProductMap({
 
         {!leafletError && !hasProductsWithLocation && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-1000 bg-stone-900 text-white px-6 py-3 rounded-full shadow-2xl text-sm">
-            {t("Nenhum produto com localização disponível no momento.")}
+            {t("Nenhuma atividade com localização disponível no momento.")}
           </div>
         )}
 
@@ -1606,10 +1614,10 @@ export default function ProductMap({
                 <div className="flex items-center justify-between mb-3 sm:mb-4 gap-3">
                   <div>
                     <h2 className="text-base sm:text-lg font-semibold text-stone-800">
-                      {t("Produtos encontrados")}
+                      {t("Attività trovate")}
                     </h2>
                     <p className="text-[11px] sm:text-xs text-stone-500">
-                      {t("{count} itens na área selecionada", {
+                      {t("{count} attività nella zona selezionata", {
                         count: selectedProducts.length,
                       })}
                     </p>
@@ -1658,7 +1666,7 @@ export default function ProductMap({
                     </div>
                     <div>
                       <p className="font-medium text-stone-600">
-                        {t("Nenhum produto encontrado")}
+                        {t("Nenhuma atividade encontrada")}
                       </p>
                       <p className="text-sm text-stone-400">
                         {t("Tente mudar o filtro ou desenhar outra área.")}
@@ -1674,31 +1682,31 @@ export default function ProductMap({
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         className={`group text-left bg-white border border-stone-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 ${
-                          onOpenProduct ? "cursor-pointer" : ""
+                          onOpenProduct || onOpenEstablishment ? "cursor-pointer" : ""
                         }`}
                         onPointerDown={(event) => {
                           event.stopPropagation();
                         }}
                         onClick={(event) => {
                           event.stopPropagation();
-                          if (!onOpenProduct) {
+                          if (!onOpenProduct && !onOpenEstablishment) {
                             return;
                           }
-                          onOpenProduct(product);
+                          openMapItem(product);
                         }}
                         onKeyDown={(event) => {
-                          if (!onOpenProduct) {
+                          if (!onOpenProduct && !onOpenEstablishment) {
                             return;
                           }
                           if (event.key !== "Enter" && event.key !== " ") {
                             return;
                           }
                           event.preventDefault();
-                          onOpenProduct(product);
+                          openMapItem(product);
                         }}
                         aria-label={
-                          onOpenProduct
-                            ? t("Abrir detalhes de {name}", { name: product.name })
+                          onOpenProduct || onOpenEstablishment
+                            ? t("Abrir atividade {name}", { name: product.name })
                             : undefined
                         }
                       >
@@ -1720,10 +1728,8 @@ export default function ProductMap({
                             {product.name}
                           </h3>
                           <div className="mt-1 sm:mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                            <span className="text-sm sm:text-lg font-semibold text-stone-700">
-                              {formatCompactPriceFromUnknown(product.price, locale, {
-                                priceNegotiable: product.priceNegotiable,
-                              })}
+                            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
+                              {product.category}
                             </span>
                             <span className="text-[10px] sm:text-xs font-semibold text-stone-400 text-left sm:text-right truncate">
                               {product.city?.trim() ||
