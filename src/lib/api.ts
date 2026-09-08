@@ -52,6 +52,14 @@ export interface ProductPageDto {
   offset: number;
 }
 
+export interface PublicationPageDto {
+  publications: PublicationDto[];
+  hasMore: boolean;
+  nextOffset: number;
+  limit: number;
+  offset: number;
+}
+
 export interface GetProductsPageInput {
   limit: number;
   offset?: number;
@@ -268,6 +276,12 @@ export interface PublicationDto {
   createdAt: number;
   updatedAt: number;
   legacyProductId?: number;
+  establishmentName?: string;
+  establishmentSlug?: string;
+  establishmentCategory?: string;
+  establishmentCity?: string;
+  establishmentLogoUrl?: string;
+  establishmentCoverUrl?: string;
 }
 
 export interface GeocodeResultDto {
@@ -1371,7 +1385,7 @@ function normalizePublicationItem(value: unknown): PublicationDto | null {
   if (id === undefined || establishmentId === undefined || ownerId === undefined || !imageUrl) {
     return null;
   }
-  return {
+  const publication: PublicationDto = {
     id,
     establishmentId,
     ownerId,
@@ -1382,6 +1396,31 @@ function normalizePublicationItem(value: unknown): PublicationDto | null {
     updatedAt: toNonNegativeInteger(firstDefined(parsed, ["updatedAt", "updated_at"])) ?? 0,
     legacyProductId: toOptionalNumber(firstDefined(parsed, ["legacyProductId", "legacy_product_id"])),
   };
+  const establishmentName = toStringValue(firstDefined(parsed, ["establishmentName", "establishment_name"]));
+  const establishmentSlug = toStringValue(firstDefined(parsed, ["establishmentSlug", "establishment_slug"]));
+  const establishmentCategory = toStringValue(firstDefined(parsed, ["establishmentCategory", "establishment_category"]));
+  const establishmentCity = toStringValue(firstDefined(parsed, ["establishmentCity", "establishment_city"]));
+  const establishmentLogoUrl = toStringValue(firstDefined(parsed, ["establishmentLogoUrl", "establishment_logo_url", "logoUrl", "logo_url"]));
+  const establishmentCoverUrl = toStringValue(firstDefined(parsed, ["establishmentCoverUrl", "establishment_cover_url", "coverUrl", "cover_url"]));
+  if (establishmentName) {
+    publication.establishmentName = establishmentName;
+  }
+  if (establishmentSlug) {
+    publication.establishmentSlug = establishmentSlug;
+  }
+  if (establishmentCategory) {
+    publication.establishmentCategory = establishmentCategory;
+  }
+  if (establishmentCity) {
+    publication.establishmentCity = establishmentCity;
+  }
+  if (establishmentLogoUrl) {
+    publication.establishmentLogoUrl = establishmentLogoUrl;
+  }
+  if (establishmentCoverUrl) {
+    publication.establishmentCoverUrl = establishmentCoverUrl;
+  }
+  return publication;
 }
 
 function normalizePublicationList(value: unknown): PublicationDto[] {
@@ -1612,6 +1651,28 @@ function normalizeProductPage(value: unknown, fallbackLimit: number, fallbackOff
 
   return {
     products,
+    hasMore,
+    nextOffset,
+    limit,
+    offset,
+  };
+}
+
+function normalizePublicationPage(value: unknown, fallbackLimit: number, fallbackOffset: number): PublicationPageDto {
+  const parsed = parseJsonIfNeeded(value);
+  const publications = normalizePublicationList(parsed);
+  const pagination = isRecord(parsed) && isRecord(parsed.pagination) ? parsed.pagination : {};
+  const returned = publications.length;
+  const hasMore =
+    toOptionalBoolean(firstDefined(pagination, ["hasMore", "has_more"])) ??
+    returned >= fallbackLimit;
+  const nextOffset =
+    toNonNegativeInteger(firstDefined(pagination, ["nextOffset", "next_offset"])) ??
+    fallbackOffset + returned;
+  const limit = toNonNegativeInteger(firstDefined(pagination, ["limit"])) ?? fallbackLimit;
+  const offset = toNonNegativeInteger(firstDefined(pagination, ["offset"])) ?? fallbackOffset;
+  return {
+    publications,
     hasMore,
     nextOffset,
     limit,
@@ -2754,6 +2815,18 @@ export const api = {
       throw new Error("Resposta inválida ao carregar attivita.");
     }
     return { establishment, products, publications };
+  },
+  async getPublicationsFeed(input: { limit?: number; offset?: number } = {}) {
+    const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 12)), 1), 36);
+    const offset = Math.max(Math.floor(Number(input.offset ?? 0)), 0);
+    const query = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    const payload = await request<unknown>(`/api/publications?${query.toString()}`, {
+      skipAuthToken: true,
+    });
+    return normalizePublicationPage(payload, limit, offset);
   },
   async saveEstablishment(input: Partial<EstablishmentDto>) {
     const method = input.id ? "PUT" : "POST";

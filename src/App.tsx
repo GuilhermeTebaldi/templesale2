@@ -293,6 +293,12 @@ export default function App() {
   const [selectedPublication, setSelectedPublication] = React.useState<PublicationDto | null>(null);
   const [focusedPublicationCommentId, setFocusedPublicationCommentId] = React.useState<number | null>(null);
   const [isEstablishmentPageOpen, setIsEstablishmentPageOpen] = React.useState(false);
+  const [publicationFeed, setPublicationFeed] = React.useState<PublicationDto[]>([]);
+  const [isLoadingPublicationFeed, setIsLoadingPublicationFeed] = React.useState(true);
+  const [isLoadingMorePublicationFeed, setIsLoadingMorePublicationFeed] = React.useState(false);
+  const [hasMorePublicationFeed, setHasMorePublicationFeed] = React.useState(false);
+  const [nextPublicationFeedOffset, setNextPublicationFeedOffset] = React.useState(0);
+  const [publicationFeedError, setPublicationFeedError] = React.useState("");
   const [isLoadingEstablishments, setIsLoadingEstablishments] = React.useState(false);
   const activityOnboardingShownRef = React.useRef<number | null>(null);
   const [cartQuantitiesByProductId, setCartQuantitiesByProductId] = React.useState<Record<number, number>>(
@@ -341,6 +347,7 @@ export default function App() {
   const [desktopProductGridColumns, setDesktopProductGridColumns] = React.useState<2 | 3 | 4>(3);
   const cartToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const productsRequestSequenceRef = React.useRef(0);
+  const publicationsRequestSequenceRef = React.useRef(0);
   const auth0SyncAttemptedRef = React.useRef(false);
   const hasMemberAccess = Boolean(currentUser);
   const cartStorageKey = React.useMemo(
@@ -569,6 +576,72 @@ export default function App() {
   React.useEffect(() => {
     void loadProductsPage({ append: false });
   }, [loadProductsPage]);
+
+  const loadPublicationFeedPage = React.useCallback(
+    async ({
+      append,
+      offset = 0,
+    }: {
+      append: boolean;
+      offset?: number;
+    }): Promise<void> => {
+      const requestSequence = publicationsRequestSequenceRef.current + 1;
+      publicationsRequestSequenceRef.current = requestSequence;
+      const isLatestRequest = () => publicationsRequestSequenceRef.current === requestSequence;
+      const limit = append ? 8 : 12;
+
+      if (append) {
+        setIsLoadingMorePublicationFeed(true);
+      } else {
+        setIsLoadingPublicationFeed(true);
+        setPublicationFeedError("");
+      }
+
+      try {
+        const page = await api.getPublicationsFeed({ limit, offset });
+        if (!isLatestRequest()) {
+          return;
+        }
+        setPublicationFeed((current) => {
+          if (!append) {
+            return page.publications;
+          }
+          const nextById = new globalThis.Map<number, PublicationDto>();
+          current.forEach((publication) => nextById.set(publication.id, publication));
+          page.publications.forEach((publication) => nextById.set(publication.id, publication));
+          return [...nextById.values()];
+        });
+        setHasMorePublicationFeed(page.hasMore);
+        setNextPublicationFeedOffset(page.nextOffset);
+        setPublicationFeedError("");
+      } catch (error) {
+        console.error("Error fetching publication feed:", error);
+        if (!isLatestRequest()) {
+          return;
+        }
+        setPublicationFeedError(error instanceof Error ? error.message : t("Falha ao carregar publicações."));
+        if (!append) {
+          setPublicationFeed([]);
+          setHasMorePublicationFeed(false);
+          setNextPublicationFeedOffset(0);
+        }
+      } finally {
+        if (!isLatestRequest()) {
+          return;
+        }
+        if (append) {
+          setIsLoadingMorePublicationFeed(false);
+        } else {
+          setIsLoadingPublicationFeed(false);
+        }
+      }
+    },
+    [t],
+  );
+
+  React.useEffect(() => {
+    void loadPublicationFeedPage({ append: false });
+  }, [loadPublicationFeedPage]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -2295,6 +2368,41 @@ export default function App() {
   }, [catalogProducts, activeCategory, searchQuery, hasMaxPriceFilter, maxPriceFilter]);
 
   const visibleEstablishments = React.useMemo(() => establishments, [establishments]);
+  const isDiscoveryMode = React.useMemo(
+    () => debouncedSearchQuery.trim().length > 0 || activeCategory !== "All",
+    [activeCategory, debouncedSearchQuery],
+  );
+  const buildEstablishmentFromPublication = React.useCallback(
+    (publication: PublicationDto): EstablishmentDto => {
+      const existing =
+        establishments.find((item) => item.id === publication.establishmentId) ??
+        (selectedEstablishment?.id === publication.establishmentId ? selectedEstablishment : null);
+      return {
+        id: publication.establishmentId,
+        ownerId: publication.ownerId,
+        name: publication.establishmentName || existing?.name || t("Attività"),
+        slug: publication.establishmentSlug || existing?.slug || String(publication.establishmentId),
+        category: publication.establishmentCategory || existing?.category || "Altro",
+        logoUrl: publication.establishmentLogoUrl || existing?.logoUrl || "",
+        coverUrl: publication.establishmentCoverUrl || existing?.coverUrl || "",
+        description: existing?.description || "",
+        city: publication.establishmentCity || existing?.city || "",
+        address: existing?.address || "",
+        latitude: existing?.latitude,
+        longitude: existing?.longitude,
+        whatsappCountryIso: existing?.whatsappCountryIso,
+        whatsappNumber: existing?.whatsappNumber,
+        phone: existing?.phone,
+        openingHours: existing?.openingHours,
+        keywords: existing?.keywords ?? [],
+        isActive: existing?.isActive ?? true,
+        productCount: existing?.productCount ?? 0,
+        publicationCount: existing?.publicationCount,
+        sections: existing?.sections,
+      };
+    },
+    [establishments, selectedEstablishment, t],
+  );
 
   const productGridClassName = React.useMemo(() => {
     if (!USE_ART_GALLERY_PRODUCT_GRID) {
@@ -3038,7 +3146,17 @@ export default function App() {
             establishment={myEstablishment}
             onClose={() => setIsNewProductOpen(false)}
             onPublished={(publication) => {
-              setSelectedEstablishmentPublications((current) => [publication, ...current]);
+              const publicationWithEstablishment: PublicationDto = {
+                ...publication,
+                establishmentName: myEstablishment.name,
+                establishmentSlug: myEstablishment.slug,
+                establishmentCategory: myEstablishment.category,
+                establishmentCity: myEstablishment.city,
+                establishmentLogoUrl: myEstablishment.logoUrl,
+                establishmentCoverUrl: myEstablishment.coverUrl,
+              };
+              setSelectedEstablishmentPublications((current) => [publicationWithEstablishment, ...current]);
+              setPublicationFeed((current) => [publicationWithEstablishment, ...current]);
               setMyEstablishment((current) =>
                 current
                   ? { ...current, publicationCount: (current.publicationCount ?? 0) + 1 }
@@ -3577,7 +3695,7 @@ export default function App() {
               transition={{ duration: 0.8, delay: 0.2 }}
               className="text-2xl sm:text-4xl font-serif italic leading-tight"
             >
-              {t("Arena de vendas.")}
+              {t("Vetrine in movimento.")}
             </motion.h2>
             <motion.button
               initial={{ opacity: 0, scale: 0.9 }}
@@ -3621,62 +3739,17 @@ export default function App() {
           </div>
         </section>
 
-        {/* Filter Bar */}
-        {USE_ELEGANT_PRODUCT_FILTER ? (
-          <ElegantProductFilter
-            activeCategory={activeCategory}
-            categories={availableCategoryFilters}
-            effectivePriceSliderValue={effectivePriceSliderValue}
-            hasMaxPriceFilter={hasMaxPriceFilter}
-            priceSliderMax={priceSliderMax}
-            priceSliderStep={priceSliderStep}
-            resultsCount={filteredProducts.length}
-            formatPrice={formatSliderEuro}
-            getCategoryName={(category) =>
-              category === "All" ? t("Todos") : getCategoryLabel(category, locale)
-            }
-            onCategorySelect={(category) => {
-              handleCategorySelect(category);
-              setIsCategoryDropdownOpen(false);
-              setIsPriceDropdownOpen(false);
-            }}
-            onClearAll={() => {
-              handleCategorySelect("All");
-              setSearchQuery("");
-              setMaxPriceFilter(null);
-              setIsCategoryDropdownOpen(false);
-              setIsPriceDropdownOpen(false);
-            }}
-            onMaxPriceChange={setMaxPriceFilter}
-            labels={{
-              all: "TUTTI",
-              apply: t("Aplicar"),
-              category: t("Categoria"),
-              clear: t("Limpar"),
-              clearAll: t("Limpar tudo"),
-              filter: t("Filtro"),
-              filters: t("Filtros"),
-              maxPrice: t("Até qual valor (€)"),
-              noActiveFilters: t("Sem filtros ativos"),
-              price: t("Preço"),
-              results: t("resultados"),
-              selectedFilters: t("Filtros ativos"),
-            }}
-          />
-        ) : (
         <section className="bg-[#fdfcfb] border-b border-stone-100">
-          <div ref={categoryDropdownRef} className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 sm:py-3">
-            <div className="flex items-center gap-2">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 sm:py-3">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
               <button
                 type="button"
                 onClick={() => {
                   handleCategorySelect("All");
                   setSearchQuery("");
                   setMaxPriceFilter(null);
-                  setIsCategoryDropdownOpen(false);
-                  setIsPriceDropdownOpen(false);
                 }}
-                className={`px-3 py-2 rounded-lg border text-[10px] uppercase tracking-[0.2em] font-semibold transition-colors ${
+                className={`shrink-0 px-3 py-2 rounded-lg border text-[10px] uppercase tracking-[0.2em] font-semibold transition-colors ${
                   activeCategory === "All"
                     ? "border-stone-900 text-stone-900 bg-stone-100"
                     : "border-stone-300 text-stone-700 hover:border-stone-500"
@@ -3685,175 +3758,159 @@ export default function App() {
                 TUTTI
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCategoryDropdownOpen((current) => !current);
-                  setIsPriceDropdownOpen(false);
-                }}
-                className="px-3 py-2 rounded-lg border border-stone-300 text-stone-700 hover:border-stone-500 transition-colors inline-flex items-center gap-2"
-                aria-label={t("Filtro")}
-                aria-expanded={isCategoryDropdownOpen}
-              >
-                <span className="text-[10px] uppercase tracking-[0.18em] font-semibold">
-                  {t("Filtro")}
-                </span>
-                <ChevronRight
-                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                    isCategoryDropdownOpen ? "rotate-90" : ""
-                  }`}
-                />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPriceDropdownOpen((current) => !current);
-                  setIsCategoryDropdownOpen(false);
-                }}
-                className={`px-3 py-2 rounded-lg border transition-colors inline-flex items-center gap-2 ${
-                  hasMaxPriceFilter
-                    ? "border-stone-900 text-stone-900 bg-stone-100"
-                    : "border-stone-300 text-stone-700 hover:border-stone-500"
-                }`}
-                aria-label={t("Preço")}
-                aria-expanded={isPriceDropdownOpen}
-              >
-                <span className="text-[10px] uppercase tracking-[0.18em] font-semibold">
-                  {t("Preço")}
-                </span>
-                <ChevronRight
-                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                    isPriceDropdownOpen ? "rotate-90" : ""
-                  }`}
-                />
-              </button>
+              {availableCategoryFilters
+                .filter((category) => category.key !== "All")
+                .map((category) => (
+                  <button
+                    key={category.key}
+                    type="button"
+                    onClick={() => handleCategorySelect(category.key)}
+                    className={`shrink-0 px-3 py-2 rounded-lg border text-[10px] uppercase tracking-[0.18em] font-medium transition-colors ${
+                      activeCategory === category.key
+                        ? "border-stone-900 text-stone-900 bg-stone-100"
+                        : "border-stone-200 text-stone-500 hover:text-stone-700 hover:border-stone-400"
+                    }`}
+                  >
+                    {getCategoryLabel(category.key, locale)}
+                  </button>
+                ))}
             </div>
-
-            <AnimatePresence initial={false}>
-              {isCategoryDropdownOpen && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2, ease: "easeOut" }}
-                  className="overflow-hidden"
-                >
-                  <div className="pt-2 pb-1 flex flex-wrap gap-2">
-                    {availableCategoryFilters
-                      .filter((category) => category.key !== "All")
-                      .map((category) => (
-                        <button
-                          key={category.key}
-                          type="button"
-                          onClick={() => {
-                            handleCategorySelect(category.key);
-                            setIsCategoryDropdownOpen(false);
-                            setIsPriceDropdownOpen(false);
-                          }}
-                          className={`px-3 py-2 rounded-lg border text-[10px] uppercase tracking-[0.18em] font-medium transition-colors ${
-                            activeCategory === category.key
-                              ? "border-stone-900 text-stone-900 bg-stone-100"
-                              : "border-stone-200 text-stone-500 hover:text-stone-700 hover:border-stone-400"
-                          }`}
-                        >
-                          {getCategoryLabel(category.key, locale)}
-                        </button>
-                      ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <AnimatePresence initial={false}>
-              {isPriceDropdownOpen && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2, ease: "easeOut" }}
-                  className="overflow-hidden"
-                >
-                  <div className="pt-2 pb-1">
-                    <div className="w-full sm:max-w-[20rem] rounded-lg border border-stone-200 bg-white px-3 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-[10px] uppercase tracking-[0.14em] font-semibold text-stone-600">
-                          {t("Até qual valor (€)")}
-                        </span>
-                        <span className="text-sm text-stone-900">
-                          {formatSliderEuro(effectivePriceSliderValue)}
-                        </span>
-                      </div>
-
-                      <input
-                        type="range"
-                        min={0}
-                        max={priceSliderMax}
-                        step={priceSliderStep}
-                        value={effectivePriceSliderValue}
-                        onChange={(event) => {
-                          const nextValue = Number(event.target.value);
-                          if (!Number.isFinite(nextValue) || nextValue <= 0) {
-                            setMaxPriceFilter(null);
-                            return;
-                          }
-                          setMaxPriceFilter(nextValue);
-                        }}
-                        className="mt-3 h-1.5 w-full cursor-pointer accent-stone-800"
-                        aria-label={t("Até qual valor (€)")}
-                      />
-
-                      <div className="mt-2 flex items-center justify-between text-[11px] text-stone-400">
-                        <span>{formatSliderEuro(0)}</span>
-                        <span>{formatSliderEuro(priceSliderMax)}</span>
-                      </div>
-
-                      {hasMaxPriceFilter && (
-                        <button
-                          type="button"
-                          onClick={() => setMaxPriceFilter(null)}
-                          className="mt-3 h-9 px-3 rounded-lg border border-stone-300 text-[10px] uppercase tracking-[0.14em] font-semibold text-stone-700 hover:border-stone-700 transition-colors"
-                        >
-                          {t("Limpar")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
+        </section>
+
+        {!isDiscoveryMode && (
+        <section className="mx-auto max-w-2xl px-3 pt-4 pb-12 sm:px-6 sm:pt-6 sm:pb-20">
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.26em] text-stone-400">{t("Feed")}</p>
+              <h2 className="mt-1 font-serif text-2xl text-stone-900">{t("Pubblicazioni")}</h2>
+            </div>
+          </div>
+          {isLoadingPublicationFeed ? (
+            <div className="py-20 text-center text-stone-400 text-xs uppercase tracking-[0.2em]">
+              {t("Caricamento pubblicazioni...")}
+            </div>
+          ) : publicationFeed.length === 0 ? (
+            <div className="rounded-lg border border-stone-100 bg-white py-20 text-center">
+              <p className="text-xs uppercase tracking-[0.2em] text-stone-400">
+                {t("Nessuna pubblicazione ancora.")}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-5 sm:space-y-7">
+              {publicationFeed.map((publication, index) => {
+                const feedEstablishment = buildEstablishmentFromPublication(publication);
+                const logoUrl = feedEstablishment.logoUrl || feedEstablishment.coverUrl || "";
+                return (
+                  <article
+                    key={publication.id}
+                    className="overflow-hidden rounded-lg border border-stone-200/80 bg-white shadow-[0_1px_2px_rgba(28,25,23,0.04),0_14px_34px_rgba(28,25,23,0.04)]"
+                  >
+                    <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
+                      <button
+                        type="button"
+                        onClick={() => void openEstablishmentPage(feedEstablishment)}
+                        className="flex min-w-0 items-center gap-3 text-left"
+                      >
+                        <span className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-stone-200 bg-stone-100">
+                          {logoUrl ? (
+                            <ProgressiveProductImage
+                              src={logoUrl}
+                              alt={feedEstablishment.name}
+                              loading={index < 4 ? "eager" : "lazy"}
+                              fetchPriority={index < 4 ? "high" : "auto"}
+                              variant="thumbnail"
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <span className="flex h-full w-full items-center justify-center font-serif text-lg text-stone-400">
+                              {feedEstablishment.name.slice(0, 1).toUpperCase()}
+                            </span>
+                          )}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate font-serif text-lg text-stone-950">
+                            {feedEstablishment.name}
+                          </span>
+                          <span className="block truncate text-[10px] uppercase tracking-[0.16em] text-stone-400">
+                            {[feedEstablishment.category, feedEstablishment.city].filter(Boolean).join(" · ")}
+                          </span>
+                        </span>
+                      </button>
+                      <span className="shrink-0 text-[11px] uppercase tracking-[0.14em] text-stone-400">
+                        {formatRelativeTime(publication.createdAt, locale)}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedEstablishment(feedEstablishment);
+                        setSelectedPublication(publication);
+                        setFocusedPublicationCommentId(null);
+                      }}
+                      className="block w-full bg-stone-100"
+                    >
+                      <ProgressiveProductImage
+                        src={publication.imageUrl}
+                        alt={publication.caption || feedEstablishment.name}
+                        loading={index < 3 ? "eager" : "lazy"}
+                        fetchPriority={index < 3 ? "high" : "auto"}
+                        variant="full"
+                        className="max-h-[78vh] w-full object-cover"
+                      />
+                    </button>
+
+                    <div className="px-4 py-4 sm:px-5">
+                      {publication.caption && (
+                        <p className="whitespace-pre-wrap text-sm leading-6 text-stone-800">
+                          {publication.caption}
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedEstablishment(feedEstablishment);
+                          setSelectedPublication(publication);
+                          setFocusedPublicationCommentId(null);
+                        }}
+                        className="mt-4 inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-stone-500 transition-colors hover:text-stone-950"
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                        {t("Ver comentários")}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+              {publicationFeedError && (
+                <p className="text-center text-xs uppercase tracking-[0.18em] text-red-500">
+                  {publicationFeedError}
+                </p>
+              )}
+              {hasMorePublicationFeed && (
+                <div className="flex justify-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void loadPublicationFeedPage({
+                        append: true,
+                        offset: nextPublicationFeedOffset,
+                      })
+                    }
+                    disabled={isLoadingMorePublicationFeed}
+                    className="inline-flex min-w-40 items-center justify-center rounded-lg border border-stone-300 bg-white px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-800 transition-colors hover:border-stone-600 disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    {isLoadingMorePublicationFeed ? t("Carregando...") : t("Carregar mais")}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </section>
         )}
 
-        {false && searchQuery.trim().length === 0 && !hasMaxPriceFilter && randomProductsByCategory.length > 0 && (
-          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-5">
-            <div className="overflow-x-auto no-scrollbar">
-              <div className="flex items-center gap-2.5 sm:gap-3 min-w-max">
-                {randomProductsByCategory.map((product, index) => (
-                  <button
-                    key={`top-category-${product.category}-${product.id}`}
-                    onClick={() => openProductDetails(product)}
-                    title={getCategoryLabel(product.category, locale)}
-                    className="relative shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-sm overflow-hidden border border-stone-200 bg-stone-100 hover:border-stone-400 transition-colors"
-                    aria-label={t("Abrir detalhes de {name}", { name: product.name })}
-                  >
-                    <ProgressiveProductImage
-                      src={product.image}
-                      alt={product.name}
-                      loading={index < 8 ? "eager" : "lazy"}
-                      fetchPriority={index < 8 ? "high" : "low"}
-                      variant="thumbnail"
-                      className="relative w-full h-full object-cover transition-[opacity,transform] duration-500"
-                    />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* Establishment Grid */}
+        {isDiscoveryMode && (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-12 sm:pb-20">
           <div className="mb-5 flex items-end justify-between gap-4">
             <div>
@@ -3916,51 +3973,10 @@ export default function App() {
                   </button>
                 ))}
               </div>
-              {false && (searchQuery.trim().length > 0 || hasMaxPriceFilter) && filteredProducts.length > 0 && (
-                <div className="mt-12">
-                  <p className="mb-5 text-[10px] uppercase tracking-[0.26em] text-stone-400">
-                    {t("Prodotti e servizi trovati")}
-                  </p>
-                  <div className={productGridClassName}>
-                    {filteredProducts.slice(0, 12).map((product, index) => (
-                      <div key={product.id} className="h-full">
-                        <ProductCard
-                          product={product}
-                          imageLoading={index < 8 ? "eager" : "lazy"}
-                          imageFetchPriority={index < 8 ? "high" : "auto"}
-                          onClick={() => openProductDetails(product)}
-                          isLiked={likedProductIds.has(product.id)}
-                          onToggleLike={() => {
-                            void handleToggleLike(product);
-                          }}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {productsError && (
-                <p className="mt-8 text-center text-xs uppercase tracking-[0.18em] text-red-500">
-                  {productsError}
-                </p>
-              )}
-
-              {(searchQuery.trim().length > 0 || hasMaxPriceFilter) && hasMoreProducts && (
-                <div className="mt-10 flex justify-center">
-                  <button
-                    type="button"
-                    onClick={handleLoadMoreProducts}
-                    disabled={isLoadingMoreProducts}
-                    className="inline-flex min-w-40 items-center justify-center rounded-lg border border-stone-300 bg-white px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-800 transition-colors hover:border-stone-600 disabled:cursor-not-allowed disabled:opacity-55"
-                  >
-                    {isLoadingMoreProducts ? t("Carregando...") : t("Carregar mais")}
-                  </button>
-                </div>
-              )}
             </>
           )}
         </section>
+        )}
 
         {/* Brand CTA */}
         <section className="bg-stone-100 px-6 py-28 sm:py-32">

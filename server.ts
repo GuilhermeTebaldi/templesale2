@@ -280,6 +280,12 @@ type EstablishmentPublicationRecord = {
   createdAt: number;
   updatedAt: number;
   legacyProductId?: number;
+  establishmentName?: string;
+  establishmentSlug?: string;
+  establishmentCategory?: string;
+  establishmentCity?: string;
+  establishmentLogoUrl?: string;
+  establishmentCoverUrl?: string;
 };
 
 type StorefrontSectionRecord = {
@@ -1459,7 +1465,7 @@ function normalizeKeywordList(value: unknown, limit = 24): string[] {
 function normalizePublicationRow(row: Record<string, unknown>): EstablishmentPublicationRecord {
   const media = normalizeImages(row.media, String(row.image_url ?? ""));
   const legacyProductId = toNullableNumber(row.legacy_product_id);
-  return {
+  const normalized: EstablishmentPublicationRecord = {
     id: toRequiredNumber(row.id),
     establishmentId: toRequiredNumber(row.establishment_id),
     ownerId: toRequiredNumber(row.owner_user_id),
@@ -1470,6 +1476,31 @@ function normalizePublicationRow(row: Record<string, unknown>): EstablishmentPub
     updatedAt: toRequiredNonNegativeInteger(row.updated_at, Math.floor(Date.now() / 1000)),
     ...(legacyProductId !== null ? { legacyProductId } : {}),
   };
+  const establishmentName = toNullableString(row.establishment_name);
+  const establishmentSlug = toNullableString(row.establishment_slug);
+  const establishmentCategory = toNullableString(row.establishment_category);
+  const establishmentCity = toNullableString(row.establishment_city);
+  const establishmentLogoUrl = toNullableString(row.establishment_logo_url);
+  const establishmentCoverUrl = toNullableString(row.establishment_cover_url);
+  if (establishmentName) {
+    normalized.establishmentName = establishmentName;
+  }
+  if (establishmentSlug) {
+    normalized.establishmentSlug = establishmentSlug;
+  }
+  if (establishmentCategory) {
+    normalized.establishmentCategory = establishmentCategory;
+  }
+  if (establishmentCity) {
+    normalized.establishmentCity = establishmentCity;
+  }
+  if (establishmentLogoUrl) {
+    normalized.establishmentLogoUrl = establishmentLogoUrl;
+  }
+  if (establishmentCoverUrl) {
+    normalized.establishmentCoverUrl = establishmentCoverUrl;
+  }
+  return normalized;
 }
 
 function normalizeStorefrontSectionRow(row: Record<string, unknown>): StorefrontSectionRecord {
@@ -4153,6 +4184,59 @@ async function selectPublicationsByEstablishmentRows(
     )
     .all(establishmentId, normalizedLimit) as Array<Record<string, unknown>>;
   return rows.map(normalizePublicationRow);
+}
+
+async function selectPublicationsFeedRows(input: {
+  limit?: number;
+  offset?: number;
+} = {}): Promise<{ rows: EstablishmentPublicationRecord[]; hasMore: boolean; nextOffset: number }> {
+  const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 12)), 1), 36);
+  const offset = Math.max(Math.floor(Number(input.offset ?? 0)), 0);
+  const fetchLimit = limit + 1;
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          ep.*,
+          e.name AS establishment_name,
+          e.slug AS establishment_slug,
+          e.category AS establishment_category,
+          e.city AS establishment_city,
+          e.logo_url AS establishment_logo_url,
+          e.cover_url AS establishment_cover_url
+        FROM establishment_publications ep
+        INNER JOIN establishments e ON e.id = ep.establishment_id
+        WHERE e.is_active = TRUE
+        ORDER BY ep.created_at DESC, ep.id DESC
+        LIMIT $1 OFFSET $2
+      `,
+      [fetchLimit, offset],
+    );
+    const rows = result.rows.slice(0, limit).map(normalizePublicationRow);
+    return { rows, hasMore: result.rows.length > limit, nextOffset: offset + rows.length };
+  }
+
+  const rawRows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          ep.*,
+          e.name AS establishment_name,
+          e.slug AS establishment_slug,
+          e.category AS establishment_category,
+          e.city AS establishment_city,
+          e.logo_url AS establishment_logo_url,
+          e.cover_url AS establishment_cover_url
+        FROM establishment_publications ep
+        INNER JOIN establishments e ON e.id = ep.establishment_id
+        WHERE e.is_active = 1
+        ORDER BY ep.created_at DESC, ep.id DESC
+        LIMIT ? OFFSET ?
+      `,
+    )
+    .all(fetchLimit, offset) as Array<Record<string, unknown>>;
+  const rows = rawRows.slice(0, limit).map(normalizePublicationRow);
+  return { rows, hasMore: rawRows.length > limit, nextOffset: offset + rows.length };
 }
 
 async function selectPublicationByIdRecord(publicationId: number): Promise<EstablishmentPublicationRecord | null> {
@@ -10953,6 +11037,28 @@ async function bootstrap() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao publicar.";
       res.status(400).json({ error: message });
+    }
+  });
+
+  app.get("/api/publications", async (req, res) => {
+    try {
+      const page = await selectPublicationsFeedRows({
+        limit: Number(req.query.limit ?? 12),
+        offset: Number(req.query.offset ?? 0),
+      });
+      res.json({
+        publications: page.rows,
+        pagination: {
+          limit: Math.min(Math.max(Math.floor(Number(req.query.limit ?? 12)), 1), 36),
+          offset: Math.max(Math.floor(Number(req.query.offset ?? 0)), 0),
+          returned: page.rows.length,
+          hasMore: page.hasMore,
+          nextOffset: page.nextOffset,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao carregar feed.";
+      res.status(500).json({ error: message });
     }
   });
 
