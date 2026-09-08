@@ -449,50 +449,50 @@ export default function EditePerfil({
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: "100%" }}
       transition={{ type: "spring", damping: 30, stiffness: 300 }}
-      className="fixed inset-0 z-150 bg-[#fdfcfb] flex flex-col"
+      className="ts-profile-editor fixed inset-0 z-150 bg-neutral-950 text-neutral-100 flex flex-col"
     >
-      <div className="p-8 flex justify-between items-center border-b border-stone-100">
+      <div className="p-5 sm:p-8 flex justify-between items-center border-b border-neutral-800 bg-neutral-900/95 backdrop-blur-md">
         <div className="flex items-center gap-4">
-          <User className="w-6 h-6 text-stone-800" />
-          <h2 className="text-2xl font-serif tracking-widest uppercase">{t("Editar Perfil")}</h2>
+          <User className="w-6 h-6 text-amber-400" />
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{t("Editar Perfil")}</h2>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-stone-50 rounded-full transition-colors">
-          <X className="w-6 h-6 text-stone-600" />
+        <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full transition-colors">
+          <X className="w-6 h-6 text-neutral-300" />
         </button>
       </div>
 
-      <div className="grow overflow-y-auto overscroll-contain p-8">
+      <div className="grow overflow-y-auto overscroll-contain p-4 sm:p-8">
         <form onSubmit={handleSubmit} className="max-w-xl mx-auto space-y-8">
           <div className="space-y-6">
-            <div className="rounded-xl border border-stone-200 bg-gradient-to-br from-white via-stone-50 to-stone-100/60 p-4 shadow-[0_10px_28px_rgba(28,25,23,0.07)]">
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-2xl">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 space-y-1.5">
-                  <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
+                  <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
                     {t("Email cadastrado")}
                   </p>
-                  <p className="break-all text-base font-medium text-stone-900 sm:text-lg">
+                  <p className="break-all text-base font-medium text-neutral-100 sm:text-lg">
                     {registeredEmail || t("Sem email cadastrado")}
                   </p>
-                  <p className="text-[10px] uppercase tracking-[0.16em] font-semibold text-stone-500">
+                  <p className="text-[10px] uppercase tracking-[0.16em] font-semibold text-neutral-500">
                     {t("Este email nao pode ser alterado.")}
                   </p>
                 </div>
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-700">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-neutral-700 bg-neutral-950 text-neutral-300">
                   <Mail className="h-4 w-4" />
                 </span>
               </div>
             </div>
 
-            <div className="rounded-lg border border-stone-200 bg-white p-5">
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
               <div className="mb-5 flex items-center gap-3">
-                <Store className="h-4 w-4 text-stone-700" />
-                <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-stone-800">
+                <Store className="h-4 w-4 text-amber-400" />
+                <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-neutral-200">
                   {t("Dati attività")}
                 </h3>
               </div>
               <div className="space-y-6">
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
+                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
                     {t("Nome attività")}
                   </label>
                   <input
@@ -500,7 +500,7 @@ export default function EditePerfil({
                     minLength={2}
                     type="text"
                     placeholder={t("Ex: Casa Tebaldi")}
-                    className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
+                    className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-lg font-semibold text-neutral-100"
                     value={formData.establishmentName}
                     onChange={(e) =>
                       setFormData({ ...formData, establishmentName: e.target.value })
@@ -508,12 +508,12 @@ export default function EditePerfil({
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
+                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
                     {t("Categoria attività")}
                   </label>
                   <input
                     required
-                    className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
+                    className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-neutral-100"
                     value={formData.establishmentCategory}
                     onChange={(e) =>
                       setFormData({ ...formData, establishmentCategory: e.target.value })
@@ -527,7 +527,7 @@ export default function EditePerfil({
                     ))}
                   </datalist>
                   {formData.establishmentCategory.trim() && (
-                    <p className="text-[11px] text-stone-400">
+                    <p className="text-[11px] text-neutral-500">
                       {businessCategorySuggestions.some(
                         (suggestion) =>
                           suggestion.label.localeCompare(formData.establishmentCategory, undefined, {
@@ -540,12 +540,12 @@ export default function EditePerfil({
                   )}
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
+                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
                     {t("Descrizione")}
                   </label>
                   <textarea
                     rows={3}
-                    className="w-full resize-none bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-sm leading-6 text-stone-700"
+                    className="w-full resize-none bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-sm leading-6 text-neutral-100"
                     value={formData.establishmentDescription}
                     onChange={(e) =>
                       setFormData({ ...formData, establishmentDescription: e.target.value })
@@ -553,7 +553,7 @@ export default function EditePerfil({
                   />
                 </div>
                 <div className="space-y-3">
-                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
+                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
                     {t("Parole chiave")}
                   </label>
                   {formData.establishmentKeywords.length > 0 && (
@@ -561,13 +561,13 @@ export default function EditePerfil({
                       {formData.establishmentKeywords.map((keyword) => (
                         <span
                           key={normalizeTaxonomyLabel(keyword)}
-                          className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-700"
+                          className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-xs text-amber-100"
                         >
                           {keyword}
                           <button
                             type="button"
                             onClick={() => removeKeyword(keyword)}
-                            className="text-stone-400 transition-colors hover:text-red-600"
+                            className="text-amber-200/70 transition-colors hover:text-red-300"
                             aria-label={t("Remover palavra-chave")}
                           >
                             <X className="h-3 w-3" />
@@ -588,25 +588,25 @@ export default function EditePerfil({
                         }
                       }}
                       placeholder={t("Ex: aperitivo, cucina romana, consegna")}
-                      className="min-w-0 flex-1 bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
+                      className="min-w-0 flex-1 bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-neutral-100"
                     />
                     <button
                       type="button"
                       onClick={() => addKeyword(keywordInput)}
-                      className="rounded-lg border border-stone-200 px-4 text-[10px] font-bold uppercase tracking-[0.16em] text-stone-700 transition-colors hover:border-stone-700"
+                      className="rounded-xl border border-neutral-700 bg-neutral-950 px-4 text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-200 transition-colors hover:border-amber-400/60 hover:text-amber-200"
                     >
                       {t("Aggiungi")}
                     </button>
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
+                  <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
                     {t("Orari")}
                   </label>
                   <input
                     type="text"
                     placeholder={t("Ex: Lun-Sab 18:00-23:00")}
-                    className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
+                    className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-neutral-100"
                     value={formData.establishmentOpeningHours}
                     onChange={(e) =>
                       setFormData({ ...formData, establishmentOpeningHours: e.target.value })
@@ -616,20 +616,20 @@ export default function EditePerfil({
               </div>
             </div>
 
-            <div className="border-t border-stone-100 pt-6">
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
               <div className="mb-5 flex items-center gap-3">
-                <User className="h-4 w-4 text-stone-700" />
-                <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-stone-800">
+                <User className="h-4 w-4 text-amber-400" />
+                <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-neutral-200">
                   {t("Account")}
                 </h3>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Nome proprietario")}</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">{t("Nome proprietario")}</label>
                 <input 
                   required
                   minLength={2}
                   type="text"
-                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
+                  className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-lg font-semibold text-neutral-100"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                 />
@@ -637,10 +637,10 @@ export default function EditePerfil({
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("WhatsApp attività")}</label>
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">{t("WhatsApp attività")}</label>
               <div className="grid grid-cols-[1fr_2fr] gap-4">
                 <select
-                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors text-stone-700"
+                  className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-neutral-100"
                   value={formData.whatsappCountryIso}
                   onChange={(e) =>
                     setFormData({ ...formData, whatsappCountryIso: e.target.value })
@@ -652,7 +652,7 @@ export default function EditePerfil({
                   required
                   type="tel"
                   placeholder="3331234567"
-                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
+                  className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-lg font-semibold text-neutral-100"
                   value={formData.whatsappNumber}
                   onChange={(e) =>
                     setFormData({ ...formData, whatsappNumber: e.target.value })
@@ -661,16 +661,16 @@ export default function EditePerfil({
               </div>
             </div>
 
-            <div className="rounded-lg border border-stone-200 bg-white p-5">
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5 shadow-2xl">
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
-                  <MapPin className="h-4 w-4 text-stone-700" />
-                  <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-stone-800">
+                  <MapPin className="h-4 w-4 text-amber-400" />
+                  <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-neutral-200">
                     {t("Posizione attività")}
                   </h3>
                 </div>
                 {locationStatus === "success" && selectedLocation && (
-                  <span className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-600">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-300">
                     <CheckCircle2 className="h-4 w-4" />
                     {t("Localização registrada")}
                   </span>
@@ -682,7 +682,7 @@ export default function EditePerfil({
                   type="button"
                   disabled={isResolvingLocation}
                   onClick={handleUseLocation}
-                  className="inline-flex items-center justify-center gap-2 border border-stone-200 px-3 py-3 text-[10px] uppercase tracking-[0.16em] font-bold text-stone-800 hover:border-stone-500 transition-colors disabled:text-stone-300"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-3 text-[10px] uppercase tracking-[0.16em] font-bold text-amber-200 transition-colors hover:border-amber-300 hover:bg-amber-400/15 disabled:text-neutral-500 disabled:border-neutral-800 disabled:bg-neutral-950"
                 >
                   <Navigation className="w-4 h-4" />
                   {isResolvingLocation ? t("Processando...") : t("Localização atual")}
@@ -690,14 +690,14 @@ export default function EditePerfil({
                 <button
                   type="button"
                   onClick={() => setIsMapPickerOpen(true)}
-                  className="inline-flex items-center justify-center gap-2 border border-stone-200 px-3 py-3 text-[10px] uppercase tracking-[0.16em] font-bold text-stone-800 hover:border-stone-500 transition-colors"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-[10px] uppercase tracking-[0.16em] font-bold text-neutral-200 transition-colors hover:border-neutral-500 hover:bg-neutral-800"
                 >
                   <MapPin className="w-4 h-4" />
                   {t("Mapa")}
                 </button>
               </div>
 
-              <p className={`mt-3 text-xs ${locationStatus === "error" ? "text-red-500" : "text-stone-500"}`}>
+              <p className={`mt-3 text-xs ${locationStatus === "error" ? "text-red-300" : "text-neutral-400"}`}>
                 {selectedLocation
                   ? `${selectedLocation.latitude.toFixed(6)}, ${selectedLocation.longitude.toFixed(6)}`
                   : t("Nenhuma localização registrada ainda.")}
@@ -706,10 +706,10 @@ export default function EditePerfil({
 
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("País")}</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">{t("País")}</label>
                 <input 
                   type="text"
-                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
+                  className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-lg font-semibold text-neutral-100"
                   value={formData.country}
                   onChange={(e) => {
                     setLocationStatus(null);
@@ -718,10 +718,10 @@ export default function EditePerfil({
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Estado")}</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">{t("Estado")}</label>
                 <input 
                   type="text"
-                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
+                  className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-lg font-semibold text-neutral-100"
                   value={formData.state}
                   onChange={(e) => {
                     setLocationStatus(null);
@@ -733,10 +733,10 @@ export default function EditePerfil({
 
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Cidade")}</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">{t("Cidade")}</label>
                 <input 
                   type="text"
-                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
+                  className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-lg font-semibold text-neutral-100"
                   value={formData.city}
                   onChange={(e) => {
                     setLocationStatus(null);
@@ -745,10 +745,10 @@ export default function EditePerfil({
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Bairro")}</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">{t("Bairro")}</label>
                 <input 
                   type="text"
-                  className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
+                  className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-lg font-semibold text-neutral-100"
                   value={formData.neighborhood}
                   onChange={(e) => {
                     setLocationStatus(null);
@@ -759,10 +759,10 @@ export default function EditePerfil({
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">{t("Rua")}</label>
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">{t("Rua")}</label>
               <input 
                 type="text"
-                className="w-full bg-transparent border-b border-stone-200 py-3 outline-none focus:border-stone-800 transition-colors font-serif italic text-lg"
+                className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-lg font-semibold text-neutral-100"
                 value={formData.street}
                 onChange={(e) => {
                   setLocationStatus(null);
@@ -773,13 +773,13 @@ export default function EditePerfil({
           </div>
 
           {errorMessage && (
-            <p className="text-sm text-red-500">{errorMessage}</p>
+            <p className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{errorMessage}</p>
           )}
 
           <button 
             disabled={isSaving}
             type="submit"
-            className="w-full bg-stone-900 text-white py-6 text-xs uppercase tracking-[0.3em] font-bold flex items-center justify-center gap-3 hover:bg-black transition-all mt-12 disabled:bg-stone-400"
+            className="w-full rounded-2xl bg-neutral-100 text-neutral-950 py-5 text-xs uppercase tracking-[0.22em] font-bold flex items-center justify-center gap-3 hover:bg-white transition-all mt-8 disabled:bg-neutral-700 disabled:text-neutral-500"
           >
             <Save className="w-4 h-4" />
             {isSaving ? t("Salvando...") : t("Salvar alterações")}

@@ -111,3 +111,31 @@ html {
 .animate-like-absorb {
   animation: templesale-btn-absorb 360ms cubic-bezier(0.175, 0.885, 0.32, 1.4);
 }
+
+.ts-profile-editor input,
+.ts-profile-editor textarea,
+.ts-profile-editor select {
+  color: rgb(245 245 245);
+  background-color: transparent;
+  border-color: rgb(64 64 64);
+}
+
+.ts-profile-editor input::placeholder,
+.ts-profile-editor textarea::placeholder {
+  color: rgb(115 115 115);
+}
+
+.ts-profile-editor input:focus,
+.ts-profile-editor textarea:focus,
+.ts-profile-editor select:focus {
+  border-color: rgb(251 191 36);
+}
+
+.ts-profile-editor label {
+  color: rgb(163 163 163);
+}
+
+.ts-profile-editor option,
+.ts-profile-editor datalist {
+  color: rgb(23 23 23);
+}

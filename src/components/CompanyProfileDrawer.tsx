@@ -370,7 +370,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                     Nenhuma publicação salva ainda
                   </h4>
                   <p className="text-xs text-neutral-400 max-w-xs mx-auto leading-relaxed">
-                    Navegue pelo feed de empresas e toque no ícone de marcador 🔖 nas fotos que você gostar para guardá-las aqui.
+                    Navegue pelo feed de empresas e toque no marcador das fotos que você gostar para guardá-las aqui.
                   </p>
                 </div>
               ) : (

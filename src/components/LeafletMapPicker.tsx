@@ -228,52 +228,52 @@ export default function LeafletMapPicker({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-130 bg-black/20 backdrop-blur-sm p-4 md:p-10"
+      className="fixed inset-0 z-220 bg-black/80 backdrop-blur-sm p-4 md:p-10"
     >
       <motion.div
         initial={{ opacity: 0, y: 12, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 12, scale: 0.98 }}
-        className="w-full h-full max-w-6xl mx-auto bg-[#fdfcfb] border border-stone-200 rounded-sm shadow-2xl flex flex-col overflow-hidden"
+        className="w-full h-full max-w-6xl mx-auto bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-neutral-100"
       >
-        <div className="px-6 py-5 border-b border-stone-100 flex items-center justify-between">
+        <div className="px-6 py-5 border-b border-neutral-800 flex items-center justify-between">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400">
+            <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
               {t("Localização manual")}
             </p>
-            <h3 className="text-2xl font-serif italic text-stone-800">
+            <h3 className="text-2xl font-bold text-neutral-100">
               {t("Escolher local no mapa")}
             </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-2 hover:bg-stone-50 rounded-full transition-colors"
+            className="p-2 hover:bg-neutral-800 rounded-full transition-colors"
             aria-label={t("Fechar")}
           >
-            <X className="w-5 h-5 text-stone-600" />
+            <X className="w-5 h-5 text-neutral-300" />
           </button>
         </div>
 
         <div className="p-6 flex-1 min-h-0 flex flex-col gap-5">
-          <p className="text-sm text-stone-500">
+          <p className="text-sm text-neutral-400">
             {t("Arraste para mover o mapa e clique uma vez para marcar o ponto real.")}
           </p>
 
           {leafletError ? (
-            <div className="flex-1 min-h-80 border border-red-100 bg-red-50 rounded-sm flex items-center justify-center">
-              <p className="text-sm text-red-600">{leafletError}</p>
+            <div className="flex-1 min-h-80 border border-red-500/30 bg-red-500/10 rounded-xl flex items-center justify-center">
+              <p className="text-sm text-red-300">{leafletError}</p>
             </div>
           ) : (
             <div
               ref={mapContainerRef}
-              className="flex-1 min-h-80 border border-stone-200 rounded-sm overflow-hidden bg-stone-100"
+              className="flex-1 min-h-80 border border-neutral-700 rounded-xl overflow-hidden bg-neutral-950"
               style={{ touchAction: "none" }}
             />
           )}
 
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div className="text-sm text-stone-500">
+            <div className="text-sm text-neutral-400">
               {selectedPoint
                 ? `${selectedPoint.latitude.toFixed(6)}, ${selectedPoint.longitude.toFixed(6)}`
                 : t("Nenhum ponto selecionado no mapa.")}
@@ -283,7 +283,7 @@ export default function LeafletMapPicker({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-3 border border-stone-200 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-500 hover:border-stone-400 hover:text-stone-800 transition-colors"
+                className="px-5 py-3 rounded-xl border border-neutral-700 text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-300 hover:border-neutral-500 hover:text-white transition-colors"
               >
                 {t("Cancelar")}
               </button>
@@ -296,7 +296,7 @@ export default function LeafletMapPicker({
                   onConfirm(selectedPoint);
                 }}
                 disabled={!selectedPoint}
-                className="px-5 py-3 bg-stone-900 text-white text-[10px] uppercase tracking-[0.2em] font-bold hover:bg-black transition-colors disabled:bg-stone-400 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                className="px-5 py-3 rounded-xl bg-neutral-100 text-neutral-950 text-[10px] uppercase tracking-[0.2em] font-bold hover:bg-white transition-colors disabled:bg-neutral-700 disabled:text-neutral-400 disabled:cursor-not-allowed inline-flex items-center gap-2"
               >
                 <MapPin className="w-4 h-4" />
                 {t("Confirmar localização")}
