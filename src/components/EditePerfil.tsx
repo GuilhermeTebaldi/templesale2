@@ -1,6 +1,6 @@
 import React from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { CheckCircle2, Mail, MapPin, Navigation, Save, Store, User, X } from "lucide-react";
+import { CheckCircle2, Image as ImageIcon, Mail, MapPin, Navigation, Save, Store, User, X } from "lucide-react";
 import {
   api,
   type EstablishmentDto,
@@ -25,6 +25,9 @@ interface EditePerfilProps {
   initialData?: SessionUser | null;
   initialEstablishment?: EstablishmentDto | null;
   initialErrorMessage?: string;
+  onChangeCompanyPhoto?: () => void;
+  isChangingCompanyPhoto?: boolean;
+  companyPhotoError?: string;
 }
 
 type GeoPoint = {
@@ -95,6 +98,9 @@ export default function EditePerfil({
   initialData,
   initialEstablishment,
   initialErrorMessage = "",
+  onChangeCompanyPhoto,
+  isChangingCompanyPhoto = false,
+  companyPhotoError = "",
 }: EditePerfilProps) {
   const { t } = useI18n();
   const registeredEmail = String(initialData?.email ?? "").trim();
@@ -480,6 +486,59 @@ export default function EditePerfil({
                 <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-neutral-700 bg-neutral-950 text-neutral-300">
                   <Mail className="h-4 w-4" />
                 </span>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5 shadow-2xl">
+              <div className="mb-4 flex items-center gap-3">
+                <ImageIcon className="h-4 w-4 text-amber-400" />
+                <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-neutral-200">
+                  {t("Foto da empresa")}
+                </h3>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950">
+                  {initialEstablishment?.logoUrl ? (
+                    <img
+                      src={initialEstablishment.logoUrl}
+                      alt={initialEstablishment.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-neutral-500">
+                      <ImageIcon className="h-6 w-6" />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    {initialEstablishment?.logoUrl && (
+                      <a
+                        href={initialEstablishment.logoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-200 transition-colors hover:border-neutral-500 hover:bg-neutral-800"
+                      >
+                        {t("Ver foto")}
+                      </a>
+                    )}
+                    {onChangeCompanyPhoto && (
+                      <button
+                        type="button"
+                        onClick={onChangeCompanyPhoto}
+                        disabled={isChangingCompanyPhoto}
+                        className="inline-flex items-center justify-center rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-200 transition-colors hover:border-amber-300 hover:bg-amber-400/15 disabled:border-neutral-800 disabled:bg-neutral-950 disabled:text-neutral-500"
+                      >
+                        {isChangingCompanyPhoto ? t("Enviando...") : t("Trocar foto")}
+                      </button>
+                    )}
+                  </div>
+                  {(companyPhotoError || initialEstablishment?.logoUrl) && (
+                    <p className={`text-xs ${companyPhotoError ? "text-red-300" : "text-neutral-500"}`}>
+                      {companyPhotoError || t("Essa imagem aparece no perfil da empresa e nas publicações.")}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
 

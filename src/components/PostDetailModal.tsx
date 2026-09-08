@@ -9,6 +9,7 @@ import {
   Bookmark,
   ArrowLeft,
   Trash2,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { Post, Company } from '../types';
 import { TempleSaleLikeIcon } from './TempleSaleLikeIcon';
@@ -22,6 +23,7 @@ interface PostDetailModalProps {
   isSaved?: boolean;
   onToggleSave?: () => void;
   isOwner?: boolean;
+  onEditPostPhoto?: (postId: string) => void;
   onDeletePost?: (postId: string) => void;
 }
 
@@ -44,6 +46,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
   isSaved,
   onToggleSave,
   isOwner,
+  onEditPostPhoto,
   onDeletePost,
 }) => {
   const [newCommentText, setNewCommentText] = useState('');
@@ -296,6 +299,17 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
           </div>
 
           <div className="flex items-center space-x-1.5 shrink-0">
+            {isOwner && onEditPostPhoto && (
+              <button
+                type="button"
+                id="btn-edit-post-photo-mobile-detail"
+                onClick={() => onEditPostPhoto(post.id)}
+                className="p-1.5 text-neutral-400 hover:text-amber-300 hover:bg-neutral-800 rounded-full transition-colors cursor-pointer"
+                title="Editar foto da publicação"
+              >
+                <ImageIcon className="w-4 h-4" />
+              </button>
+            )}
             {isOwner && onDeletePost && (
               <button
                 type="button"
@@ -391,6 +405,17 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
             </div>
 
             <div className="flex items-center space-x-1 shrink-0">
+              {isOwner && onEditPostPhoto && (
+                <button
+                  type="button"
+                  id="btn-edit-post-photo-desktop-detail"
+                  onClick={() => onEditPostPhoto(post.id)}
+                  className="p-2 text-neutral-400 hover:text-amber-300 hover:bg-neutral-800 rounded-lg transition-colors shrink-0 cursor-pointer"
+                  title="Editar foto da publicação"
+                >
+                  <ImageIcon className="w-4 h-4" />
+                </button>
+              )}
               {isOwner && onDeletePost && (
                 <button
                   type="button"

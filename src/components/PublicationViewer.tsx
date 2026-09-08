@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "motion/react";
-import { Loader2, MessageCircle, Pencil, Send, Trash2, X } from "lucide-react";
+import { Image as ImageIcon, Loader2, MessageCircle, Pencil, Send, Trash2, X } from "lucide-react";
 import { api, type EstablishmentDto, type ProductCommentDto, type PublicationDto, type SessionUser } from "../lib/api";
 import { formatRelativeTime } from "../i18n/formatters";
 import { useI18n } from "../i18n/provider";
@@ -14,6 +14,7 @@ interface PublicationViewerProps {
   onClose: () => void;
   onRequireAuth: () => void;
   onUpdated?: (publication: PublicationDto) => void;
+  onEditPhoto?: (publicationId: number) => void;
   onDeleted?: (publicationId: number) => void;
   onCommentsChanged?: (publicationId: number, comments: ProductCommentDto[]) => void;
 }
@@ -37,6 +38,7 @@ export default function PublicationViewer({
   onClose,
   onRequireAuth,
   onUpdated,
+  onEditPhoto,
   onDeleted,
   onCommentsChanged,
 }: PublicationViewerProps) {
@@ -395,6 +397,17 @@ export default function PublicationViewer({
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
+                  {onEditPhoto && (
+                    <button
+                      type="button"
+                      onClick={() => onEditPhoto(publication.id)}
+                      disabled={isSavingPublication}
+                      className="rounded-full border border-neutral-700 p-2 text-neutral-400 transition-colors hover:border-amber-400/60 hover:text-amber-300 disabled:opacity-50"
+                      aria-label={t("Editar foto da publicação")}
+                    >
+                      <ImageIcon className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => void deletePublication()}

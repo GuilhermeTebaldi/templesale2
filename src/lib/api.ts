@@ -2886,6 +2886,29 @@ export const api = {
     });
     return true;
   },
+  async getSavedPublications() {
+    const payload = await request<unknown>("/api/publication-saves");
+    const parsed = parseJsonIfNeeded(payload);
+    return normalizePublicationList(isRecord(parsed) ? firstDefined(parsed, ["publications", "posts", "data"]) ?? [] : parsed);
+  },
+  async savePublication(publicationId: number) {
+    if (!Number.isInteger(publicationId) || publicationId <= 0) {
+      throw new Error("ID de publicação inválido.");
+    }
+    await request<{ success: boolean }>(`/api/publications/${publicationId}/save`, {
+      method: "POST",
+    });
+    return true;
+  },
+  async unsavePublication(publicationId: number) {
+    if (!Number.isInteger(publicationId) || publicationId <= 0) {
+      throw new Error("ID de publicação inválido.");
+    }
+    await request<{ success: boolean }>(`/api/publications/${publicationId}/save`, {
+      method: "DELETE",
+    });
+    return true;
+  },
   async getPublicationComments(publicationId: number) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
       throw new Error("ID de publicação inválido.");

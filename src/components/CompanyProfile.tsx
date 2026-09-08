@@ -17,6 +17,7 @@ import {
   X,
   Trash2,
   AlertTriangle,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { Company, Post } from '../types';
 import { TempleSaleLikeIcon } from './TempleSaleLikeIcon';
@@ -30,7 +31,9 @@ interface CompanyProfileProps {
   onOpenPost: (post: Post) => void;
   onOpenCreatePost?: () => void;
   onEditCompany?: (company: Company) => void;
+  onChangeCompanyPhoto?: () => void;
   onKeywordClick?: (keyword: string) => void;
+  onEditPostPhoto?: (postId: string) => void;
   onDeletePost?: (postId: string) => void;
 }
 
@@ -42,7 +45,9 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
   onOpenPost,
   onOpenCreatePost,
   onEditCompany,
+  onChangeCompanyPhoto,
   onKeywordClick,
+  onEditPostPhoto,
   onDeletePost,
 }) => {
   const [activeHighlight, setActiveHighlight] = useState<string | null>(null);
@@ -118,6 +123,28 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
               size="lg"
               isOwner={isOwner}
             />
+            <div className="mt-2 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em]">
+              {company.logo && (
+                <a
+                  href={company.logo}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-neutral-400 transition-colors hover:text-white"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  Ver foto
+                </a>
+              )}
+              {isOwner && onChangeCompanyPhoto && (
+                <button
+                  type="button"
+                  onClick={onChangeCompanyPhoto}
+                  className="text-amber-300 transition-colors hover:text-amber-200"
+                >
+                  Trocar foto
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Estatísticas (publicações, curtidas, local) */}
@@ -390,20 +417,38 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                   loading="lazy"
                 />
 
-                {/* Botão de Excluir / Apagar (Exclusivo para o perfil da empresa do usuário) */}
-                {isOwner && onDeletePost && (
-                  <button
-                    type="button"
-                    id={`btn-delete-post-${post.id}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPostToDelete(post);
-                    }}
-                    className="absolute top-1.5 right-1.5 z-20 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-neutral-950/85 hover:bg-red-600 text-neutral-300 hover:text-white border border-neutral-700/80 hover:border-red-500 flex items-center justify-center transition-all duration-150 shadow-md cursor-pointer active:scale-90"
-                    title="Excluir publicação"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                {/* Botões do proprietário para editar ou excluir a foto publicada */}
+                {isOwner && (onEditPostPhoto || onDeletePost) && (
+                  <div className="absolute top-1.5 right-1.5 z-20 flex items-center gap-1">
+                    {onEditPostPhoto && (
+                      <button
+                        type="button"
+                        id={`btn-edit-post-photo-${post.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditPostPhoto(post.id);
+                        }}
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-neutral-950/85 hover:bg-amber-500 text-neutral-300 hover:text-neutral-950 border border-neutral-700/80 hover:border-amber-400 flex items-center justify-center transition-all duration-150 shadow-md cursor-pointer active:scale-90"
+                        title="Editar foto da publicação"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {onDeletePost && (
+                      <button
+                        type="button"
+                        id={`btn-delete-post-${post.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPostToDelete(post);
+                        }}
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-neutral-950/85 hover:bg-red-600 text-neutral-300 hover:text-white border border-neutral-700/80 hover:border-red-500 flex items-center justify-center transition-all duration-150 shadow-md cursor-pointer active:scale-90"
+                        title="Excluir publicação"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 )}
 
                 {/* Overlay no Hover com Curtidas e Comentários */}

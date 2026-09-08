@@ -2342,6 +2342,15 @@ function initializeSqliteDatabase() {
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS publication_saves (
+      user_id INTEGER NOT NULL,
+      publication_id INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      PRIMARY KEY (user_id, publication_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (publication_id) REFERENCES establishment_publications(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS product_cart_notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       owner_user_id INTEGER NOT NULL,
@@ -2425,6 +2434,10 @@ function initializeSqliteDatabase() {
     CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id);
+    CREATE INDEX IF NOT EXISTS idx_publication_saves_user_created
+      ON publication_saves(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_publication_saves_publication_id
+      ON publication_saves(publication_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_establishments_slug_unique ON establishments(slug);
     CREATE INDEX IF NOT EXISTS idx_establishments_owner ON establishments(owner_user_id);
     CREATE INDEX IF NOT EXISTS idx_establishments_category_city ON establishments(category, city);
@@ -2842,6 +2855,14 @@ async function ensurePostgresEstablishmentSchema() {
         updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
       )
     `,
+    `
+      CREATE TABLE IF NOT EXISTS publication_saves (
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        publication_id BIGINT NOT NULL REFERENCES establishment_publications(id) ON DELETE CASCADE,
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+        PRIMARY KEY (user_id, publication_id)
+      )
+    `,
     "ALTER TABLE establishments ADD COLUMN IF NOT EXISTS keywords TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE establishment_publications ADD COLUMN IF NOT EXISTS establishment_id BIGINT REFERENCES establishments(id) ON DELETE CASCADE",
     "ALTER TABLE establishment_publications ADD COLUMN IF NOT EXISTS owner_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE",
@@ -2859,6 +2880,8 @@ async function ensurePostgresEstablishmentSchema() {
     "CREATE INDEX IF NOT EXISTS idx_storefront_sections_establishment ON storefront_sections(establishment_id, position)",
     "CREATE INDEX IF NOT EXISTS idx_establishment_publications_establishment_created ON establishment_publications(establishment_id, created_at DESC)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_establishment_publications_legacy_product ON establishment_publications(legacy_product_id) WHERE legacy_product_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_publication_saves_user_created ON publication_saves(user_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_publication_saves_publication_id ON publication_saves(publication_id)",
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS publication_id BIGINT REFERENCES establishment_publications(id) ON DELETE CASCADE",
     "ALTER TABLE product_comments ALTER COLUMN product_id DROP NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_product_comments_publication_created ON product_comments(publication_id, created_at DESC)",
@@ -3040,6 +3063,14 @@ async function initializePostgresDatabase() {
         product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
         created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
         PRIMARY KEY (user_id, product_id)
+      )
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS publication_saves (
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        publication_id BIGINT NOT NULL REFERENCES establishment_publications(id) ON DELETE CASCADE,
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+        PRIMARY KEY (user_id, publication_id)
       )
     `,
     `
@@ -3252,6 +3283,8 @@ async function initializePostgresDatabase() {
     "CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)",
     "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id)",
+    "CREATE INDEX IF NOT EXISTS idx_publication_saves_user_created ON publication_saves(user_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_publication_saves_publication_id ON publication_saves(publication_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_establishments_slug_unique ON establishments(slug)",
     "CREATE INDEX IF NOT EXISTS idx_establishments_owner ON establishments(owner_user_id)",
     "CREATE INDEX IF NOT EXISTS idx_establishments_category_city ON establishments(category, city)",
@@ -4237,6 +4270,86 @@ async function selectPublicationsFeedRows(input: {
     .all(fetchLimit, offset) as Array<Record<string, unknown>>;
   const rows = rawRows.slice(0, limit).map(normalizePublicationRow);
   return { rows, hasMore: rawRows.length > limit, nextOffset: offset + rows.length };
+}
+
+async function selectSavedPublicationsByUserRows(userId: number): Promise<EstablishmentPublicationRecord[]> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          ep.*,
+          e.name AS establishment_name,
+          e.slug AS establishment_slug,
+          e.category AS establishment_category,
+          e.city AS establishment_city,
+          e.logo_url AS establishment_logo_url,
+          e.cover_url AS establishment_cover_url
+        FROM publication_saves ps
+        INNER JOIN establishment_publications ep ON ep.id = ps.publication_id
+        INNER JOIN establishments e ON e.id = ep.establishment_id
+        WHERE ps.user_id = $1
+        ORDER BY ps.created_at DESC, ep.id DESC
+      `,
+      [userId],
+    );
+    return result.rows.map(normalizePublicationRow);
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          ep.*,
+          e.name AS establishment_name,
+          e.slug AS establishment_slug,
+          e.category AS establishment_category,
+          e.city AS establishment_city,
+          e.logo_url AS establishment_logo_url,
+          e.cover_url AS establishment_cover_url
+        FROM publication_saves ps
+        INNER JOIN establishment_publications ep ON ep.id = ps.publication_id
+        INNER JOIN establishments e ON e.id = ep.establishment_id
+        WHERE ps.user_id = ?
+        ORDER BY ps.created_at DESC, ep.id DESC
+      `,
+    )
+    .all(userId) as Array<Record<string, unknown>>;
+  return rows.map(normalizePublicationRow);
+}
+
+async function createPublicationSaveRecord(userId: number, publicationId: number): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(
+      `
+        INSERT INTO publication_saves (user_id, publication_id)
+        VALUES ($1, $2)
+        ON CONFLICT (user_id, publication_id) DO NOTHING
+      `,
+      [userId, publicationId],
+    );
+    return;
+  }
+  requireSqliteDb()
+    .prepare(
+      `
+        INSERT OR IGNORE INTO publication_saves (user_id, publication_id)
+        VALUES (?, ?)
+      `,
+    )
+    .run(userId, publicationId);
+}
+
+async function deletePublicationSaveRecord(userId: number, publicationId: number): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(
+      "DELETE FROM publication_saves WHERE user_id = $1 AND publication_id = $2",
+      [userId, publicationId],
+    );
+    return;
+  }
+  requireSqliteDb()
+    .prepare("DELETE FROM publication_saves WHERE user_id = ? AND publication_id = ?")
+    .run(userId, publicationId);
 }
 
 async function selectPublicationByIdRecord(publicationId: number): Promise<EstablishmentPublicationRecord | null> {
@@ -11739,6 +11852,68 @@ async function bootstrap() {
       res.json(rows.map((row) => rowToProduct(row, locale)));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao listar curtidas.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/publication-saves", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+
+    try {
+      const publications = await selectSavedPublicationsByUserRows(user.id);
+      res.json({ publications });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar publicações salvas.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/publications/:id/save", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID publicação inválido." });
+      return;
+    }
+
+    try {
+      const publication = await selectPublicationByIdRecord(id);
+      if (!publication) {
+        res.status(404).json({ error: "Publicação não encontrada." });
+        return;
+      }
+      await createPublicationSaveRecord(user.id, id);
+      res.status(201).json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao salvar publicação.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.delete("/api/publications/:id/save", async (req, res) => {
+    const user = await requireAuth(req, res);
+    if (!user) {
+      return;
+    }
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID publicação inválido." });
+      return;
+    }
+
+    try {
+      await deletePublicationSaveRecord(user.id, id);
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao remover publicação salva.";
       res.status(500).json({ error: message });
     }
   });

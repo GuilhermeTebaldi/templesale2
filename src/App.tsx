@@ -96,6 +96,7 @@ const ESTABLISHMENT_CATEGORIES = [
 const USE_ELEGANT_PRODUCT_FILTER = true;
 const USE_ART_GALLERY_PRODUCT_GRID = true;
 const BRAND_NAME = "TempleSale";
+const TEMPLESALE_LOGO_FALLBACK = "/templesale-logo.svg";
 const HOME_HERO_FALLBACK_IMAGE =
   "https://i.pinimg.com/1200x/47/38/db/4738dbf78874192b8e38d5eadf13717f.jpg";
 const INSTAGRAM_PROFILE_URL = "https://www.instagram.com/the.templesale/";
@@ -351,6 +352,9 @@ export default function App() {
   const [socialActiveTab, setSocialActiveTab] = React.useState<SocialActiveTab>("feed");
   const [socialSelectedCompanyId, setSocialSelectedCompanyId] = React.useState<string>("");
   const [savedPublicationIds, setSavedPublicationIds] = React.useState<string[]>([]);
+  const [savedPublications, setSavedPublications] = React.useState<PublicationDto[]>([]);
+  const [editingPublicationPhotoId, setEditingPublicationPhotoId] = React.useState<number | null>(null);
+  const [, setIsPublicationPhotoUploading] = React.useState(false);
   const [cartToast, setCartToast] = React.useState<{
     id: number;
     message: string;
@@ -427,8 +431,9 @@ export default function App() {
   const memberAvatar =
     String(myEstablishment?.logoUrl ?? "").trim() ||
     String(currentUser?.avatarUrl ?? "").trim() ||
-    "https://picsum.photos/seed/avatar/200/200";
+    TEMPLESALE_LOGO_FALLBACK;
   const avatarInputRef = React.useRef<HTMLInputElement | null>(null);
+  const publicationPhotoInputRef = React.useRef<HTMLInputElement | null>(null);
   const avatarButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const avatarPickerPanelRef = React.useRef<HTMLDivElement | null>(null);
   const notificationsButtonRef = React.useRef<HTMLButtonElement | null>(null);
@@ -1191,6 +1196,39 @@ export default function App() {
     };
 
     fetchLikedProducts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const fetchSavedPublications = async () => {
+      if (!currentUser) {
+        setSavedPublications([]);
+        setSavedPublicationIds([]);
+        return;
+      }
+
+      try {
+        const data = await api.getSavedPublications();
+        if (!cancelled) {
+          const publications = asArray<PublicationDto>(data);
+          setSavedPublications(publications);
+          setSavedPublicationIds(publications.map((publication) => `publication_${publication.id}`));
+        }
+      } catch (err) {
+        console.error("Error fetching saved publications:", err);
+        if (!cancelled) {
+          setSavedPublications([]);
+          setSavedPublicationIds([]);
+        }
+      }
+    };
+
+    void fetchSavedPublications();
 
     return () => {
       cancelled = true;
@@ -2216,6 +2254,39 @@ export default function App() {
         const withoutCurrent = current.filter((item) => item.id !== savedEstablishment.id);
         return [savedEstablishment, ...withoutCurrent];
       });
+      setPublicationFeed((current) =>
+        current.map((publication) =>
+          publication.establishmentId === savedEstablishment.id
+            ? {
+                ...publication,
+                establishmentLogoUrl: savedEstablishment.logoUrl,
+                establishmentCoverUrl: savedEstablishment.coverUrl,
+              }
+            : publication,
+        ),
+      );
+      setSelectedEstablishmentPublications((current) =>
+        current.map((publication) =>
+          publication.establishmentId === savedEstablishment.id
+            ? {
+                ...publication,
+                establishmentLogoUrl: savedEstablishment.logoUrl,
+                establishmentCoverUrl: savedEstablishment.coverUrl,
+              }
+            : publication,
+        ),
+      );
+      setSavedPublications((current) =>
+        current.map((publication) =>
+          publication.establishmentId === savedEstablishment.id
+            ? {
+                ...publication,
+                establishmentLogoUrl: savedEstablishment.logoUrl,
+                establishmentCoverUrl: savedEstablishment.coverUrl,
+              }
+            : publication,
+        ),
+      );
       setIsAvatarPickerOpen(false);
     } catch (error) {
       const message =
@@ -2223,6 +2294,87 @@ export default function App() {
       setAvatarUploadError(message);
     } finally {
       setIsAvatarUploading(false);
+    }
+  };
+
+  const requestCompanyPhotoChange = React.useCallback(() => {
+    setAvatarUploadError("");
+    avatarInputRef.current?.click();
+  }, []);
+
+  const requestPublicationPhotoChange = React.useCallback((postIdOrPublicationId: string | number) => {
+    const publicationId =
+      typeof postIdOrPublicationId === "number"
+        ? postIdOrPublicationId
+        : Number(String(postIdOrPublicationId).replace(/^publication_/, ""));
+    if (!Number.isInteger(publicationId) || publicationId <= 0) {
+      return;
+    }
+    if (!hasMemberAccess) {
+      setAuthModalMode("register");
+      setIsAuthModalOpen(true);
+      return;
+    }
+    setEditingPublicationPhotoId(publicationId);
+    publicationPhotoInputRef.current?.click();
+  }, [hasMemberAccess]);
+
+  const handlePublicationPhotoUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    const publicationId = editingPublicationPhotoId;
+    setEditingPublicationPhotoId(null);
+
+    if (!file || !publicationId) {
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setAvatarUploadError(t("Arquivo inválido. Envie uma imagem."));
+      return;
+    }
+    if (file.size <= 0 || file.size > 12 * 1024 * 1024) {
+      setAvatarUploadError(t("Imagem muito grande. Limite de 12 MB."));
+      return;
+    }
+
+    const publication =
+      publicationFeed.find((item) => item.id === publicationId) ??
+      savedPublications.find((item) => item.id === publicationId) ??
+      (selectedPublication?.id === publicationId ? selectedPublication : null);
+    if (!publication) {
+      return;
+    }
+
+    setIsPublicationPhotoUploading(true);
+    setAvatarUploadError("");
+    try {
+      const uploadResult = await api.uploadProductImage(file);
+      const nextMedia = [
+        uploadResult.url,
+        ...publication.media.filter((url) => url && url !== publication.imageUrl).slice(0, 9),
+      ];
+      const updated = await api.updatePublication(publicationId, {
+        caption: publication.caption,
+        media: nextMedia,
+      });
+      setSelectedPublication((current) => (current?.id === updated.id ? updated : current));
+      setSelectedEstablishmentPublications((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setPublicationFeed((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setSavedPublications((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t("Falha ao enviar foto de perfil.");
+      setAvatarUploadError(message);
+    } finally {
+      setIsPublicationPhotoUploading(false);
     }
   };
 
@@ -2546,7 +2698,7 @@ export default function App() {
       logo:
         establishment.logoUrl ||
         establishment.coverUrl ||
-        `https://picsum.photos/seed/templesale-company-${establishment.id}/160/160`,
+        TEMPLESALE_LOGO_FALLBACK,
       category: establishment.category || t("Attività"),
       city: establishment.city || currentUser?.city || "",
       description: establishment.description || "",
@@ -2616,8 +2768,16 @@ export default function App() {
   }, [socialPostIdFromPublicationId]);
 
   const socialPosts = React.useMemo<SocialPost[]>(
-    () =>
-      publicationFeed.map((publication) => ({
+    () => {
+      const publicationsById = new globalThis.Map<number, PublicationDto>();
+      publicationFeed.forEach((publication) => publicationsById.set(publication.id, publication));
+      savedPublications.forEach((publication) => {
+        if (!publicationsById.has(publication.id)) {
+          publicationsById.set(publication.id, publication);
+        }
+      });
+
+      return Array.from(publicationsById.values()).map((publication) => ({
         id: socialPostIdFromPublicationId(publication.id),
         companyId: socialCompanyIdFromEstablishmentId(publication.establishmentId),
         imageUrl: publication.imageUrl,
@@ -2625,10 +2785,12 @@ export default function App() {
         createdAt: new Date(publication.createdAt).toISOString(),
         comments: toSocialComments(publicationCommentsById[publication.id] ?? []),
         likesCount: 0,
-      })),
+      }));
+    },
     [
       publicationCommentsById,
       publicationFeed,
+      savedPublications,
       socialCompanyIdFromEstablishmentId,
       socialPostIdFromPublicationId,
       toSocialComments,
@@ -2699,7 +2861,10 @@ export default function App() {
   const openSocialPost = React.useCallback(
     (post: SocialPost) => {
       const publicationId = publicationIdFromSocialPostId(post.id);
-      const publication = publicationId ? publicationFeed.find((item) => item.id === publicationId) : null;
+      const publication = publicationId
+        ? publicationFeed.find((item) => item.id === publicationId) ??
+          savedPublications.find((item) => item.id === publicationId)
+        : null;
       if (!publication) {
         return;
       }
@@ -2708,7 +2873,7 @@ export default function App() {
       setSelectedPublication(publication);
       setFocusedPublicationCommentId(null);
     },
-    [buildEstablishmentFromPublication, publicationFeed, publicationIdFromSocialPostId],
+    [buildEstablishmentFromPublication, publicationFeed, publicationIdFromSocialPostId, savedPublications],
   );
 
   const selectSocialCompany = React.useCallback(
@@ -2765,10 +2930,59 @@ export default function App() {
   );
 
   const toggleSavedSocialPost = React.useCallback((postId: string) => {
+    const publicationId = publicationIdFromSocialPostId(postId);
+    if (!publicationId) {
+      return;
+    }
+    if (!hasMemberAccess) {
+      setAuthModalMode("register");
+      setIsAuthModalOpen(true);
+      return;
+    }
+
+    const existingPublication =
+      publicationFeed.find((publication) => publication.id === publicationId) ??
+      savedPublications.find((publication) => publication.id === publicationId);
+    const wasSaved = savedPublicationIds.includes(postId);
+
     setSavedPublicationIds((current) =>
-      current.includes(postId) ? current.filter((id) => id !== postId) : [...current, postId],
+      wasSaved ? current.filter((id) => id !== postId) : [...current, postId],
     );
-  }, []);
+    setSavedPublications((current) => {
+      if (wasSaved) {
+        return current.filter((publication) => publication.id !== publicationId);
+      }
+      if (!existingPublication || current.some((publication) => publication.id === publicationId)) {
+        return current;
+      }
+      return [existingPublication, ...current];
+    });
+
+    void (wasSaved ? api.unsavePublication(publicationId) : api.savePublication(publicationId))
+      .catch((error) => {
+        console.error("Error toggling saved publication:", error);
+        setSavedPublicationIds((current) =>
+          wasSaved
+            ? current.includes(postId) ? current : [...current, postId]
+            : current.filter((id) => id !== postId),
+        );
+        setSavedPublications((current) => {
+          if (wasSaved && existingPublication && !current.some((publication) => publication.id === publicationId)) {
+            return [existingPublication, ...current];
+          }
+          if (!wasSaved) {
+            return current.filter((publication) => publication.id !== publicationId);
+          }
+          return current;
+        });
+      });
+  }, [
+    hasMemberAccess,
+    publicationFeed,
+    publicationIdFromSocialPostId,
+    savedPublicationIds,
+    savedPublications,
+  ]);
 
   const deleteSocialPost = React.useCallback(
     async (postId: string) => {
@@ -2801,6 +3015,7 @@ export default function App() {
           return next;
         });
         setSavedPublicationIds((current) => current.filter((id) => id !== postId));
+        setSavedPublications((current) => current.filter((item) => item.id !== publicationId));
         setMyEstablishment((current) =>
           current && current.id === publication.establishmentId
             ? { ...current, publicationCount: Math.max(0, (current.publicationCount ?? 1) - 1) }
@@ -2825,6 +3040,20 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
+      <input
+        ref={avatarInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(event) => void handleProfileAvatarUpload(event)}
+      />
+      <input
+        ref={publicationPhotoInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(event) => void handlePublicationPhotoUpload(event)}
+      />
       <AnimatePresence>
         {isAuthModalOpen && (
           <Auth
@@ -2911,10 +3140,12 @@ export default function App() {
             onOpenPost={openSocialPost}
             onOpenCreatePost={handleOpenNewProduct}
             onEditCompany={() => setIsEditePerfilOpen(true)}
+            onChangeCompanyPhoto={requestCompanyPhotoChange}
             onKeywordClick={(keyword) => {
               setSearchQuery(keyword);
               setSocialActiveTab("search");
             }}
+            onEditPostPhoto={requestPublicationPhotoChange}
             onDeletePost={(postId) => {
               void deleteSocialPost(postId);
             }}
@@ -3002,7 +3233,6 @@ export default function App() {
           }
         }}
         onMarkAllAsRead={markAllNotificationsAsRead}
-        onSimulateComment={() => null}
       />
 
       <AnimatePresence>
@@ -3034,7 +3264,11 @@ export default function App() {
               setPublicationFeed((current) =>
                 current.map((item) => (item.id === publication.id ? publication : item)),
               );
+              setSavedPublications((current) =>
+                current.map((item) => (item.id === publication.id ? publication : item)),
+              );
             }}
+            onEditPhoto={requestPublicationPhotoChange}
             onDeleted={(publicationId) => {
               setSelectedPublication(null);
               setFocusedPublicationCommentId(null);
@@ -3042,6 +3276,8 @@ export default function App() {
                 current.filter((item) => item.id !== publicationId),
               );
               setPublicationFeed((current) => current.filter((item) => item.id !== publicationId));
+              setSavedPublicationIds((current) => current.filter((id) => id !== `publication_${publicationId}`));
+              setSavedPublications((current) => current.filter((item) => item.id !== publicationId));
               setMyEstablishment((current) =>
                 current
                   ? { ...current, publicationCount: Math.max(0, (current.publicationCount ?? 1) - 1) }
@@ -3231,6 +3467,9 @@ export default function App() {
             initialData={currentUser}
             initialEstablishment={myEstablishment}
             initialErrorMessage={profileCompletionMessage}
+            onChangeCompanyPhoto={requestCompanyPhotoChange}
+            isChangingCompanyPhoto={isAvatarUploading}
+            companyPhotoError={avatarUploadError}
           />
         )}
       </AnimatePresence>
