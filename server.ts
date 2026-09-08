@@ -9389,7 +9389,7 @@ async function bootstrap() {
         next();
         return;
       }
-      if (normalizedPath === "/api/agent/report") {
+      if (normalizedPath === "/api/agent/report" || normalizedPath === "/api/visitor/ping") {
         next();
         return;
       }

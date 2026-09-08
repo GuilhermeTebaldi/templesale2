@@ -303,14 +303,14 @@ export default function PublicationViewer({
         exit={{ opacity: 0, y: 24, scale: 0.98 }}
         className="grid max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl lg:grid-cols-[minmax(0,1.1fr)_380px]"
       >
-        <div className="min-h-[42vh] bg-stone-950 lg:min-h-0">
+        <div className="relative h-[42vh] overflow-hidden bg-stone-950 sm:h-[58vh] lg:h-[92vh]">
           <ProgressiveProductImage
             src={publication.imageUrl}
             alt={establishment.name}
             loading="eager"
             fetchPriority="high"
             variant="full"
-            className="h-full max-h-[58vh] w-full object-contain lg:max-h-[92vh]"
+            className="relative h-full w-full object-contain"
           />
         </div>
         <div className="flex max-h-[50vh] flex-col border-l border-stone-100 bg-[#fdfcfb] lg:max-h-[92vh]">
