@@ -3792,8 +3792,8 @@ export default function App() {
             </div>
           ) : publicationFeed.length === 0 ? (
             <div className="rounded-lg border border-stone-100 bg-white py-20 text-center">
-              <p className="text-xs uppercase tracking-[0.2em] text-stone-400">
-                {t("Nessuna pubblicazione ancora.")}
+              <p className={`text-xs uppercase tracking-[0.2em] ${publicationFeedError ? "text-red-500" : "text-stone-400"}`}>
+                {publicationFeedError || t("Nessuna pubblicazione ancora.")}
               </p>
             </div>
           ) : (
@@ -3812,7 +3812,7 @@ export default function App() {
                         onClick={() => void openEstablishmentPage(feedEstablishment)}
                         className="flex min-w-0 items-center gap-3 text-left"
                       >
-                        <span className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-stone-200 bg-stone-100">
+                        <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-stone-200 bg-stone-100">
                           {logoUrl ? (
                             <ProgressiveProductImage
                               src={logoUrl}
@@ -3849,7 +3849,7 @@ export default function App() {
                         setSelectedPublication(publication);
                         setFocusedPublicationCommentId(null);
                       }}
-                      className="block w-full bg-stone-100"
+                      className="relative block aspect-[4/5] w-full overflow-hidden bg-stone-100 sm:aspect-square"
                     >
                       <ProgressiveProductImage
                         src={publication.imageUrl}
@@ -3857,7 +3857,7 @@ export default function App() {
                         loading={index < 3 ? "eager" : "lazy"}
                         fetchPriority={index < 3 ? "high" : "auto"}
                         variant="full"
-                        className="max-h-[78vh] w-full object-cover"
+                        className="h-full w-full object-cover"
                       />
                     </button>
 
