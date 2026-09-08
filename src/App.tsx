@@ -2964,6 +2964,15 @@ export default function App() {
           setProfileCompletionMessage("");
           setIsEditePerfilOpen(true);
         }}
+        onOpenListings={() => {
+          setIsMeusAnunciosOpen(true);
+        }}
+        onOpenFavorites={() => {
+          setIsCurtidasOpen(true);
+        }}
+        onLogout={() => {
+          void handleLogout();
+        }}
         onViewPublicProfile={(companyId) => {
           setSocialSelectedCompanyId(companyId);
           setSocialActiveTab("profile");
@@ -3073,6 +3082,143 @@ export default function App() {
                 .then(setEstablishments)
                 .catch(() => null);
             }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedProduct && (
+          <ProductDetails
+            product={selectedProduct}
+            products={products}
+            onOpenProduct={(product) => setSelectedProduct(product)}
+            onClose={handleProductDetailsClose}
+            isLiked={likedProductIds.has(selectedProduct.id)}
+            onToggleLike={() => {
+              void handleToggleLike(selectedProduct);
+            }}
+            onOpenEstablishment={(idOrSlug) => {
+              handleProductDetailsClose();
+              void openEstablishmentPage(idOrSlug);
+            }}
+            currentUser={currentUser}
+            focusCommentId={focusedCommentId}
+            onRequireAuth={() => {
+              setAuthModalMode("register");
+              setIsAuthModalOpen(true);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {(hasMemberAccess && editingProduct) && (
+          <NewProduct
+            mode="edit"
+            initialProduct={editingProduct}
+            establishment={myEstablishment}
+            sections={myEstablishment?.sections ?? []}
+            onCreateSection={async (name) => {
+              const establishment = myEstablishment ?? (await api.getMyEstablishment());
+              const section = await api.createStorefrontSection(establishment.id, name);
+              setMyEstablishment((current) =>
+                current
+                  ? { ...current, sections: [...(current.sections ?? []), section] }
+                  : { ...establishment, sections: [...(establishment.sections ?? []), section] },
+              );
+              return section;
+            }}
+            onDeleteSection={async (sectionId) => {
+              const establishment = myEstablishment ?? (await api.getMyEstablishment());
+              await api.deleteStorefrontSection(establishment.id, sectionId);
+              setMyEstablishment((current) =>
+                current
+                  ? {
+                      ...current,
+                      sections: (current.sections ?? []).filter((section) => section.id !== sectionId),
+                    }
+                  : current,
+              );
+            }}
+            onClose={() => setEditingProduct(null)}
+            onPublish={async (updatedInput) => {
+              const sellerPhone = String(currentUser?.whatsappNumber ?? "").replace(/\D/g, "");
+              const updated = await api.updateProduct(editingProduct.id, {
+                ...updatedInput,
+                phone: sellerPhone || undefined,
+                seller_phone: sellerPhone || undefined,
+                whatsappNumber: sellerPhone || undefined,
+                whatsappCountryIso: currentUser?.whatsappCountryIso || "IT",
+              });
+              syncUpdatedProduct(updated);
+              setEditingProduct(null);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {(hasMemberAccess && isMeusAnunciosOpen) && (
+          <MeusAnuncios
+            products={myProducts}
+            onClose={() => setIsMeusAnunciosOpen(false)}
+            onEdit={(prod) => {
+              setIsMeusAnunciosOpen(false);
+              setEditingProduct(prod);
+            }}
+            onDelete={async (id) => {
+              await api.deleteProduct(id);
+              setMyProducts((current) => current.filter((p) => p.id !== id));
+              setProducts((current) => current.filter((p) => p.id !== id));
+              setLikedProducts((current) => current.filter((p) => p.id !== id));
+              setSelectedProduct((current) => (current?.id === id ? null : current));
+              setEditingProduct((current) => (current?.id === id ? null : current));
+              setCartQuantitiesByProductId((current) => {
+                if (!(id in current)) {
+                  return current;
+                }
+                const next = { ...current };
+                delete next[id];
+                return next;
+              });
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {(hasMemberAccess && isCurtidasOpen) && (
+          <Curtidas
+            products={likedProducts}
+            onClose={() => setIsCurtidasOpen(false)}
+            onOpenProduct={(product) => {
+              openProductDetails(product);
+              setIsCurtidasOpen(false);
+            }}
+            onRemove={async (id) => {
+              try {
+                await api.unlikeProduct(id);
+                setLikedProducts((current) => current.filter((product) => product.id !== id));
+              } catch (err) {
+                console.error("Error removing liked product:", err);
+              }
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isCartOpen && (
+          <Carrinho
+            items={cartItems}
+            onClose={() => setIsCartOpen(false)}
+            onOpenProduct={(product) => {
+              setIsCartOpen(false);
+              openProductDetails(product);
+            }}
+            onRemove={handleRemoveFromCart}
+            onClear={handleClearCart}
+            onUpdateQuantity={handleUpdateCartItemQuantity}
           />
         )}
       </AnimatePresence>

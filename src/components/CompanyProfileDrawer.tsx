@@ -13,6 +13,9 @@ import {
   Image as ImageIcon,
   Sparkles,
   CheckCircle2,
+  Heart,
+  LogOut,
+  Package,
 } from 'lucide-react';
 import { Company, Post, Auth0User } from '../types';
 import { TempleSaleAvatarFrame } from './TempleSaleAvatarFrame';
@@ -28,6 +31,9 @@ interface CompanyProfileDrawerProps {
   onOpenPost: (post: Post) => void;
   onToggleSavePost: (postId: string) => void;
   onOpenEditCompany: () => void;
+  onOpenListings?: () => void;
+  onOpenFavorites?: () => void;
+  onLogout?: () => void;
   onViewPublicProfile: (companyId: string) => void;
   currentLanguage: SupportedLanguage;
   onChangeLanguage: (lang: SupportedLanguage) => void;
@@ -48,6 +54,9 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
   onOpenPost,
   onToggleSavePost,
   onOpenEditCompany,
+  onOpenListings,
+  onOpenFavorites,
+  onLogout,
   onViewPublicProfile,
   currentLanguage,
   onChangeLanguage,
@@ -184,15 +193,67 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                       </div>
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-neutral-200 group-hover:text-white">
-                          Editar Perfil
+                          Editar perfil do usuário
                         </div>
                         <div className="text-xs text-neutral-400 truncate">
-                          Nome, WhatsApp, fotos, endereço e horários
+                          Nome, WhatsApp, endereço, empresa, fotos e horários
                         </div>
                       </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-neutral-300 shrink-0" />
                   </button>
+
+                  {onOpenListings && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenListings();
+                        onClose();
+                      }}
+                      className="w-full flex items-center justify-between p-3.5 hover:bg-neutral-800/50 transition-colors text-left group cursor-pointer"
+                    >
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-400/10 flex items-center justify-center text-emerald-400 shrink-0">
+                          <Package className="w-4.5 h-4.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-neutral-200 group-hover:text-white">
+                            Minhas publicações
+                          </div>
+                          <div className="text-xs text-neutral-400 truncate">
+                            Gerenciar, editar e apagar seus anúncios
+                          </div>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-neutral-300 shrink-0" />
+                    </button>
+                  )}
+
+                  {onOpenFavorites && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenFavorites();
+                        onClose();
+                      }}
+                      className="w-full flex items-center justify-between p-3.5 hover:bg-neutral-800/50 transition-colors text-left group cursor-pointer"
+                    >
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-red-400/10 flex items-center justify-center text-red-300 shrink-0">
+                          <Heart className="w-4.5 h-4.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-neutral-200 group-hover:text-white">
+                            Favoritos
+                          </div>
+                          <div className="text-xs text-neutral-400 truncate">
+                            Produtos e publicações salvas
+                          </div>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-neutral-300 shrink-0" />
+                    </button>
+                  )}
 
                   {/* Item: Salvos / Preferidos */}
                   <button
@@ -271,6 +332,19 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
 
               {/* RODAPÉ DO DRAWER */}
               <div className="pt-2 text-center text-[11px] text-neutral-400 space-y-1">
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onLogout();
+                      onClose();
+                    }}
+                    className="mb-4 w-full flex items-center justify-center space-x-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-bold text-red-300 transition-colors hover:bg-red-500/15 hover:text-red-200"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    <span>Sair da conta</span>
+                  </button>
+                )}
                 <div className="flex items-center justify-center space-x-1.5 font-medium text-neutral-400">
                   <Sparkles className="w-3 h-3 text-amber-400" />
                   <span>
