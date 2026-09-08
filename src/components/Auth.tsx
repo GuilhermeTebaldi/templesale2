@@ -98,7 +98,7 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-200 bg-[#fdfcfb] flex items-center justify-center p-6">
+    <div className="fixed inset-0 z-200 flex items-center justify-center bg-neutral-950 p-6 text-neutral-100">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -107,36 +107,39 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
         <div className="flex justify-end mb-4">
           <button
             onClick={onClose}
-            className="p-2 hover:bg-stone-50 rounded-full transition-colors"
+            className="p-2 hover:bg-neutral-800 rounded-full transition-colors"
             aria-label={t("Fechar cadastro")}
           >
-            <X className="w-5 h-5 text-stone-600" />
+            <X className="w-5 h-5 text-neutral-300" />
           </button>
         </div>
 
         <div className="text-center mb-10">
-          <h1 className="text-4xl font-serif tracking-[0.2em] uppercase mb-4">Templesale</h1>
-          <p className="text-xs uppercase tracking-[0.3em] text-stone-400 font-medium">
+          <h1 className="text-4xl font-serif tracking-[0.2em] uppercase mb-4 text-neutral-50">
+            <span className="text-amber-400">Temple</span>
+            <span className="text-emerald-400">Sale</span>
+          </h1>
+          <p className="text-xs uppercase tracking-[0.3em] text-neutral-400 font-medium">
             {t("Acessar Conta")}
           </p>
         </div>
 
         <div className="space-y-6">
-          <p className="text-center text-sm leading-relaxed text-stone-500">
+          <p className="text-center text-sm leading-relaxed text-neutral-300">
             Entre com sua conta Google. Se for seu primeiro acesso, a conta TempleSale sera criada automaticamente.
           </p>
 
           {errorMessage && (
-            <p className="text-xs text-red-500">{errorMessage}</p>
+            <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-300">{errorMessage}</p>
           )}
 
           <button 
             disabled={isSubmitting || isLoading}
             type="button"
             onClick={(event) => void handleAuth0Redirect(event)}
-            className="w-full border border-stone-300 bg-white px-5 py-5 text-sm font-semibold text-stone-900 flex items-center justify-center gap-3 shadow-sm hover:bg-stone-50 hover:border-stone-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full border border-neutral-700 bg-neutral-100 px-5 py-5 text-sm font-semibold text-neutral-950 flex items-center justify-center gap-3 shadow-sm hover:bg-white hover:border-neutral-500 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-stone-200 bg-white text-base font-bold text-[#4285f4]">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-neutral-300 bg-white text-base font-bold text-[#4285f4]">
               G
             </span>
             {isSubmitting || isLoading

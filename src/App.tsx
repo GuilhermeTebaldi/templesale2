@@ -1,12 +1,19 @@
 import React from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, ShoppingBag, Menu, ArrowRight, Instagram, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, Heart, Plus, Minus, Share2, Bell, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown, ImagePlus, LoaderCircle, Trash2, Users, Mail, MessageCircle } from "lucide-react";
+import { Search, ShoppingBag, Menu, ArrowRight, Instagram, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, ChevronLeft, Heart, Plus, Minus, Share2, Bell, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown, ImagePlus, LoaderCircle, Trash2, Users, Mail, MessageCircle, Home, Filter } from "lucide-react";
 import ProductCard, { ProgressiveProductImage, type Product } from "./components/ProductCard";
 import ProductDetails from "./components/ProductDetails";
 import NewProduct from "./components/NewProduct";
 import NewPublication from "./components/NewPublication";
 import PublicationViewer from "./components/PublicationViewer";
+import { Header as SocialHeader } from "./components/Header";
+import { FeedView as SocialFeedView } from "./components/FeedView";
+import { CompanyProfile as SocialCompanyProfile } from "./components/CompanyProfile";
+import { CompanySearch as SocialCompanySearch } from "./components/CompanySearch";
+import { CompanyProfileDrawer as SocialCompanyProfileDrawer, type SupportedLanguage as SocialSupportedLanguage } from "./components/CompanyProfileDrawer";
+import { NotificationsPopover as SocialNotificationsPopover } from "./components/NotificationsPopover";
+import { TempleSaleLogo as SocialTempleSaleLogo } from "./components/TempleSaleLogo";
 import Auth, { type AuthMode, type AuthSubmitPayload } from "./components/Auth";
 import MeusAnuncios from "./components/MeusAnuncios";
 import EditePerfil from "./components/EditePerfil";
@@ -25,6 +32,7 @@ import {
   type EstablishmentDto,
   type StorefrontSectionDto,
   type PublicationDto,
+  type ProductCommentDto,
 } from "./lib/api";
 import { useI18n } from "./i18n/provider";
 import { localeOptions, type AppLocale } from "./i18n";
@@ -32,6 +40,13 @@ import { formatCollectionDate, formatRelativeTime } from "./i18n/formatters";
 import { getCategoryLabel } from "./i18n/categories";
 import { parsePriceToNumber } from "./lib/currency";
 import { buildWhatsappUrl } from "./lib/whatsapp";
+import type {
+  ActiveTab as SocialActiveTab,
+  AppNotification as SocialAppNotification,
+  Auth0User as SocialAuth0User,
+  Company as SocialCompany,
+  Post as SocialPost,
+} from "./types";
 import {
   AUTH0_AUDIENCE,
   AUTH0_DEBUG_LOGS,
@@ -294,6 +309,7 @@ export default function App() {
   const [focusedPublicationCommentId, setFocusedPublicationCommentId] = React.useState<number | null>(null);
   const [isEstablishmentPageOpen, setIsEstablishmentPageOpen] = React.useState(false);
   const [publicationFeed, setPublicationFeed] = React.useState<PublicationDto[]>([]);
+  const [publicationCommentsById, setPublicationCommentsById] = React.useState<Record<number, ProductCommentDto[]>>({});
   const [isLoadingPublicationFeed, setIsLoadingPublicationFeed] = React.useState(true);
   const [isLoadingMorePublicationFeed, setIsLoadingMorePublicationFeed] = React.useState(false);
   const [hasMorePublicationFeed, setHasMorePublicationFeed] = React.useState(false);
@@ -332,6 +348,9 @@ export default function App() {
   const [productsError, setProductsError] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState("");
+  const [socialActiveTab, setSocialActiveTab] = React.useState<SocialActiveTab>("feed");
+  const [socialSelectedCompanyId, setSocialSelectedCompanyId] = React.useState<string>("");
+  const [savedPublicationIds, setSavedPublicationIds] = React.useState<string[]>([]);
   const [cartToast, setCartToast] = React.useState<{
     id: number;
     message: string;
@@ -642,6 +661,45 @@ export default function App() {
   React.useEffect(() => {
     void loadPublicationFeedPage({ append: false });
   }, [loadPublicationFeedPage]);
+
+  React.useEffect(() => {
+    const missingPublicationIds = publicationFeed
+      .map((publication) => publication.id)
+      .filter((publicationId) => !(publicationId in publicationCommentsById))
+      .slice(0, 20);
+
+    if (missingPublicationIds.length === 0) {
+      return;
+    }
+
+    let isActive = true;
+    void Promise.all(
+      missingPublicationIds.map(async (publicationId) => {
+        try {
+          const comments = await api.getPublicationComments(publicationId);
+          return [publicationId, comments] as const;
+        } catch (error) {
+          console.error("Error loading publication comments for feed:", error);
+          return [publicationId, []] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!isActive) {
+        return;
+      }
+      setPublicationCommentsById((current) => {
+        const next = { ...current };
+        entries.forEach(([publicationId, comments]) => {
+          next[publicationId] = comments;
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, [publicationCommentsById, publicationFeed]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -2458,8 +2516,315 @@ export default function App() {
     );
   }, [catalogProducts, locale]);
 
+  const socialCompanyIdFromEstablishmentId = React.useCallback((id: number) => `company_${id}`, []);
+  const socialPostIdFromPublicationId = React.useCallback((id: number) => `publication_${id}`, []);
+  const publicationIdFromSocialPostId = React.useCallback((id: string) => {
+    const parsed = Number(String(id).replace(/^publication_/, ""));
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }, []);
+  const establishmentIdFromSocialCompanyId = React.useCallback((id: string) => {
+    const parsed = Number(String(id).replace(/^company_/, ""));
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }, []);
+
+  const socialCompanies = React.useMemo<SocialCompany[]>(() => {
+    const byId = new globalThis.Map<number, EstablishmentDto>();
+    establishments.forEach((establishment) => byId.set(establishment.id, establishment));
+    if (myEstablishment) {
+      byId.set(myEstablishment.id, myEstablishment);
+    }
+    publicationFeed.forEach((publication) => {
+      if (byId.has(publication.establishmentId)) {
+        return;
+      }
+      byId.set(publication.establishmentId, buildEstablishmentFromPublication(publication));
+    });
+
+    return Array.from(byId.values()).map((establishment) => ({
+      id: socialCompanyIdFromEstablishmentId(establishment.id),
+      name: establishment.name,
+      logo:
+        establishment.logoUrl ||
+        establishment.coverUrl ||
+        `https://picsum.photos/seed/templesale-company-${establishment.id}/160/160`,
+      category: establishment.category || t("Attività"),
+      city: establishment.city || currentUser?.city || "",
+      description: establishment.description || "",
+      whatsapp: String(establishment.whatsappNumber || establishment.phone || currentUser?.whatsappNumber || "").trim(),
+      address: establishment.address || "",
+      mapQuery: establishment.address || establishment.city || establishment.name,
+      lat: establishment.latitude,
+      lng: establishment.longitude,
+      hours: establishment.openingHours || "",
+      keywords: establishment.keywords?.length ? establishment.keywords : [establishment.category, establishment.city].filter(Boolean),
+      isOwner: myEstablishment?.id === establishment.id,
+      createdAt: new Date().toISOString(),
+    }));
+  }, [
+    buildEstablishmentFromPublication,
+    currentUser?.city,
+    currentUser?.whatsappNumber,
+    establishments,
+    myEstablishment,
+    publicationFeed,
+    socialCompanyIdFromEstablishmentId,
+    t,
+  ]);
+
+  const activeSocialCompany = React.useMemo<SocialCompany>(() => {
+    const fallbackCompany: SocialCompany = {
+      id: myEstablishment ? socialCompanyIdFromEstablishmentId(myEstablishment.id) : "company_guest",
+      name: myEstablishment?.name || currentUser?.name || BRAND_NAME,
+      logo: memberAvatar,
+      category: myEstablishment?.category || t("Attività"),
+      city: myEstablishment?.city || currentUser?.city || "",
+      description: myEstablishment?.description || "",
+      whatsapp: myEstablishment?.whatsappNumber || currentUser?.whatsappNumber || "",
+      address: myEstablishment?.address || "",
+      mapQuery: myEstablishment?.address || myEstablishment?.city || "",
+      lat: myEstablishment?.latitude,
+      lng: myEstablishment?.longitude,
+      hours: myEstablishment?.openingHours || "",
+      keywords: [myEstablishment?.category, myEstablishment?.city].filter(Boolean) as string[],
+      isOwner: Boolean(myEstablishment),
+      createdAt: new Date().toISOString(),
+    };
+    return socialCompanies.find((company) => company.isOwner) || socialCompanies[0] || fallbackCompany;
+  }, [currentUser, memberAvatar, myEstablishment, socialCompanies, socialCompanyIdFromEstablishmentId, t]);
+
+  React.useEffect(() => {
+    if (!socialSelectedCompanyId && activeSocialCompany.id) {
+      setSocialSelectedCompanyId(activeSocialCompany.id);
+    }
+  }, [activeSocialCompany.id, socialSelectedCompanyId]);
+
+  const toSocialComments = React.useCallback((items: ProductCommentDto[]) => {
+    const flattened: ProductCommentDto[] = [];
+    const visit = (comment: ProductCommentDto) => {
+      flattened.push(comment);
+      comment.replies.forEach(visit);
+    };
+    items.forEach(visit);
+    return flattened.map((comment) => ({
+      id: `comment_${comment.id}`,
+      postId: socialPostIdFromPublicationId(comment.publicationId ?? 0),
+      authorName: comment.authorName,
+      authorAvatar: comment.authorAvatarUrl,
+      text: comment.body,
+      createdAt: new Date(comment.createdAt).toISOString(),
+    }));
+  }, [socialPostIdFromPublicationId]);
+
+  const socialPosts = React.useMemo<SocialPost[]>(
+    () =>
+      publicationFeed.map((publication) => ({
+        id: socialPostIdFromPublicationId(publication.id),
+        companyId: socialCompanyIdFromEstablishmentId(publication.establishmentId),
+        imageUrl: publication.imageUrl,
+        caption: publication.caption || "",
+        createdAt: new Date(publication.createdAt).toISOString(),
+        comments: toSocialComments(publicationCommentsById[publication.id] ?? []),
+        likesCount: 0,
+      })),
+    [
+      publicationCommentsById,
+      publicationFeed,
+      socialCompanyIdFromEstablishmentId,
+      socialPostIdFromPublicationId,
+      toSocialComments,
+    ],
+  );
+
+  const selectedSocialCompany = React.useMemo(
+    () =>
+      socialCompanies.find((company) => company.id === socialSelectedCompanyId) ||
+      activeSocialCompany,
+    [activeSocialCompany, socialCompanies, socialSelectedCompanyId],
+  );
+  const selectedSocialCompanyPosts = React.useMemo(
+    () => socialPosts.filter((post) => post.companyId === selectedSocialCompany.id),
+    [selectedSocialCompany.id, socialPosts],
+  );
+
+  const socialUser = React.useMemo<SocialAuth0User>(
+    () => ({
+      isAuthenticated: hasMemberAccess,
+      sub: currentUser?.id ? String(currentUser.id) : undefined,
+      name: memberName,
+      email: memberEmail,
+      picture: memberAvatar,
+      companyId: activeSocialCompany.id,
+    }),
+    [activeSocialCompany.id, currentUser?.id, hasMemberAccess, memberAvatar, memberEmail, memberName],
+  );
+
+  const socialNotifications = React.useMemo<SocialAppNotification[]>(
+    () =>
+      notificationsToDisplay
+        .filter((notification) => notification.type === "publication_comment" || notification.type === "admin_broadcast")
+        .map((notification) => {
+          const publicationId =
+            "publicationId" in notification && notification.publicationId
+              ? notification.publicationId
+              : publicationFeed[0]?.id ?? 0;
+          const publication = publicationFeed.find((item) => item.id === publicationId);
+          return {
+            id: notification.id,
+            type: "comment",
+            postId: socialPostIdFromPublicationId(publicationId),
+            companyId: publication
+              ? socialCompanyIdFromEstablishmentId(publication.establishmentId)
+              : activeSocialCompany.id,
+            postImageUrl:
+              String(("productImageUrl" in notification ? notification.productImageUrl : "") ?? "").trim() ||
+              publication?.imageUrl ||
+              activeSocialCompany.logo,
+            authorName: String(("actorName" in notification ? notification.actorName : "") || notification.title || BRAND_NAME),
+            text: notification.message,
+            createdAt: new Date(notification.createdAt).toISOString(),
+            read: readNotificationIdSet.has(notification.id),
+          };
+        }),
+    [
+      activeSocialCompany.id,
+      activeSocialCompany.logo,
+      notificationsToDisplay,
+      publicationFeed,
+      readNotificationIdSet,
+      socialCompanyIdFromEstablishmentId,
+      socialPostIdFromPublicationId,
+    ],
+  );
+
+  const openSocialPost = React.useCallback(
+    (post: SocialPost) => {
+      const publicationId = publicationIdFromSocialPostId(post.id);
+      const publication = publicationId ? publicationFeed.find((item) => item.id === publicationId) : null;
+      if (!publication) {
+        return;
+      }
+      const establishment = buildEstablishmentFromPublication(publication);
+      setSelectedEstablishment(establishment);
+      setSelectedPublication(publication);
+      setFocusedPublicationCommentId(null);
+    },
+    [buildEstablishmentFromPublication, publicationFeed, publicationIdFromSocialPostId],
+  );
+
+  const selectSocialCompany = React.useCallback(
+    (companyId: string) => {
+      setSocialSelectedCompanyId(companyId);
+      setSocialActiveTab("profile");
+      const establishmentId = establishmentIdFromSocialCompanyId(companyId);
+      const establishment = establishmentId ? establishments.find((item) => item.id === establishmentId) : null;
+      if (establishment) {
+        void openEstablishmentPage(establishment);
+      }
+    },
+    [establishmentIdFromSocialCompanyId, establishments, openEstablishmentPage],
+  );
+
+  const addSocialComment = React.useCallback(
+    async (postId: string, text: string) => {
+      const publicationId = publicationIdFromSocialPostId(postId);
+      if (!publicationId) {
+        return;
+      }
+      if (!hasMemberAccess) {
+        setAuthModalMode("register");
+        setIsAuthModalOpen(true);
+        return;
+      }
+      try {
+        const nextComments = await api.createPublicationComment(publicationId, { body: text });
+        setPublicationCommentsById((current) => ({
+          ...current,
+          [publicationId]: nextComments,
+        }));
+        const payload = await api.getPublication(publicationId);
+        setPublicationFeed((current) =>
+          current.map((publication) => (publication.id === publicationId ? payload.publication : publication)),
+        );
+        setSelectedPublication((current) => (current?.id === publicationId ? payload.publication : current));
+      } catch (error) {
+        console.error("Error creating social comment:", error);
+      }
+    },
+    [hasMemberAccess, publicationIdFromSocialPostId],
+  );
+
+  const changeSocialTab = React.useCallback(
+    (tab: SocialActiveTab) => {
+      if (tab === "map") {
+        openMapDefault();
+        return;
+      }
+      setSocialActiveTab(tab);
+    },
+    [openMapDefault],
+  );
+
+  const toggleSavedSocialPost = React.useCallback((postId: string) => {
+    setSavedPublicationIds((current) =>
+      current.includes(postId) ? current.filter((id) => id !== postId) : [...current, postId],
+    );
+  }, []);
+
+  const deleteSocialPost = React.useCallback(
+    async (postId: string) => {
+      const publicationId = publicationIdFromSocialPostId(postId);
+      if (!publicationId) {
+        return;
+      }
+
+      const publication = publicationFeed.find((item) => item.id === publicationId);
+      if (!publication) {
+        return;
+      }
+
+      if (!hasMemberAccess || currentUser?.id !== publication.ownerId) {
+        setAuthModalMode("register");
+        setIsAuthModalOpen(true);
+        return;
+      }
+
+      try {
+        await api.deletePublication(publicationId);
+        setPublicationFeed((current) => current.filter((item) => item.id !== publicationId));
+        setSelectedEstablishmentPublications((current) =>
+          current.filter((item) => item.id !== publicationId),
+        );
+        setSelectedPublication((current) => (current?.id === publicationId ? null : current));
+        setPublicationCommentsById((current) => {
+          const next = { ...current };
+          delete next[publicationId];
+          return next;
+        });
+        setSavedPublicationIds((current) => current.filter((id) => id !== postId));
+        setMyEstablishment((current) =>
+          current && current.id === publication.establishmentId
+            ? { ...current, publicationCount: Math.max(0, (current.publicationCount ?? 1) - 1) }
+            : current,
+        );
+        void api.getEstablishments({ search: debouncedSearchQuery, category: activeCategory, limit: 80 })
+          .then(setEstablishments)
+          .catch(() => null);
+      } catch (error) {
+        console.error("Error deleting social publication:", error);
+      }
+    },
+    [
+      activeCategory,
+      currentUser?.id,
+      debouncedSearchQuery,
+      hasMemberAccess,
+      publicationFeed,
+      publicationIdFromSocialPostId,
+    ],
+  );
+
   return (
-    <div className="min-h-[100dvh] flex flex-col">
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
       <AnimatePresence>
         {isAuthModalOpen && (
           <Auth
@@ -2469,344 +2834,6 @@ export default function App() {
           />
         )}
       </AnimatePresence>
-
-      <AnimatePresence>
-        {cartToast && (
-          <motion.div
-            key={cartToast.id}
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 14, scale: 0.96 }}
-            transition={{ type: "spring", damping: 22, stiffness: 320 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-170 px-4"
-          >
-            <div
-              className={`min-w-[260px] max-w-[90vw] border px-4 py-3 shadow-xl backdrop-blur-sm flex items-center gap-3 ${
-                cartToast.variant === "warning"
-                  ? "bg-amber-50/95 border-amber-200 text-amber-800"
-                  : "bg-stone-900/95 border-stone-800 text-white"
-              }`}
-            >
-              <ShoppingBag className="w-4 h-4 shrink-0" />
-              <span className="text-xs tracking-[0.06em]">{cartToast.message}</span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {deletedNotificationUndo && (
-          <motion.div
-            key={deletedNotificationUndo.notification.id}
-            initial={{ opacity: 0, y: 24, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 18, scale: 0.96 }}
-            transition={{ type: "spring", damping: 22, stiffness: 320 }}
-            className={`fixed left-1/2 z-170 -translate-x-1/2 px-4 ${cartToast ? "bottom-20" : "bottom-6"}`}
-          >
-            <div className="flex min-w-[280px] max-w-[92vw] items-center justify-between gap-4 border border-stone-800 bg-stone-950/95 px-4 py-3 text-white shadow-xl backdrop-blur-sm">
-              <span className="text-xs tracking-[0.06em]">{t("Notificação excluída.")}</span>
-              <button
-                type="button"
-                onClick={() => void handleUndoDeleteNotification()}
-                className="text-xs font-bold uppercase tracking-[0.12em] text-white underline decoration-white/40 underline-offset-4 transition-colors hover:text-stone-200"
-              >
-                {t("Desfazer")}
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Side Menu Overlay */}
-      <motion.div
-        initial={false}
-        animate={isMenuOpen || isUserOpen ? { opacity: 1 } : { opacity: 0 }}
-        className={`fixed inset-0 z-70 bg-black/20 backdrop-blur-sm transition-opacity duration-500 ${
-          isMenuOpen || isUserOpen ? "pointer-events-auto" : "pointer-events-none"
-        }`}
-        onClick={() => {
-          setIsMenuOpen(false);
-          setIsLanguageMenuOpen(false);
-          setIsUserOpen(false);
-          setIsAvatarPickerOpen(false);
-        }}
-      />
-
-      {hasMemberAccess && (
-        <>
-      {/* User Dashboard Overlay */}
-      <motion.div
-        initial={{ x: "100%" }}
-        animate={{ x: isUserOpen ? 0 : "100%" }}
-        transition={{ type: "spring", damping: 30, stiffness: 300 }}
-        className="fixed top-0 right-0 bottom-0 w-[85vw] max-w-sm z-80 bg-[#fdfcfb] shadow-2xl flex flex-col"
-      >
-        <div className="p-8 flex justify-between items-center border-b border-stone-100">
-          <div className="min-w-0 pr-3">
-            <h2 className="text-xl font-serif tracking-widest uppercase">{t("Painel")}</h2>
-            {memberEmail && (
-              <p className="mt-1 truncate text-[11px] font-medium text-stone-500">{memberEmail}</p>
-            )}
-          </div>
-          <button
-            onClick={() => {
-              setIsUserOpen(false);
-              setIsLanguageMenuOpen(false);
-              setIsAccountSettingsOpen(false);
-              setIsAvatarPickerOpen(false);
-            }}
-            className="p-2 hover:bg-stone-50 rounded-full transition-colors"
-          >
-            <X className="w-6 h-6 text-stone-600" />
-          </button>
-        </div>
-        
-        <div className="grow overflow-y-auto p-8 flex flex-col gap-10">
-          {/* User Profile Summary */}
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <button
-                ref={avatarButtonRef}
-                onClick={() => setIsAvatarPickerOpen((current) => !current)}
-                className="w-16 h-16 rounded-full overflow-hidden bg-stone-100 border border-stone-200 p-0.5"
-              >
-                <img
-                  src={memberAvatar}
-                  alt={t("Avatar do usuário")}
-                  className="w-full h-full object-cover rounded-full"
-                />
-                {isAvatarUploading && (
-                  <span className="absolute inset-0 bg-black/35 text-white flex items-center justify-center rounded-full">
-                    <LoaderCircle className="w-4 h-4 animate-spin" />
-                  </span>
-                )}
-              </button>
-              <AnimatePresence>
-                {isAvatarPickerOpen && (
-                  <motion.div
-                    ref={avatarPickerPanelRef}
-                    initial={{ opacity: 0, y: -6, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -6, scale: 0.96 }}
-                    className="absolute top-[calc(100%+0.5rem)] left-0 z-90 min-w-[180px] bg-white border border-stone-200 shadow-lg rounded-sm p-2"
-                  >
-                    <button
-                      disabled={isAvatarUploading}
-                      onClick={() => avatarInputRef.current?.click()}
-                      className="w-full flex items-center justify-center gap-2 px-3 py-2 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-700 hover:bg-stone-100 disabled:text-stone-300 disabled:hover:bg-transparent transition-colors"
-                    >
-                      <ImagePlus className="w-3.5 h-3.5" />
-                      {isAvatarUploading ? t("Enviando foto...") : t("Escolher foto")}
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-            <div>
-              <h3 className="font-serif italic text-xl text-stone-800">
-                {myEstablishment?.name || memberName}
-              </h3>
-              <p className="text-[10px] uppercase tracking-widest text-stone-400">
-                {myEstablishment
-                  ? [myEstablishment.category, myEstablishment.city].filter(Boolean).join(" · ")
-                  : t("Membro cadastrado")}
-              </p>
-              {avatarUploadError && (
-                <p className="text-[11px] text-red-500 mt-1">{avatarUploadError}</p>
-              )}
-            </div>
-          </div>
-          <input
-            ref={avatarInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(event) => {
-              void handleProfileAvatarUpload(event);
-            }}
-          />
-
-          {/* Dashboard Links */}
-          <nav className="flex flex-col gap-2">
-            <button 
-              onClick={handleOpenNewProduct}
-              className="flex items-center justify-between p-4 bg-stone-900 text-white hover:bg-black transition-colors group mb-4 rounded-sm"
-            >
-              <div className="flex items-center gap-4">
-                <Plus className="w-4 h-4 text-white/70 group-hover:text-white transition-colors" />
-                <span className="text-xs uppercase tracking-widest font-bold">
-                  {t("Nuova pubblicazione")}
-                </span>
-              </div>
-              <ArrowRight className="w-3 h-3 text-white/50 group-hover:text-white transition-colors" />
-            </button>
-
-            <button
-              onClick={() => {
-                setIsUserOpen(false);
-                setProfileCompletionMessage("");
-                setIsEditePerfilOpen(true);
-              }}
-              className="w-full flex items-center justify-between p-4 hover:bg-stone-50 transition-colors group"
-            >
-              <div className="flex items-center gap-4">
-                <User className="w-4 h-4 text-stone-400 group-hover:text-stone-800 transition-colors" />
-                <span className="text-xs uppercase tracking-widest font-medium text-stone-600 group-hover:text-stone-800 transition-colors">
-                  {t("Profilo attività")}
-                </span>
-              </div>
-              <ChevronRight className="w-3 h-3 text-stone-300 group-hover:text-stone-500 transition-colors" />
-            </button>
-
-            <button
-              onClick={() => {
-                setIsUserOpen(false);
-                setIsCurtidasOpen(true);
-              }}
-              className="w-full flex items-center justify-between p-4 hover:bg-stone-50 transition-colors group"
-            >
-              <div className="flex items-center gap-4">
-                <Heart className="w-4 h-4 text-stone-400 group-hover:text-stone-800 transition-colors" />
-                <span className="text-xs uppercase tracking-widest font-medium text-stone-600 group-hover:text-stone-800 transition-colors">
-                  {t("Preferiti")}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono text-stone-400">{likedProducts.length}</span>
-                <ChevronRight className="w-3 h-3 text-stone-300 group-hover:text-stone-500 transition-colors" />
-              </div>
-            </button>
-
-            <button
-              onClick={() => {
-                setIsUserOpen(false);
-                setIsMeusAnunciosOpen(true);
-              }}
-              className="w-full flex items-center justify-between p-4 hover:bg-stone-50 transition-colors group"
-            >
-              <div className="flex items-center gap-4">
-                <Package className="w-4 h-4 text-stone-400 group-hover:text-stone-800 transition-colors" />
-                <span className="text-xs uppercase tracking-widest font-medium text-stone-600 group-hover:text-stone-800 transition-colors">
-                  {t("Prodotti")}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono text-stone-400">{myProducts.length}</span>
-                <ChevronRight className="w-3 h-3 text-stone-300 group-hover:text-stone-500 transition-colors" />
-              </div>
-            </button>
-
-            <div>
-              <button
-                onClick={() => setIsLanguageMenuOpen((current) => !current)}
-                className="w-full flex items-center justify-between p-4 hover:bg-stone-50 transition-colors group"
-              >
-                <div className="flex items-center gap-4">
-                  <Languages className="w-4 h-4 text-stone-400 group-hover:text-stone-800 transition-colors" />
-                  <span className="text-xs uppercase tracking-widest font-medium text-stone-600 group-hover:text-stone-800 transition-colors">
-                    {t("Idioma")}
-                  </span>
-                </div>
-                <ChevronDown
-                  className={`w-3 h-3 text-stone-300 transition-transform duration-300 ${
-                    isLanguageMenuOpen ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
-              <AnimatePresence>
-                {isLanguageMenuOpen && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden bg-stone-50/50"
-                  >
-                    {localeOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        onClick={() => {
-                          handleLocaleChange(option.value as AppLocale);
-                          setIsLanguageMenuOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between gap-4 pl-12 pr-4 py-3 hover:bg-stone-100 transition-colors group ${
-                          locale === option.value ? "bg-stone-100" : ""
-                        }`}
-                      >
-                        <span className="text-[10px] uppercase tracking-widest font-medium text-stone-500 group-hover:text-stone-800 transition-colors">
-                          {t(option.label)}
-                        </span>
-                        {locale === option.value && (
-                          <span className="text-[10px] uppercase tracking-[0.15em] text-stone-500">
-                            {t("Ativo")}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            <div>
-              <button
-                onClick={() => setIsAccountSettingsOpen((current) => !current)}
-                className="w-full flex items-center justify-between p-4 hover:bg-stone-50 transition-colors group"
-              >
-                <div className="flex items-center gap-4">
-                  <Settings className="w-4 h-4 text-stone-400 group-hover:text-stone-800 transition-colors" />
-                  <span className="text-xs uppercase tracking-widest font-medium text-stone-600 group-hover:text-stone-800 transition-colors">
-                    {t("Configurações da conta")}
-                  </span>
-                </div>
-                <ChevronDown
-                  className={`w-3 h-3 text-stone-300 transition-transform duration-300 ${
-                    isAccountSettingsOpen ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
-              <AnimatePresence>
-                {isAccountSettingsOpen && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden bg-stone-50/50"
-                  >
-                    {[
-                      { icon: FileText, label: "Termos" },
-                      { icon: Shield, label: "Privacidade" },
-                      { icon: HelpCircle, label: "Suporte" },
-                    ].map((subItem) => (
-                      <button
-                        key={subItem.label}
-                        className="w-full flex items-center gap-4 pl-12 py-3 hover:bg-stone-100 transition-colors group"
-                      >
-                        <subItem.icon className="w-3.5 h-3.5 text-stone-400 group-hover:text-stone-800 transition-colors" />
-                        <span className="text-[10px] uppercase tracking-widest font-medium text-stone-500 group-hover:text-stone-800 transition-colors">
-                          {t(subItem.label)}
-                        </span>
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </nav>
-
-          <div className="mt-auto">
-            <button 
-              onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-3 p-4 border border-stone-100 text-stone-400 hover:text-red-500 hover:border-red-100 hover:bg-red-50/30 transition-all text-xs uppercase tracking-[0.2em] font-medium"
-            >
-              <LogOut className="w-4 h-4" />
-              {t("Sair")}
-            </button>
-          </div>
-        </div>
-      </motion.div>
-        </>
-      )}
 
       <AnimatePresence>
         {isMapOpen && (
@@ -2838,166 +2865,136 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {isVendedoresOpen && (
-          <Vendedores
-            onClose={() => setIsVendedoresOpen(false)}
-            onOpenProduct={(product) => {
-              setIsVendedoresOpen(false);
-              openProductDetails(product);
+      <SocialHeader
+        activeTab={socialActiveTab}
+        setActiveTab={changeSocialTab}
+        unreadNotificationsCount={unreadNotificationsCount}
+        onToggleNotifications={() => setIsNotificationsOpen((current) => !current)}
+        onOpenCreatePost={handleOpenNewProduct}
+        onOpenCompanyModal={() => {
+          if (!hasMemberAccess) {
+            setAuthModalMode("register");
+            setIsAuthModalOpen(true);
+            return;
+          }
+          setIsUserOpen(true);
+        }}
+        user={socialUser}
+        activeCompany={activeSocialCompany}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+      />
+
+      <main className="flex-1 pb-24 sm:pb-16">
+        <div style={{ display: socialActiveTab === "feed" ? "block" : "none" }}>
+          <SocialFeedView
+            posts={socialPosts}
+            companies={socialCompanies}
+            onOpenPost={openSocialPost}
+            onSelectCompany={selectSocialCompany}
+            onAddComment={(postId, text) => {
+              void addSocialComment(postId, text);
+            }}
+            onOpenCreatePost={handleOpenNewProduct}
+            savedPostIds={savedPublicationIds}
+            onToggleSavePost={toggleSavedSocialPost}
+            onRefresh={() => loadPublicationFeedPage({ append: false })}
+          />
+        </div>
+
+        {socialActiveTab === "profile" && (
+          <SocialCompanyProfile
+            company={selectedSocialCompany}
+            posts={selectedSocialCompanyPosts}
+            isOwner={selectedSocialCompany.id === activeSocialCompany.id}
+            onBack={() => setSocialActiveTab("feed")}
+            onOpenPost={openSocialPost}
+            onOpenCreatePost={handleOpenNewProduct}
+            onEditCompany={() => setIsEditePerfilOpen(true)}
+            onKeywordClick={(keyword) => {
+              setSearchQuery(keyword);
+              setSocialActiveTab("search");
+            }}
+            onDeletePost={(postId) => {
+              void deleteSocialPost(postId);
             }}
           />
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
-        {isEstablishmentPageOpen && selectedEstablishment && (
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 24 }}
-            transition={{ duration: 0.24 }}
-            className="fixed inset-0 z-160 overflow-y-auto bg-[#fdfcfb]"
-          >
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-100 bg-[#fdfcfb]/95 px-5 py-4 backdrop-blur-md">
-              <button
-                type="button"
-                onClick={closeEstablishmentPage}
-                className="rounded-full p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-900"
-                aria-label={t("Fechar")}
-              >
-                <X className="h-5 w-5" />
-              </button>
-              <span className="text-xs uppercase tracking-[0.22em] text-stone-500">
-                {t("Attività")}
-              </span>
-              <span className="h-9 w-9" />
-            </div>
-            <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
-              <section className="grid gap-8 lg:grid-cols-[22rem_1fr]">
-                <div>
-                  <div className="relative aspect-[4/3] overflow-hidden rounded-lg border border-stone-200 bg-stone-100">
-                    {selectedEstablishment.coverUrl || selectedEstablishment.logoUrl ? (
-                      <ProgressiveProductImage
-                        src={selectedEstablishment.coverUrl || selectedEstablishment.logoUrl || ""}
-                        alt={selectedEstablishment.name}
-                        loading="eager"
-                        fetchPriority="high"
-                        variant="full"
-                        className="relative h-full w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center font-serif text-7xl text-stone-300">
-                        {selectedEstablishment.name.slice(0, 1).toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="flex flex-col justify-center">
-                  <h1 className="font-serif text-4xl text-stone-950 sm:text-6xl">
-                    {selectedEstablishment.name}
-                  </h1>
-                  <p className="mt-3 text-xs uppercase tracking-[0.2em] text-stone-500">
-                    {[selectedEstablishment.category, selectedEstablishment.city].filter(Boolean).join(" · ")}
-                  </p>
-                  {selectedEstablishment.description && (
-                    <p className="mt-6 max-w-2xl text-sm leading-7 text-stone-600">
-                      {selectedEstablishment.description}
-                    </p>
-                  )}
-                  <div className="mt-6 space-y-2 text-sm text-stone-600">
-                    {selectedEstablishment.address && (
-                      <p className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-stone-400" />
-                        {selectedEstablishment.address}
-                      </p>
-                    )}
-                    {selectedEstablishment.openingHours && <p>{selectedEstablishment.openingHours}</p>}
-                  </div>
-                  <div className="mt-8 flex flex-wrap gap-3">
-                    {selectedEstablishment.whatsappNumber && (
-                      <a
-                        href={
-                          buildWhatsappUrl(
-                            selectedEstablishment.whatsappCountryIso || "IT",
-                            selectedEstablishment.whatsappNumber,
-                            selectedEstablishment.name,
-                            { kind: "establishment" },
-                          ) ?? "#"
-                        }
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex h-11 items-center gap-2 rounded-lg bg-stone-950 px-4 text-xs font-semibold uppercase tracking-[0.16em] text-white"
-                      >
-                        <MessageCircle className="h-4 w-4" />
-                        {t("WhatsApp")}
-                      </a>
-                    )}
-                    {selectedEstablishment.phone && (
-                      <a
-                        href={`tel:${selectedEstablishment.phone}`}
-                        className="inline-flex h-11 items-center rounded-lg border border-stone-300 px-4 text-xs font-semibold uppercase tracking-[0.16em] text-stone-800"
-                      >
-                        {t("Chiama")}
-                      </a>
-                    )}
-                    {typeof selectedEstablishment.latitude === "number" && typeof selectedEstablishment.longitude === "number" && (
-                      <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${selectedEstablishment.latitude},${selectedEstablishment.longitude}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex h-11 items-center gap-2 rounded-lg border border-stone-300 px-4 text-xs font-semibold uppercase tracking-[0.16em] text-stone-800"
-                      >
-                        <MapPin className="h-4 w-4" />
-                        {t("Mappa")}
-                      </a>
-                    )}
-                  </div>
-                </div>
-              </section>
-              <section className="mt-12">
-                {selectedEstablishmentPublications.length === 0 ? (
-                  <div className="border-t border-stone-100 py-16 text-center">
-                    <p className="text-xs uppercase tracking-[0.22em] text-stone-400">
-                      {t("Nessuna pubblicazione ancora.")}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-3 gap-1 sm:gap-2">
-                    {selectedEstablishmentPublications.map((publication, index) => (
-                      <button
-                        key={publication.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedPublication(publication);
-                          setFocusedPublicationCommentId(null);
-                        }}
-                        className="group relative aspect-square overflow-hidden bg-stone-100"
-                      >
-                        <ProgressiveProductImage
-                          src={publication.imageUrl}
-                          alt={selectedEstablishment.name}
-                          loading={index < 9 ? "eager" : "lazy"}
-                          fetchPriority={index < 9 ? "high" : "auto"}
-                          variant="card"
-                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        />
-                        {publication.caption && (
-                          <div className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/55 to-transparent px-3 pb-3 pt-8 opacity-0 transition-opacity group-hover:opacity-100">
-                            <p className="line-clamp-2 text-left text-xs leading-5 text-white">
-                              {publication.caption}
-                            </p>
-                          </div>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </section>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        <div style={{ display: socialActiveTab === "search" ? "block" : "none" }}>
+          <SocialCompanySearch
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            companies={socialCompanies}
+            posts={socialPosts}
+            onSelectCompany={selectSocialCompany}
+            onOpenPost={openSocialPost}
+          />
+        </div>
+      </main>
+
+      <footer className="border-t border-neutral-900 py-6 mb-16 sm:mb-0 text-center text-xs text-neutral-400">
+        <div className="max-w-4xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center space-x-2">
+            <SocialTempleSaleLogo className="w-5 h-5" />
+            <span className="text-xs font-medium tracking-tight">
+              <span className="text-amber-400 font-medium">Temple</span>
+              <span className="text-emerald-400 font-semibold ml-0.5">Sale</span>
+            </span>
+            <span>•</span>
+            <span>Rede de Descoberta de Empresas</span>
+          </div>
+          <span className="text-[11px] text-neutral-500">Empresa -&gt; Foto -&gt; Legenda</span>
+        </div>
+      </footer>
+
+      <SocialCompanyProfileDrawer
+        isOpen={isUserOpen}
+        onClose={() => setIsUserOpen(false)}
+        company={activeSocialCompany}
+        user={socialUser}
+        savedPosts={socialPosts.filter((post) => savedPublicationIds.includes(post.id))}
+        onOpenPost={(post) => {
+          openSocialPost(post);
+          setIsUserOpen(false);
+        }}
+        onToggleSavePost={toggleSavedSocialPost}
+        onOpenEditCompany={() => {
+          setIsUserOpen(false);
+          setProfileCompletionMessage("");
+          setIsEditePerfilOpen(true);
+        }}
+        onViewPublicProfile={(companyId) => {
+          setSocialSelectedCompanyId(companyId);
+          setSocialActiveTab("profile");
+          setIsUserOpen(false);
+        }}
+        currentLanguage={locale as SocialSupportedLanguage}
+        onChangeLanguage={(language) => {
+          if (language === "pt-BR" || language === "it-IT") {
+            handleLocaleChange(language);
+          }
+        }}
+      />
+
+      <SocialNotificationsPopover
+        isOpen={isNotificationsOpen}
+        onClose={() => setIsNotificationsOpen(false)}
+        notifications={socialNotifications}
+        onSelectNotification={(notification) => {
+          const originalNotification = notificationsToDisplay.find((item) => item.id === notification.id);
+          if (originalNotification) {
+            void handleNotificationClick(originalNotification);
+            return;
+          }
+          const post = socialPosts.find((item) => item.id === notification.postId);
+          if (post) {
+            openSocialPost(post);
+          }
+        }}
+        onMarkAllAsRead={markAllNotificationsAsRead}
+        onSimulateComment={() => null}
+      />
 
       <AnimatePresence>
         {selectedPublication && selectedEstablishment && (
@@ -3014,9 +3011,18 @@ export default function App() {
               setAuthModalMode("register");
               setIsAuthModalOpen(true);
             }}
+            onCommentsChanged={(publicationId, comments) => {
+              setPublicationCommentsById((current) => ({
+                ...current,
+                [publicationId]: comments,
+              }));
+            }}
             onUpdated={(publication) => {
               setSelectedPublication(publication);
               setSelectedEstablishmentPublications((current) =>
+                current.map((item) => (item.id === publication.id ? publication : item)),
+              );
+              setPublicationFeed((current) =>
                 current.map((item) => (item.id === publication.id ? publication : item)),
               );
             }}
@@ -3026,6 +3032,7 @@ export default function App() {
               setSelectedEstablishmentPublications((current) =>
                 current.filter((item) => item.id !== publicationId),
               );
+              setPublicationFeed((current) => current.filter((item) => item.id !== publicationId));
               setMyEstablishment((current) =>
                 current
                   ? { ...current, publicationCount: Math.max(0, (current.publicationCount ?? 1) - 1) }
@@ -3039,107 +3046,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Product Details View */}
-      <AnimatePresence>
-        {selectedProduct && (
-          <ProductDetails 
-            product={selectedProduct} 
-            products={products}
-            onOpenProduct={(product) => setSelectedProduct(product)}
-            onClose={handleProductDetailsClose}
-            isLiked={likedProductIds.has(selectedProduct.id)}
-            onToggleLike={() => {
-              void handleToggleLike(selectedProduct);
-            }}
-            onOpenEstablishment={(idOrSlug) => {
-              handleProductDetailsClose();
-              void openEstablishmentPage(idOrSlug);
-            }}
-            currentUser={currentUser}
-            focusCommentId={focusedCommentId}
-            onRequireAuth={() => {
-              setAuthModalMode("register");
-              setIsAuthModalOpen(true);
-            }}
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {likersProduct && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setLikersProduct(null)}
-              className="fixed inset-0 z-190 bg-black/30"
-            />
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.98 }}
-              className="fixed left-1/2 top-1/2 z-200 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 border border-stone-200 bg-white shadow-2xl"
-            >
-              <div className="flex items-start justify-between gap-4 border-b border-stone-100 p-5">
-                <div>
-                  <div className="mb-2 flex items-center gap-2">
-                    <Users className="h-4 w-4 text-stone-600" />
-                    <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-800">
-                      {t("Curtidas")}
-                    </h3>
-                  </div>
-                  <p className="text-sm font-semibold text-stone-900">{likersProduct.name}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setLikersProduct(null)}
-                  className="rounded-full p-2 text-stone-500 hover:bg-stone-50 hover:text-stone-900"
-                  aria-label={t("Fechar")}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="max-h-[22rem] overflow-y-auto p-4">
-                {isLoadingProductLikers ? (
-                  <div className="flex items-center justify-center gap-2 py-8 text-sm text-stone-500">
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                    {t("Carregando...")}
-                  </div>
-                ) : productLikersError ? (
-                  <p className="py-6 text-center text-sm text-red-500">{productLikersError}</p>
-                ) : productLikers.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-stone-500">
-                    {t("Ainda não há curtidas públicas para esta publicação.")}
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {productLikers.map((liker) => (
-                      <div key={liker.id} className="flex items-center gap-3 rounded-sm border border-stone-100 p-3">
-                        <img
-                          src={liker.avatarUrl || `https://picsum.photos/seed/liker-${liker.id}/80/80`}
-                          alt={liker.name}
-                          className="h-10 w-10 rounded-full border border-stone-200 object-cover"
-                        />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-stone-800">{liker.name}</p>
-                          {(liker.city || liker.country) && (
-                            <p className="truncate text-xs text-stone-400">
-                              {[liker.city, liker.country].filter(Boolean).join(", ")}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* New Publication View */}
       <AnimatePresence>
         {(hasMemberAccess && isNewProductOpen && myEstablishment) && (
           <NewPublication
@@ -3172,122 +3078,8 @@ export default function App() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {(hasMemberAccess && editingProduct) && (
-          <NewProduct
-            mode="edit"
-            initialProduct={editingProduct}
-            establishment={myEstablishment}
-            sections={myEstablishment?.sections ?? []}
-            onCreateSection={async (name) => {
-              const establishment = myEstablishment ?? (await api.getMyEstablishment());
-              const section = await api.createStorefrontSection(establishment.id, name);
-              setMyEstablishment((current) =>
-                current
-                  ? { ...current, sections: [...(current.sections ?? []), section] }
-                  : { ...establishment, sections: [...(establishment.sections ?? []), section] },
-              );
-              return section;
-            }}
-            onDeleteSection={async (sectionId) => {
-              const establishment = myEstablishment ?? (await api.getMyEstablishment());
-              await api.deleteStorefrontSection(establishment.id, sectionId);
-              setMyEstablishment((current) =>
-                current
-                  ? {
-                      ...current,
-                      sections: (current.sections ?? []).filter((section) => section.id !== sectionId),
-                    }
-                  : current,
-              );
-            }}
-            onClose={() => setEditingProduct(null)}
-            onPublish={async (updatedInput) => {
-              const sellerPhone = String(currentUser?.whatsappNumber ?? "").replace(/\D/g, "");
-              const updated = await api.updateProduct(editingProduct.id, {
-                ...updatedInput,
-                phone: sellerPhone || undefined,
-                seller_phone: sellerPhone || undefined,
-                whatsappNumber: sellerPhone || undefined,
-                whatsappCountryIso: currentUser?.whatsappCountryIso || "IT",
-              });
-              syncUpdatedProduct(updated);
-              setEditingProduct(null);
-            }}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Meus Anúncios View */}
-      <AnimatePresence>
-        {(hasMemberAccess && isMeusAnunciosOpen) && (
-          <MeusAnuncios 
-            products={myProducts}
-            onClose={() => setIsMeusAnunciosOpen(false)}
-            onEdit={(prod) => {
-              setIsMeusAnunciosOpen(false);
-              setEditingProduct(prod);
-            }}
-            onDelete={async (id) => {
-              await api.deleteProduct(id);
-              setMyProducts((current) => current.filter((p) => p.id !== id));
-              setProducts((current) => current.filter((p) => p.id !== id));
-              setLikedProducts((current) => current.filter((p) => p.id !== id));
-              setSelectedProduct((current) => (current?.id === id ? null : current));
-              setEditingProduct((current) => (current?.id === id ? null : current));
-              setCartQuantitiesByProductId((current) => {
-                if (!(id in current)) {
-                  return current;
-                }
-                const next = { ...current };
-                delete next[id];
-                return next;
-              });
-            }}
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isCartOpen && (
-          <Carrinho
-            items={cartItems}
-            onClose={() => setIsCartOpen(false)}
-            onOpenProduct={(product) => {
-              setIsCartOpen(false);
-              openProductDetails(product);
-            }}
-            onRemove={handleRemoveFromCart}
-            onClear={handleClearCart}
-            onUpdateQuantity={handleUpdateCartItemQuantity}
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {(hasMemberAccess && isCurtidasOpen) && (
-          <Curtidas
-            products={likedProducts}
-            onClose={() => setIsCurtidasOpen(false)}
-            onOpenProduct={(product) => {
-              openProductDetails(product);
-              setIsCurtidasOpen(false);
-            }}
-            onRemove={async (id) => {
-              try {
-                await api.unlikeProduct(id);
-                setLikedProducts((current) => current.filter((product) => product.id !== id));
-              } catch (err) {
-                console.error("Error removing liked product:", err);
-              }
-            }}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Editar Perfil View */}
-      <AnimatePresence>
         {(hasMemberAccess && isEditePerfilOpen) && (
-          <EditePerfil 
+          <EditePerfil
             onClose={() => setIsEditePerfilOpen(false)}
             onSave={handleProfileSave}
             initialData={currentUser}
@@ -3296,790 +3088,7 @@ export default function App() {
           />
         )}
       </AnimatePresence>
-
-      <motion.div
-        initial={{ x: "-100%" }}
-        animate={{ x: isMenuOpen ? 0 : "-100%" }}
-        transition={{ type: "spring", damping: 30, stiffness: 300 }}
-        className="fixed top-0 left-0 bottom-0 w-[85vw] max-w-sm z-80 bg-[#fdfcfb] shadow-2xl flex flex-col"
-      >
-        <div className="p-8 flex justify-between items-center border-b border-stone-100">
-          <h2 className="text-xl font-serif tracking-widest uppercase">{t("Menu")}</h2>
-          <button
-            onClick={() => {
-              setIsMenuOpen(false);
-              setIsLanguageMenuOpen(false);
-            }}
-            className="p-2 hover:bg-stone-50 rounded-full transition-colors"
-          >
-            <X className="w-6 h-6 text-stone-600" />
-          </button>
-        </div>
-        
-        <div className="grow overflow-y-auto p-8 flex flex-col gap-8">
-          <nav className="flex flex-col gap-4">
-            <button
-              className="flex items-center gap-4 text-xl font-serif italic text-stone-800 hover:translate-x-2 transition-transform duration-300 group"
-              onClick={() => {
-                openMapDefault();
-              }}
-            >
-              <Map className="w-5 h-5 text-stone-300 group-hover:text-stone-800 transition-colors" />
-              {t("Mapa")}
-            </button>
-
-            <button
-              className="flex items-center gap-4 text-xl font-serif italic text-stone-800 hover:translate-x-2 transition-transform duration-300 group"
-              onClick={() => {
-                setIsMenuOpen(false);
-                setIsVendedoresOpen(true);
-              }}
-            >
-              <Store className="w-5 h-5 text-stone-300 group-hover:text-stone-800 transition-colors" />
-              {t("Attività")}
-            </button>
-          </nav>
-          
-          <div className="h-px bg-stone-100 my-4" />
-
-          <div className="space-y-3">
-            <h3 className="text-[10px] font-bold uppercase tracking-[0.18em] text-stone-400">
-              {t("Visualização de Colunas")}
-            </h3>
-            <div className="space-y-3">
-              <div className="lg:hidden">
-                <div className="grid grid-cols-2 gap-2 rounded-md border border-stone-100 bg-stone-50 p-1">
-                  {([1, 2] as const).map((columns) => (
-                    <button
-                      key={columns}
-                      type="button"
-                      onClick={() => setMobileProductGridColumns(columns)}
-                      className={`h-9 rounded text-[10px] font-bold uppercase tracking-[0.12em] transition-colors ${
-                        mobileProductGridColumns === columns
-                          ? "bg-white text-stone-950 shadow-sm ring-1 ring-stone-200"
-                          : "text-stone-400 hover:text-stone-800"
-                      }`}
-                    >
-                      {columns} {t("Colunas")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="hidden lg:block">
-                <div className="grid grid-cols-3 gap-2 rounded-md border border-stone-100 bg-stone-50 p-1">
-                  {([2, 3, 4] as const).map((columns) => (
-                    <button
-                      key={columns}
-                      type="button"
-                      onClick={() => setDesktopProductGridColumns(columns)}
-                      className={`h-9 rounded text-[10px] font-bold uppercase tracking-[0.12em] transition-colors ${
-                        desktopProductGridColumns === columns
-                          ? "bg-white text-stone-950 shadow-sm ring-1 ring-stone-200"
-                          : "text-stone-400 hover:text-stone-800"
-                      }`}
-                    >
-                      {columns} {t("Colunas")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="h-px bg-stone-100 my-4" />
-          
-          <div className="flex flex-col gap-4 text-[10px] uppercase tracking-[0.2em] font-medium text-stone-400">
-            <a href="#" className="hover:text-black transition-colors">{t("Arquivo")}</a>
-            <a href="#" className="hover:text-black transition-colors">{t("Diário")}</a>
-            <a href="#" className="hover:text-black transition-colors">{t("Sobre nós")}</a>
-            <a href="#" className="hover:text-black transition-colors">{t("Contato")}</a>
-          </div>
-        </div>
-        
-        <div className="p-8 border-t border-stone-100 bg-stone-50/50">
-          <div className="flex gap-6">
-            <a
-              href={INSTAGRAM_PROFILE_URL}
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Instagram TempleSale"
-            >
-              <Instagram className="w-5 h-5 text-stone-400 hover:text-black transition-colors cursor-pointer" />
-            </a>
-            <a
-              href={`mailto:${CONTACT_EMAIL}`}
-              aria-label="Email TempleSale"
-              title={CONTACT_EMAIL}
-            >
-              <Mail className="w-5 h-5 text-stone-400 hover:text-black transition-colors cursor-pointer" />
-            </a>
-          </div>
-          <a
-            href={`mailto:${CONTACT_EMAIL}`}
-            className="mt-4 block break-all text-[10px] font-medium tracking-[0.08em] text-stone-400 transition-colors hover:text-black"
-          >
-            {CONTACT_EMAIL}
-          </a>
-        </div>
-      </motion.div>
-
-      {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-[#fdfcfb] border-b border-stone-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-2 sm:gap-8 w-auto sm:w-1/3 shrink-0">
-            <button 
-              onClick={() => setIsMenuOpen(true)}
-              className="relative p-2 -ml-2 hover:bg-stone-50 rounded-full transition-colors"
-            >
-              <Menu className="w-5 h-5 text-stone-600" />
-            </button>
-         
-          </div>
-
-          <button
-            type="button"
-            onClick={scrollPageToTop}
-            className="text-center grow px-2 whitespace-nowrap notranslate bg-transparent cursor-pointer leading-none"
-            translate="no"
-          >
-            <span className="text-[18px] sm:text-[26px] font-extrabold tracking-[0.22em] text-stone-950">
-              TEMPLE
-            </span>
-            <span className="text-[18px] sm:text-[26px] font-light tracking-[0.22em] text-stone-400">
-              SALE
-            </span>
-          </button>
-
-          <div className="flex items-center justify-end gap-1 sm:gap-4 w-auto sm:w-1/3 shrink-0">
-            {hasMemberAccess ? (
-              <>
-                <div className="relative">
-                  <button 
-                    ref={notificationsButtonRef}
-                    onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                    className="p-2 hover:bg-stone-50 rounded-full transition-colors relative"
-                  >
-                    <Bell className="w-5 h-5 text-stone-600" />
-                    {unreadNotificationsCount > 0 && (
-                      <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#fdfcfb] bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
-                        {unreadNotificationsCount > 9 ? "9+" : unreadNotificationsCount}
-                      </span>
-                    )}
-                  </button>
-
-                  <AnimatePresence>
-                    {isNotificationsOpen && (
-                      <>
-                        <motion.div 
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          onClick={() => setIsNotificationsOpen(false)}
-                          className="fixed inset-0 z-90"
-                        />
-                        <motion.div
-                          ref={notificationsPanelRef}
-                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                          transition={{ type: "spring", damping: 20, stiffness: 300 }}
-                          className="fixed left-1/2 top-[5.5rem] w-[calc(100vw-3rem)] max-w-sm -translate-x-1/2 sm:absolute sm:left-auto sm:top-full sm:w-80 sm:max-w-none sm:translate-x-0 sm:right-0 sm:mt-2 bg-white border border-stone-100 shadow-xl rounded-xl z-100 overflow-hidden"
-                        >
-                          <div className="p-4 border-b border-stone-50 grid grid-cols-[2rem_1fr_auto] items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setIsNotificationsOpen(false)}
-                              className="flex h-8 w-8 items-center justify-center rounded-full text-stone-400 transition-colors hover:bg-stone-50 hover:text-stone-800"
-                              aria-label={t("Fechar notificações")}
-                              title={t("Fechar notificações")}
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                            <h3 className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-800">
-                              {t("Notificações")}
-                            </h3>
-                            <button
-                              onClick={markAllNotificationsAsRead}
-                              disabled={unreadNotificationsCount === 0}
-                              className={`text-[10px] transition-colors ${
-                                unreadNotificationsCount === 0
-                                  ? "text-stone-300 cursor-not-allowed"
-                                  : "text-stone-400 hover:text-stone-800"
-                              }`}
-                            >
-                              {t("Marcar tudo como lido")}
-                            </button>
-                          </div>
-                          <div className="max-h-[18rem] overflow-y-auto">
-                            {notificationsToDisplay.length === 0 ? (
-                              <div className="p-4 text-xs text-stone-400">
-                                {t("Nenhuma notificação disponível.")}
-                              </div>
-                            ) : (
-                              <AnimatePresence initial={false}>
-                                {notificationsToDisplay.map((notification) => {
-                                  const isRead = readNotificationIdSet.has(notification.id);
-                                  const presentation = getNotificationPresentation(notification);
-                                  const title = presentation.title;
-                                  const message = presentation.message;
-                                  const productImageUrl =
-                                    String(
-                                      ("productImageUrl" in notification ? notification.productImageUrl : "") ?? "",
-                                    ).trim();
-                                  const productName =
-                                    String(("productName" in notification ? notification.productName : "") ?? "")
-                                      .trim() || title;
-
-                                  return (
-                                    <motion.div
-                                      key={notification.id}
-                                      layout
-                                      initial={{ opacity: 0, y: 8, filter: "blur(4px)" }}
-                                      animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                                      exit={{
-                                        opacity: 0,
-                                        x: -48,
-                                        scale: 0.94,
-                                        filter: "blur(10px)",
-                                        transition: { duration: 0.28, ease: "easeOut" },
-                                      }}
-                                      className="relative overflow-hidden border-b border-stone-50 last:border-0"
-                                    >
-                                      <div className="absolute inset-y-0 right-0 flex w-20 items-center justify-center bg-red-600">
-                                        <button
-                                          type="button"
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            void handleDeleteNotification(notification.id);
-                                          }}
-                                          className="flex h-full w-full items-center justify-center text-white"
-                                          aria-label={t("Excluir notificação")}
-                                          title={t("Excluir notificação")}
-                                        >
-                                          <Trash2 className="h-5 w-5" />
-                                        </button>
-                                      </div>
-                                      <motion.button
-                                        type="button"
-                                        drag="x"
-                                        dragConstraints={{ left: -80, right: 0 }}
-                                        dragElastic={0.08}
-                                        animate={{ x: swipedNotificationId === notification.id ? -80 : 0 }}
-                                        onDragEnd={(_, info) => {
-                                          setSwipedNotificationId(info.offset.x < -45 ? notification.id : null);
-                                        }}
-                                        onClick={() => {
-                                          if (swipedNotificationId === notification.id) {
-                                            setSwipedNotificationId(null);
-                                            return;
-                                          }
-                                          void handleNotificationClick(notification);
-                                        }}
-                                        className={`block w-full text-left p-4 hover:bg-stone-50 transition-colors cursor-pointer relative bg-white ${
-                                          !isRead ? "bg-stone-50/50" : ""
-                                        }`}
-                                      >
-                                        {!isRead && (
-                                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-stone-900" />
-                                        )}
-                                        {productImageUrl && (
-                                          <img
-                                            src={productImageUrl}
-                                            alt={productName}
-                                            className="float-right ml-3 mb-2 h-16 w-16 rounded-md border border-stone-200 object-cover shadow-sm"
-                                          />
-                                        )}
-                                        <div className="flex justify-between items-start mb-1 gap-3">
-                                          <h4
-                                            className={`text-xs font-bold text-stone-800 ${
-                                              containsBrandName(title) ? "notranslate" : ""
-                                            }`}
-                                            translate={containsBrandName(title) ? "no" : "yes"}
-                                          >
-                                            {title}
-                                          </h4>
-                                          <span className="shrink-0 text-[9px] text-stone-400">
-                                            {formatRelativeTime(notification.createdAt, locale)}
-                                          </span>
-                                        </div>
-                                        <p
-                                          className={`text-xs text-stone-500 leading-relaxed ${
-                                            containsBrandName(message) ? "notranslate" : ""
-                                          }`}
-                                          translate={containsBrandName(message) ? "no" : "yes"}
-                                        >
-                                          {message}
-                                        </p>
-                                        {notification.type !== "system_welcome" &&
-                                          notification.type !== "admin_broadcast" && (
-                                          <div className="mt-3 flex items-center gap-2">
-                                            <img
-                                              src={notification.actorAvatarUrl || `https://picsum.photos/seed/notification-${encodeURIComponent(notification.id)}/80/80`}
-                                              alt={notification.actorName || t("Usuário")}
-                                              className="h-7 w-7 rounded-full border border-stone-200 object-cover"
-                                            />
-                                            <div className="min-w-0">
-                                              <p className="truncate text-[11px] font-semibold text-stone-700">
-                                                {notification.actorName || t("Usuário TempleSale")}
-                                              </p>
-                                              {(notification.actorCity || notification.actorCountry) && (
-                                                <p className="truncate text-[10px] text-stone-400">
-                                                  {[notification.actorCity, notification.actorCountry]
-                                                    .filter(Boolean)
-                                                    .join(", ")}
-                                                </p>
-                                              )}
-                                            </div>
-                                          </div>
-                                        )}
-                                      </motion.button>
-                                    </motion.div>
-                                  );
-                                })}
-                              </AnimatePresence>
-                            )}
-                          </div>
-                          <div className="p-3 bg-stone-50 text-center">
-                            <span className="text-[10px] uppercase tracking-widest font-bold text-stone-400">
-                              {notificationsToDisplay.length}{" "}
-                              {notificationsToDisplay.length === 1 ? t("notificação") : t("notificações")}
-                            </span>
-                          </div>
-                        </motion.div>
-                      </>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                <button 
-                  onClick={() => setIsUserOpen(true)}
-                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-full overflow-hidden border border-stone-200 hover:border-stone-400 transition-all p-0.5 shrink-0"
-                >
-                  <img 
-                    src={memberAvatar} 
-                    alt={t("Perfil do usuário")} 
-                    className="w-full h-full object-cover rounded-full"
-                  />
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => {
-                  setAuthModalMode("register");
-                  setIsAuthModalOpen(true);
-                }}
-                className="px-4 sm:px-5 py-2 border border-stone-200 text-[10px] uppercase tracking-[0.2em] font-bold text-stone-600 hover:text-black hover:border-stone-400 transition-colors rounded-sm"
-              >
-                {t("Cadastrar")}
-              </button>
-            )}
-          </div>
-        </div>
-      </nav>
-
-      <main className="grow pt-20">
-        {/* Hero Section */}
-        <section className="relative h-28 sm:h-36 overflow-hidden">
-          <img
-            src={HOME_HERO_FALLBACK_IMAGE}
-            alt={t("Imagem de destaque")}
-            className="absolute inset-0 w-full h-full object-cover"
-            referrerPolicy="no-referrer"
-          />
-          <div className="absolute inset-0 bg-black/30" />
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-white px-4 sm:px-6 text-center gap-2">
-            <motion.h2
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-              className="text-2xl sm:text-4xl font-serif italic leading-tight"
-            >
-              {t("Vetrine in movimento.")}
-            </motion.h2>
-            <motion.button
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.8, delay: 0.4 }}
-              onClick={() => openMapWithSearch(activeCategory)}
-              className="group flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-white text-black text-[9px] sm:text-[10px] uppercase tracking-[0.16em] font-medium hover:bg-stone-100 transition-all rounded-sm"
-            >
-              {t("Explorar coleção")}
-              <ArrowRight className="w-3 h-3 transition-transform group-hover:translate-x-1" />
-            </motion.button>
-          </div>
-        </section>
-
-        <section className="sticky top-20 z-40 bg-[#fdfcfb]/95 border-b border-stone-100/80 backdrop-blur-md">
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-2.5 sm:py-3">
-            <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400 pointer-events-none" />
-              <input
-                ref={homeSearchInputRef}
-                type="search"
-                value={searchQuery}
-                onChange={(event) => handleSearchQueryChange(event.target.value)}
-                placeholder={t("Cerca attività, prodotti, servizi o città...")}
-                className="w-full h-9 sm:h-10 rounded-full border border-stone-200/70 bg-white/85 pl-9 pr-10 text-[13px] text-stone-800 shadow-[0_1px_10px_rgba(28,25,23,0.035)] placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-400/15 focus:border-stone-400 transition-all"
-              />
-              {searchQuery.trim().length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery("");
-                    homeSearchInputRef.current?.focus();
-                  }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
-                  aria-label={t("Limpar busca")}
-                >
-                  <X className="w-4 h-4 mx-auto" />
-                </button>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="bg-[#fdfcfb] border-b border-stone-100">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 sm:py-3">
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-              <button
-                type="button"
-                onClick={() => {
-                  handleCategorySelect("All");
-                  setSearchQuery("");
-                  setMaxPriceFilter(null);
-                }}
-                className={`shrink-0 px-3 py-2 rounded-lg border text-[10px] uppercase tracking-[0.2em] font-semibold transition-colors ${
-                  activeCategory === "All"
-                    ? "border-stone-900 text-stone-900 bg-stone-100"
-                    : "border-stone-300 text-stone-700 hover:border-stone-500"
-                }`}
-              >
-                TUTTI
-              </button>
-
-              {availableCategoryFilters
-                .filter((category) => category.key !== "All")
-                .map((category) => (
-                  <button
-                    key={category.key}
-                    type="button"
-                    onClick={() => handleCategorySelect(category.key)}
-                    className={`shrink-0 px-3 py-2 rounded-lg border text-[10px] uppercase tracking-[0.18em] font-medium transition-colors ${
-                      activeCategory === category.key
-                        ? "border-stone-900 text-stone-900 bg-stone-100"
-                        : "border-stone-200 text-stone-500 hover:text-stone-700 hover:border-stone-400"
-                    }`}
-                  >
-                    {getCategoryLabel(category.key, locale)}
-                  </button>
-                ))}
-            </div>
-          </div>
-        </section>
-
-        {!isDiscoveryMode && (
-        <section className="mx-auto max-w-2xl px-3 pt-4 pb-12 sm:px-6 sm:pt-6 sm:pb-20">
-          <div className="mb-5 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.26em] text-stone-400">{t("Feed")}</p>
-              <h2 className="mt-1 font-serif text-2xl text-stone-900">{t("Pubblicazioni")}</h2>
-            </div>
-          </div>
-          {isLoadingPublicationFeed ? (
-            <div className="py-20 text-center text-stone-400 text-xs uppercase tracking-[0.2em]">
-              {t("Caricamento pubblicazioni...")}
-            </div>
-          ) : publicationFeed.length === 0 ? (
-            <div className="rounded-lg border border-stone-100 bg-white py-20 text-center">
-              <p className={`text-xs uppercase tracking-[0.2em] ${publicationFeedError ? "text-red-500" : "text-stone-400"}`}>
-                {publicationFeedError || t("Nessuna pubblicazione ancora.")}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-5 sm:space-y-7">
-              {publicationFeed.map((publication, index) => {
-                const feedEstablishment = buildEstablishmentFromPublication(publication);
-                const logoUrl = feedEstablishment.logoUrl || feedEstablishment.coverUrl || "";
-                return (
-                  <article
-                    key={publication.id}
-                    className="overflow-hidden rounded-lg border border-stone-200/80 bg-white shadow-[0_1px_2px_rgba(28,25,23,0.04),0_14px_34px_rgba(28,25,23,0.04)]"
-                  >
-                    <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
-                      <button
-                        type="button"
-                        onClick={() => void openEstablishmentPage(feedEstablishment)}
-                        className="flex min-w-0 items-center gap-3 text-left"
-                      >
-                        <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-stone-200 bg-stone-100">
-                          {logoUrl ? (
-                            <ProgressiveProductImage
-                              src={logoUrl}
-                              alt={feedEstablishment.name}
-                              loading={index < 4 ? "eager" : "lazy"}
-                              fetchPriority={index < 4 ? "high" : "auto"}
-                              variant="thumbnail"
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <span className="flex h-full w-full items-center justify-center font-serif text-lg text-stone-400">
-                              {feedEstablishment.name.slice(0, 1).toUpperCase()}
-                            </span>
-                          )}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate font-serif text-lg text-stone-950">
-                            {feedEstablishment.name}
-                          </span>
-                          <span className="block truncate text-[10px] uppercase tracking-[0.16em] text-stone-400">
-                            {[feedEstablishment.category, feedEstablishment.city].filter(Boolean).join(" · ")}
-                          </span>
-                        </span>
-                      </button>
-                      <span className="shrink-0 text-[11px] uppercase tracking-[0.14em] text-stone-400">
-                        {formatRelativeTime(publication.createdAt, locale)}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedEstablishment(feedEstablishment);
-                        setSelectedPublication(publication);
-                        setFocusedPublicationCommentId(null);
-                      }}
-                      className="relative block aspect-[4/5] w-full overflow-hidden bg-stone-100 sm:aspect-square"
-                    >
-                      <ProgressiveProductImage
-                        src={publication.imageUrl}
-                        alt={publication.caption || feedEstablishment.name}
-                        loading={index < 3 ? "eager" : "lazy"}
-                        fetchPriority={index < 3 ? "high" : "auto"}
-                        variant="full"
-                        className="h-full w-full object-cover"
-                      />
-                    </button>
-
-                    <div className="px-4 py-4 sm:px-5">
-                      {publication.caption && (
-                        <p className="whitespace-pre-wrap text-sm leading-6 text-stone-800">
-                          {publication.caption}
-                        </p>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedEstablishment(feedEstablishment);
-                          setSelectedPublication(publication);
-                          setFocusedPublicationCommentId(null);
-                        }}
-                        className="mt-4 inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-stone-500 transition-colors hover:text-stone-950"
-                      >
-                        <MessageCircle className="h-4 w-4" />
-                        {t("Ver comentários")}
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
-              {publicationFeedError && (
-                <p className="text-center text-xs uppercase tracking-[0.18em] text-red-500">
-                  {publicationFeedError}
-                </p>
-              )}
-              {hasMorePublicationFeed && (
-                <div className="flex justify-center pt-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void loadPublicationFeedPage({
-                        append: true,
-                        offset: nextPublicationFeedOffset,
-                      })
-                    }
-                    disabled={isLoadingMorePublicationFeed}
-                    className="inline-flex min-w-40 items-center justify-center rounded-lg border border-stone-300 bg-white px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-800 transition-colors hover:border-stone-600 disabled:cursor-not-allowed disabled:opacity-55"
-                  >
-                    {isLoadingMorePublicationFeed ? t("Carregando...") : t("Carregar mais")}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-        )}
-
-        {isDiscoveryMode && (
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-12 sm:pb-20">
-          <div className="mb-5 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.26em] text-stone-400">{t("Attività")}</p>
-              <h2 className="mt-1 font-serif text-2xl text-stone-900">{t("Vetrine locali")}</h2>
-            </div>
-          </div>
-          {isLoadingEstablishments ? (
-            <div className="py-20 text-center text-stone-400 text-xs uppercase tracking-[0.2em]">
-              {t("Caricamento attività...")}
-            </div>
-          ) : visibleEstablishments.length === 0 ? (
-            <div className="py-20 text-center">
-              <p className="text-xs uppercase tracking-[0.2em] text-stone-400">
-                {t("Nessuna attività trovata.")}
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {visibleEstablishments.map((establishment, index) => (
-                  <button
-                    key={establishment.id}
-                    type="button"
-                    onClick={() => void openEstablishmentPage(establishment)}
-                    className="group flex h-full min-h-[9rem] overflow-hidden rounded-lg border border-stone-200/80 bg-white text-left shadow-[0_1px_2px_rgba(28,25,23,0.04),0_14px_34px_rgba(28,25,23,0.04)] transition-all hover:border-stone-300 hover:shadow-[0_12px_32px_rgba(28,25,23,0.10)]"
-                  >
-                    <div className="relative w-32 shrink-0 overflow-hidden bg-stone-100">
-                      {establishment.logoUrl || establishment.coverUrl ? (
-                        <ProgressiveProductImage
-                          src={establishment.coverUrl || establishment.logoUrl || ""}
-                          alt={establishment.name}
-                          loading={index < 6 ? "eager" : "lazy"}
-                          fetchPriority={index < 6 ? "high" : "low"}
-                          variant="card"
-                          className="relative h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center font-serif text-3xl text-stone-300">
-                          {establishment.name.slice(0, 1).toUpperCase()}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex min-w-0 flex-1 flex-col justify-between p-4">
-                      <div>
-                        <h3 className="truncate font-serif text-xl text-stone-900">{establishment.name}</h3>
-                        <p className="mt-1 text-xs uppercase tracking-[0.16em] text-stone-500">
-                          {[establishment.category, establishment.city].filter(Boolean).join(" · ")}
-                        </p>
-                      </div>
-                      <div className="mt-4 flex items-center justify-between gap-3">
-                        <span className="text-xs text-stone-500">
-                          {t("{count} pubblicazioni", {
-                            count: String(establishment.publicationCount ?? establishment.productCount ?? 0),
-                          })}
-                        </span>
-                        <ArrowRight className="h-4 w-4 text-stone-400 transition-transform group-hover:translate-x-1" />
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </section>
-        )}
-
-        {/* Brand CTA */}
-        <section className="bg-stone-100 px-6 py-28 sm:py-32">
-          <div className="mx-auto max-w-5xl text-center notranslate" translate="no">
-            <span className="text-[clamp(2.6rem,10vw,8rem)] font-extrabold leading-none tracking-[0.18em] text-stone-950">
-              TEMPLE
-            </span>
-            <span className="text-[clamp(2.6rem,10vw,8rem)] font-light leading-none tracking-[0.18em] text-stone-400">
-              SALE
-            </span>
-          </div>
-        </section>
-      </main>
-
-      {/* Footer */}
-      <footer className="bg-white border-t border-stone-100 py-20 px-6">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12">
-          <div className="col-span-1 md:col-span-2">
-            <h2 className="text-xl font-serif tracking-[0.15em] uppercase mb-6 notranslate" translate="no">
-              {BRAND_NAME}
-            </h2>
-            <p className="text-stone-400 text-sm max-w-sm leading-relaxed">
-              {t("Uma vitrine curada de objetos que definem o santuário moderno. Acreditamos na beleza duradoura dos materiais naturais e na alma do feito à mão.")}
-            </p>
-          </div>
-          <div>
-            <h4 className="text-[10px] uppercase tracking-[0.2em] font-bold mb-6">{t("Informações")}</h4>
-            <ul className="space-y-4 text-stone-500 text-sm">
-              <li><a href="#" className="hover:text-black transition-colors">{t("Termos de serviço")}</a></li>
-              <li><a href="#" className="hover:text-black transition-colors">{t("Contato")}</a></li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="text-[10px] uppercase tracking-[0.2em] font-bold mb-6">{t("Social")}</h4>
-            <div className="flex gap-4">
-              <a
-                href={INSTAGRAM_PROFILE_URL}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="Instagram TempleSale"
-                className="p-2 bg-stone-50 rounded-full hover:bg-stone-100 transition-colors"
-              >
-                <Instagram className="w-4 h-4 text-stone-600" />
-              </a>
-              <a
-                href={`mailto:${CONTACT_EMAIL}`}
-                aria-label="Email TempleSale"
-                title={CONTACT_EMAIL}
-                className="p-2 bg-stone-50 rounded-full hover:bg-stone-100 transition-colors"
-              >
-                <Mail className="w-4 h-4 text-stone-600" />
-              </a>
-            </div>
-            <a
-              href={`mailto:${CONTACT_EMAIL}`}
-              className="mt-4 block break-all text-xs text-stone-400 transition-colors hover:text-black"
-            >
-              {CONTACT_EMAIL}
-            </a>
-          </div>
-        </div>
-        <div className="max-w-7xl mx-auto mt-14">
-          <a
-            href={PARTNER_PROMO_URL}
-            target="_blank"
-            rel="noreferrer sponsored"
-            className="group block border border-stone-200 bg-linear-to-r from-stone-50 to-white p-4 sm:p-5 hover:border-stone-400 transition-colors"
-            aria-label={t("Visitar site parceiro PuntoEscort")}
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5">
-              <img
-                src={PARTNER_PROMO_LOGO}
-                alt={t("Logo PuntoEscort")}
-                className="w-20 h-20 sm:w-24 sm:h-24 object-cover rounded-sm border border-stone-200 shrink-0"
-                referrerPolicy="no-referrer"
-              />
-              <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-stone-500 mb-2">
-                  {t("Parceiro em destaque")}
-                </p>
-                <h3 className="text-lg sm:text-xl font-serif italic text-stone-900 mb-1 notranslate" translate="no">
-                  PuntoEscort
-                </h3>
-                <p className="text-sm text-stone-500 leading-relaxed">
-                  {t("Conheça nosso parceiro e acesse mais anúncios diretamente no site.")}
-                </p>
-              </div>
-              <span className="sm:ml-auto inline-flex items-center justify-center px-4 py-2 border border-stone-300 text-[10px] uppercase tracking-[0.2em] font-semibold text-stone-700 transition-colors group-hover:bg-stone-900 group-hover:text-white group-hover:border-stone-900">
-                {t("Visitar site")}
-              </span>
-            </div>
-          </a>
-        </div>
-        <div className="max-w-7xl mx-auto mt-20 pt-8 border-t border-stone-50 flex flex-col md:flex-row justify-between items-center gap-4">
-          <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400">
-            © 2026 <span className="notranslate" translate="no">{BRAND_NAME}</span>.{" "}
-            {t("Todos os direitos reservados.")}
-          </span>
-          <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400">
-            {t("Design com intenção")}
-          </span>
-        </div>
-      </footer>
     </div>
   );
+
 }
