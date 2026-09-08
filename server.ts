@@ -2828,6 +2828,9 @@ async function ensurePostgresEstablishmentSchema() {
     "CREATE INDEX IF NOT EXISTS idx_storefront_sections_establishment ON storefront_sections(establishment_id, position)",
     "CREATE INDEX IF NOT EXISTS idx_establishment_publications_establishment_created ON establishment_publications(establishment_id, created_at DESC)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_establishment_publications_legacy_product ON establishment_publications(legacy_product_id) WHERE legacy_product_id IS NOT NULL",
+    "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS publication_id BIGINT REFERENCES establishment_publications(id) ON DELETE CASCADE",
+    "ALTER TABLE product_comments ALTER COLUMN product_id DROP NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_product_comments_publication_created ON product_comments(publication_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_products_establishment_id ON products(establishment_id)",
     "CREATE INDEX IF NOT EXISTS idx_products_section_id ON products(section_id)",
     `
@@ -10894,9 +10897,13 @@ async function bootstrap() {
         res.status(404).json({ error: "Attivita non trovata." });
         return;
       }
+      const includeProducts =
+        String(req.query.includeProducts ?? req.query.include_products ?? "")
+          .trim()
+          .toLowerCase() === "true";
       const [sections, products, publications] = await Promise.all([
         selectStorefrontSectionsRows(establishment.id),
-        selectProductsByEstablishmentRows(establishment.id),
+        includeProducts ? selectProductsByEstablishmentRows(establishment.id) : Promise.resolve([]),
         selectPublicationsByEstablishmentRows(establishment.id),
       ]);
       res.json({

@@ -2773,7 +2773,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     });
-    const publication = normalizePublicationItem(payload);
+    const parsed = parseJsonIfNeeded(payload);
+    const publication = normalizePublicationItem(isRecord(parsed) ? parsed.publication : parsed);
     if (!publication) {
       throw new Error("Resposta inválida ao publicar.");
     }
@@ -2799,7 +2800,8 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(input),
     });
-    const publication = normalizePublicationItem(payload);
+    const parsed = parseJsonIfNeeded(payload);
+    const publication = normalizePublicationItem(isRecord(parsed) ? parsed.publication : parsed);
     if (!publication) {
       throw new Error("Resposta inválida ao atualizar publicação.");
     }
