@@ -6,6 +6,7 @@ import {
   Home,
   Building2,
   MapPin,
+  Heart,
 } from 'lucide-react';
 import { Company, ActiveTab, Auth0User } from '../types';
 import { TempleSaleLogo } from './TempleSaleLogo';
@@ -15,6 +16,7 @@ interface HeaderProps {
   setActiveTab: (tab: ActiveTab) => void;
   unreadNotificationsCount: number;
   onToggleNotifications: () => void;
+  onOpenFavorites?: () => void;
   onOpenCreatePost: () => void;
   onOpenCompanyModal: () => void;
   user: Auth0User;
@@ -28,6 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
   setActiveTab,
   unreadNotificationsCount,
   onToggleNotifications,
+  onOpenFavorites,
   onOpenCreatePost,
   onOpenCompanyModal,
   user,
@@ -129,6 +132,17 @@ export const Header: React.FC<HeaderProps> = ({
 
             <div className="h-6 w-px bg-neutral-800 mx-1" />
 
+            {onOpenFavorites && (
+              <button
+                id="btn-header-likes"
+                onClick={onOpenFavorites}
+                className="p-2 text-neutral-300 hover:text-red-300 rounded-xl hover:bg-neutral-800/80 transition-all active:scale-95 cursor-pointer"
+                title="Curtidas"
+              >
+                <Heart className="w-5 h-5" />
+              </button>
+            )}
+
             {/* + PUBLICAR Button (Desktop) */}
             <button
               id="btn-header-publish"
@@ -189,6 +203,17 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="absolute top-1.5 right-1.5 min-w-[14px] h-[14px] px-0.5 bg-amber-400 text-neutral-950 font-bold text-[8px] rounded-full flex items-center justify-center ring-2 ring-neutral-900" />
               )}
             </button>
+
+            {onOpenFavorites && (
+              <button
+                id="btn-mobile-likes"
+                onClick={onOpenFavorites}
+                className="relative p-2 text-neutral-300 active:text-red-300 rounded-full hover:bg-neutral-800/80 transition-colors cursor-pointer"
+                title="Curtidas"
+              >
+                <Heart className="w-5 h-5" />
+              </button>
+            )}
 
             {/* Avatar no Mobile */}
             <button

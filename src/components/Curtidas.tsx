@@ -1,26 +1,35 @@
 import React from "react";
 import { motion } from "motion/react";
-import { X, Heart, ExternalLink, Trash2 } from "lucide-react";
+import { X, Heart, ExternalLink, Trash2, Image as ImageIcon } from "lucide-react";
 import { type Product } from "./ProductCard";
+import { type PublicationDto } from "../lib/api";
 import { useI18n } from "../i18n/provider";
 import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 
 interface CurtidasProps {
   products: Product[];
+  publications?: PublicationDto[];
   onClose: () => void;
   onOpenProduct: (product: Product) => void;
+  onOpenPublication?: (publication: PublicationDto) => void;
   onRemove: (id: number) => Promise<void>;
+  onRemovePublication?: (id: number) => Promise<void>;
 }
 
 export default function Curtidas({
   products,
+  publications = [],
   onClose,
   onOpenProduct,
+  onOpenPublication,
   onRemove,
+  onRemovePublication,
 }: CurtidasProps) {
   const { t, locale } = useI18n();
   const [removingProductId, setRemovingProductId] = React.useState<number | null>(null);
+  const [removingPublicationId, setRemovingPublicationId] = React.useState<number | null>(null);
+  const hasItems = products.length > 0 || publications.length > 0;
 
   const handleRemove = async (id: number) => {
     if (removingProductId === id) {
@@ -31,6 +40,18 @@ export default function Curtidas({
       await onRemove(id);
     } finally {
       setRemovingProductId(null);
+    }
+  };
+
+  const handleRemovePublication = async (id: number) => {
+    if (removingPublicationId === id || !onRemovePublication) {
+      return;
+    }
+    setRemovingPublicationId(id);
+    try {
+      await onRemovePublication(id);
+    } finally {
+      setRemovingPublicationId(null);
     }
   };
 
@@ -54,7 +75,7 @@ export default function Curtidas({
 
       <div className="grow overflow-y-auto overscroll-contain p-4 sm:p-8">
         <div className="max-w-4xl mx-auto">
-          {products.length === 0 ? (
+          {!hasItems ? (
             <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-10 text-center shadow-2xl">
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-neutral-800 bg-neutral-950">
                 <Heart className="w-7 h-7 text-neutral-500" />
@@ -65,6 +86,60 @@ export default function Curtidas({
             </div>
           ) : (
             <div className="grid gap-6">
+              {publications.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 px-1 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500">
+                    <ImageIcon className="h-3.5 w-3.5" />
+                    <span>Publicações curtidas</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {publications.map((publication) => {
+                      const isRemoving = removingPublicationId === publication.id;
+                      const title = publication.establishmentName || publication.caption || "Publicação";
+
+                      return (
+                        <motion.div
+                          key={publication.id}
+                          layout
+                          className="group relative aspect-square overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-xl transition-colors hover:border-neutral-600"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => onOpenPublication?.(publication)}
+                            className="h-full w-full cursor-pointer"
+                            title={title}
+                          >
+                            <img
+                              src={publication.imageUrl}
+                              alt={title}
+                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            />
+                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-2 text-left">
+                              <p className="line-clamp-1 text-[10px] font-bold text-white">
+                                {publication.establishmentName || "TempleSale"}
+                              </p>
+                            </div>
+                          </button>
+                          {onRemovePublication && (
+                            <button
+                              type="button"
+                              disabled={isRemoving}
+                              onClick={() => {
+                                void handleRemovePublication(publication.id);
+                              }}
+                              className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border border-neutral-700/80 bg-neutral-950/85 text-neutral-300 transition-colors hover:border-red-500 hover:bg-red-600 hover:text-white disabled:opacity-50"
+                              title="Remover curtida"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {products.map((product) => {
                 const isRemoving = removingProductId === product.id;
 

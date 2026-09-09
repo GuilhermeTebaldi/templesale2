@@ -1320,7 +1320,6 @@ export default function App() {
       setIsNewProductOpen(false);
       setIsMeusAnunciosOpen(false);
       setEditingProduct(null);
-      setIsCurtidasOpen(false);
       setIsCartOpen(false);
       setIsEditePerfilOpen(false);
       setIsNotificationsOpen(false);
@@ -2815,6 +2814,25 @@ export default function App() {
     [selectedSocialCompany.id, socialPosts],
   );
 
+  const likedPublicationItems = React.useMemo(() => {
+    const byId = new globalThis.Map<number, PublicationDto>();
+    likedPublications.forEach((publication) => byId.set(publication.id, publication));
+    [...publicationFeed, ...savedPublications, ...selectedEstablishmentPublications].forEach((publication) => {
+      const socialPostId = socialPostIdFromPublicationId(publication.id);
+      if (likedPublicationIds.includes(socialPostId) && !byId.has(publication.id)) {
+        byId.set(publication.id, publication);
+      }
+    });
+    return Array.from(byId.values());
+  }, [
+    likedPublicationIds,
+    likedPublications,
+    publicationFeed,
+    savedPublications,
+    selectedEstablishmentPublications,
+    socialPostIdFromPublicationId,
+  ]);
+
   const socialUser = React.useMemo<SocialAuth0User>(
     () => ({
       isAuthenticated: hasMemberAccess,
@@ -3230,6 +3248,7 @@ export default function App() {
         setActiveTab={changeSocialTab}
         unreadNotificationsCount={unreadNotificationsCount}
         onToggleNotifications={() => setIsNotificationsOpen((current) => !current)}
+        onOpenFavorites={() => setIsCurtidasOpen(true)}
         onOpenCreatePost={handleOpenNewProduct}
         onOpenCompanyModal={() => {
           if (!hasMemberAccess) {
@@ -3593,12 +3612,19 @@ export default function App() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {(hasMemberAccess && isCurtidasOpen) && (
+        {isCurtidasOpen && (
           <Curtidas
             products={likedProducts}
+            publications={likedPublicationItems}
             onClose={() => setIsCurtidasOpen(false)}
             onOpenProduct={(product) => {
               openProductDetails(product);
+              setIsCurtidasOpen(false);
+            }}
+            onOpenPublication={(publication) => {
+              setSelectedEstablishment(buildEstablishmentFromPublication(publication));
+              setSelectedPublication(publication);
+              setFocusedPublicationCommentId(null);
               setIsCurtidasOpen(false);
             }}
             onRemove={async (id) => {
@@ -3607,6 +3633,30 @@ export default function App() {
                 setLikedProducts((current) => current.filter((product) => product.id !== id));
               } catch (err) {
                 console.error("Error removing liked product:", err);
+              }
+            }}
+            onRemovePublication={async (id) => {
+              const postId = socialPostIdFromPublicationId(id);
+              try {
+                await api.unlikePublication(id);
+                setLikedPublicationIds((current) => current.filter((item) => item !== postId));
+                setLikedPublications((current) => current.filter((publication) => publication.id !== id));
+                setPublicationFeed((current) =>
+                  current.map((publication) =>
+                    publication.id === id
+                      ? { ...publication, likesCount: Math.max(0, (publication.likesCount ?? 0) - 1) }
+                      : publication,
+                  ),
+                );
+                setSelectedEstablishmentPublications((current) =>
+                  current.map((publication) =>
+                    publication.id === id
+                      ? { ...publication, likesCount: Math.max(0, (publication.likesCount ?? 0) - 1) }
+                      : publication,
+                  ),
+                );
+              } catch (err) {
+                console.error("Error removing liked publication:", err);
               }
             }}
           />
