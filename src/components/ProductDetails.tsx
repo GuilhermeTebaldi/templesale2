@@ -334,7 +334,7 @@ export default function ProductDetails({
   const canAddToCart = availableQuantity > 0 && selectedQuantity > 0;
   const publicSellerName = product.establishmentName || product.sellerName || "";
   const publicSellerCategory = product.establishmentCategory || product.category || "";
-  const canComment = Boolean(currentUser?.id);
+  const canComment = true;
   const canReplyAsOwner = Boolean(
     currentUser?.id &&
       typeof product.ownerId === "number" &&
@@ -635,11 +635,6 @@ export default function ProductDetails({
   };
 
   const handleSubmitComment = async () => {
-    if (!canComment) {
-      onRequireAuth?.();
-      return;
-    }
-
     const normalizedBody = newCommentBody.trim();
     if (!normalizedBody) {
       setCommentsError(t("Escreva um comentário para enviar."));

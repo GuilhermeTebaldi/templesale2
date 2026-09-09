@@ -12,7 +12,6 @@ interface PublicationViewerProps {
   currentUser: SessionUser | null;
   focusCommentId?: number | null;
   onClose: () => void;
-  onRequireAuth: () => void;
   onDeleted?: (publicationId: number) => void;
   onCommentsChanged?: (publicationId: number, comments: ProductCommentDto[]) => void;
 }
@@ -34,7 +33,6 @@ export default function PublicationViewer({
   currentUser,
   focusCommentId,
   onClose,
-  onRequireAuth,
   onDeleted,
   onCommentsChanged,
 }: PublicationViewerProps) {
@@ -96,10 +94,6 @@ export default function PublicationViewer({
 
   const submitComment = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!currentUser) {
-      onRequireAuth();
-      return;
-    }
     const body = commentBody.trim();
     if (!body || isSubmittingComment) {
       return;
@@ -227,7 +221,7 @@ export default function PublicationViewer({
               <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-neutral-300">{comment.body}</p>
             )}
             <div className="mt-2 flex items-center gap-3">
-              {!isReply && isOwner && currentUser && (
+              {!isReply && (
                 <button
                   type="button"
                   onClick={() => setReplyToCommentId(comment.id)}
@@ -385,7 +379,7 @@ export default function PublicationViewer({
                 value={commentBody}
                 onChange={(event) => setCommentBody(event.target.value)}
                 rows={1}
-                placeholder={currentUser ? t("Scrivi un commento...") : t("Accedi per commentare")}
+                placeholder={t("Scrivi un commento...")}
                 className="min-h-11 flex-1 resize-none rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-base text-neutral-100 outline-none placeholder:text-neutral-500 focus:border-amber-400 sm:text-sm"
               />
               <button

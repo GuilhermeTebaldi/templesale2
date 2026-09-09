@@ -119,6 +119,8 @@ const PARTNER_PROMO_LOGO =
 const CART_STORAGE_KEY = "templesale_cart_items";
 const CART_UNSEEN_STORAGE_KEY = "templesale_cart_unseen_alert";
 const READ_NOTIFICATIONS_STORAGE_KEY = "templesale_read_notifications";
+const LIKED_PUBLICATIONS_STORAGE_KEY = "templesale_liked_publications";
+const SAVED_PUBLICATIONS_STORAGE_KEY = "templesale_saved_publications";
 const MOBILE_INITIAL_PRODUCT_LIMIT = 30;
 const MOBILE_MORE_PRODUCT_LIMIT = 20;
 const DESKTOP_PRODUCT_LIMIT = 36;
@@ -277,6 +279,20 @@ function readNotificationIdsStorage(storageKey: string): string[] {
   }
 }
 
+function readStringListStorage(storageKey: string): string[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(storageKey) || "[]") as unknown;
+    return Array.isArray(parsed)
+      ? parsed.map((item) => String(item)).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function App() {
   const { locale, setLocale, t } = useI18n();
   const {
@@ -366,6 +382,8 @@ export default function App() {
   const [socialSelectedCompanyId, setSocialSelectedCompanyId] = React.useState<string>("");
   const [savedPublicationIds, setSavedPublicationIds] = React.useState<string[]>([]);
   const [savedPublications, setSavedPublications] = React.useState<PublicationDto[]>([]);
+  const [likedPublicationIds, setLikedPublicationIds] = React.useState<string[]>([]);
+  const [likedPublications, setLikedPublications] = React.useState<PublicationDto[]>([]);
   const [pendingPublicationCount, setPendingPublicationCount] = React.useState(0);
   const [cartToast, setCartToast] = React.useState<{
     id: number;
@@ -395,6 +413,14 @@ export default function App() {
   );
   const readNotificationsStorageKey = React.useMemo(
     () => getScopedStorageKey(READ_NOTIFICATIONS_STORAGE_KEY, currentUser?.id),
+    [currentUser?.id],
+  );
+  const savedPublicationsStorageKey = React.useMemo(
+    () => getScopedStorageKey(SAVED_PUBLICATIONS_STORAGE_KEY, currentUser?.id),
+    [currentUser?.id],
+  );
+  const likedPublicationsStorageKey = React.useMemo(
+    () => getScopedStorageKey(LIKED_PUBLICATIONS_STORAGE_KEY, currentUser?.id),
     [currentUser?.id],
   );
   const isOverlayBlockingScroll =
@@ -1189,11 +1215,6 @@ export default function App() {
     let cancelled = false;
 
     const fetchLikedProducts = async () => {
-      if (!currentUser) {
-        setLikedProducts([]);
-        return;
-      }
-
       try {
         const data = await api.getLikedProducts();
         if (!cancelled) {
@@ -1218,24 +1239,22 @@ export default function App() {
     let cancelled = false;
 
     const fetchSavedPublications = async () => {
-      if (!currentUser) {
-        setSavedPublications([]);
-        setSavedPublicationIds([]);
-        return;
-      }
+      const localSavedIds = readStringListStorage(savedPublicationsStorageKey);
+      setSavedPublicationIds(localSavedIds);
 
       try {
         const data = await api.getSavedPublications();
         if (!cancelled) {
           const publications = asArray<PublicationDto>(data);
           setSavedPublications(publications);
-          setSavedPublicationIds(publications.map((publication) => `publication_${publication.id}`));
+          const ids = publications.map((publication) => `publication_${publication.id}`);
+          setSavedPublicationIds(ids);
+          window.localStorage.setItem(savedPublicationsStorageKey, JSON.stringify(ids));
         }
       } catch (err) {
         console.error("Error fetching saved publications:", err);
         if (!cancelled) {
-          setSavedPublications([]);
-          setSavedPublicationIds([]);
+          setSavedPublicationIds(localSavedIds);
         }
       }
     };
@@ -1245,7 +1264,52 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [currentUser]);
+  }, [currentUser, savedPublicationsStorageKey]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const fetchLikedPublications = async () => {
+      const localLikedIds = readStringListStorage(likedPublicationsStorageKey);
+      setLikedPublicationIds(localLikedIds);
+
+      try {
+        const data = await api.getLikedPublications();
+        if (!cancelled) {
+          const publications = asArray<PublicationDto>(data);
+          setLikedPublications(publications);
+          const ids = publications.map((publication) => `publication_${publication.id}`);
+          setLikedPublicationIds(ids);
+          window.localStorage.setItem(likedPublicationsStorageKey, JSON.stringify(ids));
+        }
+      } catch (err) {
+        console.error("Error fetching liked publications:", err);
+        if (!cancelled) {
+          setLikedPublicationIds(localLikedIds);
+        }
+      }
+    };
+
+    void fetchLikedPublications();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser, likedPublicationsStorageKey]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(savedPublicationsStorageKey, JSON.stringify(savedPublicationIds));
+  }, [savedPublicationIds, savedPublicationsStorageKey]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(likedPublicationsStorageKey, JSON.stringify(likedPublicationIds));
+  }, [likedPublicationIds, likedPublicationsStorageKey]);
 
   React.useEffect(() => {
     if (!hasMemberAccess) {
@@ -1832,12 +1896,6 @@ export default function App() {
   }, [products, openEstablishmentPage]);
 
   const handleToggleLike = async (product: Product) => {
-    if (!currentUser) {
-      setAuthModalMode("register");
-      setIsAuthModalOpen(true);
-      return;
-    }
-
     const isCurrentlyLiked = likedProductIds.has(product.id);
 
     try {
@@ -2713,6 +2771,11 @@ export default function App() {
           publicationsById.set(publication.id, publication);
         }
       });
+      likedPublications.forEach((publication) => {
+        if (!publicationsById.has(publication.id)) {
+          publicationsById.set(publication.id, publication);
+        }
+      });
 
       return Array.from(publicationsById.values()).map((publication) => ({
         id: socialPostIdFromPublicationId(publication.id),
@@ -2725,12 +2788,13 @@ export default function App() {
         caption: publication.caption || "",
         createdAt: new Date(publication.createdAt).toISOString(),
         comments: toSocialComments(publicationCommentsById[publication.id] ?? []),
-        likesCount: 0,
+        likesCount: publication.likesCount ?? 0,
       }));
     },
     [
       publicationCommentsById,
       publicationFeed,
+      likedPublications,
       savedPublications,
       currentUser?.id,
       memberProfilePhoto,
@@ -2885,11 +2949,6 @@ export default function App() {
       if (!publicationId) {
         return;
       }
-      if (!hasMemberAccess) {
-        setAuthModalMode("register");
-        setIsAuthModalOpen(true);
-        return;
-      }
       try {
         const nextComments = await api.createPublicationComment(publicationId, { body: text });
         setPublicationCommentsById((current) => ({
@@ -2905,7 +2964,7 @@ export default function App() {
         console.error("Error creating social comment:", error);
       }
     },
-    [hasMemberAccess, publicationIdFromSocialPostId],
+    [publicationIdFromSocialPostId],
   );
 
   const changeSocialTab = React.useCallback(
@@ -2943,12 +3002,6 @@ export default function App() {
     if (!publicationId) {
       return;
     }
-    if (!hasMemberAccess) {
-      setAuthModalMode("register");
-      setIsAuthModalOpen(true);
-      return;
-    }
-
     const existingPublication =
       publicationFeed.find((publication) => publication.id === publicationId) ??
       savedPublications.find((publication) => publication.id === publicationId);
@@ -2986,10 +3039,86 @@ export default function App() {
         });
       });
   }, [
-    hasMemberAccess,
     publicationFeed,
     publicationIdFromSocialPostId,
     savedPublicationIds,
+    savedPublications,
+  ]);
+
+  const toggleLikedSocialPost = React.useCallback((postId: string) => {
+    const publicationId = publicationIdFromSocialPostId(postId);
+    if (!publicationId) {
+      return;
+    }
+
+    const existingPublication =
+      publicationFeed.find((publication) => publication.id === publicationId) ??
+      savedPublications.find((publication) => publication.id === publicationId) ??
+      likedPublications.find((publication) => publication.id === publicationId);
+    const wasLiked = likedPublicationIds.includes(postId);
+    const likeDelta = wasLiked ? -1 : 1;
+
+    const updateCount = (publication: PublicationDto): PublicationDto =>
+      publication.id === publicationId
+        ? {
+            ...publication,
+            likesCount: Math.max(0, (publication.likesCount ?? 0) + likeDelta),
+          }
+        : publication;
+
+    setLikedPublicationIds((current) =>
+      wasLiked ? current.filter((id) => id !== postId) : [...current, postId],
+    );
+    setLikedPublications((current) => {
+      if (wasLiked) {
+        return current.filter((publication) => publication.id !== publicationId);
+      }
+      if (!existingPublication || current.some((publication) => publication.id === publicationId)) {
+        return current;
+      }
+      return [{ ...existingPublication, likesCount: Math.max(0, (existingPublication.likesCount ?? 0) + 1) }, ...current];
+    });
+    setPublicationFeed((current) => current.map(updateCount));
+    setSelectedEstablishmentPublications((current) => current.map(updateCount));
+    setSavedPublications((current) => current.map(updateCount));
+    setSelectedPublication((current) => (current?.id === publicationId ? updateCount(current) : current));
+
+    void (wasLiked ? api.unlikePublication(publicationId) : api.likePublication(publicationId))
+      .catch((error) => {
+        console.error("Error toggling publication like:", error);
+        const rollbackDelta = -likeDelta;
+        const rollbackCount = (publication: PublicationDto): PublicationDto =>
+          publication.id === publicationId
+            ? {
+                ...publication,
+                likesCount: Math.max(0, (publication.likesCount ?? 0) + rollbackDelta),
+              }
+            : publication;
+
+        setLikedPublicationIds((current) =>
+          wasLiked
+            ? current.includes(postId) ? current : [...current, postId]
+            : current.filter((id) => id !== postId),
+        );
+        setLikedPublications((current) => {
+          if (wasLiked && existingPublication && !current.some((publication) => publication.id === publicationId)) {
+            return [existingPublication, ...current];
+          }
+          if (!wasLiked) {
+            return current.filter((publication) => publication.id !== publicationId);
+          }
+          return current;
+        });
+        setPublicationFeed((current) => current.map(rollbackCount));
+        setSelectedEstablishmentPublications((current) => current.map(rollbackCount));
+        setSavedPublications((current) => current.map(rollbackCount));
+        setSelectedPublication((current) => (current?.id === publicationId ? rollbackCount(current) : current));
+      });
+  }, [
+    likedPublicationIds,
+    likedPublications,
+    publicationFeed,
+    publicationIdFromSocialPostId,
     savedPublications,
   ]);
 
@@ -3141,6 +3270,8 @@ export default function App() {
             }}
             onOpenCreatePost={handleOpenNewProduct}
             savedPostIds={savedPublicationIds}
+            likedPostIds={likedPublicationIds}
+            onToggleLikePost={toggleLikedSocialPost}
             onToggleSavePost={toggleSavedSocialPost}
             onRefresh={() => loadPublicationFeedPage({ append: false })}
           />
@@ -3279,10 +3410,6 @@ export default function App() {
             onClose={() => {
               setSelectedPublication(null);
               setFocusedPublicationCommentId(null);
-            }}
-            onRequireAuth={() => {
-              setAuthModalMode("register");
-              setIsAuthModalOpen(true);
             }}
             onCommentsChanged={(publicationId, comments) => {
               setPublicationCommentsById((current) => ({

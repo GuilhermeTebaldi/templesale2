@@ -24,6 +24,8 @@ interface FeedViewProps {
   onAddComment: (postId: string, text: string) => void;
   onOpenCreatePost: () => void;
   savedPostIds?: string[];
+  likedPostIds?: string[];
+  onToggleLikePost?: (postId: string) => void;
   onToggleSavePost?: (postId: string) => void;
   onRefresh?: () => Promise<void> | void;
 }
@@ -46,11 +48,12 @@ export const FeedView: React.FC<FeedViewProps> = ({
   onAddComment,
   onOpenCreatePost,
   savedPostIds,
+  likedPostIds,
+  onToggleLikePost,
   onToggleSavePost,
   onRefresh,
 }) => {
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
-  const [likedPosts, setLikedPosts] = useState<Record<string, boolean>>({});
   const [internalSavedPosts, setInternalSavedPosts] = useState<Record<string, boolean>>({});
   const [flyingLikes, setFlyingLikes] = useState<Record<string, FlyingLikeState>>({});
   const [absorbedLikes, setAbsorbedLikes] = useState<Record<string, boolean>>({});
@@ -203,16 +206,11 @@ export const FeedView: React.FC<FeedViewProps> = ({
   };
 
   const handleToggleLike = (postId: string) => {
-    setLikedPosts((prev) => {
-      const willBeLiked = !prev[postId];
-      if (willBeLiked) {
-        triggerFlyLike(postId);
-      }
-      return {
-        ...prev,
-        [postId]: willBeLiked,
-      };
-    });
+    const isLiked = likedPostIds ? likedPostIds.includes(postId) : false;
+    if (!isLiked) {
+      triggerFlyLike(postId);
+    }
+    onToggleLikePost?.(postId);
   };
 
   const handleToggleSave = (postId: string) => {
@@ -247,10 +245,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
       lastTapRef.current[postId] = { time: 0, x: 0, y: 0 };
       lastTriggeredRef.current[postId] = now;
 
-      setLikedPosts((prev) => ({
-        ...prev,
-        [postId]: true,
-      }));
+      if (!likedPostIds?.includes(postId)) {
+        onToggleLikePost?.(postId);
+      }
       triggerFlyLike(postId, e.clientX, e.clientY);
     } else {
       lastTapRef.current[postId] = { time: now, x: e.clientX, y: e.clientY };
@@ -266,10 +263,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
     if (now - lastTriggered < 300) return;
     lastTriggeredRef.current[postId] = now;
 
-    setLikedPosts((prev) => ({
-      ...prev,
-      [postId]: true,
-    }));
+    if (!likedPostIds?.includes(postId)) {
+      onToggleLikePost?.(postId);
+    }
     triggerFlyLike(postId, e.clientX, e.clientY);
   };
 
@@ -372,9 +368,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
           const company = companyMap.get(post.companyId);
           if (!company) return null;
 
-          const isLiked = !!likedPosts[post.id];
+          const isLiked = likedPostIds ? likedPostIds.includes(post.id) : false;
           const isSaved = savedPostIds ? savedPostIds.includes(post.id) : !!internalSavedPosts[post.id];
-          const likesCount = (post.likesCount || 0) + (isLiked ? 1 : 0);
+          const likesCount = post.likesCount || 0;
           const currentCommentText = commentInputs[post.id] || '';
           const authorAvatarUrl = post.authorAvatarUrl || company.logo;
 

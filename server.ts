@@ -218,6 +218,7 @@ type SessionUser = {
   locationLatitude?: number;
   locationLongitude?: number;
   preferredLocale?: AppLocale;
+  isDeviceUser?: boolean;
 };
 
 type Auth0JwtClaims = {
@@ -279,6 +280,7 @@ type EstablishmentPublicationRecord = {
   imageUrl: string;
   createdAt: number;
   updatedAt: number;
+  likesCount?: number;
   legacyProductId?: number;
   establishmentName?: string;
   establishmentSlug?: string;
@@ -1475,6 +1477,7 @@ function normalizePublicationRow(row: Record<string, unknown>): EstablishmentPub
     imageUrl: String(row.image_url ?? "").trim() || media[0] || "",
     createdAt: toRequiredNonNegativeInteger(row.created_at, Math.floor(Date.now() / 1000)),
     updatedAt: toRequiredNonNegativeInteger(row.updated_at, Math.floor(Date.now() / 1000)),
+    likesCount: toRequiredNonNegativeInteger(row.likes_count, 0),
     ...(legacyProductId !== null ? { legacyProductId } : {}),
   };
   const establishmentName = toNullableString(row.establishment_name);
@@ -2275,6 +2278,7 @@ function initializeSqliteDatabase() {
       is_banned INTEGER NOT NULL DEFAULT 0,
       ban_reason TEXT NOT NULL DEFAULT '',
       new_product_defaults TEXT NOT NULL DEFAULT '{}',
+      device_id TEXT,
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
     );
 
@@ -2348,6 +2352,15 @@ function initializeSqliteDatabase() {
     );
 
     CREATE TABLE IF NOT EXISTS publication_saves (
+      user_id INTEGER NOT NULL,
+      publication_id INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      PRIMARY KEY (user_id, publication_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (publication_id) REFERENCES establishment_publications(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS publication_likes (
       user_id INTEGER NOT NULL,
       publication_id INTEGER NOT NULL,
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
@@ -2610,6 +2623,10 @@ function initializeSqliteDatabase() {
   if (!userColumns.some((column) => column.name === "auth0_sub")) {
     db.exec("ALTER TABLE users ADD COLUMN auth0_sub TEXT");
   }
+  if (!userColumns.some((column) => column.name === "device_id")) {
+    db.exec("ALTER TABLE users ADD COLUMN device_id TEXT");
+  }
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_device_id_unique ON users(device_id) WHERE device_id IS NOT NULL AND device_id <> ''");
   if (!userColumns.some((column) => column.name === "is_banned")) {
     db.exec("ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0");
   }
@@ -2689,6 +2706,18 @@ function initializeSqliteDatabase() {
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_product_comments_parent ON product_comments(parent_comment_id)",
   );
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS publication_likes (
+      user_id INTEGER NOT NULL,
+      publication_id INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+      PRIMARY KEY (user_id, publication_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (publication_id) REFERENCES establishment_publications(id) ON DELETE CASCADE
+    )
+  `);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_publication_likes_user_created ON publication_likes(user_id, created_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_publication_likes_publication_id ON publication_likes(publication_id)");
 
   const visitorColumns = db.prepare("PRAGMA table_info(site_daily_visitors)").all() as Array<{
     name: string;
@@ -2868,6 +2897,16 @@ async function ensurePostgresEstablishmentSchema() {
         PRIMARY KEY (user_id, publication_id)
       )
     `,
+    `
+      CREATE TABLE IF NOT EXISTS publication_likes (
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        publication_id BIGINT NOT NULL REFERENCES establishment_publications(id) ON DELETE CASCADE,
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+        PRIMARY KEY (user_id, publication_id)
+      )
+    `,
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS device_id TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_device_id_unique ON users(device_id) WHERE device_id IS NOT NULL AND device_id <> ''",
     "ALTER TABLE establishments ADD COLUMN IF NOT EXISTS keywords TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE establishment_publications ADD COLUMN IF NOT EXISTS establishment_id BIGINT REFERENCES establishments(id) ON DELETE CASCADE",
     "ALTER TABLE establishment_publications ADD COLUMN IF NOT EXISTS owner_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE",
@@ -2887,6 +2926,8 @@ async function ensurePostgresEstablishmentSchema() {
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_establishment_publications_legacy_product ON establishment_publications(legacy_product_id) WHERE legacy_product_id IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_publication_saves_user_created ON publication_saves(user_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_publication_saves_publication_id ON publication_saves(publication_id)",
+    "CREATE INDEX IF NOT EXISTS idx_publication_likes_user_created ON publication_likes(user_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_publication_likes_publication_id ON publication_likes(publication_id)",
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS publication_id BIGINT REFERENCES establishment_publications(id) ON DELETE CASCADE",
     "ALTER TABLE product_comments ALTER COLUMN product_id DROP NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_product_comments_publication_created ON product_comments(publication_id, created_at DESC)",
@@ -2993,6 +3034,7 @@ async function initializePostgresDatabase() {
         is_banned BOOLEAN NOT NULL DEFAULT FALSE,
         ban_reason TEXT NOT NULL DEFAULT '',
         new_product_defaults TEXT NOT NULL DEFAULT '{}',
+        device_id TEXT,
         created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
       )
     `,
@@ -3092,6 +3134,14 @@ async function initializePostgresDatabase() {
       )
     `,
     `
+      CREATE TABLE IF NOT EXISTS publication_likes (
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        publication_id BIGINT NOT NULL REFERENCES establishment_publications(id) ON DELETE CASCADE,
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+        PRIMARY KEY (user_id, publication_id)
+      )
+    `,
+    `
       CREATE TABLE IF NOT EXISTS product_cart_notifications (
         id BIGSERIAL PRIMARY KEY,
         owner_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -3172,6 +3222,7 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth0_sub TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS device_id TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT",
@@ -3303,6 +3354,8 @@ async function initializePostgresDatabase() {
     "CREATE INDEX IF NOT EXISTS idx_product_likes_product_id ON product_likes(product_id)",
     "CREATE INDEX IF NOT EXISTS idx_publication_saves_user_created ON publication_saves(user_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_publication_saves_publication_id ON publication_saves(publication_id)",
+    "CREATE INDEX IF NOT EXISTS idx_publication_likes_user_created ON publication_likes(user_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_publication_likes_publication_id ON publication_likes(publication_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_establishments_slug_unique ON establishments(slug)",
     "CREATE INDEX IF NOT EXISTS idx_establishments_owner ON establishments(owner_user_id)",
     "CREATE INDEX IF NOT EXISTS idx_establishments_category_city ON establishments(category, city)",
@@ -4243,9 +4296,16 @@ async function selectPublicationsByEstablishmentRows(
   if (pgPool) {
     const result = await pgPool.query<Record<string, unknown>>(
       `
-        SELECT *
-        FROM establishment_publications
-        WHERE establishment_id = $1
+        SELECT
+          ep.*,
+          COALESCE(pl.likes_count, 0) AS likes_count
+        FROM establishment_publications ep
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
+        WHERE ep.establishment_id = $1
         ORDER BY created_at DESC, id DESC
         LIMIT $2
       `,
@@ -4256,9 +4316,16 @@ async function selectPublicationsByEstablishmentRows(
   const rows = requireSqliteDb()
     .prepare(
       `
-        SELECT *
-        FROM establishment_publications
-        WHERE establishment_id = ?
+        SELECT
+          ep.*,
+          COALESCE(pl.likes_count, 0) AS likes_count
+        FROM establishment_publications ep
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
+        WHERE ep.establishment_id = ?
         ORDER BY created_at DESC, id DESC
         LIMIT ?
       `,
@@ -4285,10 +4352,16 @@ async function selectPublicationsFeedRows(input: {
           e.city AS establishment_city,
           e.logo_url AS establishment_logo_url,
           e.cover_url AS establishment_cover_url,
-          u.avatar_url AS owner_avatar_url
+          u.avatar_url AS owner_avatar_url,
+          COALESCE(pl.likes_count, 0) AS likes_count
         FROM establishment_publications ep
         INNER JOIN establishments e ON e.id = ep.establishment_id
         LEFT JOIN users u ON u.id = ep.owner_user_id
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
         WHERE e.is_active = TRUE
         ORDER BY ep.created_at DESC, ep.id DESC
         LIMIT $1 OFFSET $2
@@ -4310,10 +4383,16 @@ async function selectPublicationsFeedRows(input: {
           e.city AS establishment_city,
           e.logo_url AS establishment_logo_url,
           e.cover_url AS establishment_cover_url,
-          u.avatar_url AS owner_avatar_url
+          u.avatar_url AS owner_avatar_url,
+          COALESCE(pl.likes_count, 0) AS likes_count
         FROM establishment_publications ep
         INNER JOIN establishments e ON e.id = ep.establishment_id
         LEFT JOIN users u ON u.id = ep.owner_user_id
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
         WHERE e.is_active = 1
         ORDER BY ep.created_at DESC, ep.id DESC
         LIMIT ? OFFSET ?
@@ -4336,11 +4415,17 @@ async function selectSavedPublicationsByUserRows(userId: number): Promise<Establ
           e.city AS establishment_city,
           e.logo_url AS establishment_logo_url,
           e.cover_url AS establishment_cover_url,
-          u.avatar_url AS owner_avatar_url
+          u.avatar_url AS owner_avatar_url,
+          COALESCE(pl.likes_count, 0) AS likes_count
         FROM publication_saves ps
         INNER JOIN establishment_publications ep ON ep.id = ps.publication_id
         INNER JOIN establishments e ON e.id = ep.establishment_id
         LEFT JOIN users u ON u.id = ep.owner_user_id
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
         WHERE ps.user_id = $1
         ORDER BY ps.created_at DESC, ep.id DESC
       `,
@@ -4360,11 +4445,17 @@ async function selectSavedPublicationsByUserRows(userId: number): Promise<Establ
           e.city AS establishment_city,
           e.logo_url AS establishment_logo_url,
           e.cover_url AS establishment_cover_url,
-          u.avatar_url AS owner_avatar_url
+          u.avatar_url AS owner_avatar_url,
+          COALESCE(pl.likes_count, 0) AS likes_count
         FROM publication_saves ps
         INNER JOIN establishment_publications ep ON ep.id = ps.publication_id
         INNER JOIN establishments e ON e.id = ep.establishment_id
         LEFT JOIN users u ON u.id = ep.owner_user_id
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
         WHERE ps.user_id = ?
         ORDER BY ps.created_at DESC, ep.id DESC
       `,
@@ -4408,16 +4499,192 @@ async function deletePublicationSaveRecord(userId: number, publicationId: number
     .run(userId, publicationId);
 }
 
+async function selectLikedPublicationsByUserRows(userId: number): Promise<EstablishmentPublicationRecord[]> {
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          ep.*,
+          e.name AS establishment_name,
+          e.slug AS establishment_slug,
+          e.category AS establishment_category,
+          e.city AS establishment_city,
+          e.logo_url AS establishment_logo_url,
+          e.cover_url AS establishment_cover_url,
+          u.avatar_url AS owner_avatar_url,
+          COALESCE(pl.likes_count, 0) AS likes_count
+        FROM publication_likes current_like
+        INNER JOIN establishment_publications ep ON ep.id = current_like.publication_id
+        INNER JOIN establishments e ON e.id = ep.establishment_id
+        LEFT JOIN users u ON u.id = ep.owner_user_id
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
+        WHERE current_like.user_id = $1
+        ORDER BY current_like.created_at DESC, ep.id DESC
+      `,
+      [userId],
+    );
+    return result.rows.map(normalizePublicationRow);
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          ep.*,
+          e.name AS establishment_name,
+          e.slug AS establishment_slug,
+          e.category AS establishment_category,
+          e.city AS establishment_city,
+          e.logo_url AS establishment_logo_url,
+          e.cover_url AS establishment_cover_url,
+          u.avatar_url AS owner_avatar_url,
+          COALESCE(pl.likes_count, 0) AS likes_count
+        FROM publication_likes current_like
+        INNER JOIN establishment_publications ep ON ep.id = current_like.publication_id
+        INNER JOIN establishments e ON e.id = ep.establishment_id
+        LEFT JOIN users u ON u.id = ep.owner_user_id
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
+        WHERE current_like.user_id = ?
+        ORDER BY current_like.created_at DESC, ep.id DESC
+      `,
+    )
+    .all(userId) as Array<Record<string, unknown>>;
+  return rows.map(normalizePublicationRow);
+}
+
+async function createPublicationLikeRecord(userId: number, publicationId: number): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(
+      `
+        INSERT INTO publication_likes (user_id, publication_id)
+        VALUES ($1, $2)
+        ON CONFLICT (user_id, publication_id) DO NOTHING
+      `,
+      [userId, publicationId],
+    );
+    return;
+  }
+  requireSqliteDb()
+    .prepare(
+      `
+        INSERT OR IGNORE INTO publication_likes (user_id, publication_id)
+        VALUES (?, ?)
+      `,
+    )
+    .run(userId, publicationId);
+}
+
+async function deletePublicationLikeRecord(userId: number, publicationId: number): Promise<void> {
+  if (pgPool) {
+    await pgPool.query(
+      "DELETE FROM publication_likes WHERE user_id = $1 AND publication_id = $2",
+      [userId, publicationId],
+    );
+    return;
+  }
+  requireSqliteDb()
+    .prepare("DELETE FROM publication_likes WHERE user_id = ? AND publication_id = ?")
+    .run(userId, publicationId);
+}
+
+async function mergeDeviceInteractionsIntoUser(deviceUserId: number, targetUserId: number): Promise<void> {
+  if (deviceUserId === targetUserId) {
+    return;
+  }
+
+  if (pgPool) {
+    await pgPool.query(
+      `
+        INSERT INTO product_likes (user_id, product_id)
+        SELECT $2, product_id FROM product_likes WHERE user_id = $1
+        ON CONFLICT (user_id, product_id) DO NOTHING
+      `,
+      [deviceUserId, targetUserId],
+    );
+    await pgPool.query(
+      `
+        INSERT INTO publication_saves (user_id, publication_id)
+        SELECT $2, publication_id FROM publication_saves WHERE user_id = $1
+        ON CONFLICT (user_id, publication_id) DO NOTHING
+      `,
+      [deviceUserId, targetUserId],
+    );
+    await pgPool.query(
+      `
+        INSERT INTO publication_likes (user_id, publication_id)
+        SELECT $2, publication_id FROM publication_likes WHERE user_id = $1
+        ON CONFLICT (user_id, publication_id) DO NOTHING
+      `,
+      [deviceUserId, targetUserId],
+    );
+    return;
+  }
+
+  const db = requireSqliteDb();
+  db.prepare(
+    `
+      INSERT OR IGNORE INTO product_likes (user_id, product_id)
+      SELECT ?, product_id FROM product_likes WHERE user_id = ?
+    `,
+  ).run(targetUserId, deviceUserId);
+  db.prepare(
+    `
+      INSERT OR IGNORE INTO publication_saves (user_id, publication_id)
+      SELECT ?, publication_id FROM publication_saves WHERE user_id = ?
+    `,
+  ).run(targetUserId, deviceUserId);
+  db.prepare(
+    `
+      INSERT OR IGNORE INTO publication_likes (user_id, publication_id)
+      SELECT ?, publication_id FROM publication_likes WHERE user_id = ?
+    `,
+  ).run(targetUserId, deviceUserId);
+}
+
 async function selectPublicationByIdRecord(publicationId: number): Promise<EstablishmentPublicationRecord | null> {
   if (pgPool) {
     const result = await pgPool.query<Record<string, unknown>>(
-      "SELECT * FROM establishment_publications WHERE id = $1 LIMIT 1",
+      `
+        SELECT
+          ep.*,
+          COALESCE(pl.likes_count, 0) AS likes_count
+        FROM establishment_publications ep
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
+        WHERE ep.id = $1
+        LIMIT 1
+      `,
       [publicationId],
     );
     return result.rows[0] ? normalizePublicationRow(result.rows[0]) : null;
   }
   const row = requireSqliteDb()
-    .prepare("SELECT * FROM establishment_publications WHERE id = ? LIMIT 1")
+    .prepare(
+      `
+        SELECT
+          ep.*,
+          COALESCE(pl.likes_count, 0) AS likes_count
+        FROM establishment_publications ep
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
+        WHERE ep.id = ?
+        LIMIT 1
+      `,
+    )
     .get(publicationId) as Record<string, unknown> | undefined;
   return row ? normalizePublicationRow(row) : null;
 }
@@ -7149,6 +7416,41 @@ async function selectUserByIdRow(id: number): Promise<UserRow | undefined> {
   return row ? normalizeUserRow(row) : undefined;
 }
 
+async function selectUserByDeviceIdRow(deviceId: string): Promise<UserRow | undefined> {
+  const normalizedDeviceId = normalizeDeviceId(deviceId);
+  if (!normalizedDeviceId) {
+    return undefined;
+  }
+
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT ${USER_SELECT_FIELDS}
+        FROM users
+        WHERE device_id = $1
+        ORDER BY id ASC
+        LIMIT 1
+      `,
+      [normalizedDeviceId],
+    );
+    const row = result.rows[0];
+    return row ? normalizeUserRow(row) : undefined;
+  }
+
+  const row = requireSqliteDb()
+    .prepare(
+      `
+        SELECT ${USER_SELECT_FIELDS}
+        FROM users
+        WHERE device_id = ?
+        ORDER BY id ASC
+        LIMIT 1
+      `,
+    )
+    .get(normalizedDeviceId) as Record<string, unknown> | undefined;
+  return row ? normalizeUserRow(row) : undefined;
+}
+
 async function updateUserPasswordRecord(
   userId: number,
   passwordHash: string,
@@ -7359,6 +7661,60 @@ async function createUserRecord(
     )
     .run(name, email, passwordHash, passwordSalt);
   return Number(result.lastInsertRowid);
+}
+
+async function createDeviceUserRecord(deviceId: string): Promise<number> {
+  const normalizedDeviceId = normalizeDeviceId(deviceId);
+  if (!normalizedDeviceId) {
+    throw new Error("Dispositivo inválido.");
+  }
+  const existing = await selectUserByDeviceIdRow(normalizedDeviceId);
+  if (existing) {
+    return existing.id;
+  }
+
+  const digest = crypto.createHash("sha256").update(normalizedDeviceId).digest("hex").slice(0, 24);
+  const email = `visitor-${digest}@device.templesale.local`;
+  const name = "Visitante";
+  const credentials = createPasswordCredentials(crypto.randomBytes(24).toString("hex"));
+
+  if (pgPool) {
+    const result = await pgPool.query<{ id: number | string }>(
+      `
+        INSERT INTO users (
+          name,
+          username,
+          email,
+          password,
+          password_hash,
+          password_salt,
+          device_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (email) DO UPDATE SET device_id = EXCLUDED.device_id
+        RETURNING id
+      `,
+      [name, email, email, credentials.hash, credentials.hash, credentials.salt, normalizedDeviceId],
+    );
+    return toRequiredNumber(result.rows[0]?.id);
+  }
+
+  const result = requireSqliteDb()
+    .prepare(
+      `
+        INSERT OR IGNORE INTO users (name, email, password_hash, password_salt, device_id)
+        VALUES (?, ?, ?, ?, ?)
+      `,
+    )
+    .run(name, email, credentials.hash, credentials.salt, normalizedDeviceId);
+  if (Number(result.lastInsertRowid) > 0) {
+    return Number(result.lastInsertRowid);
+  }
+  const inserted = await selectUserByEmailRow(email);
+  if (!inserted) {
+    throw new Error("Falha ao criar visitante.");
+  }
+  return inserted.id;
 }
 
 async function updateUserProfileRecord(input: UserProfileUpdateInput): Promise<void> {
@@ -8840,6 +9196,17 @@ function getRequestHeaderTokenValue(value: string | string[] | undefined): strin
   return String(value ?? "").trim();
 }
 
+function normalizeDeviceId(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, "")
+    .slice(0, 80);
+}
+
+function getDeviceIdFromRequest(req: Request): string {
+  return normalizeDeviceId(req.headers["x-templesale-device-id"]);
+}
+
 function normalizeNominatimAddress(record: Record<string, unknown>, latitude: number, longitude: number): GeoLookupResult {
   const address =
     record.address && typeof record.address === "object"
@@ -9277,6 +9644,35 @@ async function getSessionUser(req: Request): Promise<SessionUser | null> {
 
   const token = getSessionTokenFromRequest(req);
   return getSessionUserFromToken(token);
+}
+
+async function getInteractionUser(req: Request): Promise<SessionUser | null> {
+  const sessionUser = await getSessionUser(req);
+  if (sessionUser) {
+    const deviceId = getDeviceIdFromRequest(req);
+    const deviceUser = deviceId ? await selectUserByDeviceIdRow(deviceId) : null;
+    if (deviceUser && deviceUser.id !== sessionUser.id) {
+      await mergeDeviceInteractionsIntoUser(deviceUser.id, sessionUser.id);
+    }
+    return sessionUser;
+  }
+
+  const deviceId = getDeviceIdFromRequest(req);
+  if (!deviceId) {
+    return null;
+  }
+  const userId = await createDeviceUserRecord(deviceId);
+  const row = await selectUserByIdRow(userId);
+  return row ? { ...sanitizeUser(row), isDeviceUser: true } : null;
+}
+
+async function requireInteractionUser(req: Request, res: Response): Promise<SessionUser | null> {
+  const user = await getInteractionUser(req);
+  if (!user) {
+    res.status(401).json({ error: "Não foi possível identificar este dispositivo." });
+    return null;
+  }
+  return user;
 }
 
 async function getSessionUserFromToken(token: string | null): Promise<SessionUser | null> {
@@ -11479,7 +11875,7 @@ async function bootstrap() {
   });
 
   app.post("/api/products/:id/comments", async (req, res) => {
-    const user = await requireAuth(req, res);
+    const user = await requireInteractionUser(req, res);
     if (!user) {
       return;
     }
@@ -11661,7 +12057,7 @@ async function bootstrap() {
   });
 
   app.post("/api/publications/:id/comments", async (req, res) => {
-    const user = await requireAuth(req, res);
+    const user = await requireInteractionUser(req, res);
     if (!user) {
       return;
     }
@@ -11697,12 +12093,6 @@ async function bootstrap() {
           return;
         }
 
-        if (publication.ownerId !== user.id) {
-          res
-            .status(403)
-            .json({ error: "Solo il proprietario dell'attivita puo rispondere ai commenti." });
-          return;
-        }
       }
 
       await createProductCommentRecord({
@@ -11897,7 +12287,7 @@ async function bootstrap() {
   });
 
   app.get("/api/likes", async (req, res) => {
-    const user = await requireAuth(req, res);
+    const user = await requireInteractionUser(req, res);
     if (!user) {
       return;
     }
@@ -11913,7 +12303,7 @@ async function bootstrap() {
   });
 
   app.get("/api/publication-saves", async (req, res) => {
-    const user = await requireAuth(req, res);
+    const user = await requireInteractionUser(req, res);
     if (!user) {
       return;
     }
@@ -11928,7 +12318,7 @@ async function bootstrap() {
   });
 
   app.post("/api/publications/:id/save", async (req, res) => {
-    const user = await requireAuth(req, res);
+    const user = await requireInteractionUser(req, res);
     if (!user) {
       return;
     }
@@ -11954,7 +12344,7 @@ async function bootstrap() {
   });
 
   app.delete("/api/publications/:id/save", async (req, res) => {
-    const user = await requireAuth(req, res);
+    const user = await requireInteractionUser(req, res);
     if (!user) {
       return;
     }
@@ -11970,6 +12360,71 @@ async function bootstrap() {
       res.json({ success: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao remover publicação salva.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/publication-likes", async (req, res) => {
+    const user = await requireInteractionUser(req, res);
+    if (!user) {
+      return;
+    }
+
+    try {
+      const publications = await selectLikedPublicationsByUserRows(user.id);
+      res.json({ publications });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar publicações curtidas.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/publications/:id/like", async (req, res) => {
+    const user = await requireInteractionUser(req, res);
+    if (!user) {
+      return;
+    }
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID publicação inválido." });
+      return;
+    }
+
+    try {
+      const publication = await selectPublicationByIdRecord(id);
+      if (!publication) {
+        res.status(404).json({ error: "Publicação não encontrada." });
+        return;
+      }
+      await createPublicationLikeRecord(user.id, id);
+      if (publication.ownerId && publication.ownerId !== user.id) {
+        notifyUserNotificationsChanged(publication.ownerId, "publication-like");
+      }
+      res.status(201).json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao curtir publicação.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.delete("/api/publications/:id/like", async (req, res) => {
+    const user = await requireInteractionUser(req, res);
+    if (!user) {
+      return;
+    }
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "ID publicação inválido." });
+      return;
+    }
+
+    try {
+      await deletePublicationLikeRecord(user.id, id);
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao remover curtida da publicação.";
       res.status(500).json({ error: message });
     }
   });
@@ -12199,7 +12654,7 @@ async function bootstrap() {
   });
 
   app.post("/api/products/:id/like", async (req, res) => {
-    const user = await requireAuth(req, res);
+    const user = await requireInteractionUser(req, res);
     if (!user) {
       return;
     }
@@ -12229,7 +12684,7 @@ async function bootstrap() {
   });
 
   app.delete("/api/products/:id/like", async (req, res) => {
-    const user = await requireAuth(req, res);
+    const user = await requireInteractionUser(req, res);
     if (!user) {
       return;
     }

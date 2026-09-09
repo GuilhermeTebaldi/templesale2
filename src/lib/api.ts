@@ -275,6 +275,7 @@ export interface PublicationDto {
   imageUrl: string;
   createdAt: number;
   updatedAt: number;
+  likesCount?: number;
   legacyProductId?: number;
   establishmentName?: string;
   establishmentSlug?: string;
@@ -372,6 +373,7 @@ const RETRYABLE_FETCH_ATTEMPTS = 3;
 const AUTH_TOKEN_STORAGE_KEY = "templesale_auth_token";
 const ADMIN_AUTH_TOKEN_STORAGE_KEY = "templesale_admin_token";
 const ADMIN_SESSION_EMAIL_STORAGE_KEY = "templesale_admin_email";
+const DEVICE_ID_STORAGE_KEY = "templesale_device_id";
 const SHOULD_SKIP_OPTIONAL_VENDORS_API =
   typeof window !== "undefined" &&
   /(^|\.)templesale\.com$/i.test(window.location.hostname);
@@ -421,6 +423,23 @@ function persistAuthToken(token: unknown) {
     return;
   }
   window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, normalizedToken);
+}
+
+function getOrCreateDeviceId(): string {
+  if (!canUseStorage()) {
+    return "";
+  }
+  const existing = String(window.localStorage.getItem(DEVICE_ID_STORAGE_KEY) ?? "").trim();
+  if (/^[a-zA-Z0-9_-]{24,80}$/.test(existing)) {
+    return existing;
+  }
+  const random =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const next = `device_${String(random).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 72)}`;
+  window.localStorage.setItem(DEVICE_ID_STORAGE_KEY, next);
+  return next;
 }
 
 function clearAuthToken() {
@@ -1395,6 +1414,7 @@ function normalizePublicationItem(value: unknown): PublicationDto | null {
     imageUrl,
     createdAt: toNonNegativeInteger(firstDefined(parsed, ["createdAt", "created_at"])) ?? 0,
     updatedAt: toNonNegativeInteger(firstDefined(parsed, ["updatedAt", "updated_at"])) ?? 0,
+    likesCount: toNonNegativeInteger(firstDefined(parsed, ["likesCount", "likes_count"])) ?? 0,
     legacyProductId: toOptionalNumber(firstDefined(parsed, ["legacyProductId", "legacy_product_id"])),
   };
   const establishmentName = toStringValue(firstDefined(parsed, ["establishmentName", "establishment_name"]));
@@ -1955,6 +1975,12 @@ async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
       headers.set("X-TempleSale-Locale", locale);
     }
   }
+  if (!headers.has("X-TempleSale-Device-Id")) {
+    const deviceId = getOrCreateDeviceId();
+    if (deviceId) {
+      headers.set("X-TempleSale-Device-Id", deviceId);
+    }
+  }
 
   const token = useAdminToken ? readAdminToken() : skipAuthToken ? "" : readAuthToken();
   if (token && !headers.has("Authorization")) {
@@ -2073,6 +2099,10 @@ async function uploadImageFileToEndpoint(
     "Content-Type": file.type || "image/jpeg",
     "X-File-Name": encodeURIComponent(file.name || "upload"),
   });
+  const deviceId = getOrCreateDeviceId();
+  if (deviceId) {
+    headers.set("X-TempleSale-Device-Id", deviceId);
+  }
   const authToken = readAuthToken();
   if (authToken) {
     headers.set("Authorization", `Bearer ${authToken}`);
@@ -2896,6 +2926,11 @@ export const api = {
     const parsed = parseJsonIfNeeded(payload);
     return normalizePublicationList(isRecord(parsed) ? firstDefined(parsed, ["publications", "posts", "data"]) ?? [] : parsed);
   },
+  async getLikedPublications() {
+    const payload = await request<unknown>("/api/publication-likes");
+    const parsed = parseJsonIfNeeded(payload);
+    return normalizePublicationList(isRecord(parsed) ? firstDefined(parsed, ["publications", "posts", "data"]) ?? [] : parsed);
+  },
   async savePublication(publicationId: number) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
       throw new Error("ID de publicação inválido.");
@@ -2910,6 +2945,24 @@ export const api = {
       throw new Error("ID de publicação inválido.");
     }
     await request<{ success: boolean }>(`/api/publications/${publicationId}/save`, {
+      method: "DELETE",
+    });
+    return true;
+  },
+  async likePublication(publicationId: number) {
+    if (!Number.isInteger(publicationId) || publicationId <= 0) {
+      throw new Error("ID de publicação inválido.");
+    }
+    await request<{ success: boolean }>(`/api/publications/${publicationId}/like`, {
+      method: "POST",
+    });
+    return true;
+  },
+  async unlikePublication(publicationId: number) {
+    if (!Number.isInteger(publicationId) || publicationId <= 0) {
+      throw new Error("ID de publicação inválido.");
+    }
+    await request<{ success: boolean }>(`/api/publications/${publicationId}/like`, {
       method: "DELETE",
     });
     return true;
