@@ -85,6 +85,8 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
   if (!isOpen) return null;
 
   const currentLangLabel = LANGUAGE_OPTIONS.find((l) => l.id === currentLanguage)?.flag || '🇧🇷';
+  const userProfileImage = user.picture || '/templesale-logo.svg';
+  const userDisplayName = user.name || company.name;
 
   return (
     <div id="company-profile-drawer-backdrop" className="fixed inset-0 z-50 overflow-hidden">
@@ -137,17 +139,17 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
               <div className="bg-neutral-950/80 border border-neutral-800/80 rounded-2xl p-4.5 space-y-3.5 shadow-sm">
                 <div className="flex items-center space-x-3.5">
                   <TempleSaleAvatarFrame
-                    src={company.logo}
-                    alt={company.name}
+                    src={userProfileImage}
+                    alt={userDisplayName}
                     size="md"
                     className="shrink-0"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center space-x-1.5 truncate">
-                      <h3 className="font-bold text-base text-neutral-100 truncate">{company.name}</h3>
+                      <h3 className="font-bold text-base text-neutral-100 truncate">{userDisplayName}</h3>
                       <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
                     </div>
-                    <p className="text-xs text-neutral-400 truncate">{company.category} • {company.city}</p>
+                    <p className="text-xs text-neutral-400 truncate">{company.name}</p>
                     <p className="text-[11px] text-emerald-400 font-medium truncate mt-0.5">
                       WhatsApp: {company.whatsapp}
                     </p>
