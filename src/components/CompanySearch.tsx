@@ -239,6 +239,9 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
             )}`;
 
             const latestPosts = companyPosts.slice(0, 3);
+            const profilePhoto =
+              latestPosts.find((post) => post.authorAvatarUrl)?.authorAvatarUrl ||
+              company.logo;
 
             return (
               <div
@@ -254,7 +257,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
                     title={`Abrir perfil de ${company.name}`}
                   >
                     <img
-                      src={company.logo}
+                      src={profilePhoto}
                       alt={company.name}
                       className="w-10 h-10 rounded-full object-cover border border-neutral-700/80 group-hover:border-neutral-400 transition-colors shrink-0"
                     />
