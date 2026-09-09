@@ -7,6 +7,7 @@ import ProductDetails from "./components/ProductDetails";
 import NewProduct from "./components/NewProduct";
 import NewPublication from "./components/NewPublication";
 import PublicationViewer from "./components/PublicationViewer";
+import EditPublicationModal from "./components/EditPublicationModal";
 import { Header as SocialHeader } from "./components/Header";
 import { FeedView as SocialFeedView } from "./components/FeedView";
 import { CompanyProfile as SocialCompanyProfile } from "./components/CompanyProfile";
@@ -318,6 +319,7 @@ export default function App() {
   const [, setSelectedEstablishmentProducts] = React.useState<Product[]>([]);
   const [selectedEstablishmentPublications, setSelectedEstablishmentPublications] = React.useState<PublicationDto[]>([]);
   const [selectedPublication, setSelectedPublication] = React.useState<PublicationDto | null>(null);
+  const [editingSocialPublication, setEditingSocialPublication] = React.useState<PublicationDto | null>(null);
   const [focusedPublicationCommentId, setFocusedPublicationCommentId] = React.useState<number | null>(null);
   const [isEstablishmentPageOpen, setIsEstablishmentPageOpen] = React.useState(false);
   const [publicationFeed, setPublicationFeed] = React.useState<PublicationDto[]>([]);
@@ -2817,6 +2819,50 @@ export default function App() {
     [buildEstablishmentFromPublication, publicationFeed, publicationIdFromSocialPostId, savedPublications],
   );
 
+  const syncSocialPublication = React.useCallback((publication: PublicationDto) => {
+    setSelectedPublication((current) => (current?.id === publication.id ? publication : current));
+    setEditingSocialPublication((current) => (current?.id === publication.id ? publication : current));
+    setSelectedEstablishmentPublications((current) =>
+      current.map((item) => (item.id === publication.id ? publication : item)),
+    );
+    setPublicationFeed((current) =>
+      current.map((item) => (item.id === publication.id ? publication : item)),
+    );
+    setSavedPublications((current) =>
+      current.map((item) => (item.id === publication.id ? publication : item)),
+    );
+  }, []);
+
+  const openSocialPublicationEditor = React.useCallback(
+    (postId: string) => {
+      const publicationId = publicationIdFromSocialPostId(postId);
+      const publication = publicationId
+        ? publicationFeed.find((item) => item.id === publicationId) ??
+          selectedEstablishmentPublications.find((item) => item.id === publicationId) ??
+          savedPublications.find((item) => item.id === publicationId)
+        : null;
+      if (!publication) {
+        return;
+      }
+      if (!hasMemberAccess || currentUser?.id !== publication.ownerId) {
+        setAuthModalMode("register");
+        setIsAuthModalOpen(true);
+        return;
+      }
+      setSelectedPublication(null);
+      setFocusedPublicationCommentId(null);
+      setEditingSocialPublication(publication);
+    },
+    [
+      currentUser?.id,
+      hasMemberAccess,
+      publicationFeed,
+      publicationIdFromSocialPostId,
+      savedPublications,
+      selectedEstablishmentPublications,
+    ],
+  );
+
   const selectSocialCompany = React.useCallback(
     (companyId: string) => {
       if (socialActiveTab === "feed") {
@@ -3139,6 +3185,7 @@ export default function App() {
             onDeletePost={(postId) => {
               void deleteSocialPost(postId);
             }}
+            onEditPost={openSocialPublicationEditor}
           />
         )}
 
@@ -3243,18 +3290,6 @@ export default function App() {
                 [publicationId]: comments,
               }));
             }}
-            onUpdated={(publication) => {
-              setSelectedPublication(publication);
-              setSelectedEstablishmentPublications((current) =>
-                current.map((item) => (item.id === publication.id ? publication : item)),
-              );
-              setPublicationFeed((current) =>
-                current.map((item) => (item.id === publication.id ? publication : item)),
-              );
-              setSavedPublications((current) =>
-                current.map((item) => (item.id === publication.id ? publication : item)),
-              );
-            }}
             onDeleted={(publicationId) => {
               setSelectedPublication(null);
               setFocusedPublicationCommentId(null);
@@ -3273,6 +3308,17 @@ export default function App() {
                 .then(setEstablishments)
                 .catch(() => null);
             }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {editingSocialPublication && (
+          <EditPublicationModal
+            publication={editingSocialPublication}
+            establishment={buildEstablishmentFromPublication(editingSocialPublication)}
+            onClose={() => setEditingSocialPublication(null)}
+            onUpdated={syncSocialPublication}
           />
         )}
       </AnimatePresence>

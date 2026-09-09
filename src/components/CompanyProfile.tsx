@@ -33,6 +33,7 @@ interface CompanyProfileProps {
   onChangeCompanyPhoto?: () => void;
   onKeywordClick?: (keyword: string) => void;
   onDeletePost?: (postId: string) => void;
+  onEditPost?: (postId: string) => void;
 }
 
 export const CompanyProfile: React.FC<CompanyProfileProps> = ({
@@ -46,6 +47,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
   onChangeCompanyPhoto,
   onKeywordClick,
   onDeletePost,
+  onEditPost,
 }) => {
   const [activeHighlight, setActiveHighlight] = useState<string | null>(null);
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
@@ -414,22 +416,38 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                   loading="lazy"
                 />
 
-                {/* Botão de excluir publicação; edição completa fica ao abrir a foto */}
-                {isOwner && onDeletePost && (
-                  <div className="absolute top-1.5 right-1.5 z-20 flex items-center gap-1">
-                    <button
-                      type="button"
-                      id={`btn-delete-post-${post.id}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPostToDelete(post);
-                      }}
-                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-neutral-950/85 hover:bg-red-600 text-neutral-300 hover:text-white border border-neutral-700/80 hover:border-red-500 flex items-center justify-center transition-all duration-150 shadow-md cursor-pointer active:scale-90"
-                      title="Excluir publicação"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                {isOwner && (
+                  <div className="absolute right-1.5 top-1.5 z-20 flex items-center gap-1">
+                    {onDeletePost && (
+                      <button
+                        type="button"
+                        id={`btn-delete-post-${post.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPostToDelete(post);
+                        }}
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-neutral-950/85 hover:bg-red-600 text-neutral-300 hover:text-white border border-neutral-700/80 hover:border-red-500 flex items-center justify-center transition-all duration-150 shadow-md cursor-pointer active:scale-90"
+                        title="Excluir publicação"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
+                )}
+
+                {isOwner && onEditPost && (
+                  <button
+                    type="button"
+                    id={`btn-edit-post-${post.id}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditPost(post.id);
+                    }}
+                    className="absolute bottom-1.5 right-1.5 z-20 flex h-7 w-7 items-center justify-center rounded-full border border-neutral-700/80 bg-neutral-950/85 text-neutral-300 shadow-md transition-all duration-150 hover:border-amber-300/80 hover:bg-amber-300 hover:text-neutral-950 active:scale-90 sm:h-8 sm:w-8"
+                    title="Editar publicação"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                  </button>
                 )}
 
                 {/* Overlay no Hover com Curtidas e Comentários */}
