@@ -364,8 +364,6 @@ export default function App() {
   const [socialSelectedCompanyId, setSocialSelectedCompanyId] = React.useState<string>("");
   const [savedPublicationIds, setSavedPublicationIds] = React.useState<string[]>([]);
   const [savedPublications, setSavedPublications] = React.useState<PublicationDto[]>([]);
-  const [editingPublicationPhotoId, setEditingPublicationPhotoId] = React.useState<number | null>(null);
-  const [, setIsPublicationPhotoUploading] = React.useState(false);
   const [cartToast, setCartToast] = React.useState<{
     id: number;
     message: string;
@@ -439,10 +437,11 @@ export default function App() {
   }, [currentUser, myEstablishment]);
   const memberName = currentUser?.name || t("Membro cadastrado");
   const memberEmail = String(currentUser?.email ?? "").trim();
-  const memberAvatar =
+  const memberProfilePhoto =
+    String(currentUser?.avatarUrl ?? "").trim() || TEMPLESALE_LOGO_FALLBACK;
+  const companyProfileLogo =
     normalizeCompanyLogoForLayout(myEstablishment?.logoUrl);
   const avatarInputRef = React.useRef<HTMLInputElement | null>(null);
-  const publicationPhotoInputRef = React.useRef<HTMLInputElement | null>(null);
   const avatarButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const avatarPickerPanelRef = React.useRef<HTMLDivElement | null>(null);
   const notificationsButtonRef = React.useRef<HTMLButtonElement | null>(null);
@@ -2311,82 +2310,6 @@ export default function App() {
     avatarInputRef.current?.click();
   }, []);
 
-  const requestPublicationPhotoChange = React.useCallback((postIdOrPublicationId: string | number) => {
-    const publicationId =
-      typeof postIdOrPublicationId === "number"
-        ? postIdOrPublicationId
-        : Number(String(postIdOrPublicationId).replace(/^publication_/, ""));
-    if (!Number.isInteger(publicationId) || publicationId <= 0) {
-      return;
-    }
-    if (!hasMemberAccess) {
-      setAuthModalMode("register");
-      setIsAuthModalOpen(true);
-      return;
-    }
-    setEditingPublicationPhotoId(publicationId);
-    publicationPhotoInputRef.current?.click();
-  }, [hasMemberAccess]);
-
-  const handlePublicationPhotoUpload = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = event.target.files?.[0] ?? null;
-    event.target.value = "";
-    const publicationId = editingPublicationPhotoId;
-    setEditingPublicationPhotoId(null);
-
-    if (!file || !publicationId) {
-      return;
-    }
-    if (!file.type.startsWith("image/")) {
-      setAvatarUploadError(t("Arquivo inválido. Envie uma imagem."));
-      return;
-    }
-    if (file.size <= 0 || file.size > 12 * 1024 * 1024) {
-      setAvatarUploadError(t("Imagem muito grande. Limite de 12 MB."));
-      return;
-    }
-
-    const publication =
-      publicationFeed.find((item) => item.id === publicationId) ??
-      savedPublications.find((item) => item.id === publicationId) ??
-      (selectedPublication?.id === publicationId ? selectedPublication : null);
-    if (!publication) {
-      return;
-    }
-
-    setIsPublicationPhotoUploading(true);
-    setAvatarUploadError("");
-    try {
-      const uploadResult = await api.uploadProductImage(file);
-      const nextMedia = [
-        uploadResult.url,
-        ...publication.media.filter((url) => url && url !== publication.imageUrl).slice(0, 9),
-      ];
-      const updated = await api.updatePublication(publicationId, {
-        caption: publication.caption,
-        media: nextMedia,
-      });
-      setSelectedPublication((current) => (current?.id === updated.id ? updated : current));
-      setSelectedEstablishmentPublications((current) =>
-        current.map((item) => (item.id === updated.id ? updated : item)),
-      );
-      setPublicationFeed((current) =>
-        current.map((item) => (item.id === updated.id ? updated : item)),
-      );
-      setSavedPublications((current) =>
-        current.map((item) => (item.id === updated.id ? updated : item)),
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : t("Falha ao enviar foto de perfil.");
-      setAvatarUploadError(message);
-    } finally {
-      setIsPublicationPhotoUploading(false);
-    }
-  };
-
   const handleOpenNewProduct = () => {
     setIsUserOpen(false);
 
@@ -2734,7 +2657,7 @@ export default function App() {
     const fallbackCompany: SocialCompany = {
       id: myEstablishment ? socialCompanyIdFromEstablishmentId(myEstablishment.id) : "company_guest",
       name: myEstablishment?.name || currentUser?.name || BRAND_NAME,
-      logo: memberAvatar,
+      logo: companyProfileLogo,
       category: myEstablishment?.category || t("Attività"),
       city: myEstablishment?.city || currentUser?.city || "",
       description: myEstablishment?.description || "",
@@ -2749,7 +2672,7 @@ export default function App() {
       createdAt: new Date().toISOString(),
     };
     return socialCompanies.find((company) => company.isOwner) || fallbackCompany;
-  }, [currentUser, memberAvatar, myEstablishment, socialCompanies, socialCompanyIdFromEstablishmentId, t]);
+  }, [companyProfileLogo, currentUser, myEstablishment, socialCompanies, socialCompanyIdFromEstablishmentId, t]);
 
   React.useEffect(() => {
     if (!socialSelectedCompanyId && activeSocialCompany.id) {
@@ -2821,10 +2744,10 @@ export default function App() {
       sub: currentUser?.id ? String(currentUser.id) : undefined,
       name: memberName,
       email: memberEmail,
-      picture: memberAvatar,
+      picture: memberProfilePhoto,
       companyId: activeSocialCompany.id,
     }),
-    [activeSocialCompany.id, currentUser?.id, hasMemberAccess, memberAvatar, memberEmail, memberName],
+    [activeSocialCompany.id, currentUser?.id, hasMemberAccess, memberEmail, memberName, memberProfilePhoto],
   );
 
   const socialNotifications = React.useMemo<SocialAppNotification[]>(
@@ -2931,9 +2854,12 @@ export default function App() {
         openMapDefault();
         return;
       }
+      if (tab === "profile") {
+        setSocialSelectedCompanyId(activeSocialCompany.id);
+      }
       setSocialActiveTab(tab);
     },
-    [openMapDefault],
+    [activeSocialCompany.id, openMapDefault],
   );
 
   const toggleSavedSocialPost = React.useCallback((postId: string) => {
@@ -3054,13 +2980,6 @@ export default function App() {
         className="hidden"
         onChange={(event) => void handleProfileAvatarUpload(event)}
       />
-      <input
-        ref={publicationPhotoInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(event) => void handlePublicationPhotoUpload(event)}
-      />
       <AnimatePresence>
         {isAuthModalOpen && (
           <Auth
@@ -3138,7 +3057,29 @@ export default function App() {
           />
         </div>
 
-        {socialActiveTab === "profile" && (
+        {socialActiveTab === "profile" && !hasMemberAccess && selectedSocialCompany.id === activeSocialCompany.id && (
+          <section className="mx-auto flex max-w-xl flex-col items-center px-5 py-16 text-center">
+            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-900 text-amber-300">
+              <Store className="h-7 w-7" />
+            </div>
+            <h2 className="text-xl font-bold text-neutral-100">Entre para ver sua empresa</h2>
+            <p className="mt-2 max-w-sm text-sm leading-6 text-neutral-400">
+              A aba Empresa é o seu perfil comercial no TempleSale. Faça login para editar dados, publicar fotos e gerenciar sua vitrine.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthModalMode("login");
+                setIsAuthModalOpen(true);
+              }}
+              className="mt-6 rounded-2xl bg-neutral-100 px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-neutral-950 transition-colors hover:bg-white"
+            >
+              Fazer login
+            </button>
+          </section>
+        )}
+
+        {socialActiveTab === "profile" && (hasMemberAccess || selectedSocialCompany.id !== activeSocialCompany.id) && (
           <SocialCompanyProfile
             company={selectedSocialCompany}
             posts={selectedSocialCompanyPosts}
@@ -3152,7 +3093,6 @@ export default function App() {
               setSearchQuery(keyword);
               setSocialActiveTab("search");
             }}
-            onEditPostPhoto={requestPublicationPhotoChange}
             onDeletePost={(postId) => {
               void deleteSocialPost(postId);
             }}
@@ -3272,7 +3212,6 @@ export default function App() {
                 current.map((item) => (item.id === publication.id ? publication : item)),
               );
             }}
-            onEditPhoto={requestPublicationPhotoChange}
             onDeleted={(publicationId) => {
               setSelectedPublication(null);
               setFocusedPublicationCommentId(null);

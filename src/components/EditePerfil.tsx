@@ -40,6 +40,29 @@ const DEFAULT_MAP_CENTER: GeoPoint = {
   longitude: 12.5156,
 };
 
+const KEYWORD_SUGGESTIONS = [
+  "aperitivo",
+  "pizza",
+  "ristorante",
+  "bar",
+  "caffe",
+  "consegna",
+  "artigianale",
+  "famiglia",
+  "economico",
+  "premium",
+  "prenotazione",
+  "whatsapp",
+  "barbiere",
+  "estetica",
+  "officina",
+  "moda",
+  "casa",
+  "elettronica",
+  "Ardea",
+  "Roma",
+];
+
 function parseGeoPoint(latitude: string, longitude: string): GeoPoint | null {
   const lat = Number(String(latitude ?? "").replace(",", "."));
   const lng = Number(String(longitude ?? "").replace(",", "."));
@@ -195,17 +218,22 @@ export default function EditePerfil({
   const mapCenter = selectedLocation ?? DEFAULT_MAP_CENTER;
 
   const addKeyword = (rawKeyword: string) => {
-    const keyword = rawKeyword.trim().replace(/\s+/g, " ");
-    if (!keyword) {
+    const keywords = String(rawKeyword ?? "")
+      .split(/[,;#\n]/g)
+      .map((item) => item.trim().replace(/\s+/g, " "))
+      .filter(Boolean);
+    if (keywords.length === 0) {
       return;
     }
-    if (!isUsableTaxonomyLabel(keyword)) {
+
+    const usableKeywords = keywords.filter(isUsableTaxonomyLabel);
+    if (usableKeywords.length === 0) {
       setErrorMessage(t("Use palavras-chave reais, sem links ou texto inválido."));
       return;
     }
     setFormData((current) => ({
       ...current,
-      establishmentKeywords: normalizeKeywordList([...current.establishmentKeywords, keyword]),
+      establishmentKeywords: normalizeKeywordList([...current.establishmentKeywords, ...usableKeywords]),
     }));
     setKeywordInput("");
     setErrorMessage("");
@@ -220,6 +248,23 @@ export default function EditePerfil({
       ),
     }));
   };
+
+  const keywordSuggestions = React.useMemo(() => {
+    const selectedKeys = new Set(formData.establishmentKeywords.map(normalizeTaxonomyLabel));
+    return normalizeKeywordList([
+      formData.establishmentCategory,
+      formData.city,
+      ...businessCategorySuggestions.map((suggestion) => suggestion.label),
+      ...KEYWORD_SUGGESTIONS,
+    ])
+      .filter((keyword) => !selectedKeys.has(normalizeTaxonomyLabel(keyword)))
+      .slice(0, 10);
+  }, [
+    businessCategorySuggestions,
+    formData.city,
+    formData.establishmentCategory,
+    formData.establishmentKeywords,
+  ]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -615,6 +660,9 @@ export default function EditePerfil({
                   <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
                     {t("Parole chiave")}
                   </label>
+                  <p className="text-xs leading-5 text-neutral-500">
+                    {t("Adicione termos que clientes usariam para encontrar sua empresa na busca. Separe vários por vírgula.")}
+                  </p>
                   {formData.establishmentKeywords.length > 0 && (
                     <div className="flex flex-wrap gap-2">
                       {formData.establishmentKeywords.map((keyword) => (
@@ -657,6 +705,20 @@ export default function EditePerfil({
                       {t("Aggiungi")}
                     </button>
                   </div>
+                  {keywordSuggestions.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {keywordSuggestions.map((keyword) => (
+                        <button
+                          key={normalizeTaxonomyLabel(keyword)}
+                          type="button"
+                          onClick={() => addKeyword(keyword)}
+                          className="rounded-full border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-[11px] font-semibold text-neutral-300 transition-colors hover:border-amber-400/50 hover:text-amber-200"
+                        >
+                          + {keyword}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">

@@ -35,6 +35,9 @@ export const Header: React.FC<HeaderProps> = ({
   searchQuery,
   onSearchChange,
 }) => {
+  const profileImage = user.picture || activeCompany.logo;
+  const profileLabel = user.name || activeCompany.name;
+
   return (
     <>
       {/* TOP HEADER (Desktop & Mobile) */}
@@ -157,7 +160,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             </div>
 
-            {/* Auth0 Company Logo / Profile Button (Desktop) */}
+            {/* Auth0 Profile Button (Desktop) */}
             <button
               id="btn-user-company-menu"
               onClick={onOpenCompanyModal}
@@ -165,8 +168,8 @@ export const Header: React.FC<HeaderProps> = ({
               title="Gerenciar dados da empresa"
             >
               <img
-                src={activeCompany.logo}
-                alt={activeCompany.name}
+                src={profileImage}
+                alt={profileLabel}
                 className="w-7 h-7 rounded-full object-cover border border-neutral-700"
               />
             </button>
@@ -195,8 +198,8 @@ export const Header: React.FC<HeaderProps> = ({
               title="Menu da Empresa"
             >
               <img
-                src={activeCompany.logo}
-                alt={activeCompany.name}
+                src={profileImage}
+                alt={profileLabel}
                 className="w-7 h-7 rounded-full object-cover border border-neutral-700/80 shadow-xs"
               />
             </button>

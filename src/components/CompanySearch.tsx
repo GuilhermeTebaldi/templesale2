@@ -13,6 +13,14 @@ interface CompanySearchProps {
 
 const QUICK_TAGS = ['bar', 'pizza', 'barbeiro', 'Ardea', 'birra', 'motor', 'café', 'moda'];
 
+function normalizeSearchTerm(value: string): string {
+  return String(value ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 export const CompanySearch: React.FC<CompanySearchProps> = ({
   searchQuery,
   onSearchChange,
@@ -31,7 +39,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
     return () => clearTimeout(timer);
   }, []);
 
-  const query = searchQuery.trim().toLowerCase();
+  const query = normalizeSearchTerm(searchQuery);
 
   // Search logic:
   // Procura em:
@@ -57,45 +65,70 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
     const matchedReasons: string[] = [];
 
     // 1. Nome da empresa
-    if (company.name.toLowerCase().includes(query)) {
+    const normalizedName = normalizeSearchTerm(company.name);
+    const normalizedCategory = normalizeSearchTerm(company.category);
+    const normalizedCity = normalizeSearchTerm(company.city);
+    const normalizedDescription = normalizeSearchTerm(company.description);
+    const normalizedKeywords = company.keywords.map(normalizeSearchTerm);
+
+    if (normalizedName.includes(query)) {
       matchedReasons.push('Nome da empresa');
     }
 
     // 2. Categoria
-    if (company.category.toLowerCase().includes(query)) {
+    if (normalizedCategory.includes(query)) {
       matchedReasons.push('Categoria');
     }
 
     // 3. Cidade
-    if (company.city.toLowerCase().includes(query)) {
+    if (normalizedCity.includes(query)) {
       matchedReasons.push('Cidade');
     }
 
     // 4. Palavras-chave
-    if (company.keywords.some((kw) => kw.toLowerCase().includes(query))) {
+    if (normalizedKeywords.some((kw) => kw.includes(query))) {
       matchedReasons.push('Palavras-chave');
     }
 
     // 5. Descrição
-    if (company.description.toLowerCase().includes(query)) {
+    if (normalizedDescription.includes(query)) {
       matchedReasons.push('Descrição');
     }
 
     // 6. Legendas das publicações
     const matchingPosts = companyPosts.filter((p) =>
-      p.caption.toLowerCase().includes(query)
+      normalizeSearchTerm(p.caption).includes(query)
     );
     if (matchingPosts.length > 0) {
       matchedReasons.push(`Legenda em ${matchingPosts.length} publicação(ões)`);
     }
 
+    const score =
+      normalizedKeywords.some((kw) => kw === query) ? 0 :
+      normalizedName === query ? 1 :
+      normalizedCategory === query ? 2 :
+      normalizedKeywords.some((kw) => kw.includes(query)) ? 3 :
+      normalizedName.includes(query) ? 4 :
+      normalizedCategory.includes(query) ? 5 :
+      matchingPosts.length > 0 ? 6 :
+      7;
+
     return {
       company,
       matchedReasons,
       companyPosts,
+      score,
       isMatch: matchedReasons.length > 0,
     };
-  }).filter((res) => res.isMatch);
+  }).filter((res) => res.isMatch).sort((left, right) => {
+    if (!query) {
+      return 0;
+    }
+    if (left.score !== right.score) {
+      return left.score - right.score;
+    }
+    return right.companyPosts.length - left.companyPosts.length;
+  });
 
   return (
     <div id="search-view" className="max-w-3xl mx-auto px-3 sm:px-4 py-3 sm:py-5 space-y-3.5 sm:space-y-4 animate-in fade-in duration-200">

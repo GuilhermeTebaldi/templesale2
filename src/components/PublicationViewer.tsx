@@ -14,7 +14,6 @@ interface PublicationViewerProps {
   onClose: () => void;
   onRequireAuth: () => void;
   onUpdated?: (publication: PublicationDto) => void;
-  onEditPhoto?: (publicationId: number) => void;
   onDeleted?: (publicationId: number) => void;
   onCommentsChanged?: (publicationId: number, comments: ProductCommentDto[]) => void;
 }
@@ -38,7 +37,6 @@ export default function PublicationViewer({
   onClose,
   onRequireAuth,
   onUpdated,
-  onEditPhoto,
   onDeleted,
   onCommentsChanged,
 }: PublicationViewerProps) {
@@ -53,16 +51,20 @@ export default function PublicationViewer({
   const [commentsError, setCommentsError] = React.useState("");
   const [isEditingPublication, setIsEditingPublication] = React.useState(false);
   const [publicationCaption, setPublicationCaption] = React.useState(publication.caption);
+  const [publicationMedia, setPublicationMedia] = React.useState<string[]>(publication.media);
+  const [isUploadingPublicationPhoto, setIsUploadingPublicationPhoto] = React.useState(false);
   const [isSavingPublication, setIsSavingPublication] = React.useState(false);
   const [publicationError, setPublicationError] = React.useState("");
   const highlightedCommentRef = React.useRef<HTMLDivElement | null>(null);
+  const publicationPhotoInputRef = React.useRef<HTMLInputElement | null>(null);
   const isOwner = currentUser?.id === publication.ownerId;
 
   React.useEffect(() => {
     setPublicationCaption(publication.caption);
+    setPublicationMedia(publication.media);
     setIsEditingPublication(false);
     setPublicationError("");
-  }, [publication.id, publication.caption]);
+  }, [publication.id, publication.caption, publication.media]);
 
   React.useEffect(() => {
     let isActive = true;
@@ -159,7 +161,7 @@ export default function PublicationViewer({
   };
 
   const savePublication = async () => {
-    if (!isOwner || isSavingPublication) {
+    if (!isOwner || isSavingPublication || isUploadingPublicationPhoto) {
       return;
     }
     setIsSavingPublication(true);
@@ -167,7 +169,7 @@ export default function PublicationViewer({
     try {
       const updated = await api.updatePublication(publication.id, {
         caption: publicationCaption.trim(),
-        media: publication.media,
+        media: publicationMedia,
       });
       onUpdated?.(updated);
       setIsEditingPublication(false);
@@ -175,6 +177,36 @@ export default function PublicationViewer({
       setPublicationError(error instanceof Error ? error.message : t("Não foi possível atualizar a publicação."));
     } finally {
       setIsSavingPublication(false);
+    }
+  };
+
+  const uploadPublicationPhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setPublicationError(t("Arquivo inválido. Envie uma imagem."));
+      return;
+    }
+    if (file.size <= 0 || file.size > 12 * 1024 * 1024) {
+      setPublicationError(t("Imagem muito grande. Limite de 12 MB."));
+      return;
+    }
+
+    setIsUploadingPublicationPhoto(true);
+    setPublicationError("");
+    try {
+      const uploadResult = await api.uploadProductImage(file);
+      setPublicationMedia((current) => [
+        uploadResult.url,
+        ...current.filter((url) => url && url !== publication.imageUrl && url !== uploadResult.url).slice(0, 9),
+      ]);
+    } catch (error) {
+      setPublicationError(error instanceof Error ? error.message : t("Falha ao enviar imagem."));
+    } finally {
+      setIsUploadingPublicationPhoto(false);
     }
   };
 
@@ -350,18 +382,41 @@ export default function PublicationViewer({
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
             {isEditingPublication ? (
-              <div>
+              <div className="space-y-4">
+                <input
+                  ref={publicationPhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => void uploadPublicationPhoto(event)}
+                />
+                <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950">
+                  <img
+                    src={publicationMedia[0] || publication.imageUrl}
+                    alt={establishment.name}
+                    className="h-64 w-full object-cover"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => publicationPhotoInputRef.current?.click()}
+                  disabled={isUploadingPublicationPhoto || isSavingPublication}
+                  className="inline-flex items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-200 transition-colors hover:border-amber-300 hover:bg-amber-400/15 disabled:border-neutral-800 disabled:bg-neutral-950 disabled:text-neutral-500"
+                >
+                  <ImageIcon className="h-3.5 w-3.5" />
+                  {isUploadingPublicationPhoto ? t("Enviando...") : t("Trocar foto")}
+                </button>
                 <textarea
                   value={publicationCaption}
                   onChange={(event) => setPublicationCaption(event.target.value)}
                   rows={4}
                   className="w-full resize-none rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-sm leading-6 text-neutral-100 outline-none placeholder:text-neutral-500 focus:border-amber-400"
                 />
-                <div className="mt-3 flex gap-2">
+                <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => void savePublication()}
-                    disabled={isSavingPublication}
+                    disabled={isSavingPublication || isUploadingPublicationPhoto || publicationMedia.length === 0}
                     className="rounded-lg bg-neutral-100 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-950 disabled:bg-neutral-700 disabled:text-neutral-400"
                   >
                     {isSavingPublication ? t("Salvando...") : t("Salva")}
@@ -370,6 +425,7 @@ export default function PublicationViewer({
                     type="button"
                     onClick={() => {
                       setPublicationCaption(publication.caption);
+                      setPublicationMedia(publication.media);
                       setIsEditingPublication(false);
                     }}
                     className="rounded-lg border border-neutral-700 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-300"
@@ -397,17 +453,6 @@ export default function PublicationViewer({
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
-                  {onEditPhoto && (
-                    <button
-                      type="button"
-                      onClick={() => onEditPhoto(publication.id)}
-                      disabled={isSavingPublication}
-                      className="rounded-full border border-neutral-700 p-2 text-neutral-400 transition-colors hover:border-amber-400/60 hover:text-amber-300 disabled:opacity-50"
-                      aria-label={t("Editar foto da publicação")}
-                    >
-                      <ImageIcon className="h-3.5 w-3.5" />
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => void deletePublication()}

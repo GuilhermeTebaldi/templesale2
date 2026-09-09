@@ -3741,6 +3741,7 @@ async function selectEstablishmentsRows(input: {
   limit?: number;
 }): Promise<EstablishmentRecord[]> {
   const search = String(input.search ?? "").trim().toLowerCase();
+  const normalizedSearchKey = normalizeTaxonomyKey(search);
   const category = String(input.category ?? "").trim();
   const city = String(input.city ?? "").trim();
   const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 60)), 1), 100);
@@ -3763,6 +3764,8 @@ async function selectEstablishmentsRows(input: {
     }
     if (search) {
       const like = addValue(`%${search}%`);
+      const exact = addValue(search);
+      const keywordExact = addValue(`%"${normalizedSearchKey || search}"%`);
       whereParts.push(`
         (
           LOWER(COALESCE(e.name, '')) LIKE ${like}
@@ -3780,6 +3783,18 @@ async function selectEstablishmentsRows(input: {
         )
       `);
     }
+    const searchOrder = search
+      ? `
+        CASE
+          WHEN LOWER(COALESCE(e.name, '')) = $${values.length - 1} THEN 0
+          WHEN LOWER(COALESCE(e.category, '')) = $${values.length - 1} THEN 1
+          WHEN LOWER(COALESCE(e.keywords, '')) LIKE $${values.length} THEN 2
+          WHEN LOWER(COALESCE(e.name, '')) LIKE $${values.length - 2} THEN 3
+          WHEN LOWER(COALESCE(e.keywords, '')) LIKE $${values.length - 2} THEN 4
+          ELSE 5
+        END,
+      `
+      : "";
     const result = await pgPool.query<Record<string, unknown>>(
       `
         SELECT
@@ -3800,7 +3815,7 @@ async function selectEstablishmentsRows(input: {
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
         WHERE ${whereParts.join(" AND ")}
         GROUP BY e.id
-        ORDER BY publication_count DESC, product_count DESC, e.id DESC
+        ORDER BY ${searchOrder} publication_count DESC, product_count DESC, e.id DESC
         LIMIT ${addValue(limit)}
       `,
       values,
@@ -3841,6 +3856,21 @@ async function selectEstablishmentsRows(input: {
     `);
     values.push(...Array(12).fill(`%${search}%`));
   }
+  const sqliteSearchOrder = search
+    ? `
+        CASE
+          WHEN LOWER(COALESCE(e.name, '')) = ? THEN 0
+          WHEN LOWER(COALESCE(e.category, '')) = ? THEN 1
+          WHEN LOWER(COALESCE(e.keywords, '')) LIKE ? THEN 2
+          WHEN LOWER(COALESCE(e.name, '')) LIKE ? THEN 3
+          WHEN LOWER(COALESCE(e.keywords, '')) LIKE ? THEN 4
+          ELSE 5
+        END,
+      `
+    : "";
+  if (search) {
+    values.push(search, search, `%"${normalizedSearchKey || search}"%`, `%${search}%`, `%${search}%`);
+  }
   values.push(limit);
   const rows = requireSqliteDb()
     .prepare(
@@ -3863,7 +3893,7 @@ async function selectEstablishmentsRows(input: {
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
         WHERE ${whereParts.join(" AND ")}
         GROUP BY e.id
-        ORDER BY publication_count DESC, product_count DESC, e.id DESC
+        ORDER BY ${sqliteSearchOrder} publication_count DESC, product_count DESC, e.id DESC
         LIMIT ?
       `,
     )
