@@ -293,6 +293,14 @@ function readStringListStorage(storageKey: string): string[] {
   }
 }
 
+function toIsoFromUnixOrMillis(value: unknown): string {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return new Date().toISOString();
+  }
+  return new Date(numeric < 100000000000 ? numeric * 1000 : numeric).toISOString();
+}
+
 export default function App() {
   const { locale, setLocale, t } = useI18n();
   const {
@@ -650,7 +658,7 @@ export default function App() {
       const requestSequence = publicationsRequestSequenceRef.current + 1;
       publicationsRequestSequenceRef.current = requestSequence;
       const isLatestRequest = () => publicationsRequestSequenceRef.current === requestSequence;
-      const limit = append ? 8 : 12;
+      const limit = append ? 8 : 36;
 
       if (append) {
         setIsLoadingMorePublicationFeed(true);
@@ -660,7 +668,25 @@ export default function App() {
       }
 
       try {
-        const page = await api.getPublicationsFeed({ limit, offset });
+        const firstPage = await api.getPublicationsFeed({ limit, offset });
+        let page = firstPage;
+        if (!append) {
+          const allPublications = [...firstPage.publications];
+          let nextOffset = firstPage.nextOffset;
+          let hasMore = firstPage.hasMore;
+          while (hasMore) {
+            const nextPage = await api.getPublicationsFeed({ limit: 36, offset: nextOffset });
+            allPublications.push(...nextPage.publications);
+            nextOffset = nextPage.nextOffset;
+            hasMore = nextPage.hasMore && nextPage.publications.length > 0;
+          }
+          page = {
+            ...firstPage,
+            publications: allPublications,
+            hasMore: false,
+            nextOffset,
+          };
+        }
         if (!isLatestRequest()) {
           return;
         }
@@ -2757,7 +2783,7 @@ export default function App() {
       authorName: comment.authorName,
       authorAvatar: comment.authorAvatarUrl,
       text: comment.body,
-      createdAt: new Date(comment.createdAt).toISOString(),
+      createdAt: toIsoFromUnixOrMillis(comment.createdAt),
     }));
   }, [socialPostIdFromPublicationId]);
 
@@ -2785,7 +2811,7 @@ export default function App() {
             : String(publication.ownerAvatarUrl ?? "").trim() || undefined,
         imageUrl: publication.imageUrl,
         caption: publication.caption || "",
-        createdAt: new Date(publication.createdAt).toISOString(),
+        createdAt: toIsoFromUnixOrMillis(publication.createdAt),
         comments: toSocialComments(publicationCommentsById[publication.id] ?? []),
         likesCount: publication.likesCount ?? 0,
       }));
@@ -2868,7 +2894,7 @@ export default function App() {
               activeSocialCompany.logo,
             authorName: String(("actorName" in notification ? notification.actorName : "") || notification.title || BRAND_NAME),
             text: notification.message,
-            createdAt: new Date(notification.createdAt).toISOString(),
+            createdAt: toIsoFromUnixOrMillis(notification.createdAt),
             read: readNotificationIdSet.has(notification.id),
           };
         }),
