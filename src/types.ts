@@ -11,6 +11,7 @@ export interface Comment {
 export interface Post {
   id: string;
   companyId: string;
+  authorAvatarUrl?: string;
   imageUrl: string;
   caption: string;
   createdAt: string;

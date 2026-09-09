@@ -286,6 +286,7 @@ type EstablishmentPublicationRecord = {
   establishmentCity?: string;
   establishmentLogoUrl?: string;
   establishmentCoverUrl?: string;
+  ownerAvatarUrl?: string;
 };
 
 type StorefrontSectionRecord = {
@@ -1482,6 +1483,7 @@ function normalizePublicationRow(row: Record<string, unknown>): EstablishmentPub
   const establishmentCity = toNullableString(row.establishment_city);
   const establishmentLogoUrl = toNullableString(row.establishment_logo_url);
   const establishmentCoverUrl = toNullableString(row.establishment_cover_url);
+  const ownerAvatarUrl = toNullableString(row.owner_avatar_url);
   if (establishmentName) {
     normalized.establishmentName = establishmentName;
   }
@@ -1499,6 +1501,9 @@ function normalizePublicationRow(row: Record<string, unknown>): EstablishmentPub
   }
   if (establishmentCoverUrl) {
     normalized.establishmentCoverUrl = establishmentCoverUrl;
+  }
+  if (ownerAvatarUrl) {
+    normalized.ownerAvatarUrl = ownerAvatarUrl;
   }
   return normalized;
 }
@@ -4279,9 +4284,11 @@ async function selectPublicationsFeedRows(input: {
           e.category AS establishment_category,
           e.city AS establishment_city,
           e.logo_url AS establishment_logo_url,
-          e.cover_url AS establishment_cover_url
+          e.cover_url AS establishment_cover_url,
+          u.avatar_url AS owner_avatar_url
         FROM establishment_publications ep
         INNER JOIN establishments e ON e.id = ep.establishment_id
+        LEFT JOIN users u ON u.id = ep.owner_user_id
         WHERE e.is_active = TRUE
         ORDER BY ep.created_at DESC, ep.id DESC
         LIMIT $1 OFFSET $2
@@ -4302,9 +4309,11 @@ async function selectPublicationsFeedRows(input: {
           e.category AS establishment_category,
           e.city AS establishment_city,
           e.logo_url AS establishment_logo_url,
-          e.cover_url AS establishment_cover_url
+          e.cover_url AS establishment_cover_url,
+          u.avatar_url AS owner_avatar_url
         FROM establishment_publications ep
         INNER JOIN establishments e ON e.id = ep.establishment_id
+        LEFT JOIN users u ON u.id = ep.owner_user_id
         WHERE e.is_active = 1
         ORDER BY ep.created_at DESC, ep.id DESC
         LIMIT ? OFFSET ?
@@ -4326,10 +4335,12 @@ async function selectSavedPublicationsByUserRows(userId: number): Promise<Establ
           e.category AS establishment_category,
           e.city AS establishment_city,
           e.logo_url AS establishment_logo_url,
-          e.cover_url AS establishment_cover_url
+          e.cover_url AS establishment_cover_url,
+          u.avatar_url AS owner_avatar_url
         FROM publication_saves ps
         INNER JOIN establishment_publications ep ON ep.id = ps.publication_id
         INNER JOIN establishments e ON e.id = ep.establishment_id
+        LEFT JOIN users u ON u.id = ep.owner_user_id
         WHERE ps.user_id = $1
         ORDER BY ps.created_at DESC, ep.id DESC
       `,
@@ -4348,10 +4359,12 @@ async function selectSavedPublicationsByUserRows(userId: number): Promise<Establ
           e.category AS establishment_category,
           e.city AS establishment_city,
           e.logo_url AS establishment_logo_url,
-          e.cover_url AS establishment_cover_url
+          e.cover_url AS establishment_cover_url,
+          u.avatar_url AS owner_avatar_url
         FROM publication_saves ps
         INNER JOIN establishment_publications ep ON ep.id = ps.publication_id
         INNER JOIN establishments e ON e.id = ep.establishment_id
+        LEFT JOIN users u ON u.id = ep.owner_user_id
         WHERE ps.user_id = ?
         ORDER BY ps.created_at DESC, ep.id DESC
       `,

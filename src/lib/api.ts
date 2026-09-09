@@ -282,6 +282,7 @@ export interface PublicationDto {
   establishmentCity?: string;
   establishmentLogoUrl?: string;
   establishmentCoverUrl?: string;
+  ownerAvatarUrl?: string;
 }
 
 export interface GeocodeResultDto {
@@ -1402,6 +1403,7 @@ function normalizePublicationItem(value: unknown): PublicationDto | null {
   const establishmentCity = toStringValue(firstDefined(parsed, ["establishmentCity", "establishment_city"]));
   const establishmentLogoUrl = toStringValue(firstDefined(parsed, ["establishmentLogoUrl", "establishment_logo_url", "logoUrl", "logo_url"]));
   const establishmentCoverUrl = toStringValue(firstDefined(parsed, ["establishmentCoverUrl", "establishment_cover_url", "coverUrl", "cover_url"]));
+  const ownerAvatarUrl = toStringValue(firstDefined(parsed, ["ownerAvatarUrl", "owner_avatar_url", "avatarUrl", "avatar_url"]));
   if (establishmentName) {
     publication.establishmentName = establishmentName;
   }
@@ -1419,6 +1421,9 @@ function normalizePublicationItem(value: unknown): PublicationDto | null {
   }
   if (establishmentCoverUrl) {
     publication.establishmentCoverUrl = establishmentCoverUrl;
+  }
+  if (ownerAvatarUrl) {
+    publication.ownerAvatarUrl = ownerAvatarUrl;
   }
   return publication;
 }

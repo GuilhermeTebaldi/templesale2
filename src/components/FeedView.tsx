@@ -376,6 +376,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
           const isSaved = savedPostIds ? savedPostIds.includes(post.id) : !!internalSavedPosts[post.id];
           const likesCount = (post.likesCount || 0) + (isLiked ? 1 : 0);
           const currentCommentText = commentInputs[post.id] || '';
+          const authorAvatarUrl = post.authorAvatarUrl || company.logo;
 
           const cleanWhatsApp = company.whatsapp.replace(/\D/g, '');
           const whatsappUrl = `https://wa.me/${cleanWhatsApp}?text=${encodeURIComponent(
@@ -419,7 +420,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   onClick={() => onSelectCompany(company.id)}
                 >
                   <img
-                    src={company.logo}
+                    src={authorAvatarUrl}
                     alt={company.name}
                     className="w-9 h-9 rounded-full object-cover border border-neutral-700/80 group-hover:border-neutral-400 transition-colors shrink-0"
                   />

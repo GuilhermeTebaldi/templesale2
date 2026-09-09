@@ -364,6 +364,7 @@ export default function App() {
   const [socialSelectedCompanyId, setSocialSelectedCompanyId] = React.useState<string>("");
   const [savedPublicationIds, setSavedPublicationIds] = React.useState<string[]>([]);
   const [savedPublications, setSavedPublications] = React.useState<PublicationDto[]>([]);
+  const [pendingPublicationCount, setPendingPublicationCount] = React.useState(0);
   const [cartToast, setCartToast] = React.useState<{
     id: number;
     message: string;
@@ -442,6 +443,7 @@ export default function App() {
   const companyProfileLogo =
     normalizeCompanyLogoForLayout(myEstablishment?.logoUrl);
   const avatarInputRef = React.useRef<HTMLInputElement | null>(null);
+  const feedScrollPositionRef = React.useRef(0);
   const avatarButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const avatarPickerPanelRef = React.useRef<HTMLDivElement | null>(null);
   const notificationsButtonRef = React.useRef<HTMLButtonElement | null>(null);
@@ -2269,6 +2271,7 @@ export default function App() {
                 ...publication,
                 establishmentLogoUrl: savedEstablishment.logoUrl,
                 establishmentCoverUrl: savedEstablishment.coverUrl,
+                ownerAvatarUrl: uploadResult.url,
               }
             : publication,
         ),
@@ -2280,6 +2283,7 @@ export default function App() {
                 ...publication,
                 establishmentLogoUrl: savedEstablishment.logoUrl,
                 establishmentCoverUrl: savedEstablishment.coverUrl,
+                ownerAvatarUrl: uploadResult.url,
               }
             : publication,
         ),
@@ -2291,6 +2295,7 @@ export default function App() {
                 ...publication,
                 establishmentLogoUrl: savedEstablishment.logoUrl,
                 establishmentCoverUrl: savedEstablishment.coverUrl,
+                ownerAvatarUrl: uploadResult.url,
               }
             : publication,
         ),
@@ -2710,6 +2715,10 @@ export default function App() {
       return Array.from(publicationsById.values()).map((publication) => ({
         id: socialPostIdFromPublicationId(publication.id),
         companyId: socialCompanyIdFromEstablishmentId(publication.establishmentId),
+        authorAvatarUrl:
+          publication.ownerId === currentUser?.id
+            ? memberProfilePhoto
+            : String(publication.ownerAvatarUrl ?? "").trim() || undefined,
         imageUrl: publication.imageUrl,
         caption: publication.caption || "",
         createdAt: new Date(publication.createdAt).toISOString(),
@@ -2721,6 +2730,8 @@ export default function App() {
       publicationCommentsById,
       publicationFeed,
       savedPublications,
+      currentUser?.id,
+      memberProfilePhoto,
       socialCompanyIdFromEstablishmentId,
       socialPostIdFromPublicationId,
       toSocialComments,
@@ -2808,6 +2819,9 @@ export default function App() {
 
   const selectSocialCompany = React.useCallback(
     (companyId: string) => {
+      if (socialActiveTab === "feed") {
+        feedScrollPositionRef.current = window.scrollY || window.pageYOffset || 0;
+      }
       setSocialSelectedCompanyId(companyId);
       setSocialActiveTab("profile");
       const establishmentId = establishmentIdFromSocialCompanyId(companyId);
@@ -2816,7 +2830,7 @@ export default function App() {
         void openEstablishmentPage(establishment);
       }
     },
-    [establishmentIdFromSocialCompanyId, establishments, openEstablishmentPage],
+    [establishmentIdFromSocialCompanyId, establishments, openEstablishmentPage, socialActiveTab],
   );
 
   const addSocialComment = React.useCallback(
@@ -2851,15 +2865,31 @@ export default function App() {
   const changeSocialTab = React.useCallback(
     (tab: SocialActiveTab) => {
       if (tab === "map") {
+        if (socialActiveTab === "feed") {
+          feedScrollPositionRef.current = window.scrollY || window.pageYOffset || 0;
+        }
         openMapDefault();
         return;
+      }
+      if (tab === "feed" && socialActiveTab === "feed") {
+        void loadPublicationFeedPage({ append: false });
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      if (socialActiveTab === "feed") {
+        feedScrollPositionRef.current = window.scrollY || window.pageYOffset || 0;
       }
       if (tab === "profile") {
         setSocialSelectedCompanyId(activeSocialCompany.id);
       }
       setSocialActiveTab(tab);
+      if (tab === "feed") {
+        window.requestAnimationFrame(() => {
+          window.scrollTo({ top: feedScrollPositionRef.current, behavior: "auto" });
+        });
+      }
     },
-    [activeSocialCompany.id, openMapDefault],
+    [activeSocialCompany.id, loadPublicationFeedPage, openMapDefault, socialActiveTab],
   );
 
   const toggleSavedSocialPost = React.useCallback((postId: string) => {
@@ -3042,6 +3072,19 @@ export default function App() {
 
       <main className="flex-1 pb-24 sm:pb-16">
         <div style={{ display: socialActiveTab === "feed" ? "block" : "none" }}>
+          {pendingPublicationCount > 0 && (
+            <div className="sticky top-14 sm:top-16 z-30 mx-auto max-w-xl px-3 pt-2">
+              <div className="overflow-hidden rounded-full border border-neutral-200 bg-white/95 shadow-sm">
+                <div className="flex items-center justify-between px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
+                  <span>Publicando foto</span>
+                  {pendingPublicationCount > 1 && <span>{pendingPublicationCount}x</span>}
+                </div>
+                <div className="h-0.5 w-full overflow-hidden bg-neutral-200">
+                  <div className="h-full w-1/2 animate-pulse rounded-full bg-neutral-500" />
+                </div>
+              </div>
+            </div>
+          )}
           <SocialFeedView
             posts={socialPosts}
             companies={socialCompanies}
@@ -3084,7 +3127,7 @@ export default function App() {
             company={selectedSocialCompany}
             posts={selectedSocialCompanyPosts}
             isOwner={selectedSocialCompany.id === activeSocialCompany.id}
-            onBack={() => setSocialActiveTab("feed")}
+            onBack={() => changeSocialTab("feed")}
             onOpenPost={openSocialPost}
             onOpenCreatePost={handleOpenNewProduct}
             onEditCompany={() => setIsEditePerfilOpen(true)}
@@ -3239,6 +3282,16 @@ export default function App() {
           <NewPublication
             establishment={myEstablishment}
             onClose={() => setIsNewProductOpen(false)}
+            onPublishStarted={() => {
+              setPendingPublicationCount((current) => current + 1);
+              setSocialActiveTab("feed");
+            }}
+            onPublishFinished={() => {
+              setPendingPublicationCount((current) => Math.max(0, current - 1));
+            }}
+            onPublishFailed={(error) => {
+              console.error("Error publishing queued publication:", error);
+            }}
             onPublished={(publication) => {
               const publicationWithEstablishment: PublicationDto = {
                 ...publication,
@@ -3248,6 +3301,7 @@ export default function App() {
                 establishmentCity: myEstablishment.city,
                 establishmentLogoUrl: myEstablishment.logoUrl,
                 establishmentCoverUrl: myEstablishment.coverUrl,
+                ownerAvatarUrl: currentUser?.avatarUrl,
               };
               setSelectedEstablishmentPublications((current) => [publicationWithEstablishment, ...current]);
               setPublicationFeed((current) => [publicationWithEstablishment, ...current]);

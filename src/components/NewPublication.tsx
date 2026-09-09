@@ -9,20 +9,25 @@ interface NewPublicationProps {
   establishment: EstablishmentDto;
   onClose: () => void;
   onPublished: (publication: PublicationDto) => void;
+  onPublishStarted?: () => void;
+  onPublishFinished?: () => void;
+  onPublishFailed?: (error: Error) => void;
 }
 
 export default function NewPublication({
   establishment,
   onClose,
   onPublished,
+  onPublishStarted,
+  onPublishFinished,
+  onPublishFailed,
 }: NewPublicationProps) {
   const { t } = useI18n();
   const cameraInputRef = React.useRef<HTMLInputElement | null>(null);
   const galleryInputRef = React.useRef<HTMLInputElement | null>(null);
-  const [media, setMedia] = React.useState<string[]>([]);
+  const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = React.useState<string[]>([]);
   const [caption, setCaption] = React.useState("");
-  const [isUploading, setIsUploading] = React.useState(false);
   const [isPublishing, setIsPublishing] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState("");
 
@@ -34,40 +39,29 @@ export default function NewPublication({
     };
   }, [previewUrls]);
 
-  const handleFiles = async (files: FileList | null) => {
-    const selectedFiles = Array.from(files ?? []).filter((file) => file.type.startsWith("image/"));
-    if (selectedFiles.length === 0) {
+  const handleFiles = (files: FileList | null) => {
+    const incomingFiles = Array.from(files ?? []).filter((file) => file.type.startsWith("image/"));
+    if (incomingFiles.length === 0) {
       return;
     }
     setErrorMessage("");
-    setIsUploading(true);
-    const nextPreviews = selectedFiles.map((file) => URL.createObjectURL(file));
-    setPreviewUrls((current) => [...current, ...nextPreviews].slice(0, 10));
-    try {
-      const uploaded: string[] = [];
-      for (const file of selectedFiles.slice(0, 10 - media.length)) {
-        const response = await api.uploadProductImage(file);
-        const imageUrl = getCompatibleImageUrl(response.url);
-        if (imageUrl) {
-          uploaded.push(imageUrl);
-        }
-      }
-      setMedia((current) => [...current, ...uploaded].slice(0, 10));
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : t("Falha ao enviar imagem."));
-    } finally {
-      setIsUploading(false);
-      if (cameraInputRef.current) {
-        cameraInputRef.current.value = "";
-      }
-      if (galleryInputRef.current) {
-        galleryInputRef.current.value = "";
-      }
+    const remainingSlots = Math.max(0, 10 - selectedFiles.length);
+    const nextFiles = incomingFiles.slice(0, remainingSlots);
+    if (nextFiles.length === 0) {
+      return;
+    }
+    setSelectedFiles((current) => [...current, ...nextFiles].slice(0, 10));
+    setPreviewUrls((current) => [...current, ...nextFiles.map((file) => URL.createObjectURL(file))].slice(0, 10));
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = "";
+    }
+    if (galleryInputRef.current) {
+      galleryInputRef.current.value = "";
     }
   };
 
   const handleRemoveImage = (index: number) => {
-    setMedia((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setSelectedFiles((current) => current.filter((_, currentIndex) => currentIndex !== index));
     setPreviewUrls((current) => {
       const previewUrl = current[index];
       if (previewUrl) {
@@ -79,30 +73,45 @@ export default function NewPublication({
 
   const handlePublish = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (isUploading || isPublishing) {
+    if (isPublishing) {
       return;
     }
-    if (media.length === 0) {
+    if (selectedFiles.length === 0) {
       setErrorMessage(t("Aggiungi almeno una foto."));
       return;
     }
+    const filesToUpload = selectedFiles.slice(0, 10);
+    const captionToPublish = caption.trim();
     setIsPublishing(true);
     setErrorMessage("");
+    onPublishStarted?.();
+    onClose();
     try {
+      const media: string[] = [];
+      for (const file of filesToUpload) {
+        const response = await api.uploadProductImage(file);
+        const imageUrl = getCompatibleImageUrl(response.url);
+        if (imageUrl) {
+          media.push(imageUrl);
+        }
+      }
+      if (media.length === 0) {
+        throw new Error(t("Falha ao enviar imagem."));
+      }
       const publication = await api.createPublication(establishment.id, {
-        caption: caption.trim(),
+        caption: captionToPublish,
         media,
       });
       onPublished(publication);
-      onClose();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : t("Falha ao publicar."));
+      const normalizedError = error instanceof Error ? error : new Error(t("Falha ao publicar."));
+      onPublishFailed?.(normalizedError);
     } finally {
-      setIsPublishing(false);
+      onPublishFinished?.();
     }
   };
 
-  const displayImages = media.length > 0 ? media : previewUrls;
+  const displayImages = previewUrls;
 
   return (
     <AnimatePresence>
@@ -143,7 +152,7 @@ export default function NewPublication({
               accept="image/*"
               capture="environment"
               className="hidden"
-              onChange={(event) => void handleFiles(event.target.files)}
+              onChange={(event) => handleFiles(event.target.files)}
             />
             <input
               ref={galleryInputRef}
@@ -151,7 +160,7 @@ export default function NewPublication({
               accept="image/*"
               multiple
               className="hidden"
-              onChange={(event) => void handleFiles(event.target.files)}
+              onChange={(event) => handleFiles(event.target.files)}
             />
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -222,11 +231,11 @@ export default function NewPublication({
           <div className="border-t border-neutral-800 bg-neutral-900/95 px-5 py-4">
             <button
               type="submit"
-              disabled={isUploading || isPublishing || media.length === 0}
+              disabled={isPublishing || selectedFiles.length === 0}
               className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-neutral-100 text-xs font-bold uppercase tracking-[0.18em] text-neutral-950 transition-colors hover:bg-white disabled:bg-neutral-700 disabled:text-neutral-500"
             >
-              {(isUploading || isPublishing) && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isUploading ? t("Caricamento...") : isPublishing ? t("Pubblicazione...") : t("Pubblica")}
+              {isPublishing && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isPublishing ? t("Pubblicazione...") : t("Pubblica")}
             </button>
           </div>
         </motion.form>
