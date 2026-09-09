@@ -15,7 +15,6 @@ import {
   CheckCircle2,
   Heart,
   LogOut,
-  Package,
 } from 'lucide-react';
 import { Company, Post, Auth0User } from '../types';
 import { TempleSaleAvatarFrame } from './TempleSaleAvatarFrame';
@@ -31,7 +30,6 @@ interface CompanyProfileDrawerProps {
   onOpenPost: (post: Post) => void;
   onToggleSavePost: (postId: string) => void;
   onOpenEditCompany: () => void;
-  onOpenListings?: () => void;
   onOpenFavorites?: () => void;
   onLogout?: () => void;
   onViewPublicProfile: (companyId: string) => void;
@@ -54,7 +52,6 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
   onOpenPost,
   onToggleSavePost,
   onOpenEditCompany,
-  onOpenListings,
   onOpenFavorites,
   onLogout,
   onViewPublicProfile,
@@ -202,32 +199,6 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                     </div>
                     <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-neutral-300 shrink-0" />
                   </button>
-
-                  {onOpenListings && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onOpenListings();
-                        onClose();
-                      }}
-                      className="w-full flex items-center justify-between p-3.5 hover:bg-neutral-800/50 transition-colors text-left group cursor-pointer"
-                    >
-                      <div className="flex items-center space-x-3 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-emerald-400/10 flex items-center justify-center text-emerald-400 shrink-0">
-                          <Package className="w-4.5 h-4.5" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-neutral-200 group-hover:text-white">
-                            Minhas publicações
-                          </div>
-                          <div className="text-xs text-neutral-400 truncate">
-                            Gerenciar, editar e apagar seus anúncios
-                          </div>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-neutral-300 shrink-0" />
-                    </button>
-                  )}
 
                   {onOpenFavorites && (
                     <button

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Bell, CheckCheck, MessageCircle, X, Sparkles } from 'lucide-react';
+import { Bell, CheckCheck, MessageCircle, X } from 'lucide-react';
 import { AppNotification } from '../types';
 
 interface NotificationsPopoverProps {
@@ -8,7 +8,6 @@ interface NotificationsPopoverProps {
   notifications: AppNotification[];
   onSelectNotification: (notification: AppNotification) => void;
   onMarkAllAsRead: () => void;
-  onSimulateComment?: () => void;
 }
 
 export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
@@ -17,7 +16,6 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
   notifications,
   onSelectNotification,
   onMarkAllAsRead,
-  onSimulateComment,
 }) => {
   // Lock background scrolling completely while notification drawer is open
   useEffect(() => {
@@ -114,19 +112,9 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
           </div>
         </div>
 
-        {/* Informative Sub-header showing flow with test action */}
+        {/* Informative Sub-header showing flow */}
         <div className="bg-neutral-950/80 px-4 py-2 border-b border-neutral-800/80 text-[11px] text-neutral-400 flex items-center justify-between shrink-0">
           <span>Comentários em publicações</span>
-          {onSimulateComment && (
-            <button
-              type="button"
-              onClick={onSimulateComment}
-              className="text-emerald-400 hover:text-emerald-300 font-medium hover:underline flex items-center space-x-1 cursor-pointer"
-            >
-              <Sparkles className="w-3 h-3" />
-              <span>Simular Comentário</span>
-            </button>
-          )}
         </div>
 
         {/* Lista Rolável de Notificações: overscroll-contain impede que a página atrás se movimente */}

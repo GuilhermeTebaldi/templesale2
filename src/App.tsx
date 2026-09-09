@@ -97,6 +97,17 @@ const USE_ELEGANT_PRODUCT_FILTER = true;
 const USE_ART_GALLERY_PRODUCT_GRID = true;
 const BRAND_NAME = "TempleSale";
 const TEMPLESALE_LOGO_FALLBACK = "/templesale-logo.svg";
+
+function normalizeCompanyLogoForLayout(value?: string | null): string {
+  const url = String(value ?? "").trim();
+  if (!url) {
+    return TEMPLESALE_LOGO_FALLBACK;
+  }
+  if (/\/profiles\/avatar_user_/i.test(url)) {
+    return TEMPLESALE_LOGO_FALLBACK;
+  }
+  return url;
+}
 const HOME_HERO_FALLBACK_IMAGE =
   "https://i.pinimg.com/1200x/47/38/db/4738dbf78874192b8e38d5eadf13717f.jpg";
 const INSTAGRAM_PROFILE_URL = "https://www.instagram.com/the.templesale/";
@@ -429,9 +440,7 @@ export default function App() {
   const memberName = currentUser?.name || t("Membro cadastrado");
   const memberEmail = String(currentUser?.email ?? "").trim();
   const memberAvatar =
-    String(myEstablishment?.logoUrl ?? "").trim() ||
-    String(currentUser?.avatarUrl ?? "").trim() ||
-    TEMPLESALE_LOGO_FALLBACK;
+    normalizeCompanyLogoForLayout(myEstablishment?.logoUrl);
   const avatarInputRef = React.useRef<HTMLInputElement | null>(null);
   const publicationPhotoInputRef = React.useRef<HTMLInputElement | null>(null);
   const avatarButtonRef = React.useRef<HTMLButtonElement | null>(null);
@@ -2696,9 +2705,7 @@ export default function App() {
       id: socialCompanyIdFromEstablishmentId(establishment.id),
       name: establishment.name,
       logo:
-        establishment.logoUrl ||
-        establishment.coverUrl ||
-        TEMPLESALE_LOGO_FALLBACK,
+        normalizeCompanyLogoForLayout(establishment.logoUrl || establishment.coverUrl),
       category: establishment.category || t("Attività"),
       city: establishment.city || currentUser?.city || "",
       description: establishment.description || "",
@@ -2741,7 +2748,7 @@ export default function App() {
       isOwner: Boolean(myEstablishment),
       createdAt: new Date().toISOString(),
     };
-    return socialCompanies.find((company) => company.isOwner) || socialCompanies[0] || fallbackCompany;
+    return socialCompanies.find((company) => company.isOwner) || fallbackCompany;
   }, [currentUser, memberAvatar, myEstablishment, socialCompanies, socialCompanyIdFromEstablishmentId, t]);
 
   React.useEffect(() => {
@@ -3194,9 +3201,6 @@ export default function App() {
           setIsUserOpen(false);
           setProfileCompletionMessage("");
           setIsEditePerfilOpen(true);
-        }}
-        onOpenListings={() => {
-          setIsMeusAnunciosOpen(true);
         }}
         onOpenFavorites={() => {
           setIsCurtidasOpen(true);

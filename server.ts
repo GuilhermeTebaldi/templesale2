@@ -3049,6 +3049,19 @@ async function initializePostgresDatabase() {
       )
     `,
     `
+      CREATE TABLE IF NOT EXISTS establishment_publications (
+        id BIGSERIAL PRIMARY KEY,
+        establishment_id BIGINT NOT NULL REFERENCES establishments(id) ON DELETE CASCADE,
+        owner_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        caption TEXT NOT NULL DEFAULT '',
+        media TEXT NOT NULL DEFAULT '[]',
+        image_url TEXT NOT NULL DEFAULT '',
+        legacy_product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+        updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
+      )
+    `,
+    `
       CREATE TABLE IF NOT EXISTS sessions (
         id BIGSERIAL PRIMARY KEY,
         user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -3611,7 +3624,7 @@ async function ensureDefaultEstablishmentForUser(userId: number): Promise<Establ
     ownerId: user.id,
     name,
     category: "Altro",
-    logoUrl: user.avatar_url ?? "",
+    logoUrl: "",
     city: user.city ?? "",
     address: [user.street, user.neighborhood].filter(Boolean).join(", "),
     latitude: user.location_latitude,
