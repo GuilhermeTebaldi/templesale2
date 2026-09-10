@@ -1,7 +1,7 @@
 import React from "react";
 import { motion } from "motion/react";
 import { X, Heart, ExternalLink, Trash2, Image as ImageIcon } from "lucide-react";
-import { type Product } from "./ProductCard";
+import { ProgressiveProductImage, type Product } from "./ProductCard";
 import { type PublicationDto } from "../lib/api";
 import { useI18n } from "../i18n/provider";
 import { formatCompactPriceFromUnknown } from "../lib/currency";
@@ -109,10 +109,12 @@ export default function Curtidas({
                             className="h-full w-full cursor-pointer"
                             title={title}
                           >
-                            <img
+                            <ProgressiveProductImage
                               src={publication.imageUrl}
                               alt={title}
-                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                              className="relative h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                              loading="lazy"
+                              variant="thumbnail"
                             />
                             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-2 text-left">
                               <p className="line-clamp-1 text-[10px] font-bold text-white">
@@ -150,7 +152,13 @@ export default function Curtidas({
                     className="flex gap-4 sm:gap-6 p-3 sm:p-4 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl transition-colors hover:border-neutral-700 group"
                   >
                     <div className="w-24 h-32 bg-neutral-950 overflow-hidden shrink-0 rounded-xl border border-neutral-800">
-                      <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                      <ProgressiveProductImage
+                        src={product.image}
+                        alt={product.name}
+                        className="relative h-full w-full object-cover"
+                        loading="lazy"
+                        variant="thumbnail"
+                      />
                     </div>
 
                     <div className="grow flex flex-col justify-between py-1">

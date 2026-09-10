@@ -4,6 +4,7 @@ interface ProductImageSource {
 }
 
 export type ProductImageVariant = "full" | "card" | "thumbnail";
+type ProductImageDeliveryVariant = ProductImageVariant | "preview";
 
 function isCloudinaryUrl(url: string): boolean {
   return /(^https?:\/\/)?res\.cloudinary\.com\//i.test(url);
@@ -84,7 +85,10 @@ function normalizeAndDedupeImageUrls(values: string[]): string[] {
   return result;
 }
 
-function getCloudinaryTransformation(variant: ProductImageVariant): string {
+function getCloudinaryTransformation(variant: ProductImageDeliveryVariant): string {
+  if (variant === "preview") {
+    return "f_auto,q_auto:low,c_fill,w_64,h_64,dpr_1";
+  }
   if (variant === "thumbnail") {
     return "f_auto,q_auto,c_fill,w_180,h_180,dpr_auto";
   }
@@ -96,7 +100,7 @@ function getCloudinaryTransformation(variant: ProductImageVariant): string {
 
 function replaceCloudinaryTransformation(
   url: string,
-  variant: ProductImageVariant,
+  variant: ProductImageDeliveryVariant,
 ): string {
   if (!isCloudinaryUrl(url) || !isCloudinaryUploadUrl(url)) {
     return url;
@@ -131,6 +135,18 @@ export function getCompatibleImageUrl(
   }
 
   return optimized;
+}
+
+export function getPreviewImageUrl(value: string): string {
+  const normalized = extractCloudinaryAssetUrlFromShareLink(value);
+  if (!normalized || !isCloudinaryUrl(normalized) || !isCloudinaryUploadUrl(normalized)) {
+    return "";
+  }
+  const preview = replaceCloudinaryTransformation(normalized, "preview");
+  if (isAvifImageUrl(preview)) {
+    return replaceAvifExtension(preview, "jpg");
+  }
+  return preview;
 }
 
 export function getImageRetryUrls(

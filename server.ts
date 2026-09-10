@@ -9650,8 +9650,8 @@ async function getInteractionUser(req: Request): Promise<SessionUser | null> {
   const sessionUser = await getSessionUser(req);
   if (sessionUser) {
     const deviceId = getDeviceIdFromRequest(req);
-    const deviceUser = deviceId ? await selectUserByDeviceIdRow(deviceId) : null;
-    if (deviceUser && deviceUser.id !== sessionUser.id) {
+    const deviceUser = !IS_DEV_REMOTE_READ_ONLY && deviceId ? await selectUserByDeviceIdRow(deviceId) : null;
+    if (!IS_DEV_REMOTE_READ_ONLY && deviceUser && deviceUser.id !== sessionUser.id) {
       await mergeDeviceInteractionsIntoUser(deviceUser.id, sessionUser.id);
     }
     return sessionUser;
@@ -9659,6 +9659,9 @@ async function getInteractionUser(req: Request): Promise<SessionUser | null> {
 
   const deviceId = getDeviceIdFromRequest(req);
   if (!deviceId) {
+    return null;
+  }
+  if (IS_DEV_REMOTE_READ_ONLY) {
     return null;
   }
   const userId = await createDeviceUserRecord(deviceId);
@@ -9669,6 +9672,9 @@ async function getInteractionUser(req: Request): Promise<SessionUser | null> {
 async function requireInteractionUser(req: Request, res: Response): Promise<SessionUser | null> {
   const user = await getInteractionUser(req);
   if (!user) {
+    if (IS_DEV_REMOTE_READ_ONLY) {
+      return null;
+    }
     res.status(401).json({ error: "Não foi possível identificar este dispositivo." });
     return null;
   }
@@ -11877,6 +11883,15 @@ async function bootstrap() {
   app.post("/api/products/:id/comments", async (req, res) => {
     const user = await requireInteractionUser(req, res);
     if (!user) {
+      if (IS_DEV_REMOTE_READ_ONLY) {
+        const productId = Number(req.params.id);
+        if (Number.isInteger(productId) && productId > 0) {
+          const locale = getRequestLocale(req);
+          const comments = await selectProductCommentsRows(productId);
+          res.status(201).json({ comments: buildProductCommentsThread(comments, locale), readOnly: true });
+          return;
+        }
+      }
       return;
     }
 
@@ -12059,6 +12074,15 @@ async function bootstrap() {
   app.post("/api/publications/:id/comments", async (req, res) => {
     const user = await requireInteractionUser(req, res);
     if (!user) {
+      if (IS_DEV_REMOTE_READ_ONLY) {
+        const publicationId = Number(req.params.id);
+        if (Number.isInteger(publicationId) && publicationId > 0) {
+          const locale = getRequestLocale(req);
+          const comments = await selectPublicationCommentsRows(publicationId);
+          res.status(201).json({ comments: buildProductCommentsThread(comments, locale), readOnly: true });
+          return;
+        }
+      }
       return;
     }
 
@@ -12289,6 +12313,9 @@ async function bootstrap() {
   app.get("/api/likes", async (req, res) => {
     const user = await requireInteractionUser(req, res);
     if (!user) {
+      if (IS_DEV_REMOTE_READ_ONLY) {
+        res.json([]);
+      }
       return;
     }
     const locale = getRequestLocale(req);
@@ -12305,6 +12332,9 @@ async function bootstrap() {
   app.get("/api/publication-saves", async (req, res) => {
     const user = await requireInteractionUser(req, res);
     if (!user) {
+      if (IS_DEV_REMOTE_READ_ONLY) {
+        res.json({ publications: [] });
+      }
       return;
     }
 
@@ -12320,6 +12350,9 @@ async function bootstrap() {
   app.post("/api/publications/:id/save", async (req, res) => {
     const user = await requireInteractionUser(req, res);
     if (!user) {
+      if (IS_DEV_REMOTE_READ_ONLY) {
+        res.status(201).json({ success: true, readOnly: true });
+      }
       return;
     }
 
@@ -12346,6 +12379,9 @@ async function bootstrap() {
   app.delete("/api/publications/:id/save", async (req, res) => {
     const user = await requireInteractionUser(req, res);
     if (!user) {
+      if (IS_DEV_REMOTE_READ_ONLY) {
+        res.json({ success: true, readOnly: true });
+      }
       return;
     }
 
@@ -12367,6 +12403,9 @@ async function bootstrap() {
   app.get("/api/publication-likes", async (req, res) => {
     const user = await requireInteractionUser(req, res);
     if (!user) {
+      if (IS_DEV_REMOTE_READ_ONLY) {
+        res.json({ publications: [] });
+      }
       return;
     }
 
@@ -12382,6 +12421,9 @@ async function bootstrap() {
   app.post("/api/publications/:id/like", async (req, res) => {
     const user = await requireInteractionUser(req, res);
     if (!user) {
+      if (IS_DEV_REMOTE_READ_ONLY) {
+        res.status(201).json({ success: true, readOnly: true });
+      }
       return;
     }
 
@@ -12411,6 +12453,9 @@ async function bootstrap() {
   app.delete("/api/publications/:id/like", async (req, res) => {
     const user = await requireInteractionUser(req, res);
     if (!user) {
+      if (IS_DEV_REMOTE_READ_ONLY) {
+        res.json({ success: true, readOnly: true });
+      }
       return;
     }
 
@@ -12656,6 +12701,9 @@ async function bootstrap() {
   app.post("/api/products/:id/like", async (req, res) => {
     const user = await requireInteractionUser(req, res);
     if (!user) {
+      if (IS_DEV_REMOTE_READ_ONLY) {
+        res.status(201).json({ success: true, readOnly: true });
+      }
       return;
     }
 
@@ -12686,6 +12734,9 @@ async function bootstrap() {
   app.delete("/api/products/:id/like", async (req, res) => {
     const user = await requireInteractionUser(req, res);
     if (!user) {
+      if (IS_DEV_REMOTE_READ_ONLY) {
+        res.json({ success: true, readOnly: true });
+      }
       return;
     }
 

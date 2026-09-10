@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Company, ActiveTab, Auth0User } from '../types';
 import { TempleSaleLogo } from './TempleSaleLogo';
+import { ProgressiveProductImage } from './ProductCard';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -181,11 +182,16 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex items-center space-x-2 p-1.5 rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer"
               title="Gerenciar dados da empresa"
             >
-              <img
-                src={profileImage}
-                alt={profileLabel}
-                className="w-7 h-7 rounded-full object-cover border border-neutral-700"
-              />
+              <div className="relative h-7 w-7 overflow-hidden rounded-full border border-neutral-700">
+                <ProgressiveProductImage
+                  src={profileImage}
+                  alt={profileLabel}
+                  className="relative h-full w-full rounded-full object-cover"
+                  loading="eager"
+                  fetchPriority="high"
+                  variant="thumbnail"
+                />
+              </div>
             </button>
           </div>
 
@@ -222,11 +228,16 @@ export const Header: React.FC<HeaderProps> = ({
               className="p-0.5 rounded-full hover:ring-2 hover:ring-neutral-700 active:scale-95 transition-all cursor-pointer"
               title="Menu da Empresa"
             >
-              <img
-                src={profileImage}
-                alt={profileLabel}
-                className="w-7 h-7 rounded-full object-cover border border-neutral-700/80 shadow-xs"
-              />
+              <div className="relative h-7 w-7 overflow-hidden rounded-full border border-neutral-700/80 shadow-xs">
+                <ProgressiveProductImage
+                  src={profileImage}
+                  alt={profileLabel}
+                  className="relative h-full w-full rounded-full object-cover"
+                  loading="eager"
+                  fetchPriority="high"
+                  variant="thumbnail"
+                />
+              </div>
             </button>
           </div>
         </div>

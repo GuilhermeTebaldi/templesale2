@@ -173,9 +173,15 @@ export default function PublicationViewer({
         }`}
       >
         <div className="flex items-start gap-3">
-          <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-neutral-800">
+          <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-neutral-800">
             {comment.authorAvatarUrl ? (
-              <img src={comment.authorAvatarUrl} alt="" className="h-full w-full object-cover" />
+              <ProgressiveProductImage
+                src={comment.authorAvatarUrl}
+                alt=""
+                className="relative h-full w-full object-cover"
+                loading="lazy"
+                variant="thumbnail"
+              />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-neutral-400">
                 {comment.authorName.slice(0, 1).toUpperCase()}
@@ -289,9 +295,15 @@ export default function PublicationViewer({
         <div className="flex min-h-0 flex-1 flex-col border-l border-neutral-800 bg-neutral-900 lg:h-[92vh]">
           <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-5 py-4">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-neutral-800">
+              <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-neutral-800">
                 {establishment.logoUrl ? (
-                  <img src={establishment.logoUrl} alt="" className="h-full w-full object-cover" />
+                  <ProgressiveProductImage
+                    src={establishment.logoUrl}
+                    alt=""
+                    className="relative h-full w-full object-cover"
+                    loading="eager"
+                    variant="thumbnail"
+                  />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center font-serif text-lg text-neutral-400">
                     {establishment.name.slice(0, 1).toUpperCase()}

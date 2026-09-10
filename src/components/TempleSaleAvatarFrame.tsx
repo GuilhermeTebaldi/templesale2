@@ -1,4 +1,5 @@
 import React from 'react';
+import { ProgressiveProductImage } from './ProductCard';
 
 interface TempleSaleAvatarFrameProps {
   src: string;
@@ -63,11 +64,12 @@ export const TempleSaleAvatarFrame: React.FC<TempleSaleAvatarFrameProps> = ({
           className={`w-full h-full ${config.imgRadius} bg-neutral-950 p-[2px] overflow-hidden flex items-center justify-center relative`}
         >
           {/* Foto da Empresa */}
-          <img
+          <ProgressiveProductImage
             src={src}
             alt={alt}
-            className={`w-full h-full object-cover ${config.imgRadius} transition-opacity duration-200`}
+            className={`relative w-full h-full object-cover ${config.imgRadius} transition-opacity duration-200`}
             loading="lazy"
+            variant="thumbnail"
           />
 
           {/* Brilho de reflexo de vidro suave diagonal */}

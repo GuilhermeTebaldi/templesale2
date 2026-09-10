@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { MapPin, MessageSquare, X, CheckCircle2, Sparkles, Search } from 'lucide-react';
 import { Company, Post } from '../types';
+import { ProgressiveProductImage } from './ProductCard';
 
 interface CompanySearchProps {
   searchQuery: string;
@@ -256,11 +257,15 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
                     className="flex items-center space-x-2.5 cursor-pointer group min-w-0 flex-1"
                     title={`Abrir perfil de ${company.name}`}
                   >
-                    <img
-                      src={profilePhoto}
-                      alt={company.name}
-                      className="w-10 h-10 rounded-full object-cover border border-neutral-700/80 group-hover:border-neutral-400 transition-colors shrink-0"
-                    />
+                    <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-neutral-700/80 transition-colors group-hover:border-neutral-400">
+                      <ProgressiveProductImage
+                        src={profilePhoto}
+                        alt={company.name}
+                        className="relative h-full w-full rounded-full object-cover"
+                        loading="lazy"
+                        variant="thumbnail"
+                      />
+                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center space-x-1.5 truncate">
                         <span className="text-sm font-bold text-neutral-100 group-hover:text-white transition-colors truncate">
@@ -299,13 +304,15 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
                       <div
                         key={post.id}
                         onClick={() => onOpenPost(post)}
-                        className="aspect-square rounded-lg overflow-hidden bg-neutral-950 border border-neutral-800/80 hover:border-neutral-500 cursor-pointer transition-all group"
+                        className="relative aspect-square rounded-lg overflow-hidden bg-neutral-950 border border-neutral-800/80 hover:border-neutral-500 cursor-pointer transition-all group"
                         title={post.caption}
                       >
-                        <img
+                        <ProgressiveProductImage
                           src={post.imageUrl}
                           alt={post.caption}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          className="relative w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          loading="lazy"
+                          variant="thumbnail"
                         />
                       </div>
                     ))}

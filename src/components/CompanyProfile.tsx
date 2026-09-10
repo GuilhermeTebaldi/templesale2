@@ -21,11 +21,13 @@ import {
 import { Company, Post } from '../types';
 import { TempleSaleLikeIcon } from './TempleSaleLikeIcon';
 import { TempleSaleAvatarFrame } from './TempleSaleAvatarFrame';
+import { ProgressiveProductImage } from './ProductCard';
 
 interface CompanyProfileProps {
   company: Company;
   posts: Post[];
   isOwner?: boolean;
+  profilePhotoUrl?: string;
   onBack?: () => void;
   onOpenPost: (post: Post) => void;
   onOpenCreatePost?: () => void;
@@ -40,6 +42,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
   company,
   posts,
   isOwner,
+  profilePhotoUrl,
   onBack,
   onOpenPost,
   onOpenCreatePost,
@@ -62,6 +65,10 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
   )}`;
 
   const totalLikes = posts.reduce((sum, p) => sum + (p.likesCount || 0), 0);
+  const displayProfilePhoto =
+    String(profilePhotoUrl ?? "").trim() ||
+    posts.find((post) => String(post.authorAvatarUrl ?? "").trim())?.authorAvatarUrl ||
+    company.logo;
 
   // Formatar identificador da empresa
   const companyHandle = company.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
@@ -117,15 +124,15 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
           {/* Avatar com a Moldura Exclusiva dos Quadradinhos do TempleSale */}
           <div className="shrink-0 mr-4 sm:mr-7">
             <TempleSaleAvatarFrame
-              src={company.logo}
+              src={displayProfilePhoto}
               alt={company.name}
               size="lg"
               isOwner={isOwner}
             />
             <div className="mt-2 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em]">
-              {company.logo && (
+              {displayProfilePhoto && (
                 <a
-                  href={company.logo}
+                  href={displayProfilePhoto}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-neutral-400 transition-colors hover:text-white"
@@ -409,11 +416,12 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 onClick={() => onOpenPost(post)}
                 className="group relative aspect-square bg-neutral-950 cursor-pointer overflow-hidden"
               >
-                <img
+                <ProgressiveProductImage
                   src={post.imageUrl}
                   alt={post.caption}
-                  className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                  className="relative w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
                   loading="lazy"
+                  variant="thumbnail"
                 />
 
                 {isOwner && (
@@ -498,11 +506,15 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
 
             {/* Prévia da publicação que será excluída */}
             <div className="flex items-center space-x-3 p-2.5 bg-neutral-950 rounded-xl border border-neutral-800">
-              <img
-                src={postToDelete.imageUrl}
-                alt={postToDelete.caption}
-                className="w-14 h-14 rounded-lg object-cover border border-neutral-800 shrink-0"
-              />
+              <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-neutral-800">
+                <ProgressiveProductImage
+                  src={postToDelete.imageUrl}
+                  alt={postToDelete.caption}
+                  className="relative h-full w-full object-cover"
+                  loading="eager"
+                  variant="thumbnail"
+                />
+              </div>
               <div className="min-w-0 flex-1">
                 <p className="text-xs text-neutral-200 line-clamp-2 italic">
                   "{postToDelete.caption || 'Sem legenda'}"

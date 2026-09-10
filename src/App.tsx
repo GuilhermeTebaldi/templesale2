@@ -301,6 +301,19 @@ function toIsoFromUnixOrMillis(value: unknown): string {
   return new Date(numeric < 100000000000 ? numeric * 1000 : numeric).toISOString();
 }
 
+function isReadOnlyDevWriteError(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().includes("modo somente leitura");
+}
+
+function scrollWindowToTop(behavior: ScrollBehavior = "auto"): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.requestAnimationFrame(() => {
+    window.scrollTo({ top: 0, left: 0, behavior });
+  });
+}
+
 export default function App() {
   const { locale, setLocale, t } = useI18n();
   const {
@@ -658,7 +671,7 @@ export default function App() {
       const requestSequence = publicationsRequestSequenceRef.current + 1;
       publicationsRequestSequenceRef.current = requestSequence;
       const isLatestRequest = () => publicationsRequestSequenceRef.current === requestSequence;
-      const limit = append ? 8 : 36;
+      const limit = append ? 8 : 18;
 
       if (append) {
         setIsLoadingMorePublicationFeed(true);
@@ -668,25 +681,7 @@ export default function App() {
       }
 
       try {
-        const firstPage = await api.getPublicationsFeed({ limit, offset });
-        let page = firstPage;
-        if (!append) {
-          const allPublications = [...firstPage.publications];
-          let nextOffset = firstPage.nextOffset;
-          let hasMore = firstPage.hasMore;
-          while (hasMore) {
-            const nextPage = await api.getPublicationsFeed({ limit: 36, offset: nextOffset });
-            allPublications.push(...nextPage.publications);
-            nextOffset = nextPage.nextOffset;
-            hasMore = nextPage.hasMore && nextPage.publications.length > 0;
-          }
-          page = {
-            ...firstPage,
-            publications: allPublications,
-            hasMore: false,
-            nextOffset,
-          };
-        }
+        const page = await api.getPublicationsFeed({ limit, offset });
         if (!isLatestRequest()) {
           return;
         }
@@ -2978,6 +2973,7 @@ export default function App() {
       }
       setSocialSelectedCompanyId(companyId);
       setSocialActiveTab("profile");
+      scrollWindowToTop();
       const establishmentId = establishmentIdFromSocialCompanyId(companyId);
       const establishment = establishmentId ? establishments.find((item) => item.id === establishmentId) : null;
       if (establishment) {
@@ -3032,6 +3028,9 @@ export default function App() {
         setSocialSelectedCompanyId(activeSocialCompany.id);
       }
       setSocialActiveTab(tab);
+      if (tab === "profile") {
+        scrollWindowToTop();
+      }
       if (tab === "feed") {
         window.requestAnimationFrame(() => {
           window.scrollTo({ top: feedScrollPositionRef.current, behavior: "auto" });
@@ -3066,6 +3065,9 @@ export default function App() {
 
     void (wasSaved ? api.unsavePublication(publicationId) : api.savePublication(publicationId))
       .catch((error) => {
+        if (isReadOnlyDevWriteError(error)) {
+          return;
+        }
         console.error("Error toggling saved publication:", error);
         setSavedPublicationIds((current) =>
           wasSaved
@@ -3129,6 +3131,9 @@ export default function App() {
 
     void (wasLiked ? api.unlikePublication(publicationId) : api.likePublication(publicationId))
       .catch((error) => {
+        if (isReadOnlyDevWriteError(error)) {
+          return;
+        }
         console.error("Error toggling publication like:", error);
         const rollbackDelta = -likeDelta;
         const rollbackCount = (publication: PublicationDto): PublicationDto =>
@@ -3319,6 +3324,14 @@ export default function App() {
             onToggleLikePost={toggleLikedSocialPost}
             onToggleSavePost={toggleSavedSocialPost}
             onRefresh={() => loadPublicationFeedPage({ append: false })}
+            hasMorePosts={hasMorePublicationFeed}
+            isLoadingMorePosts={isLoadingMorePublicationFeed}
+            onLoadMorePosts={() =>
+              loadPublicationFeedPage({
+                append: true,
+                offset: nextPublicationFeedOffset,
+              })
+            }
           />
         </div>
 
@@ -3349,6 +3362,11 @@ export default function App() {
             company={selectedSocialCompany}
             posts={selectedSocialCompanyPosts}
             isOwner={selectedSocialCompany.id === activeSocialCompany.id}
+            profilePhotoUrl={
+              selectedSocialCompany.id === activeSocialCompany.id
+                ? memberProfilePhoto
+                : selectedSocialCompanyPosts.find((post) => post.authorAvatarUrl)?.authorAvatarUrl
+            }
             onBack={() => changeSocialTab("feed")}
             onOpenPost={openSocialPost}
             onOpenCreatePost={handleOpenNewProduct}
@@ -3417,6 +3435,7 @@ export default function App() {
         onViewPublicProfile={(companyId) => {
           setSocialSelectedCompanyId(companyId);
           setSocialActiveTab("profile");
+          scrollWindowToTop();
           setIsUserOpen(false);
         }}
         currentLanguage={locale as SocialSupportedLanguage}

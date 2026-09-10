@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   MessageCircle,
   MessageSquare,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Company, Post } from '../types';
 import { TempleSaleLikeIcon } from './TempleSaleLikeIcon';
+import { ProgressiveProductImage } from './ProductCard';
 
 interface FeedViewProps {
   posts: Post[];
@@ -28,6 +29,9 @@ interface FeedViewProps {
   onToggleLikePost?: (postId: string) => void;
   onToggleSavePost?: (postId: string) => void;
   onRefresh?: () => Promise<void> | void;
+  hasMorePosts?: boolean;
+  isLoadingMorePosts?: boolean;
+  onLoadMorePosts?: () => Promise<void> | void;
 }
 
 interface FlyingLikeState {
@@ -52,6 +56,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
   onToggleLikePost,
   onToggleSavePost,
   onRefresh,
+  hasMorePosts = false,
+  isLoadingMorePosts = false,
+  onLoadMorePosts,
 }) => {
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [internalSavedPosts, setInternalSavedPosts] = useState<Record<string, boolean>>({});
@@ -65,8 +72,29 @@ export const FeedView: React.FC<FeedViewProps> = ({
   >('idle');
   const touchStartY = useRef<number>(0);
   const isPullingRef = useRef<boolean>(false);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const companyMap = new Map<string, Company>(companies.map((c) => [c.id, c]));
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel || !onLoadMorePosts) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting && hasMorePosts && !isLoadingMorePosts) {
+          void onLoadMorePosts();
+        }
+      },
+      { root: null, rootMargin: '900px 0px', threshold: 0 },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMorePosts, isLoadingMorePosts, onLoadMorePosts]);
 
   // Pull-to-refresh touch handlers
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -415,11 +443,15 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   className="flex items-center space-x-2.5 cursor-pointer group min-w-0"
                   onClick={() => onSelectCompany(company.id)}
                 >
-                  <img
-                    src={authorAvatarUrl}
-                    alt={company.name}
-                    className="w-9 h-9 rounded-full object-cover border border-neutral-700/80 group-hover:border-neutral-400 transition-colors shrink-0"
-                  />
+                  <div className="relative w-9 h-9 overflow-hidden rounded-full border border-neutral-700/80 transition-colors group-hover:border-neutral-400 shrink-0">
+                    <ProgressiveProductImage
+                      src={authorAvatarUrl}
+                      alt={company.name}
+                      className="relative h-full w-full rounded-full object-cover"
+                      loading="lazy"
+                      variant="thumbnail"
+                    />
+                  </div>
                   <div className="min-w-0">
                     <h3 className="text-xs sm:text-sm font-bold text-neutral-100 group-hover:text-white truncate">
                       {company.name}
@@ -453,10 +485,12 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 onClick={(e) => handlePhotoInteraction(post.id, e)}
                 onDoubleClick={(e) => handlePhotoDoubleClick(post.id, e)}
               >
-                <img
+                <ProgressiveProductImage
                   src={post.imageUrl}
                   alt={post.caption}
-                  className="w-full h-full object-cover select-none pointer-events-none"
+                  className="relative w-full h-full object-cover select-none pointer-events-none"
+                  loading="lazy"
+                  variant="card"
                 />
               </div>
 
@@ -623,6 +657,13 @@ export const FeedView: React.FC<FeedViewProps> = ({
             </article>
           );
         })}
+        <div ref={loadMoreRef} aria-hidden="true" className="h-8">
+          {isLoadingMorePosts && (
+            <div className="mx-auto mt-1 h-0.5 w-28 overflow-hidden rounded-full bg-neutral-800">
+              <div className="h-full w-1/2 animate-pulse rounded-full bg-neutral-500" />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

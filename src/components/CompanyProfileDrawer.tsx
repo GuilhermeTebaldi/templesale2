@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Company, Post, Auth0User } from '../types';
 import { TempleSaleAvatarFrame } from './TempleSaleAvatarFrame';
+import { ProgressiveProductImage } from './ProductCard';
 
 export type SupportedLanguage = 'pt-BR' | 'it-IT' | 'en-US';
 
@@ -364,10 +365,12 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                         className="group relative aspect-square rounded-xl overflow-hidden bg-neutral-950 border border-neutral-800/80 hover:border-neutral-500 transition-all cursor-pointer shadow-sm"
                         title={post.caption}
                       >
-                        <img
+                        <ProgressiveProductImage
                           src={post.imageUrl}
                           alt={post.caption}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          className="relative w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          loading="lazy"
+                          variant="thumbnail"
                         />
                         {/* Overlay on hover */}
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-1">

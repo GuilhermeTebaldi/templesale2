@@ -6,6 +6,7 @@ import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 import {
   getImageRetryUrls,
+  getPreviewImageUrl,
   resolveProductImages,
   type ProductImageVariant,
 } from "../lib/product-images";
@@ -72,7 +73,9 @@ export function ProgressiveProductImage({
   const [sourceIndex, setSourceIndex] = React.useState(0);
   const imageRef = React.useRef<HTMLImageElement | null>(null);
   const sources = React.useMemo(() => getImageRetryUrls(src, variant), [src, variant]);
+  const previewSrc = React.useMemo(() => getPreviewImageUrl(src), [src]);
   const activeSrc = sources[sourceIndex] ?? "";
+  const hasPreview = Boolean(previewSrc && previewSrc !== activeSrc);
 
   React.useEffect(() => {
     setIsLoaded(false);
@@ -109,9 +112,22 @@ export function ProgressiveProductImage({
       <div
         aria-hidden="true"
         className={`absolute inset-0 bg-linear-to-br from-stone-100 via-stone-50 to-stone-200 transition-opacity duration-500 ${
-          isLoaded ? "opacity-0" : "opacity-100"
+          isLoaded || hasPreview ? "opacity-0" : "opacity-100"
         }`}
       />
+      {hasPreview && (
+        <img
+          aria-hidden="true"
+          src={previewSrc}
+          alt=""
+          loading="eager"
+          decoding="async"
+          className={`${className} absolute inset-0 scale-105 blur-xl transition-opacity duration-500 ${
+            isLoaded ? "opacity-0" : "opacity-70"
+          }`}
+          referrerPolicy="no-referrer"
+        />
+      )}
       {activeSrc && (
         <img
           ref={imageRef}
@@ -122,9 +138,7 @@ export function ProgressiveProductImage({
           decoding="async"
           onLoad={() => setIsLoaded(true)}
           onError={handleImageError}
-          className={`${className} transition-[opacity,transform] duration-500 ${
-            isLoaded ? "opacity-100" : "opacity-0"
-          }`}
+          className={`${className} transition-transform duration-500`}
           referrerPolicy="no-referrer"
         />
       )}
