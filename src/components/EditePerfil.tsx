@@ -459,6 +459,16 @@ export default function EditePerfil({
 
     setIsSaving(true);
     try {
+      const pendingKeywords = String(keywordInput ?? "").trim()
+        ? String(keywordInput)
+            .split(/[,;#\n]/g)
+            .map((item) => item.trim().replace(/\s+/g, " "))
+            .filter(isUsableTaxonomyLabel)
+        : [];
+      const establishmentKeywords = normalizeKeywordList([
+        ...formData.establishmentKeywords,
+        ...pendingKeywords,
+      ]);
       const profilePayload = {
         name: normalizedName,
         whatsappCountryIso: formData.whatsappCountryIso,
@@ -475,7 +485,7 @@ export default function EditePerfil({
         category: formData.establishmentCategory,
         description: formData.establishmentDescription.trim(),
         openingHours: formData.establishmentOpeningHours.trim(),
-        keywords: normalizeKeywordList(formData.establishmentKeywords),
+        keywords: establishmentKeywords,
         city: profilePayload.city,
         address: profilePayload.street,
         latitude: Number.isFinite(Number(formData.latitude)) ? Number(formData.latitude) : undefined,

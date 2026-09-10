@@ -41,6 +41,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
   }, []);
 
   const query = normalizeSearchTerm(searchQuery);
+  const queryTerms = query.split(/\s+/).filter(Boolean);
 
   // Search logic:
   // Procura em:
@@ -71,6 +72,16 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
     const normalizedCity = normalizeSearchTerm(company.city);
     const normalizedDescription = normalizeSearchTerm(company.description);
     const normalizedKeywords = company.keywords.map(normalizeSearchTerm);
+    const searchableText = [
+      normalizedName,
+      normalizedCategory,
+      normalizedCity,
+      normalizedDescription,
+      ...normalizedKeywords,
+      ...companyPosts.map((post) => normalizeSearchTerm(post.caption)),
+    ].join(" ");
+    const matchesAllTerms =
+      queryTerms.length > 1 && queryTerms.every((term) => searchableText.includes(term));
 
     if (normalizedName.includes(query)) {
       matchedReasons.push('Nome da empresa');
@@ -90,6 +101,12 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
     if (normalizedKeywords.some((kw) => kw.includes(query))) {
       matchedReasons.push('Palavras-chave');
     }
+    if (
+      matchedReasons.length === 0 &&
+      queryTerms.some((term) => normalizedKeywords.some((kw) => kw.includes(term)))
+    ) {
+      matchedReasons.push('Palavras-chave');
+    }
 
     // 5. Descrição
     if (normalizedDescription.includes(query)) {
@@ -103,12 +120,17 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
     if (matchingPosts.length > 0) {
       matchedReasons.push(`Legenda em ${matchingPosts.length} publicação(ões)`);
     }
+    if (matchedReasons.length === 0 && matchesAllTerms) {
+      matchedReasons.push('Busca combinada');
+    }
 
     const score =
       normalizedKeywords.some((kw) => kw === query) ? 0 :
+      queryTerms.some((term) => normalizedKeywords.some((kw) => kw === term)) ? 1 :
       normalizedName === query ? 1 :
       normalizedCategory === query ? 2 :
       normalizedKeywords.some((kw) => kw.includes(query)) ? 3 :
+      matchesAllTerms ? 4 :
       normalizedName.includes(query) ? 4 :
       normalizedCategory.includes(query) ? 5 :
       matchingPosts.length > 0 ? 6 :

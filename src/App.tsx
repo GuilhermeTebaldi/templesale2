@@ -2315,6 +2315,7 @@ export default function App() {
       category: establishmentData?.category ?? myEstablishment?.category ?? "Altro",
       description: establishmentData?.description ?? myEstablishment?.description ?? "",
       openingHours: establishmentData?.openingHours ?? myEstablishment?.openingHours ?? "",
+      keywords: establishmentData?.keywords ?? myEstablishment?.keywords ?? [],
       city: establishmentData?.city ?? mergedUser.city,
       address:
         establishmentData?.address ??
