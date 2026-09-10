@@ -13,6 +13,9 @@ export const TempleSaleLogo: React.FC<TempleSaleLogoProps> = ({
       <img
         src="/templesale-logo.svg"
         alt="TempleSale Logo"
+        loading="eager"
+        fetchPriority="high"
+        decoding="async"
         className="w-full h-full object-contain filter drop-shadow-sm"
       />
     </div>

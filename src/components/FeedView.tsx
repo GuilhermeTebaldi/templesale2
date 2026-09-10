@@ -481,7 +481,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
               {/* 2. Foto da Publicação (1:1 Quadrado Perfeito) - O clique simples na foto NÃO abre detalhes ou comentários */}
               <div
                 id={`feed-photo-${post.id}`}
-                className="relative aspect-square w-full bg-neutral-950 overflow-hidden select-none cursor-pointer"
+                className="relative aspect-square w-full bg-stone-100 overflow-hidden select-none cursor-pointer"
                 onClick={(e) => handlePhotoInteraction(post.id, e)}
                 onDoubleClick={(e) => handlePhotoDoubleClick(post.id, e)}
               >
