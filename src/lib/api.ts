@@ -2836,8 +2836,11 @@ export const api = {
     return establishment;
   },
   async getEstablishment(idOrSlug: number | string) {
+    const query = new URLSearchParams({
+      publicationsLimit: "60",
+    });
     const payload = await request<unknown>(
-      `/api/establishments/${encodeURIComponent(String(idOrSlug))}`,
+      `/api/establishments/${encodeURIComponent(String(idOrSlug))}?${query.toString()}`,
       { skipAuthToken: true },
     );
     const parsed = parseJsonIfNeeded(payload);
@@ -2850,6 +2853,19 @@ export const api = {
       throw new Error("Resposta inválida ao carregar attivita.");
     }
     return { establishment, products, publications };
+  },
+  async getEstablishmentPublications(input: { establishmentId: number; limit?: number; offset?: number }) {
+    const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 30)), 1), 60);
+    const offset = Math.max(Math.floor(Number(input.offset ?? 0)), 0);
+    const query = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    const payload = await request<unknown>(
+      `/api/establishments/${encodeURIComponent(String(input.establishmentId))}/publications?${query.toString()}`,
+      { skipAuthToken: true },
+    );
+    return normalizePublicationPage(payload, limit, offset);
   },
   async getPublicationsFeed(input: { limit?: number; offset?: number } = {}) {
     const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 12)), 1), 36);

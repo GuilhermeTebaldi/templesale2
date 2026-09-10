@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   MessageSquare,
   MapPin,
@@ -36,6 +36,9 @@ interface CompanyProfileProps {
   onKeywordClick?: (keyword: string) => void;
   onDeletePost?: (postId: string) => void;
   onEditPost?: (postId: string) => void;
+  hasMorePosts?: boolean;
+  isLoadingMorePosts?: boolean;
+  onLoadMorePosts?: () => Promise<void> | void;
 }
 
 export const CompanyProfile: React.FC<CompanyProfileProps> = ({
@@ -51,9 +54,13 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
   onKeywordClick,
   onDeletePost,
   onEditPost,
+  hasMorePosts = false,
+  isLoadingMorePosts = false,
+  onLoadMorePosts,
 }) => {
   const [activeHighlight, setActiveHighlight] = useState<string | null>(null);
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const cleanWhatsAppNumber = company.whatsapp.replace(/\D/g, '');
   const whatsappUrl = `https://wa.me/${cleanWhatsAppNumber}?text=${encodeURIComponent(
@@ -72,6 +79,26 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
 
   // Formatar identificador da empresa
   const companyHandle = company.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel || !onLoadMorePosts) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting && hasMorePosts && !isLoadingMorePosts) {
+          void onLoadMorePosts();
+        }
+      },
+      { root: null, rootMargin: '700px 0px', threshold: 0 },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMorePosts, isLoadingMorePosts, onLoadMorePosts]);
 
   return (
     <div id="company-profile-view" className="max-w-xl mx-auto px-0 sm:px-4 py-0 sm:py-4 space-y-4">
@@ -473,6 +500,13 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 </div>
               </div>
             ))}
+            <div ref={loadMoreRef} aria-hidden="true" className="col-span-3 h-7">
+              {isLoadingMorePosts && (
+                <div className="mx-auto mt-3 h-0.5 w-24 overflow-hidden rounded-full bg-neutral-800">
+                  <div className="h-full w-1/2 animate-pulse rounded-full bg-neutral-500" />
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

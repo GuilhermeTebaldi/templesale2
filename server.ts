@@ -4334,6 +4334,59 @@ async function selectPublicationsByEstablishmentRows(
   return rows.map(normalizePublicationRow);
 }
 
+async function selectPublicationsByEstablishmentPageRows(input: {
+  establishmentId: number;
+  limit?: number;
+  offset?: number;
+}): Promise<{ rows: EstablishmentPublicationRecord[]; hasMore: boolean; nextOffset: number }> {
+  const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 30)), 1), 60);
+  const offset = Math.max(Math.floor(Number(input.offset ?? 0)), 0);
+  const fetchLimit = limit + 1;
+
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          ep.*,
+          COALESCE(pl.likes_count, 0) AS likes_count
+        FROM establishment_publications ep
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
+        WHERE ep.establishment_id = $1
+        ORDER BY ep.created_at DESC, ep.id DESC
+        LIMIT $2 OFFSET $3
+      `,
+      [input.establishmentId, fetchLimit, offset],
+    );
+    const rows = result.rows.slice(0, limit).map(normalizePublicationRow);
+    return { rows, hasMore: result.rows.length > limit, nextOffset: offset + rows.length };
+  }
+
+  const rawRows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          ep.*,
+          COALESCE(pl.likes_count, 0) AS likes_count
+        FROM establishment_publications ep
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
+        WHERE ep.establishment_id = ?
+        ORDER BY ep.created_at DESC, ep.id DESC
+        LIMIT ? OFFSET ?
+      `,
+    )
+    .all(input.establishmentId, fetchLimit, offset) as Array<Record<string, unknown>>;
+  const rows = rawRows.slice(0, limit).map(normalizePublicationRow);
+  return { rows, hasMore: rawRows.length > limit, nextOffset: offset + rows.length };
+}
+
 async function selectPublicationsFeedRows(input: {
   limit?: number;
   offset?: number;
@@ -11556,10 +11609,11 @@ async function bootstrap() {
         String(req.query.includeProducts ?? req.query.include_products ?? "")
           .trim()
           .toLowerCase() === "true";
+      const publicationsLimit = Number(req.query.publicationsLimit ?? req.query.publications_limit ?? 60);
       const [sections, products, publications] = await Promise.all([
         selectStorefrontSectionsRows(establishment.id),
         includeProducts ? selectProductsByEstablishmentRows(establishment.id) : Promise.resolve([]),
-        selectPublicationsByEstablishmentRows(establishment.id),
+        selectPublicationsByEstablishmentRows(establishment.id, publicationsLimit),
       ]);
       res.json({
         establishment: { ...establishment, sections },
@@ -11579,8 +11633,23 @@ async function bootstrap() {
       return;
     }
     try {
-      const publications = await selectPublicationsByEstablishmentRows(id, Number(req.query.limit ?? 60));
-      res.json({ publications });
+      const limit = Number(req.query.limit ?? 30);
+      const offset = Number(req.query.offset ?? 0);
+      const page = await selectPublicationsByEstablishmentPageRows({
+        establishmentId: id,
+        limit,
+        offset,
+      });
+      res.json({
+        publications: page.rows,
+        pagination: {
+          limit: Math.min(Math.max(Math.floor(Number(limit) || 30), 1), 60),
+          offset: Math.max(Math.floor(Number(offset) || 0), 0),
+          returned: page.rows.length,
+          hasMore: page.hasMore,
+          nextOffset: page.nextOffset,
+        },
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao listar pubblicazioni.";
       res.status(500).json({ error: message });

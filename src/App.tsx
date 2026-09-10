@@ -355,6 +355,9 @@ export default function App() {
   const [selectedEstablishment, setSelectedEstablishment] = React.useState<EstablishmentDto | null>(null);
   const [, setSelectedEstablishmentProducts] = React.useState<Product[]>([]);
   const [selectedEstablishmentPublications, setSelectedEstablishmentPublications] = React.useState<PublicationDto[]>([]);
+  const [isLoadingMoreSelectedEstablishmentPublications, setIsLoadingMoreSelectedEstablishmentPublications] = React.useState(false);
+  const [hasMoreSelectedEstablishmentPublications, setHasMoreSelectedEstablishmentPublications] = React.useState(false);
+  const [nextSelectedEstablishmentPublicationsOffset, setNextSelectedEstablishmentPublicationsOffset] = React.useState(0);
   const [selectedPublication, setSelectedPublication] = React.useState<PublicationDto | null>(null);
   const [editingSocialPublication, setEditingSocialPublication] = React.useState<PublicationDto | null>(null);
   const [focusedPublicationCommentId, setFocusedPublicationCommentId] = React.useState<number | null>(null);
@@ -1771,6 +1774,8 @@ export default function App() {
       setSelectedEstablishment(cachedEstablishment);
       setSelectedEstablishmentProducts([]);
       setSelectedEstablishmentPublications([]);
+      setHasMoreSelectedEstablishmentPublications(false);
+      setNextSelectedEstablishmentPublicationsOffset(0);
       setIsEstablishmentPageOpen(true);
       if (typeof window !== "undefined") {
         window.history.pushState(
@@ -1785,6 +1790,8 @@ export default function App() {
       setSelectedEstablishment(payload.establishment);
       setSelectedEstablishmentProducts(payload.products as Product[]);
       setSelectedEstablishmentPublications(payload.publications);
+      setHasMoreSelectedEstablishmentPublications(payload.publications.length >= 60);
+      setNextSelectedEstablishmentPublicationsOffset(payload.publications.length);
       setIsEstablishmentPageOpen(true);
       if (typeof window !== "undefined") {
         window.history.pushState(
@@ -1798,11 +1805,50 @@ export default function App() {
     }
   }, [establishments]);
 
+  const loadMoreSelectedEstablishmentPublications = React.useCallback(async () => {
+    const establishmentId = selectedEstablishment?.id;
+    if (
+      !establishmentId ||
+      isLoadingMoreSelectedEstablishmentPublications ||
+      !hasMoreSelectedEstablishmentPublications
+    ) {
+      return;
+    }
+
+    setIsLoadingMoreSelectedEstablishmentPublications(true);
+    try {
+      const page = await api.getEstablishmentPublications({
+        establishmentId,
+        limit: 30,
+        offset: nextSelectedEstablishmentPublicationsOffset,
+      });
+      setSelectedEstablishmentPublications((current) => {
+        const nextById = new globalThis.Map<number, PublicationDto>();
+        current.forEach((publication) => nextById.set(publication.id, publication));
+        page.publications.forEach((publication) => nextById.set(publication.id, publication));
+        return [...nextById.values()];
+      });
+      setHasMoreSelectedEstablishmentPublications(page.hasMore);
+      setNextSelectedEstablishmentPublicationsOffset(page.nextOffset);
+    } catch (error) {
+      console.error("Error loading more establishment publications:", error);
+    } finally {
+      setIsLoadingMoreSelectedEstablishmentPublications(false);
+    }
+  }, [
+    hasMoreSelectedEstablishmentPublications,
+    isLoadingMoreSelectedEstablishmentPublications,
+    nextSelectedEstablishmentPublicationsOffset,
+    selectedEstablishment?.id,
+  ]);
+
   const closeEstablishmentPage = React.useCallback(() => {
     setIsEstablishmentPageOpen(false);
     setSelectedEstablishment(null);
     setSelectedEstablishmentProducts([]);
     setSelectedEstablishmentPublications([]);
+    setHasMoreSelectedEstablishmentPublications(false);
+    setNextSelectedEstablishmentPublicationsOffset(0);
     setSelectedPublication(null);
     setFocusedPublicationCommentId(null);
     if (typeof window !== "undefined" && window.location.pathname.startsWith("/attivita/")) {
@@ -2791,6 +2837,11 @@ export default function App() {
           publicationsById.set(publication.id, publication);
         }
       });
+      selectedEstablishmentPublications.forEach((publication) => {
+        if (!publicationsById.has(publication.id)) {
+          publicationsById.set(publication.id, publication);
+        }
+      });
       likedPublications.forEach((publication) => {
         if (!publicationsById.has(publication.id)) {
           publicationsById.set(publication.id, publication);
@@ -2816,6 +2867,7 @@ export default function App() {
       publicationFeed,
       likedPublications,
       savedPublications,
+      selectedEstablishmentPublications,
       currentUser?.id,
       memberProfilePhoto,
       socialCompanyIdFromEstablishmentId,
@@ -3380,6 +3432,9 @@ export default function App() {
               void deleteSocialPost(postId);
             }}
             onEditPost={openSocialPublicationEditor}
+            hasMorePosts={hasMoreSelectedEstablishmentPublications}
+            isLoadingMorePosts={isLoadingMoreSelectedEstablishmentPublications}
+            onLoadMorePosts={loadMoreSelectedEstablishmentPublications}
           />
         )}
 
