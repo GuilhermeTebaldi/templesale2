@@ -6,6 +6,7 @@ import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 import {
   getImageRetryUrls,
+  getLowQualityImageUrl,
   resolveProductImages,
   type ProductImageVariant,
 } from "../lib/product-images";
@@ -72,6 +73,7 @@ export function ProgressiveProductImage({
   const [sourceIndex, setSourceIndex] = React.useState(0);
   const imageRef = React.useRef<HTMLImageElement | null>(null);
   const sources = React.useMemo(() => getImageRetryUrls(src, variant), [src, variant]);
+  const lowQualitySrc = React.useMemo(() => getLowQualityImageUrl(src), [src]);
   const activeSrc = sources[sourceIndex] ?? "";
 
   React.useEffect(() => {
@@ -108,9 +110,18 @@ export function ProgressiveProductImage({
     <>
       <div
         aria-hidden="true"
-        className={`absolute inset-0 z-0 bg-linear-to-br from-stone-100 via-white to-stone-200 transition-opacity duration-500 ${
+        className={`absolute inset-0 z-0 bg-linear-to-br from-stone-100 via-white to-stone-200 bg-cover bg-center transition-opacity duration-500 ${
           isLoaded ? "opacity-0" : "opacity-100"
         }`}
+        style={
+          lowQualitySrc
+            ? {
+                backgroundImage: `linear-gradient(rgba(250,250,249,0.14), rgba(250,250,249,0.14)), url(${JSON.stringify(lowQualitySrc)})`,
+                filter: "blur(14px)",
+                transform: "scale(1.06)",
+              }
+            : undefined
+        }
       />
       {activeSrc && (
         <img
