@@ -11,6 +11,10 @@ import {
 } from 'lucide-react';
 import { FilterPreset, PhotoAdjustments, OverlayItem, PhotoCrop } from '../types';
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
 interface PhotoEditorCanvasProps {
   imageSrc: string;
   filter: FilterPreset;
@@ -40,6 +44,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
   onDimensionsChange,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
 
   // Keep references to handlers to prevent stale closures or re-attachment bugs
   const onUpdateOverlayRef = useRef(onUpdateOverlay);
@@ -93,6 +98,28 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
   // Live feedback indicator
   const [activeFeedback, setActiveFeedback] = useState<string | null>(null);
 
+  const clampCropToImageBounds = (nextCrop: PhotoCrop): PhotoCrop => {
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    if (!containerRect || !imageSize) {
+      return nextCrop;
+    }
+
+    const coverScale = Math.max(
+      containerRect.width / imageSize.width,
+      containerRect.height / imageSize.height,
+    );
+    const renderedWidth = imageSize.width * coverScale * nextCrop.scale;
+    const renderedHeight = imageSize.height * coverScale * nextCrop.scale;
+    const maxX = Math.max(0, (renderedWidth - containerRect.width) / 2);
+    const maxY = Math.max(0, (renderedHeight - containerRect.height) / 2);
+
+    return {
+      ...nextCrop,
+      x: Math.round(clamp(nextCrop.x, -maxX, maxX)),
+      y: Math.round(clamp(nextCrop.y, -maxY, maxY)),
+    };
+  };
+
   // Compute CSS filter string
   const cssFilterParts: string[] = [];
   if (filter.id !== 'normal' && filter.filterString !== 'none') {
@@ -127,6 +154,17 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      setImageSize({
+        width: img.naturalWidth || img.width || 1,
+        height: img.naturalHeight || img.height || 1,
+      });
+    };
+    img.src = imageSrc;
+  }, [imageSrc]);
+
   // Universal pointer move listener attached to window during drag/resize/rotate/pan
   useEffect(() => {
     const onWindowPointerMove = (e: PointerEvent) => {
@@ -142,11 +180,11 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
       if (interactionMode.current === 'pan-photo') {
         const newX = Math.round(initialCropState.current.x + deltaPixelX);
         const newY = Math.round(initialCropState.current.y + deltaPixelY);
-        onChangeCropRef.current({
+        onChangeCropRef.current(clampCropToImageBounds({
           ...initialCropState.current,
           x: newX,
           y: newY,
-        });
+        }));
         return;
       }
 
@@ -386,10 +424,10 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
         onUpdateOverlayRef.current(selectedOverlayId, { fontSize: newFontSize });
       } else {
         const newScale = Math.max(1, Math.min(3.5, initialPinchCropScale.current * ratio));
-        onChangeCropRef.current({
+        onChangeCropRef.current(clampCropToImageBounds({
           ...cropRef.current,
           scale: Number(newScale.toFixed(2)),
-        });
+        }));
       }
     }
   };
@@ -620,10 +658,10 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
               type="button"
               id="btn-zoom-out"
               onClick={() =>
-                onChangeCrop({
+                onChangeCrop(clampCropToImageBounds({
                   ...crop,
                   scale: Number(Math.max(1, crop.scale - 0.15).toFixed(2)),
-                })
+                }))
               }
               disabled={crop.scale <= 1}
               className="w-6 h-6 rounded-full bg-neutral-800 hover:bg-neutral-700 disabled:opacity-35 text-white flex items-center justify-center transition active:scale-95 cursor-pointer"
@@ -641,10 +679,10 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
               type="button"
               id="btn-zoom-in"
               onClick={() =>
-                onChangeCrop({
+                onChangeCrop(clampCropToImageBounds({
                   ...crop,
                   scale: Number(Math.min(3, crop.scale + 0.15).toFixed(2)),
-                })
+                }))
               }
               disabled={crop.scale >= 3}
               className="w-6 h-6 rounded-full bg-neutral-800 hover:bg-neutral-700 disabled:opacity-35 text-white flex items-center justify-center transition active:scale-95 cursor-pointer"

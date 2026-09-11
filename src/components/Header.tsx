@@ -48,6 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [hasBrandIntroStarted, setHasBrandIntroStarted] = React.useState(false);
   const [hasObservedGlobalLoading, setHasObservedGlobalLoading] = React.useState(false);
   const [canFallbackBrandIntroStart, setCanFallbackBrandIntroStart] = React.useState(false);
+  const [mobileNavViewportOffset, setMobileNavViewportOffset] = React.useState(0);
   const isGlobalLoadingVisible = React.useSyncExternalStore(
     subscribeNetworkLoading,
     getNetworkLoadingSnapshot,
@@ -93,6 +94,35 @@ export const Header: React.FC<HeaderProps> = ({
     hasObservedGlobalLoading,
     isGlobalLoadingVisible,
   ]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const updateMobileNavOffset = () => {
+      const viewport = window.visualViewport;
+      if (!viewport) {
+        setMobileNavViewportOffset(0);
+        return;
+      }
+
+      const viewportBottom = viewport.offsetTop + viewport.height;
+      const layoutBottom = window.innerHeight;
+      setMobileNavViewportOffset(Math.max(0, Math.round(viewportBottom - layoutBottom)));
+    };
+
+    updateMobileNavOffset();
+    window.visualViewport?.addEventListener('resize', updateMobileNavOffset);
+    window.visualViewport?.addEventListener('scroll', updateMobileNavOffset);
+    window.addEventListener('resize', updateMobileNavOffset);
+    window.addEventListener('orientationchange', updateMobileNavOffset);
+
+    return () => {
+      window.visualViewport?.removeEventListener('resize', updateMobileNavOffset);
+      window.visualViewport?.removeEventListener('scroll', updateMobileNavOffset);
+      window.removeEventListener('resize', updateMobileNavOffset);
+      window.removeEventListener('orientationchange', updateMobileNavOffset);
+    };
+  }, []);
 
   return (
     <>
@@ -317,7 +347,10 @@ export const Header: React.FC<HeaderProps> = ({
       {/* MOBILE BOTTOM NAVIGATION BAR */}
       <nav
         id="mobile-bottom-nav"
-        className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 px-2 py-1 flex items-center justify-around"
+        className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 px-2 py-1 flex items-center justify-around will-change-transform"
+        style={{
+          transform: `translateY(${mobileNavViewportOffset}px)`,
+        }}
       >
         {/* Feed Tab */}
         <button
