@@ -3589,6 +3589,13 @@ export default function App() {
               setSelectedPublication(null);
               setFocusedPublicationCommentId(null);
             }}
+            onOpenEstablishment={(establishmentId) => {
+              const companyId = socialCompanyIdFromEstablishmentId(establishmentId);
+              setSocialSelectedCompanyId(companyId);
+              setSocialActiveTab("profile");
+              scrollWindowToTop();
+              void openEstablishmentPage(establishmentId);
+            }}
             onCommentsChanged={(publicationId, comments) => {
               setPublicationCommentsById((current) => ({
                 ...current,
@@ -3773,10 +3780,12 @@ export default function App() {
               setIsCurtidasOpen(false);
             }}
             onOpenPublication={(publication) => {
-              setSelectedEstablishment(buildEstablishmentFromPublication(publication));
-              setSelectedPublication(publication);
-              setFocusedPublicationCommentId(null);
               setIsCurtidasOpen(false);
+              window.requestAnimationFrame(() => {
+                setSelectedEstablishment(buildEstablishmentFromPublication(publication));
+                setSelectedPublication(publication);
+                setFocusedPublicationCommentId(null);
+              });
             }}
             onRemove={async (id) => {
               try {

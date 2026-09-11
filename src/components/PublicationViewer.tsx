@@ -12,6 +12,7 @@ interface PublicationViewerProps {
   currentUser: SessionUser | null;
   focusCommentId?: number | null;
   onClose: () => void;
+  onOpenEstablishment?: (establishmentId: number) => void;
   onDeleted?: (publicationId: number) => void;
   onCommentsChanged?: (publicationId: number, comments: ProductCommentDto[]) => void;
 }
@@ -33,6 +34,7 @@ export default function PublicationViewer({
   currentUser,
   focusCommentId,
   onClose,
+  onOpenEstablishment,
   onDeleted,
   onCommentsChanged,
 }: PublicationViewerProps) {
@@ -49,6 +51,11 @@ export default function PublicationViewer({
   const [publicationError, setPublicationError] = React.useState("");
   const highlightedCommentRef = React.useRef<HTMLDivElement | null>(null);
   const isOwner = currentUser?.id === publication.ownerId;
+
+  const openEstablishmentProfile = () => {
+    onClose();
+    onOpenEstablishment?.(establishment.id);
+  };
 
   React.useEffect(() => {
     setPublicationError("");
@@ -294,7 +301,12 @@ export default function PublicationViewer({
         </div>
         <div className="flex min-h-0 flex-1 flex-col border-l border-neutral-800 bg-neutral-900 lg:h-[92vh]">
           <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-5 py-4">
-            <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={openEstablishmentProfile}
+              className="flex min-w-0 items-center gap-3 text-left transition-opacity hover:opacity-85"
+              title={t("Ver perfil")}
+            >
               <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-neutral-800">
                 {establishment.logoUrl ? (
                   <ProgressiveProductImage
@@ -316,7 +328,7 @@ export default function PublicationViewer({
                   {[establishment.category, establishment.city].filter(Boolean).join(" · ")}
                 </p>
               </div>
-            </div>
+            </button>
             <button
               type="button"
               onClick={onClose}

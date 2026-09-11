@@ -9,10 +9,18 @@ const CINEMA_BRAND_FONT =
   '"Copperplate", "Copperplate Gothic Light", fantasy';
 
 export default function PostAuthIntroOverlay({ onComplete }: PostAuthIntroOverlayProps) {
+  const onCompleteRef = React.useRef(onComplete);
+
   React.useEffect(() => {
-    const timer = window.setTimeout(onComplete, 3500);
-    return () => window.clearTimeout(timer);
+    onCompleteRef.current = onComplete;
   }, [onComplete]);
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      onCompleteRef.current();
+    }, 3500);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   return (
     <motion.div
