@@ -2939,22 +2939,22 @@ export default function App() {
       notificationsToDisplay
         .filter((notification) => notification.type === "publication_comment" || notification.type === "admin_broadcast")
         .map((notification) => {
+          const isAdminBroadcast = notification.type === "admin_broadcast";
           const publicationId =
-            "publicationId" in notification && notification.publicationId
+            !isAdminBroadcast && "publicationId" in notification && notification.publicationId
               ? notification.publicationId
-              : publicationFeed[0]?.id ?? 0;
+              : 0;
           const publication = publicationFeed.find((item) => item.id === publicationId);
           return {
             id: notification.id,
-            type: "comment",
-            postId: socialPostIdFromPublicationId(publicationId),
+            type: isAdminBroadcast ? "admin" : "comment",
+            postId: publicationId ? socialPostIdFromPublicationId(publicationId) : "",
             companyId: publication
               ? socialCompanyIdFromEstablishmentId(publication.establishmentId)
               : activeSocialCompany.id,
             postImageUrl:
               String(("productImageUrl" in notification ? notification.productImageUrl : "") ?? "").trim() ||
-              publication?.imageUrl ||
-              activeSocialCompany.logo,
+              (isAdminBroadcast ? TEMPLESALE_LOGO_FALLBACK : publication?.imageUrl || activeSocialCompany.logo),
             authorName: String(("actorName" in notification ? notification.actorName : "") || notification.title || BRAND_NAME),
             text: notification.message,
             createdAt: toIsoFromUnixOrMillis(notification.createdAt),

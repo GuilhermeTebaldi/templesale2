@@ -40,7 +40,7 @@ export interface Company {
 
 export interface AppNotification {
   id: string;
-  type: 'comment';
+  type: 'comment' | 'admin';
   postId: string;
   companyId: string;
   postImageUrl: string;

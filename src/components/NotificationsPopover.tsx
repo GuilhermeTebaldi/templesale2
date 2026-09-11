@@ -154,15 +154,21 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
                     <span className="font-bold text-neutral-100 mr-1">
                       {notif.authorName}
                     </span>
-                    <span className="text-neutral-300">comentou:</span>
+                    <span className="text-neutral-300">
+                      {notif.type === 'admin' ? 'enviou:' : 'comentou:'}
+                    </span>
                   </div>
                   <p className="text-xs text-neutral-400 italic line-clamp-1 mt-0.5">
                     "{notif.text}"
                   </p>
                   <div className="flex items-center space-x-2 text-[10px] text-neutral-500 mt-1">
                     <span className="text-emerald-400 flex items-center space-x-1">
-                      <MessageCircle className="w-3 h-3" />
-                      <span>Ver foto</span>
+                      {notif.type === 'admin' ? (
+                        <Bell className="w-3 h-3" />
+                      ) : (
+                        <MessageCircle className="w-3 h-3" />
+                      )}
+                      <span>{notif.type === 'admin' ? 'Ver mensagem' : 'Ver foto'}</span>
                     </span>
                     <span>•</span>
                     <span>{formatRelativeTime(notif.createdAt)}</span>
@@ -172,8 +178,10 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
                 {/* Thumbnail of the post */}
                 <img
                   src={notif.postImageUrl}
-                  alt="Foto"
-                  className="w-11 h-11 rounded-lg object-cover border border-neutral-700/80 shrink-0"
+                  alt={notif.type === 'admin' ? 'TempleSale' : 'Foto'}
+                  className={`w-11 h-11 rounded-lg border border-neutral-700/80 shrink-0 ${
+                    notif.type === 'admin' ? 'bg-neutral-950 object-contain p-2' : 'object-cover'
+                  }`}
                 />
               </div>
             ))
