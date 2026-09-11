@@ -7,6 +7,13 @@ html {
   text-size-adjust: 100%;
 }
 
+body.ts-scroll-lock {
+  position: fixed;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
 /* Regra de Ouro da Apple/WebKit: fonte >= 16px impede o zoom indesejado ao focar em inputs */
 @media screen and (max-width: 768px) {
   input,

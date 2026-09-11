@@ -45,6 +45,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(null);
 
   // Keep references to handlers to prevent stale closures or re-attachment bugs
   const onUpdateOverlayRef = useRef(onUpdateOverlay);
@@ -99,19 +100,18 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
   const [activeFeedback, setActiveFeedback] = useState<string | null>(null);
 
   const clampCropToImageBounds = (nextCrop: PhotoCrop): PhotoCrop => {
-    const containerRect = containerRef.current?.getBoundingClientRect();
-    if (!containerRect || !imageSize) {
+    if (!containerSize || !imageSize) {
       return nextCrop;
     }
 
     const coverScale = Math.max(
-      containerRect.width / imageSize.width,
-      containerRect.height / imageSize.height,
+      containerSize.width / imageSize.width,
+      containerSize.height / imageSize.height,
     );
     const renderedWidth = imageSize.width * coverScale * nextCrop.scale;
     const renderedHeight = imageSize.height * coverScale * nextCrop.scale;
-    const maxX = Math.max(0, (renderedWidth - containerRect.width) / 2);
-    const maxY = Math.max(0, (renderedHeight - containerRect.height) / 2);
+    const maxX = Math.max(0, (renderedWidth - containerSize.width) / 2);
+    const maxY = Math.max(0, (renderedHeight - containerSize.height) / 2);
 
     return {
       ...nextCrop,
@@ -145,7 +145,9 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
     const reportDims = () => {
       if (containerRef.current && onDimensionsChangeRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        onDimensionsChangeRef.current({ width: rect.width, height: rect.height });
+        const nextSize = { width: rect.width, height: rect.height };
+        setContainerSize(nextSize);
+        onDimensionsChangeRef.current(nextSize);
       }
     };
     reportDims();
@@ -164,6 +166,29 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
     };
     img.src = imageSrc;
   }, [imageSrc]);
+
+  useEffect(() => {
+    const clampedCrop = clampCropToImageBounds(crop);
+    if (clampedCrop.x !== crop.x || clampedCrop.y !== crop.y) {
+      onChangeCrop(clampedCrop);
+    }
+  }, [containerSize, crop, imageSize, onChangeCrop]);
+
+  const coverFrame = React.useMemo(() => {
+    if (!containerSize || !imageSize) {
+      return null;
+    }
+
+    const coverScale = Math.max(
+      containerSize.width / imageSize.width,
+      containerSize.height / imageSize.height,
+    );
+
+    return {
+      width: imageSize.width * coverScale,
+      height: imageSize.height * coverScale,
+    };
+  }, [containerSize, imageSize]);
 
   // Universal pointer move listener attached to window during drag/resize/rotate/pan
   useEffect(() => {
@@ -459,7 +484,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="relative w-full h-full flex-1 overflow-hidden bg-neutral-950 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
+        className="relative aspect-square w-full overflow-hidden bg-neutral-950 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
       >
         {/* Panning and Zooming Photo Layer */}
         <div className="w-full h-full relative overflow-hidden flex items-center justify-center pointer-events-none">
@@ -467,9 +492,11 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
             src={imageSrc}
             alt="Foto para edição"
             referrerPolicy="no-referrer"
-            className="w-full h-full object-cover transition-transform duration-75 select-none pointer-events-none"
+            className="absolute left-1/2 top-1/2 max-w-none transition-transform duration-75 select-none pointer-events-none"
             style={{
-              transform: `translate(${crop.x}px, ${crop.y}px) scale(${crop.scale})`,
+              width: coverFrame ? `${coverFrame.width}px` : '100%',
+              height: coverFrame ? `${coverFrame.height}px` : '100%',
+              transform: `translate(calc(-50% + ${crop.x}px), calc(-50% + ${crop.y}px)) scale(${crop.scale})`,
               filter: combinedFilter,
             }}
           />

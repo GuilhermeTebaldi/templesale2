@@ -48,7 +48,8 @@ export const Header: React.FC<HeaderProps> = ({
   const [hasBrandIntroStarted, setHasBrandIntroStarted] = React.useState(false);
   const [hasObservedGlobalLoading, setHasObservedGlobalLoading] = React.useState(false);
   const [canFallbackBrandIntroStart, setCanFallbackBrandIntroStart] = React.useState(false);
-  const [mobileNavViewportOffset, setMobileNavViewportOffset] = React.useState(0);
+  const [mobileNavTop, setMobileNavTop] = React.useState<number | null>(null);
+  const mobileNavRef = React.useRef<HTMLElement | null>(null);
   const isGlobalLoadingVisible = React.useSyncExternalStore(
     subscribeNetworkLoading,
     getNetworkLoadingSnapshot,
@@ -98,29 +99,70 @@ export const Header: React.FC<HeaderProps> = ({
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const updateMobileNavOffset = () => {
+    let frameId = 0;
+    let settleIntervalId: number | undefined;
+
+    const readMobileNavTop = () => {
       const viewport = window.visualViewport;
+      const navHeight = mobileNavRef.current?.offsetHeight ?? 72;
       if (!viewport) {
-        setMobileNavViewportOffset(0);
-        return;
+        return window.innerHeight - navHeight;
       }
 
-      const viewportBottom = viewport.offsetTop + viewport.height;
-      const layoutBottom = window.innerHeight;
-      setMobileNavViewportOffset(Math.max(0, Math.round(viewportBottom - layoutBottom)));
+      return viewport.offsetTop + viewport.height - navHeight;
     };
 
-    updateMobileNavOffset();
-    window.visualViewport?.addEventListener('resize', updateMobileNavOffset);
-    window.visualViewport?.addEventListener('scroll', updateMobileNavOffset);
-    window.addEventListener('resize', updateMobileNavOffset);
-    window.addEventListener('orientationchange', updateMobileNavOffset);
+    const updateMobileNavPosition = () => {
+      const nextTop = Math.max(0, Math.round(readMobileNavTop()));
+      setMobileNavTop((currentTop) => (currentTop === nextTop ? currentTop : nextTop));
+    };
+
+    const scheduleMobileNavPosition = () => {
+      if (frameId) {
+        return;
+      }
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0;
+        updateMobileNavPosition();
+      });
+    };
+
+    const startScrollSettling = () => {
+      scheduleMobileNavPosition();
+      if (settleIntervalId) {
+        window.clearInterval(settleIntervalId);
+      }
+
+      let ticks = 0;
+      settleIntervalId = window.setInterval(() => {
+        ticks += 1;
+        scheduleMobileNavPosition();
+        if (ticks >= 12 && settleIntervalId) {
+          window.clearInterval(settleIntervalId);
+          settleIntervalId = undefined;
+        }
+      }, 80);
+    };
+
+    updateMobileNavPosition();
+    window.visualViewport?.addEventListener('resize', startScrollSettling);
+    window.visualViewport?.addEventListener('scroll', startScrollSettling);
+    window.addEventListener('resize', startScrollSettling);
+    window.addEventListener('orientationchange', startScrollSettling);
+    window.addEventListener('scroll', startScrollSettling, { passive: true });
 
     return () => {
-      window.visualViewport?.removeEventListener('resize', updateMobileNavOffset);
-      window.visualViewport?.removeEventListener('scroll', updateMobileNavOffset);
-      window.removeEventListener('resize', updateMobileNavOffset);
-      window.removeEventListener('orientationchange', updateMobileNavOffset);
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      if (settleIntervalId) {
+        window.clearInterval(settleIntervalId);
+      }
+      window.visualViewport?.removeEventListener('resize', startScrollSettling);
+      window.visualViewport?.removeEventListener('scroll', startScrollSettling);
+      window.removeEventListener('resize', startScrollSettling);
+      window.removeEventListener('orientationchange', startScrollSettling);
+      window.removeEventListener('scroll', startScrollSettling);
     };
   }, []);
 
@@ -346,10 +388,12 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
       <nav
+        ref={mobileNavRef}
         id="mobile-bottom-nav"
-        className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 px-2 py-1 flex items-center justify-around will-change-transform"
+        className="sm:hidden fixed left-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 px-2 py-1 flex items-center justify-around will-change-[top]"
         style={{
-          transform: `translateY(${mobileNavViewportOffset}px)`,
+          bottom: mobileNavTop === null ? 0 : 'auto',
+          top: mobileNavTop === null ? 'auto' : `${mobileNavTop}px`,
         }}
       >
         {/* Feed Tab */}

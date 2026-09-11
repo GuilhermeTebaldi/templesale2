@@ -2458,6 +2458,14 @@ export default function App() {
   const handleOpenNewProduct = () => {
     setIsUserOpen(false);
 
+    if (!currentUser) {
+      setIsNewProductOpen(false);
+      setIsEditePerfilOpen(false);
+      setAuthModalMode("register");
+      setIsAuthModalOpen(true);
+      return;
+    }
+
     if (!hasRequiredProfileForPublishing) {
       setIsNewProductOpen(false);
       setProfileCompletionMessage(

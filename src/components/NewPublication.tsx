@@ -69,6 +69,29 @@ export default function NewPublication({
 
   const selectedOverlay = overlays.find((overlay) => overlay.id === selectedOverlayId);
 
+  React.useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const updateViewportHeight = () => {
+      const height = window.visualViewport?.height ?? window.innerHeight;
+      document.documentElement.style.setProperty("--ts-publication-vh", `${height}px`);
+    };
+
+    updateViewportHeight();
+    window.visualViewport?.addEventListener("resize", updateViewportHeight);
+    window.visualViewport?.addEventListener("scroll", updateViewportHeight);
+    window.addEventListener("resize", updateViewportHeight);
+
+    return () => {
+      window.visualViewport?.removeEventListener("resize", updateViewportHeight);
+      window.visualViewport?.removeEventListener("scroll", updateViewportHeight);
+      window.removeEventListener("resize", updateViewportHeight);
+      document.documentElement.style.removeProperty("--ts-publication-vh");
+    };
+  }, []);
+
   const resetEditor = React.useCallback(() => {
     setCurrentImage(null);
     setPhotoCrop({ x: 0, y: 0, scale: 1 });
@@ -181,8 +204,8 @@ export default function NewPublication({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-120 flex items-center justify-center bg-black text-neutral-100">
-        <div className="relative h-[100dvh] w-full max-w-lg overflow-hidden bg-black shadow-2xl">
+      <div className="fixed inset-0 z-[120] flex items-start justify-center overflow-hidden overscroll-none bg-black text-neutral-100">
+        <div className="relative h-[var(--ts-publication-vh,100dvh)] w-full max-w-lg overflow-hidden bg-black shadow-2xl">
           <button
             type="button"
             onClick={onClose}
@@ -315,7 +338,7 @@ export default function NewPublication({
           )}
 
           {errorMessage && (
-            <div className="absolute inset-x-4 bottom-4 z-60 rounded-2xl border border-red-500/30 bg-red-950/95 px-4 py-3 text-sm text-red-100 shadow-2xl">
+            <div className="absolute inset-x-4 bottom-4 z-[60] rounded-2xl border border-red-500/30 bg-red-950/95 px-4 py-3 text-sm text-red-100 shadow-2xl">
               {errorMessage}
             </div>
           )}
