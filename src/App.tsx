@@ -1785,6 +1785,10 @@ export default function App() {
       setHasMoreSelectedEstablishmentPublications(false);
       setNextSelectedEstablishmentPublicationsOffset(0);
       setIsEstablishmentPageOpen(true);
+      setSelectedProduct(null);
+      setSocialSelectedCompanyId(`company_${cachedEstablishment.id}`);
+      setSocialActiveTab("profile");
+      scrollWindowToTop();
       if (typeof window !== "undefined") {
         window.history.pushState(
           { establishmentId: cachedEstablishment.id },
@@ -1806,6 +1810,10 @@ export default function App() {
       );
       setNextSelectedEstablishmentPublicationsOffset(payload.publications.length);
       setIsEstablishmentPageOpen(true);
+      setSelectedProduct(null);
+      setSocialSelectedCompanyId(`company_${payload.establishment.id}`);
+      setSocialActiveTab("profile");
+      scrollWindowToTop();
       if (typeof window !== "undefined") {
         window.history.pushState(
           { establishmentId: payload.establishment.id },
@@ -3407,13 +3415,20 @@ export default function App() {
         {isMapOpen && (
           <ProductMap
             products={products}
+            establishments={visibleEstablishments}
             initialCategory={mapInitialCategory}
             openResultsByDefault={mapOpenWithResults}
             autoFocusPanelSearch={mapAutoFocusPanelSearch}
             onOpenProduct={(product) => {
+              setIsMapOpen(false);
+              setMapOpenWithResults(false);
+              setMapAutoFocusPanelSearch(false);
               openProductDetails(product);
             }}
             onOpenEstablishment={(idOrSlug) => {
+              setIsMapOpen(false);
+              setMapOpenWithResults(false);
+              setMapAutoFocusPanelSearch(false);
               void openEstablishmentPage(idOrSlug);
             }}
             currentUser={currentUser}

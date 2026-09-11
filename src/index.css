@@ -35,6 +35,10 @@ body.ts-scroll-lock {
   background-color: #0a0a0a !important;
 }
 
+.leaflet-control-attribution {
+  display: none !important;
+}
+
 .templesale-pin-wrapper {
   background: transparent !important;
   border: none !important;

@@ -1,14 +1,15 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, Pencil, Trash2, Package, X, ExternalLink } from "lucide-react";
+import { ExternalLink, MapPin, Search, Store, X } from "lucide-react";
 import { type Product } from "./ProductCard";
 import { useI18n } from "../i18n/provider";
 import { type AppLocale } from "../i18n";
 import { getCategoryLabel } from "../i18n/categories";
-import { api, type SessionUser } from "../lib/api";
+import { api, type EstablishmentDto, type SessionUser } from "../lib/api";
 
 interface ProductMapProps {
   products: Product[];
+  establishments?: EstablishmentDto[];
   onClose: () => void;
   initialFocusProductId?: number;
   initialCategory?: string;
@@ -25,6 +26,8 @@ interface ProductMapProps {
 type LocatedProduct = Product & {
   latitude: number;
   longitude: number;
+  address?: string;
+  keywords?: string[];
 };
 
 type GeoPoint = [number, number];
@@ -56,27 +59,27 @@ function buildFocusedBalloonMarkerHtml(
   googleMapsHref: string,
   googleMapsLabel: string,
 ): string {
-  const safeLabel = escapeHtml(String(label ?? "").trim() || "Produto");
+  const safeLabel = escapeHtml(String(label ?? "").trim() || "Loja");
   const safeGoogleMapsHref = escapeHtml(googleMapsHref);
   const safeGoogleMapsLabel = escapeHtml(googleMapsLabel);
   return `
     <div style="position:relative;width:230px;height:96px;display:flex;justify-content:center;pointer-events:auto;">
-      <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:220px;padding:8px 10px 9px;background:#ffffff;border:1.5px solid #111111;border-radius:15px;color:#111111;line-height:1.2;box-shadow:0 10px 20px rgba(0,0,0,0.2);pointer-events:auto;">
+      <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:220px;padding:8px 10px 9px;background:#0a0a0a;border:1.5px solid #00c896;border-radius:15px;color:#ffffff;line-height:1.2;box-shadow:0 18px 32px rgba(0,0,0,0.38);pointer-events:auto;">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-          <span style="display:inline-block;width:7px;height:7px;border-radius:9999px;background:#2e7d32;"></span>
-          <span style="font-size:9px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#444444;">
+          <span style="display:inline-block;width:7px;height:7px;border-radius:9999px;background:#00c896;"></span>
+          <span style="font-size:9px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:#d4d4d4;">
             TempleSale
           </span>
         </div>
         <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
           ${safeLabel}
         </div>
-        <a href="${safeGoogleMapsHref}" target="_blank" rel="noopener noreferrer" style="margin-top:8px;display:flex;align-items:center;justify-content:center;width:100%;padding:5px 8px;background:#f5f5f5;border:1.5px solid #111111;border-radius:10px;color:#111111;font-size:10px;font-weight:700;text-decoration:none;letter-spacing:0.03em;pointer-events:auto;">
+        <a href="${safeGoogleMapsHref}" target="_blank" rel="noopener noreferrer" style="margin-top:8px;display:flex;align-items:center;justify-content:center;width:100%;padding:5px 8px;background:#ffffff;border:1.5px solid #ffffff;border-radius:10px;color:#0a0a0a;font-size:10px;font-weight:800;text-decoration:none;letter-spacing:0.03em;pointer-events:auto;">
           ${safeGoogleMapsLabel}
         </a>
       </div>
-      <div style="position:absolute;top:74px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:11px solid transparent;border-right:11px solid transparent;border-top:18px solid #111111;"></div>
-      <div style="position:absolute;top:73px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-top:17px solid #ffffff;"></div>
+      <div style="position:absolute;top:74px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:11px solid transparent;border-right:11px solid transparent;border-top:18px solid #00c896;"></div>
+      <div style="position:absolute;top:73px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-top:17px solid #0a0a0a;"></div>
     </div>
   `;
 }
@@ -91,12 +94,12 @@ function buildStoreMarkerHtml(product: Product): string {
     : `<div style="width:34px;height:34px;border-radius:9999px;background:#e7e5e4;color:#78716c;display:flex;align-items:center;justify-content:center;font-family:serif;font-size:18px;">${safeStoreName.slice(0, 1).toUpperCase()}</div>`;
   return `
     <div style="position:relative;width:164px;height:64px;display:flex;justify-content:center;pointer-events:none;">
-      <div style="display:flex;align-items:center;gap:8px;max-width:156px;height:44px;padding:5px 10px 5px 5px;background:#ffffff;border:1.5px solid #111111;border-radius:9999px;box-shadow:0 10px 24px rgba(0,0,0,0.24);">
+      <div style="display:flex;align-items:center;gap:8px;max-width:156px;height:44px;padding:5px 10px 5px 5px;background:#0a0a0a;border:1.5px solid #00c896;border-radius:9999px;box-shadow:0 14px 28px rgba(0,0,0,0.32);">
         ${imageMarkup}
-        <div style="min-width:0;max-width:92px;font-size:11px;font-weight:700;color:#111111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${safeStoreName}</div>
+        <div style="min-width:0;max-width:92px;font-size:11px;font-weight:800;color:#ffffff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${safeStoreName}</div>
       </div>
-      <div style="position:absolute;top:39px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:14px solid #111111;"></div>
-      <div style="position:absolute;top:38px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:13px solid #ffffff;"></div>
+      <div style="position:absolute;top:39px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:14px solid #00c896;"></div>
+      <div style="position:absolute;top:38px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:13px solid #0a0a0a;"></div>
     </div>
   `;
 }
@@ -118,6 +121,11 @@ function matchesProductSearch(
     product.sectionName ?? "",
     getCategoryLabel(product.category, locale),
     product.description ?? "",
+    product.city ?? "",
+    product.sellerName ?? "",
+    product.establishmentSlug ?? "",
+    (product as LocatedProduct).address ?? "",
+    ...((product as LocatedProduct).keywords ?? []),
   ];
   return searchableFields
     .map((field) => normalizeSearchText(field))
@@ -155,6 +163,41 @@ function toLocatedProduct(product: Product): LocatedProduct | null {
     ...product,
     latitude: clamp(latitude, -90, 90),
     longitude: clamp(longitude, -180, 180),
+  };
+}
+
+function toLocatedEstablishment(establishment: EstablishmentDto): LocatedProduct | null {
+  const latitude = parseCoordinate(establishment.latitude);
+  const longitude = parseCoordinate(establishment.longitude);
+
+  if (latitude === null || longitude === null) {
+    return null;
+  }
+
+  return {
+    id: 1_000_000_000 + establishment.id,
+    name: establishment.name,
+    category: establishment.category || "Altro",
+    price: "",
+    image:
+      String(establishment.logoUrl ?? "").trim() ||
+      String(establishment.coverUrl ?? "").trim() ||
+      String(establishment.ownerAvatarUrl ?? "").trim(),
+    description: establishment.description,
+    ownerId: establishment.ownerId,
+    latitude: clamp(latitude, -90, 90),
+    longitude: clamp(longitude, -180, 180),
+    city: establishment.city,
+    sellerName: establishment.name,
+    establishmentId: establishment.id,
+    establishmentSlug: establishment.slug,
+    establishmentName: establishment.name,
+    establishmentCategory: establishment.category,
+    establishmentLogoUrl: establishment.logoUrl,
+    establishmentWhatsappCountryIso: establishment.whatsappCountryIso,
+    establishmentWhatsappNumber: establishment.whatsappNumber,
+    address: establishment.address,
+    keywords: establishment.keywords ?? [],
   };
 }
 
@@ -326,9 +369,9 @@ const TILE_FALLBACK_TIMEOUT_MS = 20000;
 const TILE_ERROR_THRESHOLD = 8;
 const FOCUSED_POINT_MARKER_STYLE = {
   radius: 8,
-  color: "#1b5e20",
+  color: "#00c896",
   weight: 2,
-  fillColor: "#43a047",
+  fillColor: "#00c896",
   fillOpacity: 0.95,
 };
 let leafletAssetsPromise: Promise<LeafletGlobal> | null = null;
@@ -476,8 +519,12 @@ function setMapInteractionForDrawing(map: LeafletMapInstance, isDrawing: boolean
 
 export default function ProductMap({
   products,
+  establishments = [],
   onClose,
   initialFocusProductId,
+  initialCategory,
+  openResultsByDefault,
+  autoFocusPanelSearch,
   onOpenProduct,
   onOpenEstablishment,
   currentUser,
@@ -485,14 +532,23 @@ export default function ProductMap({
   googleMapsUrl,
 }: ProductMapProps) {
   const { t, locale } = useI18n();
+  const [searchedEstablishments, setSearchedEstablishments] = React.useState<EstablishmentDto[]>([]);
   const productsWithLocation = React.useMemo(
     () =>
       groupLocatedProductsByEstablishment(
-        products
-          .map(toLocatedProduct)
-          .filter((product): product is LocatedProduct => product !== null),
+        [
+          ...searchedEstablishments
+            .map(toLocatedEstablishment)
+            .filter((product): product is LocatedProduct => product !== null),
+          ...establishments
+            .map(toLocatedEstablishment)
+            .filter((product): product is LocatedProduct => product !== null),
+          ...products
+            .map(toLocatedProduct)
+            .filter((product): product is LocatedProduct => product !== null),
+        ],
       ),
-    [products],
+    [establishments, products, searchedEstablishments],
   );
   const hasProductsWithLocation = productsWithLocation.length > 0;
 
@@ -513,8 +569,6 @@ export default function ProductMap({
     };
     return isValidMapLocation(userLocation) ? userLocation : readSavedMapLocation();
   });
-  const hideFloatingMapControlsOnMobile = showResults;
-
   const overlayRef = React.useRef<HTMLDivElement | null>(null);
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<LeafletMapInstance | null>(null);
@@ -690,7 +744,7 @@ export default function ProductMap({
   const filteredProducts = React.useMemo(() => {
     const normalized = normalizeSearchText(searchQuery);
     if (!normalized) {
-      return productsWithLocation;
+      return [];
     }
 
     return productsWithLocation.filter((product) =>
@@ -717,10 +771,67 @@ export default function ProductMap({
     if (!normalizedTopSearchQuery) {
       return [];
     }
-    return filteredProducts.slice(0, 8);
+    return filteredProducts.slice(0, 50);
   }, [filteredProducts, normalizedTopSearchQuery]);
   const shouldShowTopSearchResults =
     normalizedTopSearchQuery.length > 0 && isTopSearchResultsOpen;
+
+  React.useEffect(() => {
+    const trimmedQuery = searchQuery.trim();
+    if (!normalizeSearchText(trimmedQuery)) {
+      setSearchedEstablishments([]);
+      return;
+    }
+
+    let cancelled = false;
+    const searchTimer = window.setTimeout(() => {
+      void api
+        .getEstablishments({
+          search: trimmedQuery,
+          limit: 150,
+        })
+        .then((items) => {
+          if (!cancelled) {
+            setSearchedEstablishments(items);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSearchedEstablishments([]);
+          }
+        });
+    }, 260);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(searchTimer);
+    };
+  }, [searchQuery]);
+
+  React.useEffect(() => {
+    const normalizedInitialCategory = String(initialCategory ?? "").trim();
+    if (!normalizedInitialCategory || normalizedInitialCategory === "All") {
+      return;
+    }
+
+    setSearchQuery(normalizedInitialCategory);
+    setIsTopSearchResultsOpen(Boolean(openResultsByDefault));
+  }, [initialCategory, openResultsByDefault]);
+
+  React.useEffect(() => {
+    if (!autoFocusPanelSearch) {
+      return;
+    }
+
+    const focusTimer = window.setTimeout(() => {
+      topSearchInputRef.current?.focus();
+      if (normalizeSearchText(searchQuery)) {
+        setIsTopSearchResultsOpen(true);
+      }
+    }, 180);
+
+    return () => window.clearTimeout(focusTimer);
+  }, [autoFocusPanelSearch, searchQuery]);
 
   React.useEffect(() => {
     if (!isTopSearchResultsOpen) {
@@ -791,13 +902,11 @@ export default function ProductMap({
     [onOpenEstablishment, onOpenProduct],
   );
 
-  const handleSearchResultSelect = React.useCallback(
+  const focusMapItem = React.useCallback(
     (product: LocatedProduct) => {
       mapRef.current?.setView([product.latitude, product.longitude], 15);
-      setIsTopSearchResultsOpen(false);
-      openMapItem(product);
     },
-    [openMapItem],
+    [],
   );
 
   const handleStartDrawingMode = () => {
@@ -866,7 +975,7 @@ export default function ProductMap({
 
         const map = L.map(mapContainerRef.current, {
           zoomControl: false,
-          attributionControl: true,
+          attributionControl: false,
         });
         map.setView(mapCenter, focusedProduct ? 15 : savedUserLocation || firstProduct ? 13 : 12);
         setMapInteractionForDrawing(map, isDrawingRef.current);
@@ -1207,11 +1316,13 @@ export default function ProductMap({
 
     const map = mapRef.current;
     const L = leafletRef.current;
-    const orderedProducts = [...filteredProducts].sort((a, b) => {
-      const aIsFocused = a.id === initialFocusProductId ? 1 : 0;
-      const bIsFocused = b.id === initialFocusProductId ? 1 : 0;
-      return aIsFocused - bIsFocused;
-    });
+    const orderedProducts = [...filteredProducts]
+      .sort((a, b) => {
+        const aIsFocused = a.id === initialFocusProductId ? 1 : 0;
+        const bIsFocused = b.id === initialFocusProductId ? 1 : 0;
+        return bIsFocused - aIsFocused;
+      })
+      .slice(0, 80);
 
     markersRef.current = orderedProducts.flatMap((product) => {
       const isFocusedProduct = product.id === initialFocusProductId;
@@ -1393,40 +1504,30 @@ export default function ProductMap({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-170 bg-[#fdfcfb] overflow-hidden"
+      className="fixed inset-0 z-[170] overflow-hidden bg-neutral-950"
     >
-      <div className="relative w-full h-full font-sans text-stone-900">
+      <div className="relative w-full h-full font-sans text-neutral-100">
         <div
-          className={`absolute top-4 left-4 right-4 z-[3000] ${
-            hideFloatingMapControlsOnMobile ? "hidden sm:flex" : "flex"
-          } flex-col sm:flex-row items-start sm:items-center gap-4 pointer-events-none`}
+          className="absolute left-4 right-4 top-[max(14px,calc(env(safe-area-inset-top)+12px))] z-[3000] flex items-start gap-3 pointer-events-none"
         >
-          <div className="relative z-30 bg-stone-50/95 backdrop-blur-md border border-stone-200 rounded-2xl p-4 shadow-xl pointer-events-auto flex items-center gap-4 w-full sm:w-auto">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-stone-800 rounded-xl flex items-center justify-center text-stone-100">
-                <Package size={20} />
-              </div>
-              <div className="hidden md:block">
-                <h1 className="text-sm font-semibold tracking-tight text-stone-800">
-                  {t("Mapa de produtos")}
-                </h1>
-                <p className="text-[10px] text-stone-500 uppercase tracking-widest font-medium">
-                  {t("Descoberta")}
-                </p>
+          <div className="relative z-30 flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950/94 p-3 shadow-2xl backdrop-blur-md pointer-events-auto">
+            <div className="flex shrink-0 items-center gap-3">
+              <div className="w-10 h-10 bg-white text-neutral-950 rounded-full flex items-center justify-center">
+                <Store size={19} />
               </div>
             </div>
 
-            <div className="h-8 w-px bg-stone-200 hidden sm:block" />
+            <div className="h-8 w-px bg-neutral-800 hidden sm:block" />
 
-            <div ref={topSearchContainerRef} className="relative grow sm:w-72">
+            <div ref={topSearchContainerRef} className="relative min-w-0 grow">
               <Search
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400"
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"
                 size={16}
               />
               <input
                 ref={topSearchInputRef}
                 type="text"
-                placeholder={t("Buscar produtos ou categorias...")}
+                placeholder={t("Buscar lojas, categorias ou cidade...")}
                 value={searchQuery}
                 onFocus={() => {
                   if (normalizeSearchText(searchQuery)) {
@@ -1448,7 +1549,7 @@ export default function ProductMap({
                     setIsTopSearchResultsOpen(false);
                   }
                 }}
-                className="w-full pl-10 pr-10 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400/20 focus:border-stone-500 transition-all"
+                className="w-full pl-10 pr-10 py-2 bg-neutral-900 border border-neutral-800 rounded-xl text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-500 transition-all"
               />
               {normalizedTopSearchQuery && (
                 <button
@@ -1459,7 +1560,7 @@ export default function ProductMap({
                     setIsTopSearchResultsOpen(false);
                     topSearchInputRef.current?.focus();
                   }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full text-neutral-500 hover:text-white hover:bg-neutral-800 transition-colors"
                   aria-label={t("Limpar busca")}
                   title={t("Limpar busca")}
                 >
@@ -1467,47 +1568,78 @@ export default function ProductMap({
                 </button>
               )}
               {shouldShowTopSearchResults && (
-                <div className="absolute z-40 top-[calc(100%+8px)] left-0 right-0 bg-stone-50/98 backdrop-blur-md border border-stone-200 rounded-xl shadow-2xl overflow-hidden">
-                  <div className="px-3 py-2 border-b border-stone-200 bg-stone-100/80 flex items-center justify-between gap-3">
-                    <span className="text-[10px] uppercase tracking-[0.14em] font-bold text-stone-500">
-                      {t("Resultados da busca")}
+                <div className="absolute z-40 top-[calc(100%+8px)] left-0 right-0 bg-neutral-950/98 backdrop-blur-md border border-neutral-800 rounded-xl shadow-2xl overflow-hidden">
+                  <div className="px-3 py-2 border-b border-neutral-800 bg-neutral-900/90 flex items-center justify-between gap-3">
+                    <span className="text-[10px] uppercase tracking-[0.14em] font-bold text-emerald-400">
+                      {t("Lojas encontradas")}
                     </span>
-                    <span className="text-[10px] text-stone-400">
+                    <span className="text-[10px] text-neutral-500">
                       {t("{count} resultado(s)", { count: filteredProducts.length })}
                     </span>
                   </div>
 
                   {topSearchResults.length === 0 ? (
-                    <p className="px-3 py-4 text-xs text-stone-500">
+                    <p className="px-3 py-4 text-xs text-neutral-400">
                       {t("Sem resultados para esta busca.")}
                     </p>
                   ) : (
                     <div className="max-h-72 overflow-y-auto">
                       {topSearchResults.map((product) => (
-                        <button
+                        <div
                           key={product.id}
-                          type="button"
+                          role="button"
+                          tabIndex={0}
                           onClick={(event) => {
                             event.stopPropagation();
-                            handleSearchResultSelect(product);
+                            focusMapItem(product);
                           }}
-                          className="w-full px-3 py-2.5 flex items-center gap-3 text-left border-b last:border-b-0 border-stone-100 hover:bg-white/90 transition-colors"
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" && event.key !== " ") {
+                              return;
+                            }
+                            event.preventDefault();
+                            focusMapItem(product);
+                          }}
+                          className="w-full px-3 py-2.5 flex items-center gap-3 text-left border-b last:border-b-0 border-neutral-900 hover:bg-neutral-900 transition-colors"
+                          aria-label={t("Ver {name} no mapa", { name: product.name })}
                         >
-                          <img
-                            src={product.image}
-                            alt={product.name}
-                            className="w-10 h-10 rounded-md object-cover bg-stone-200 shrink-0"
-                            referrerPolicy="no-referrer"
-                          />
-                          <div className="min-w-0">
-                            <p className="text-xs font-medium text-stone-800 truncate">
+                          {product.image ? (
+                            <img
+                              src={product.image}
+                              alt={product.name}
+                              className="w-10 h-10 rounded-full object-cover bg-neutral-800 shrink-0 border border-neutral-700"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800 text-sm font-bold text-neutral-300">
+                              {product.name.slice(0, 1).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-white truncate">
                               {product.name}
                             </p>
-                            <p className="text-[10px] text-stone-500 truncate">
+                            <p className="text-[10px] text-neutral-400 truncate">
                               {getCategoryLabel(product.category, locale)}
                             </p>
                           </div>
-                        </button>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <span className="rounded-full border border-neutral-700 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-neutral-300">
+                              {t("Ver no mapa")}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openMapItem(product);
+                              }}
+                              className="rounded-full border border-emerald-500/40 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-emerald-300 hover:bg-emerald-500 hover:text-neutral-950"
+                              aria-label={t("Abrir loja {name}", { name: product.name })}
+                            >
+                              {t("Abrir")}
+                            </button>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -1516,43 +1648,14 @@ export default function ProductMap({
             </div>
           </div>
 
-          <div className="relative z-20 bg-stone-50/95 backdrop-blur-md border border-stone-200 rounded-2xl p-1 shadow-xl flex items-center gap-1 pointer-events-auto">
-            <button
-              type="button"
-              onClick={() => {
-                if (isDrawing) {
-                  handleStopDrawingMode();
-                  return;
-                }
-                handleStartDrawingMode();
-              }}
-              className={`p-3 rounded-xl transition-all duration-200 ${
-                isDrawing
-                  ? "bg-stone-900 text-white shadow-lg"
-                  : "text-stone-500 hover:bg-stone-100"
-              }`}
-              title={t("Desenhar área")}
-              disabled={!hasProductsWithLocation}
-            >
-              <Pencil size={18} />
-            </button>
-            <div className="w-px h-6 bg-stone-200 mx-1" />
-            <button
-              type="button"
-              onClick={clearSelection}
-              className="p-3 rounded-xl text-stone-500 hover:bg-red-50 hover:text-red-500 transition-all duration-200"
-              title={t("Limpar seleção")}
-            >
-              <Trash2 size={18} />
-            </button>
+          <div className="relative z-20 bg-neutral-950/94 backdrop-blur-md border border-neutral-800 rounded-xl p-1 shadow-2xl flex items-center gap-1 pointer-events-auto">
             {googleMapsUrl && (
               <>
-                <div className="w-px h-6 bg-stone-200 mx-1" />
                 <a
                   href={googleMapsUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="px-2.5 py-2.5 rounded-xl text-stone-600 hover:bg-stone-100 transition-all duration-200 flex items-center gap-1.5"
+                  className="px-2.5 py-2.5 rounded-lg text-neutral-300 hover:bg-neutral-900 hover:text-white transition-all duration-200 flex items-center gap-1.5"
                   title={t("Abrir no Google Maps")}
                   aria-label={t("Abrir no Google Maps")}
                 >
@@ -1563,11 +1666,11 @@ export default function ProductMap({
                 </a>
               </>
             )}
-            <div className="w-px h-6 bg-stone-200 mx-1" />
+            {googleMapsUrl && <div className="w-px h-6 bg-neutral-800 mx-1" />}
             <button
               type="button"
               onClick={onClose}
-              className="p-3 rounded-xl text-stone-500 hover:bg-stone-100 transition-all duration-200"
+              className="p-3 rounded-lg text-neutral-400 hover:bg-neutral-900 hover:text-white transition-all duration-200"
               title={t("Fechar mapa")}
             >
               <X size={18} />
@@ -1588,7 +1691,7 @@ export default function ProductMap({
             className="w-full h-full"
             style={{
               background:
-                "radial-gradient(circle at 20% 20%, #f7f2e8 0%, #ece7db 45%, #e7e1d4 100%)",
+                "radial-gradient(circle at 20% 20%, #1f2937 0%, #111827 42%, #050505 100%)",
               cursor: isDrawing ? "crosshair" : undefined,
               touchAction: "none",
             }}
@@ -1596,13 +1699,37 @@ export default function ProductMap({
         )}
 
         {!leafletError && !hasProductsWithLocation && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-1000 bg-stone-900 text-white px-6 py-3 rounded-full shadow-2xl text-sm">
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-neutral-950 text-white px-6 py-3 rounded-full shadow-2xl text-sm border border-neutral-800">
             {t("Nenhuma atividade com localização disponível no momento.")}
           </div>
         )}
 
+        {!leafletError && hasProductsWithLocation && !normalizedTopSearchQuery && (
+          <div className="absolute left-1/2 top-1/2 z-[1000] w-[min(360px,calc(100%-32px))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-neutral-800 bg-neutral-950/92 px-5 py-4 text-center shadow-2xl backdrop-blur-md">
+            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-neutral-950">
+              <MapPin size={20} />
+            </div>
+            <p className="text-sm font-semibold text-white">
+              {t("Busque uma loja no mapa")}
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-neutral-400">
+              {t("Digite nome, categoria ou cidade para mostrar os pontos e abrir a loja direto.")}
+            </p>
+          </div>
+        )}
+
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-[2600] flex items-start justify-center border-t border-neutral-900 bg-neutral-950/96 px-4 text-[8px] font-black uppercase tracking-[0.18em] text-white backdrop-blur-md"
+          style={{
+            height: "max(14px, calc(env(safe-area-inset-bottom) + 8px))",
+          }}
+        >
+          TempleSale
+        </div>
+
         <AnimatePresence>
-          {showResults && (
+          {false && showResults && (
             <motion.div
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
@@ -1759,19 +1886,6 @@ export default function ProductMap({
             </motion.div>
           )}
         </AnimatePresence>
-
-        {isDrawing && !currentPolygon.length && !leafletError && hasProductsWithLocation && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="absolute bottom-10 left-1/2 -translate-x-1/2 z-1000 bg-stone-900 text-stone-100 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-stone-700/40"
-          >
-            <Pencil size={16} className="animate-pulse" />
-            <span className="text-sm font-medium">
-              {t("Clique e arraste para desenhar no mapa")}
-            </span>
-          </motion.div>
-        )}
       </div>
     </motion.div>
   );
