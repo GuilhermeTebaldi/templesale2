@@ -18,11 +18,13 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
   const streamRef = useRef<MediaStream | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [isStartingCamera, setIsStartingCamera] = useState<boolean>(true);
+  const [isStartingCamera, setIsStartingCamera] = useState<boolean>(false);
   const [flashAnimation, setFlashAnimation] = useState<boolean>(false);
+  const shouldAutoStartCameraRef = useRef(false);
 
   // Initialize and switch camera stream
   const startCamera = async () => {
+    shouldAutoStartCameraRef.current = true;
     setIsStartingCamera(true);
     setCameraError(null);
 
@@ -61,8 +63,31 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
   };
 
   useEffect(() => {
-    startCamera();
+    let cancelled = false;
+
+    const maybeStartCamera = async () => {
+      if (shouldAutoStartCameraRef.current) {
+        await startCamera();
+        return;
+      }
+
+      try {
+        const permission = await navigator.permissions?.query({
+          name: 'camera' as PermissionName,
+        });
+        if (!cancelled && permission?.state === 'granted') {
+          shouldAutoStartCameraRef.current = true;
+          await startCamera();
+        }
+      } catch {
+        // Browsers that do not expose camera permission state will show the manual start button.
+      }
+    };
+
+    void maybeStartCamera();
+
     return () => {
+      cancelled = true;
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
@@ -196,6 +221,26 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
               className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-200 transition"
             >
               Tentar novamente
+            </button>
+          </div>
+        )}
+
+        {!stream && !cameraError && !isStartingCamera && (
+          <div className="absolute inset-0 p-6 flex flex-col items-center justify-center text-center bg-neutral-950 z-20">
+            <div className="w-14 h-14 rounded-full bg-white text-neutral-950 flex items-center justify-center mb-4 shadow-xl">
+              <Camera className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-semibold text-neutral-100 mb-2">Escolha sua foto</h3>
+            <p className="text-xs text-neutral-400 max-w-xs leading-relaxed mb-5">
+              Abra a câmera só quando for fotografar. Para publicar sem pedir câmera, use a galeria.
+            </p>
+            <button
+              type="button"
+              id="btn-start-camera"
+              onClick={() => void startCamera()}
+              className="px-5 py-2.5 rounded-full bg-white text-xs font-bold uppercase tracking-[0.14em] text-neutral-950 transition hover:bg-neutral-200 active:scale-95"
+            >
+              Usar câmera
             </button>
           </div>
         )}

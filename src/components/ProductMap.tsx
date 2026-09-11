@@ -84,22 +84,215 @@ function buildFocusedBalloonMarkerHtml(
   `;
 }
 
-function buildStoreMarkerHtml(product: Product): string {
-  const storeName = String(product.establishmentName || product.sellerName || product.name || "Attività").trim();
-  const imageUrl = String(product.establishmentLogoUrl || product.image || "").trim();
+function calculateDistanceKm(from: LeafletLatLng | null, product: LocatedProduct): number | null {
+  if (!from) {
+    return null;
+  }
+
+  const earthRadiusKm = 6371;
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const deltaLat = toRadians(product.latitude - from.lat);
+  const deltaLng = toRadians(product.longitude - from.lng);
+  const startLat = toRadians(from.lat);
+  const endLat = toRadians(product.latitude);
+  const haversine =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(startLat) * Math.cos(endLat) * Math.sin(deltaLng / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function formatDistanceLabel(distanceKm: number | null): string {
+  if (distanceKm === null || !Number.isFinite(distanceKm)) {
+    return "";
+  }
+  if (distanceKm < 1) {
+    return `${Math.max(20, Math.round(distanceKm * 1000))} m`;
+  }
+  return `${distanceKm.toFixed(distanceKm < 10 ? 1 : 0).replace(".", ",")} km`;
+}
+
+function formatTravelTimeLabel(distanceKm: number | null): string {
+  if (distanceKm === null || !Number.isFinite(distanceKm)) {
+    return "";
+  }
+  const minutes = Math.max(2, Math.round((distanceKm / 28) * 60 + 3));
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours}h ${rest}min` : `${hours}h`;
+}
+
+function buildMapDistanceSummary(userLocation: LeafletLatLng | null, product: LocatedProduct): string {
+  const distanceKm = calculateDistanceKm(userLocation, product);
+  const distanceLabel = formatDistanceLabel(distanceKm);
+  const timeLabel = formatTravelTimeLabel(distanceKm);
+  return distanceLabel && timeLabel ? `${distanceLabel} - ${timeLabel}` : "";
+}
+
+function buildMapLocationSummary(product: LocatedProduct): string {
+  const parts = [
+    String(product.city ?? "").trim(),
+    String(product.address ?? "").trim(),
+  ].filter(Boolean);
+  if (parts.length > 0) {
+    return parts.join(" - ");
+  }
+  return `${product.latitude.toFixed(5)}, ${product.longitude.toFixed(5)}`;
+}
+
+function buildStoreMarkerHtml(
+  product: LocatedProduct,
+  distanceSummary: string,
+): string {
+  const storeName = String(
+    product.establishmentName ||
+      product.sellerName ||
+      product.name ||
+      "Attività",
+  ).trim();
+
+  const imageUrl = String(
+    product.establishmentLogoUrl ||
+      product.image ||
+      "",
+  ).trim();
+
   const safeStoreName = escapeHtml(storeName);
   const safeImageUrl = escapeHtml(imageUrl);
+  const safeDistanceSummary = escapeHtml(distanceSummary);
+
   const imageMarkup = safeImageUrl
-    ? `<img src="${safeImageUrl}" alt="" style="width:34px;height:34px;border-radius:9999px;object-fit:cover;background:#f5f5f4;" />`
-    : `<div style="width:34px;height:34px;border-radius:9999px;background:#e7e5e4;color:#78716c;display:flex;align-items:center;justify-content:center;font-family:serif;font-size:18px;">${safeStoreName.slice(0, 1).toUpperCase()}</div>`;
+    ? `<img
+        src="${safeImageUrl}"
+        alt=""
+        style="
+          width:36px;
+          height:36px;
+          flex:0 0 36px;
+          border-radius:9999px;
+          object-fit:cover;
+          background:#f5f5f4;
+        "
+      />`
+    : `<div
+        style="
+          width:36px;
+          height:36px;
+          flex:0 0 36px;
+          border-radius:9999px;
+          background:#e7e5e4;
+          color:#78716c;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          font-family:serif;
+          font-size:17px;
+          font-weight:700;
+        "
+      >${safeStoreName.slice(0, 1).toUpperCase()}</div>`;
+
+  const distanceMarkup = safeDistanceSummary
+    ? `<div
+        style="
+          margin-top:2px;
+          font-size:9px;
+          line-height:11px;
+          font-weight:700;
+          color:#6ee7b7;
+          white-space:nowrap;
+          overflow:hidden;
+          text-overflow:ellipsis;
+        "
+      >${safeDistanceSummary}</div>`
+    : "";
+
   return `
-    <div style="position:relative;width:164px;height:64px;display:flex;justify-content:center;pointer-events:none;">
-      <div style="display:flex;align-items:center;gap:8px;max-width:156px;height:44px;padding:5px 10px 5px 5px;background:#0a0a0a;border:1.5px solid #00c896;border-radius:9999px;box-shadow:0 14px 28px rgba(0,0,0,0.32);">
+    <div
+      style="
+        position:relative;
+        width:190px;
+        height:68px;
+        display:flex;
+        justify-content:center;
+        pointer-events:none;
+      "
+    >
+      <div
+        style="
+          position:absolute;
+          top:0;
+          left:50%;
+          transform:translateX(-50%);
+          width:182px;
+          height:48px;
+          box-sizing:border-box;
+          display:flex;
+          align-items:center;
+          gap:8px;
+          padding:5px 10px 5px 5px;
+          background:#0a0a0a;
+          border:1.5px solid #00c896;
+          border-radius:9999px;
+          box-shadow:0 12px 24px rgba(0,0,0,0.34);
+          overflow:hidden;
+        "
+      >
         ${imageMarkup}
-        <div style="min-width:0;max-width:92px;font-size:11px;font-weight:800;color:#ffffff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${safeStoreName}</div>
+
+        <div
+          style="
+            min-width:0;
+            flex:1;
+            overflow:hidden;
+          "
+        >
+          <div
+            style="
+              font-size:11px;
+              line-height:13px;
+              font-weight:800;
+              color:#ffffff;
+              white-space:nowrap;
+              overflow:hidden;
+              text-overflow:ellipsis;
+            "
+          >
+            ${safeStoreName}
+          </div>
+
+          ${distanceMarkup}
+        </div>
       </div>
-      <div style="position:absolute;top:39px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:14px solid #00c896;"></div>
-      <div style="position:absolute;top:38px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:13px solid #0a0a0a;"></div>
+
+      <div
+        style="
+          position:absolute;
+          top:48px;
+          left:50%;
+          transform:translateX(-50%);
+          width:0;
+          height:0;
+          border-left:9px solid transparent;
+          border-right:9px solid transparent;
+          border-top:14px solid #00c896;
+        "
+      ></div>
+
+      <div
+        style="
+          position:absolute;
+          top:47px;
+          left:50%;
+          transform:translateX(-50%);
+          width:0;
+          height:0;
+          border-left:8px solid transparent;
+          border-right:8px solid transparent;
+          border-top:13px solid #0a0a0a;
+        "
+      ></div>
     </div>
   `;
 }
@@ -305,6 +498,7 @@ type LeafletMarkerInstance = {
 
 type LeafletCircleMarkerInstance = {
   addTo: (map: LeafletMapInstance) => LeafletCircleMarkerInstance;
+  on: (eventName: string, handler: () => void) => LeafletCircleMarkerInstance;
   remove: () => void;
 };
 
@@ -356,6 +550,7 @@ const DEFAULT_MAP_CENTER: LeafletLatLng = {
   lng: -46.633308,
 };
 const SAVED_MAP_LOCATION_STORAGE_KEY = "templesale_map_user_location";
+const MAP_LOCATION_PROMPTED_STORAGE_KEY = "templesale_map_location_prompted";
 const PRIMARY_TILE_URL = "/api/map-tiles/{z}/{x}/{y}.png";
 const SECONDARY_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const TERTIARY_TILE_URL =
@@ -416,6 +611,31 @@ function writeSavedMapLocation(location: LeafletLatLng) {
 
   try {
     window.localStorage.setItem(SAVED_MAP_LOCATION_STORAGE_KEY, JSON.stringify(location));
+    window.localStorage.setItem(MAP_LOCATION_PROMPTED_STORAGE_KEY, "true");
+  } catch {
+    // Local storage can be unavailable in restricted browser modes.
+  }
+}
+
+function hasPromptedForMapLocation(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem(MAP_LOCATION_PROMPTED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function markMapLocationPrompted() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(MAP_LOCATION_PROMPTED_STORAGE_KEY, "true");
   } catch {
     // Local storage can be unavailable in restricted browser modes.
   }
@@ -517,6 +737,35 @@ function setMapInteractionForDrawing(map: LeafletMapInstance, isDrawing: boolean
   map.tap?.enable();
 }
 
+function getNearbyMarkerGroupKey(product: LocatedProduct): string {
+  return `${product.latitude.toFixed(4)}:${product.longitude.toFixed(4)}`;
+}
+
+function getMapItemKey(product: LocatedProduct): string {
+  return product.establishmentId ? `establishment:${product.establishmentId}` : `product:${product.id}`;
+}
+
+function getSpreadMarkerPosition(
+  product: LocatedProduct,
+  index: number,
+  total: number,
+): [number, number] {
+  if (total <= 1) {
+    return [product.latitude, product.longitude];
+  }
+
+  const angle = (Math.PI * 2 * index) / total - Math.PI / 2;
+  const radius = Math.min(0.00032, 0.0001 + total * 0.000018);
+  const latitudeOffset = Math.sin(angle) * radius;
+  const longitudeScale = Math.max(0.25, Math.cos((product.latitude * Math.PI) / 180));
+  const longitudeOffset = (Math.cos(angle) * radius) / longitudeScale;
+
+  return [
+    clamp(product.latitude + latitudeOffset, -90, 90),
+    clamp(product.longitude + longitudeOffset, -180, 180),
+  ];
+}
+
 export default function ProductMap({
   products,
   establishments = [],
@@ -558,6 +807,7 @@ export default function ProductMap({
   const [selectedProducts, setSelectedProducts] = React.useState<LocatedProduct[]>([]);
   const [showResults, setShowResults] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [focusedMapItemKey, setFocusedMapItemKey] = React.useState<string | null>(null);
   const [isTopSearchResultsOpen, setIsTopSearchResultsOpen] = React.useState(false);
   const [panelSearchQuery, setPanelSearchQuery] = React.useState("");
   const [mapReadyVersion, setMapReadyVersion] = React.useState(0);
@@ -607,8 +857,12 @@ export default function ProductMap({
     if (savedUserLocation || typeof navigator === "undefined" || !navigator.geolocation) {
       return;
     }
+    if (hasPromptedForMapLocation()) {
+      return;
+    }
 
     let cancelled = false;
+    markMapLocationPrompted();
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -641,7 +895,9 @@ export default function ProductMap({
             .catch(() => undefined);
         }
       },
-      () => undefined,
+      () => {
+        markMapLocationPrompted();
+      },
       {
         enableHighAccuracy: false,
         maximumAge: 24 * 60 * 60 * 1000,
@@ -777,6 +1033,16 @@ export default function ProductMap({
     normalizedTopSearchQuery.length > 0 && isTopSearchResultsOpen;
 
   React.useEffect(() => {
+    if (!focusedMapItemKey) {
+      return;
+    }
+    if (filteredProducts.some((product) => getMapItemKey(product) === focusedMapItemKey)) {
+      return;
+    }
+    setFocusedMapItemKey(null);
+  }, [filteredProducts, focusedMapItemKey]);
+
+  React.useEffect(() => {
     const trimmedQuery = searchQuery.trim();
     if (!normalizeSearchText(trimmedQuery)) {
       setSearchedEstablishments([]);
@@ -904,9 +1170,18 @@ export default function ProductMap({
 
   const focusMapItem = React.useCallback(
     (product: LocatedProduct) => {
-      mapRef.current?.setView([product.latitude, product.longitude], 15);
+      const visibleProducts = filteredProducts.slice(0, 80);
+      const nearbyGroup = visibleProducts.filter(
+        (item) => getNearbyMarkerGroupKey(item) === getNearbyMarkerGroupKey(product),
+      );
+      const nearbyIndex = nearbyGroup.findIndex((item) => item.id === product.id);
+      setFocusedMapItemKey(getMapItemKey(product));
+      mapRef.current?.setView(
+        getSpreadMarkerPosition(product, Math.max(0, nearbyIndex), nearbyGroup.length),
+        nearbyGroup.length > 1 ? 17 : 16,
+      );
     },
-    [],
+    [filteredProducts],
   );
 
   const handleStartDrawingMode = () => {
@@ -1318,53 +1593,54 @@ export default function ProductMap({
     const L = leafletRef.current;
     const orderedProducts = [...filteredProducts]
       .sort((a, b) => {
-        const aIsFocused = a.id === initialFocusProductId ? 1 : 0;
-        const bIsFocused = b.id === initialFocusProductId ? 1 : 0;
-        return bIsFocused - aIsFocused;
+        const aIsFocused =
+          a.id === initialFocusProductId || getMapItemKey(a) === focusedMapItemKey ? 1 : 0;
+        const bIsFocused =
+          b.id === initialFocusProductId || getMapItemKey(b) === focusedMapItemKey ? 1 : 0;
+        return aIsFocused - bIsFocused;
       })
       .slice(0, 80);
+    const nearbyGroups = orderedProducts.reduce((groups, product) => {
+      const groupKey = getNearbyMarkerGroupKey(product);
+      const group = groups.get(groupKey);
+      if (group) {
+        group.push(product);
+      } else {
+        groups.set(groupKey, [product]);
+      }
+      return groups;
+    }, new globalThis.Map<string, LocatedProduct[]>());
 
     markersRef.current = orderedProducts.flatMap((product) => {
-      const isFocusedProduct = product.id === initialFocusProductId;
-      if (!isFocusedProduct) {
-        const storeMarker = L.marker([product.latitude, product.longitude], {
-          icon: L.divIcon({
-            className: "templesale-store-map-marker",
-            html: buildStoreMarkerHtml(product),
-            iconSize: [164, 64],
-            iconAnchor: [82, 54],
-          }),
-        });
-        storeMarker.on("click", () => {
-          openMapItem(product);
-        });
-        storeMarker.addTo(map);
-        return [storeMarker];
-      }
-
-      const focusedPointMarker = L.circleMarker(
-        [product.latitude, product.longitude],
-        FOCUSED_POINT_MARKER_STYLE,
+      const isFocusedProduct =
+        product.id === initialFocusProductId || getMapItemKey(product) === focusedMapItemKey;
+      const nearbyGroup = nearbyGroups.get(getNearbyMarkerGroupKey(product)) ?? [product];
+      const nearbyIndex = nearbyGroup.findIndex((item) => item.id === product.id);
+      const markerPosition = getSpreadMarkerPosition(
+        product,
+        Math.max(0, nearbyIndex),
+        nearbyGroup.length,
       );
-      focusedPointMarker.addTo(map);
-
-      const focusedBalloonMarker = L.marker([product.latitude, product.longitude], {
-        icon: L.divIcon({
-          className: "templesale-focused-balloon-marker",
-          html: buildFocusedBalloonMarkerHtml(
-            product.name,
-            buildGoogleMapsSearchUrl(product.latitude, product.longitude),
-            t("Abrir no Google Maps"),
-          ),
-          iconSize: [230, 96],
-          iconAnchor: [115, 96],
-        }),
+      const storeMarker = L.marker(markerPosition, {
+       icon: L.divIcon({
+  className: "templesale-store-map-marker",
+  html: buildStoreMarkerHtml(
+    product,
+    buildMapDistanceSummary(savedUserLocation, product),
+  ),
+  iconSize: [190, 68],
+  iconAnchor: [95, 62],
+}),
+        zIndexOffset: isFocusedProduct ? 10000 : 0,
       });
-      focusedBalloonMarker.addTo(map);
+      storeMarker.on("click", () => {
+        openMapItem(product);
+      });
+      storeMarker.addTo(map);
 
-      return [focusedPointMarker, focusedBalloonMarker];
+      return [storeMarker];
     });
-  }, [clearMarkers, filteredProducts, initialFocusProductId, mapReadyVersion, openMapItem, t]);
+  }, [clearMarkers, filteredProducts, focusedMapItemKey, initialFocusProductId, mapReadyVersion, openMapItem, savedUserLocation, t]);
 
   React.useEffect(() => {
     if (!showResults || currentPolygon.length < 3) {
@@ -1508,14 +1784,13 @@ export default function ProductMap({
     >
       <div className="relative w-full h-full font-sans text-neutral-100">
         <div
-          className="absolute left-4 right-4 top-[max(14px,calc(env(safe-area-inset-top)+12px))] z-[3000] flex items-start gap-3 pointer-events-none"
-        >
-          <div className="relative z-30 flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950/94 p-3 shadow-2xl backdrop-blur-md pointer-events-auto">
-            <div className="flex shrink-0 items-center gap-3">
-              <div className="w-10 h-10 bg-white text-neutral-950 rounded-full flex items-center justify-center">
-                <Store size={19} />
-              </div>
-            </div>
+       className="absolute left-2 right-2 sm:left-4 sm:right-4 top-[max(8px,calc(env(safe-area-inset-top)+8px))] sm:top-[max(14px,calc(env(safe-area-inset-top)+12px))] z-[3000] flex items-start gap-1.5 sm:gap-3 pointer-events-none"  >
+          <div className="relative z-30 flex min-w-0 flex-1 items-center gap-2 sm:gap-3 rounded-xl border border-neutral-800 bg-neutral-950/94 p-2 sm:p-3 shadow-2xl backdrop-blur-md pointer-events-auto">
+           <div className="hidden sm:flex shrink-0 items-center gap-3">
+  <div className="w-10 h-10 bg-white text-neutral-950 rounded-full flex items-center justify-center">
+    <Store size={19} />
+  </div>
+</div>
 
             <div className="h-8 w-px bg-neutral-800 hidden sm:block" />
 
@@ -1542,6 +1817,7 @@ export default function ProductMap({
                 onChange={(event) => {
                   const nextQuery = event.target.value;
                   setSearchQuery(nextQuery);
+                  setFocusedMapItemKey(null);
                   setIsTopSearchResultsOpen(normalizeSearchText(nextQuery).length > 0);
                 }}
                 onKeyDown={(event) => {
@@ -1549,14 +1825,14 @@ export default function ProductMap({
                     setIsTopSearchResultsOpen(false);
                   }
                 }}
-                className="w-full pl-10 pr-10 py-2 bg-neutral-900 border border-neutral-800 rounded-xl text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-500 transition-all"
-              />
+                className="w-full pl-9 sm:pl-10 pr-9 sm:pr-10 py-2 bg-neutral-900 border border-neutral-800 rounded-lg sm:rounded-xl text-xs sm:text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-500 transition-all" />
               {normalizedTopSearchQuery && (
                 <button
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
                     setSearchQuery("");
+                    setFocusedMapItemKey(null);
                     setIsTopSearchResultsOpen(false);
                     topSearchInputRef.current?.focus();
                   }}
@@ -1584,63 +1860,119 @@ export default function ProductMap({
                     </p>
                   ) : (
                     <div className="max-h-72 overflow-y-auto">
-                      {topSearchResults.map((product) => (
-                        <div
-                          key={product.id}
-                          role="button"
-                          tabIndex={0}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            focusMapItem(product);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key !== "Enter" && event.key !== " ") {
-                              return;
-                            }
-                            event.preventDefault();
-                            focusMapItem(product);
-                          }}
-                          className="w-full px-3 py-2.5 flex items-center gap-3 text-left border-b last:border-b-0 border-neutral-900 hover:bg-neutral-900 transition-colors"
-                          aria-label={t("Ver {name} no mapa", { name: product.name })}
-                        >
-                          {product.image ? (
-                            <img
-                              src={product.image}
-                              alt={product.name}
-                              className="w-10 h-10 rounded-full object-cover bg-neutral-800 shrink-0 border border-neutral-700"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800 text-sm font-bold text-neutral-300">
-                              {product.name.slice(0, 1).toUpperCase()}
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold text-white truncate">
-                              {product.name}
-                            </p>
-                            <p className="text-[10px] text-neutral-400 truncate">
-                              {getCategoryLabel(product.category, locale)}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-1">
-                            <span className="rounded-full border border-neutral-700 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-neutral-300">
-                              {t("Ver no mapa")}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openMapItem(product);
-                              }}
-                              className="rounded-full border border-emerald-500/40 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-emerald-300 hover:bg-emerald-500 hover:text-neutral-950"
-                              aria-label={t("Abrir loja {name}", { name: product.name })}
-                            >
-                              {t("Abrir")}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+         {topSearchResults.map((product) => {
+  const distanceSummary =
+    buildMapDistanceSummary(savedUserLocation, product);
+
+  const locationSummary =
+    buildMapLocationSummary(product);
+
+  const isFocused =
+    focusedMapItemKey === getMapItemKey(product);
+
+  return (
+    <div
+      key={product.id}
+      role="button"
+      tabIndex={0}
+      onClick={(event) => {
+        event.stopPropagation();
+        focusMapItem(product);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+
+        event.preventDefault();
+        focusMapItem(product);
+      }}
+      className={`w-full border-b border-neutral-900 px-3 py-3 text-left last:border-b-0 transition-colors hover:bg-neutral-900 ${
+        isFocused ? "bg-neutral-900" : ""
+      }`}
+      aria-label={t("Ver {name} no mapa", {
+        name: product.name,
+      })}
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        {product.image ? (
+          <img
+            src={product.image}
+            alt={product.name}
+            className="h-11 w-11 shrink-0 rounded-full border border-neutral-700 bg-neutral-800 object-cover sm:h-10 sm:w-10"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800 text-sm font-bold text-neutral-300 sm:h-10 sm:w-10">
+            {product.name.slice(0, 1).toUpperCase()}
+          </div>
+        )}
+
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-white sm:text-xs">
+                {product.name}
+              </p>
+
+              <p className="mt-0.5 truncate text-[10px] text-neutral-400">
+                {getCategoryLabel(product.category, locale)}
+              </p>
+            </div>
+
+            {isFocused && (
+              <span className="shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[8px] font-bold uppercase tracking-wide text-emerald-300">
+                {t("No mapa")}
+              </span>
+            )}
+          </div>
+
+          <div className="mt-2 space-y-1.5">
+            <div className="flex min-w-0 items-center gap-1.5 text-neutral-300">
+              <MapPin
+                size={12}
+                className="shrink-0 text-neutral-500"
+              />
+
+              <span className="min-w-0 truncate text-[10px] leading-tight">
+                {locationSummary}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="rounded-md bg-emerald-500/10 px-2 py-1 text-[10px] font-bold text-emerald-300">
+                {distanceSummary ||
+                  t("Distância disponível após permitir localização")}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-2.5 flex items-center gap-2">
+            <span className="flex-1 rounded-lg border border-neutral-700 px-2.5 py-1.5 text-center text-[9px] font-bold uppercase tracking-wide text-neutral-300">
+              {isFocused
+                ? t("No mapa")
+                : t("Ver no mapa")}
+            </span>
+
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                openMapItem(product);
+              }}
+              className="flex-1 rounded-lg border border-emerald-500/40 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-emerald-300 transition-colors hover:bg-emerald-500 hover:text-neutral-950"
+              aria-label={t("Abrir loja {name}", {
+                name: product.name,
+              })}
+            >
+              {t("Abrir")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+})}
                     </div>
                   )}
                 </div>

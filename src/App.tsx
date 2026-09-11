@@ -317,6 +317,52 @@ function scrollWindowToTop(behavior: ScrollBehavior = "auto"): void {
   });
 }
 
+const SAVED_MAP_LOCATION_STORAGE_KEY = "templesale_map_user_location";
+const MAP_LOCATION_PROMPTED_STORAGE_KEY = "templesale_map_location_prompted";
+
+function readSavedBrowserLocation(): { lat: number; lng: number } | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SAVED_MAP_LOCATION_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as { lat?: unknown; lng?: unknown };
+    const lat = Number(parsed.lat);
+    const lng = Number(parsed.lng);
+    if (
+      Number.isFinite(lat) &&
+      Number.isFinite(lng) &&
+      lat >= -90 &&
+      lat <= 90 &&
+      lng >= -180 &&
+      lng <= 180
+    ) {
+      return { lat, lng };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function writeSavedBrowserLocation(location: { lat: number; lng: number }) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(SAVED_MAP_LOCATION_STORAGE_KEY, JSON.stringify(location));
+    window.localStorage.setItem(MAP_LOCATION_PROMPTED_STORAGE_KEY, "true");
+  } catch {
+    // localStorage can be disabled in restricted browser modes.
+  }
+}
+
 export default function App() {
   const { locale, setLocale, t } = useI18n();
   const {
@@ -667,6 +713,78 @@ export default function App() {
   React.useEffect(() => {
     void loadProductsPage({ append: false });
   }, [loadProductsPage]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || typeof navigator === "undefined") {
+      return;
+    }
+
+    const savedLocation = readSavedBrowserLocation();
+    if (savedLocation) {
+      if (currentUser && currentUser.locationLatitude === undefined && currentUser.locationLongitude === undefined) {
+        setCurrentUser((user) =>
+          user
+            ? {
+                ...user,
+                locationLatitude: savedLocation.lat,
+                locationLongitude: savedLocation.lng,
+              }
+            : user,
+        );
+      }
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      return;
+    }
+
+    try {
+      if (window.localStorage.getItem(MAP_LOCATION_PROMPTED_STORAGE_KEY) === "true") {
+        return;
+      }
+      window.localStorage.setItem(MAP_LOCATION_PROMPTED_STORAGE_KEY, "true");
+    } catch {
+      // Continue without the prompt marker if storage is unavailable.
+    }
+
+    let cancelled = false;
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (cancelled) {
+          return;
+        }
+
+        const nextLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        writeSavedBrowserLocation(nextLocation);
+        setCurrentUser((user) =>
+          user
+            ? {
+                ...user,
+                locationLatitude: nextLocation.lat,
+                locationLongitude: nextLocation.lng,
+              }
+            : user,
+        );
+        if (currentUser) {
+          void api.updateProfileLocation(nextLocation.lat, nextLocation.lng).catch(() => undefined);
+        }
+      },
+      () => undefined,
+      {
+        enableHighAccuracy: false,
+        maximumAge: 30 * 24 * 60 * 60 * 1000,
+        timeout: 10000,
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id, currentUser?.locationLatitude, currentUser?.locationLongitude]);
 
   const loadPublicationFeedPage = React.useCallback(
     async ({
