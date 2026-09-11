@@ -175,6 +175,9 @@ type AdminBroadcastNotificationRecord = {
   translationStatus: Partial<Record<AppLocale, string>>;
   productId?: number;
   productName?: string;
+  recipientUserId?: number;
+  recipientName?: string;
+  recipientEmail?: string;
   createdBy: string;
   createdAt: number;
 };
@@ -2414,9 +2417,11 @@ function initializeSqliteDatabase() {
       message_translations TEXT NOT NULL DEFAULT '{}',
       translation_status TEXT NOT NULL DEFAULT '{}',
       product_id INTEGER,
+      recipient_user_id INTEGER,
       created_by TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
+      FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS site_daily_visitors (
@@ -2477,6 +2482,8 @@ function initializeSqliteDatabase() {
       ON notification_dismissals(owner_user_id);
     CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_created
       ON admin_broadcast_notifications(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_recipient
+      ON admin_broadcast_notifications(recipient_user_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_site_daily_visitors_date_key
       ON site_daily_visitors(visit_date, visitor_key);
     CREATE INDEX IF NOT EXISTS idx_site_daily_visitors_date_last_seen
@@ -3183,6 +3190,7 @@ async function initializePostgresDatabase() {
         message_translations TEXT NOT NULL DEFAULT '{}',
         translation_status TEXT NOT NULL DEFAULT '{}',
         product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
+        recipient_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
         created_by TEXT NOT NULL DEFAULT '',
         created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
       )
@@ -3284,6 +3292,7 @@ async function initializePostgresDatabase() {
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS message_translations TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS translation_status TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS product_id BIGINT",
+    "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS recipient_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT ''",
@@ -3367,6 +3376,7 @@ async function initializePostgresDatabase() {
     "CREATE INDEX IF NOT EXISTS idx_product_comments_parent ON product_comments(parent_comment_id)",
     "CREATE INDEX IF NOT EXISTS idx_notification_dismissals_owner ON notification_dismissals(owner_user_id)",
     "CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_created ON admin_broadcast_notifications(created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_recipient ON admin_broadcast_notifications(recipient_user_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth0_sub_unique ON users(auth0_sub) WHERE auth0_sub IS NOT NULL AND auth0_sub <> ''",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_product_likes_user_product_unique ON product_likes(user_id, product_id)",
@@ -5164,8 +5174,24 @@ async function selectProductsByOwnerRows(ownerId: number): Promise<ProductRow[]>
   return rows.map(normalizeProductRow);
 }
 
-async function selectAdminUsersRows(): Promise<AdminUserRecord[]> {
+async function selectAdminUsersRows(searchValue = ""): Promise<AdminUserRecord[]> {
+  const search = String(searchValue ?? "").trim();
   if (pgPool) {
+    const values: unknown[] = [];
+    const whereParts = ["u.email NOT LIKE 'visitor-%@device.templesale.local'"];
+    if (search) {
+      values.push(`%${search}%`);
+      whereParts.push(`
+        (
+          u.email ILIKE $1
+          OR COALESCE(u.name, '') ILIKE $1
+          OR COALESCE(u.username, '') ILIKE $1
+          OR COALESCE(u.city, '') ILIKE $1
+          OR COALESCE(u.country, '') ILIKE $1
+          OR COALESCE(u.whatsapp_number, '') ILIKE $1
+        )
+      `);
+    }
     const result = await pgPool.query<Record<string, unknown>>(
       `
         SELECT
@@ -5185,32 +5211,34 @@ async function selectAdminUsersRows(): Promise<AdminUserRecord[]> {
           COALESCE(u.is_banned, FALSE) AS is_banned,
           NULLIF(BTRIM(COALESCE(u.ban_reason, '')), '') AS ban_reason,
           u.created_at,
-          COUNT(p.id)::INT AS product_count
+          (
+            (SELECT COUNT(*)::INT FROM products p WHERE p.user_id = u.id) +
+            (SELECT COUNT(*)::INT FROM establishment_publications ep WHERE ep.owner_user_id = u.id)
+          ) AS product_count
         FROM users u
-        LEFT JOIN products p ON p.user_id = u.id
-        GROUP BY
-          u.id,
-          u.name,
-          u.username,
-          u.email,
-          u.whatsapp_number,
-          u.country,
-          u.state,
-          u.city,
-          u.neighborhood,
-          u.street,
-          u.whatsapp_country_iso,
-          u.location_latitude,
-          u.location_longitude,
-          u.is_banned,
-          u.ban_reason,
-          u.created_at
+        WHERE ${whereParts.join(" AND ")}
         ORDER BY u.id DESC
       `,
+      values,
     );
     return result.rows.map(normalizeAdminUserRecord);
   }
 
+  const values: unknown[] = [];
+  const whereParts = ["u.email NOT LIKE 'visitor-%@device.templesale.local'"];
+  if (search) {
+    values.push(...Array(6).fill(`%${search.toLowerCase()}%`));
+    whereParts.push(`
+      (
+        LOWER(COALESCE(u.email, '')) LIKE ?
+        OR LOWER(COALESCE(u.name, '')) LIKE ?
+        OR LOWER(COALESCE(u.username, '')) LIKE ?
+        OR LOWER(COALESCE(u.city, '')) LIKE ?
+        OR LOWER(COALESCE(u.country, '')) LIKE ?
+        OR LOWER(COALESCE(u.whatsapp_number, '')) LIKE ?
+      )
+    `);
+  }
   const rows = requireSqliteDb()
     .prepare(
       `
@@ -5230,29 +5258,16 @@ async function selectAdminUsersRows(): Promise<AdminUserRecord[]> {
           COALESCE(u.is_banned, 0) AS is_banned,
           NULLIF(TRIM(COALESCE(u.ban_reason, '')), '') AS ban_reason,
           u.created_at,
-          COUNT(p.id) AS product_count
+          (
+            (SELECT COUNT(*) FROM products p WHERE p.user_id = u.id) +
+            (SELECT COUNT(*) FROM establishment_publications ep WHERE ep.owner_user_id = u.id)
+          ) AS product_count
         FROM users u
-        LEFT JOIN products p ON p.user_id = u.id
-        GROUP BY
-          u.id,
-          u.name,
-          u.email,
-          u.whatsapp_number,
-          u.country,
-          u.state,
-          u.city,
-          u.neighborhood,
-          u.street,
-          u.whatsapp_country_iso,
-          u.location_latitude,
-          u.location_longitude,
-          u.is_banned,
-          u.ban_reason,
-          u.created_at
+        WHERE ${whereParts.join(" AND ")}
         ORDER BY u.id DESC
       `,
     )
-    .all() as Array<Record<string, unknown>>;
+    .all(...values) as Array<Record<string, unknown>>;
   return rows.map(normalizeAdminUserRecord);
 }
 
@@ -6130,8 +6145,12 @@ async function ensureAdminBroadcastNotificationsStorage(): Promise<void> {
     await pgPool.query("ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS title_translations TEXT NOT NULL DEFAULT '{}'");
     await pgPool.query("ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS message_translations TEXT NOT NULL DEFAULT '{}'");
     await pgPool.query("ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS translation_status TEXT NOT NULL DEFAULT '{}'");
+    await pgPool.query("ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS recipient_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE");
     await pgPool.query(
       "CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_created ON admin_broadcast_notifications(created_at DESC)",
+    );
+    await pgPool.query(
+      "CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_recipient ON admin_broadcast_notifications(recipient_user_id)",
     );
     return;
   }
@@ -6145,12 +6164,16 @@ async function ensureAdminBroadcastNotificationsStorage(): Promise<void> {
       message_translations TEXT NOT NULL DEFAULT '{}',
       translation_status TEXT NOT NULL DEFAULT '{}',
       product_id INTEGER,
+      recipient_user_id INTEGER,
       created_by TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
+      FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_created
       ON admin_broadcast_notifications(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_recipient
+      ON admin_broadcast_notifications(recipient_user_id);
   `);
   const columns = requireSqliteDb()
     .prepare("PRAGMA table_info(admin_broadcast_notifications)")
@@ -6163,6 +6186,9 @@ async function ensureAdminBroadcastNotificationsStorage(): Promise<void> {
   }
   if (!columns.some((column) => column.name === "translation_status")) {
     requireSqliteDb().exec("ALTER TABLE admin_broadcast_notifications ADD COLUMN translation_status TEXT NOT NULL DEFAULT '{}'");
+  }
+  if (!columns.some((column) => column.name === "recipient_user_id")) {
+    requireSqliteDb().exec("ALTER TABLE admin_broadcast_notifications ADD COLUMN recipient_user_id INTEGER");
   }
 }
 
@@ -6220,13 +6246,27 @@ async function restoreNotificationRecord(ownerId: number, eventId: string): Prom
 async function selectAllUserIdsRows(): Promise<number[]> {
   if (pgPool) {
     const result = await pgPool.query<Record<string, unknown>>(
-      "SELECT id FROM users WHERE COALESCE(is_banned, FALSE) = FALSE ORDER BY id ASC",
+      `
+        SELECT id
+        FROM users
+        WHERE COALESCE(is_banned, FALSE) = FALSE
+          AND email NOT LIKE 'visitor-%@device.templesale.local'
+        ORDER BY id ASC
+      `,
     );
     return result.rows.map((row) => toRequiredNumber(row.id)).filter((id) => id > 0);
   }
 
   const rows = requireSqliteDb()
-    .prepare("SELECT id FROM users WHERE COALESCE(is_banned, 0) = 0 ORDER BY id ASC")
+    .prepare(
+      `
+        SELECT id
+        FROM users
+        WHERE COALESCE(is_banned, 0) = 0
+          AND email NOT LIKE 'visitor-%@device.templesale.local'
+        ORDER BY id ASC
+      `,
+    )
     .all() as Array<Record<string, unknown>>;
   return rows.map((row) => toRequiredNumber(row.id)).filter((id) => id > 0);
 }
@@ -6235,12 +6275,14 @@ async function createAdminBroadcastNotificationRecord(input: {
   title: string;
   message: string;
   productId: number | null;
+  recipientUserId: number | null;
   createdBy: string;
 }): Promise<number> {
   const title = input.title.trim();
   const message = input.message.trim();
   const createdBy = input.createdBy.trim().toLowerCase();
   const productId = input.productId;
+  const recipientUserId = input.recipientUserId;
 
   await ensureAdminBroadcastNotificationsStorage();
 
@@ -6254,6 +6296,13 @@ async function createAdminBroadcastNotificationRecord(input: {
     const product = await selectProductByIdRow(productId);
     if (!product) {
       throw new Error("Anúncio patrocinado não encontrado.");
+    }
+  }
+  if (recipientUserId !== null) {
+    const user = await selectUserByIdRow(recipientUserId);
+    const userEmail = String(user?.email ?? "");
+    if (!user || userEmail.startsWith("visitor-") || userEmail.endsWith("@device.templesale.local")) {
+      throw new Error("Destinatário da notificação não encontrado.");
     }
   }
 
@@ -6272,12 +6321,22 @@ async function createAdminBroadcastNotificationRecord(input: {
           message_translations,
           translation_status,
           product_id,
+          recipient_user_id,
           created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id
       `,
-      [title, message, titleTranslations, messageTranslations, translationStatus, productId, createdBy],
+      [
+        title,
+        message,
+        titleTranslations,
+        messageTranslations,
+        translationStatus,
+        productId,
+        recipientUserId,
+        createdBy,
+      ],
     );
     return toRequiredNumber(result.rows[0]?.id);
   }
@@ -6293,10 +6352,11 @@ async function createAdminBroadcastNotificationRecord(input: {
           message_translations,
           translation_status,
           product_id,
+          recipient_user_id,
           created_by,
           created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     )
     .run(
@@ -6306,6 +6366,7 @@ async function createAdminBroadcastNotificationRecord(input: {
       messageTranslations,
       translationStatus,
       productId,
+      recipientUserId,
       createdBy,
       now,
     );
@@ -6347,6 +6408,18 @@ function rowToAdminBroadcastNotification(row: Record<string, unknown>): AdminBro
   if (productName) {
     normalized.productName = productName;
   }
+  const recipientUserId = toNullableNumber(row.recipient_user_id);
+  if (recipientUserId !== null) {
+    normalized.recipientUserId = recipientUserId;
+  }
+  const recipientName = String(row.recipient_name ?? "").trim();
+  if (recipientName) {
+    normalized.recipientName = recipientName;
+  }
+  const recipientEmail = String(row.recipient_email ?? "").trim();
+  if (recipientEmail) {
+    normalized.recipientEmail = recipientEmail;
+  }
 
   return normalized;
 }
@@ -6366,10 +6439,14 @@ async function selectAdminBroadcastNotificationRows(): Promise<AdminBroadcastNot
           b.translation_status,
           b.product_id,
           p.name AS product_name,
+          b.recipient_user_id,
+          COALESCE(NULLIF(BTRIM(recipient.name), ''), recipient.email) AS recipient_name,
+          recipient.email AS recipient_email,
           b.created_by,
           b.created_at
         FROM admin_broadcast_notifications b
         LEFT JOIN products p ON p.id = b.product_id
+        LEFT JOIN users recipient ON recipient.id = b.recipient_user_id
         ORDER BY
           CASE
             WHEN b.created_at::TEXT ~ '^[0-9]+$' THEN b.created_at::TEXT::BIGINT
@@ -6394,10 +6471,14 @@ async function selectAdminBroadcastNotificationRows(): Promise<AdminBroadcastNot
           b.translation_status,
           b.product_id,
           p.name AS product_name,
+          b.recipient_user_id,
+          COALESCE(NULLIF(TRIM(recipient.name), ''), recipient.email) AS recipient_name,
+          recipient.email AS recipient_email,
           b.created_by,
           b.created_at
         FROM admin_broadcast_notifications b
         LEFT JOIN products p ON p.id = b.product_id
+        LEFT JOIN users recipient ON recipient.id = b.recipient_user_id
         ORDER BY CAST(b.created_at AS INTEGER) DESC, b.id DESC
         LIMIT 120
       `,
@@ -6406,18 +6487,32 @@ async function selectAdminBroadcastNotificationRows(): Promise<AdminBroadcastNot
   return rows.map(rowToAdminBroadcastNotification);
 }
 
-async function deleteAdminBroadcastNotificationRecord(id: number): Promise<boolean> {
+async function deleteAdminBroadcastNotificationRecord(
+  id: number,
+): Promise<{ deleted: boolean; recipientUserId: number | null }> {
   await ensureAdminBroadcastNotificationsStorage();
 
   if (pgPool) {
-    const result = await pgPool.query("DELETE FROM admin_broadcast_notifications WHERE id = $1", [id]);
-    return (result.rowCount ?? 0) > 0;
+    const result = await pgPool.query<Record<string, unknown>>(
+      "DELETE FROM admin_broadcast_notifications WHERE id = $1 RETURNING recipient_user_id",
+      [id],
+    );
+    return {
+      deleted: (result.rowCount ?? 0) > 0,
+      recipientUserId: toNullableNumber(result.rows[0]?.recipient_user_id ?? null),
+    };
   }
 
+  const notification = requireSqliteDb()
+    .prepare("SELECT recipient_user_id FROM admin_broadcast_notifications WHERE id = ?")
+    .get(id) as Record<string, unknown> | undefined;
   const result = requireSqliteDb()
     .prepare("DELETE FROM admin_broadcast_notifications WHERE id = ?")
     .run(id);
-  return result.changes > 0;
+  return {
+    deleted: result.changes > 0,
+    recipientUserId: toNullableNumber(notification?.recipient_user_id ?? null),
+  };
 }
 
 async function selectNotificationsByOwnerRows(ownerId: number): Promise<NotificationEventRow[]> {
@@ -6632,7 +6727,8 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           FROM admin_broadcast_notifications b
           LEFT JOIN products p ON p.id = b.product_id
           INNER JOIN users recipient ON recipient.id = $4
-          WHERE (
+          WHERE (b.recipient_user_id IS NULL OR b.recipient_user_id = $5)
+            AND (
             CASE
               WHEN b.created_at::TEXT ~ '^[0-9]+$' THEN b.created_at::TEXT::BIGINT
               ELSE EXTRACT(EPOCH FROM b.created_at::TEXT::TIMESTAMPTZ)::BIGINT
@@ -6652,7 +6748,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
         ORDER BY sort_created_at DESC, event_id DESC
         LIMIT 100
       `,
-      [ownerId, ownerId, ownerId, ownerId],
+      [ownerId, ownerId, ownerId, ownerId, ownerId],
     );
     return result.rows.map(normalizeNotificationEventRow);
   }
@@ -6844,7 +6940,8 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           FROM admin_broadcast_notifications b
           LEFT JOIN products p ON p.id = b.product_id
           INNER JOIN users recipient ON recipient.id = ?
-          WHERE CAST(b.created_at AS INTEGER) >= CAST(recipient.created_at AS INTEGER)
+          WHERE (b.recipient_user_id IS NULL OR b.recipient_user_id = ?)
+            AND CAST(b.created_at AS INTEGER) >= CAST(recipient.created_at AS INTEGER)
         )
         WHERE NOT EXISTS (
           SELECT 1
@@ -6856,6 +6953,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
       `,
     )
     .all(
+      ownerId,
       ownerId,
       ownerId,
       ownerId,
@@ -10359,6 +10457,7 @@ async function bootstrap() {
       setAdminSessionCookie(res, token, isProduction);
       res.json({
         email: ADMIN_EMAIL,
+        token,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao autenticar administrador.";
@@ -10656,7 +10755,8 @@ async function bootstrap() {
     }
 
     try {
-      const users = await selectAdminUsersRows();
+      const search = String(req.query.q ?? req.query.search ?? "").trim();
+      const users = await selectAdminUsersRows(search);
       res.json(users);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao listar usuários.";
@@ -10814,13 +10914,19 @@ async function bootstrap() {
       const message = normalizeTextField(body.message, "Mensagem", 600);
       const rawProductId = Number(body.productId ?? body.product_id);
       const productId = Number.isInteger(rawProductId) && rawProductId > 0 ? rawProductId : null;
+      const rawRecipientUserId = Number(body.recipientUserId ?? body.recipient_user_id);
+      const recipientUserId =
+        Number.isInteger(rawRecipientUserId) && rawRecipientUserId > 0
+          ? rawRecipientUserId
+          : null;
       const notificationId = await createAdminBroadcastNotificationRecord({
         title,
         message,
         productId,
+        recipientUserId,
         createdBy: adminSession.email,
       });
-      const userIds = await selectAllUserIdsRows();
+      const userIds = recipientUserId !== null ? [recipientUserId] : await selectAllUserIdsRows();
       userIds.forEach((userId) => {
         notifyUserNotificationsChanged(userId, "admin-broadcast");
       });
@@ -10865,13 +10971,16 @@ async function bootstrap() {
       }
 
       try {
-        const deleted = await deleteAdminBroadcastNotificationRecord(notificationId);
-        if (!deleted) {
+        const deleteResult = await deleteAdminBroadcastNotificationRecord(notificationId);
+        if (!deleteResult.deleted) {
           res.status(404).json({ error: "Notificação não encontrada." });
           return;
         }
 
-        const userIds = await selectAllUserIdsRows();
+        const userIds =
+          deleteResult.recipientUserId !== null
+            ? [deleteResult.recipientUserId]
+            : await selectAllUserIdsRows();
         userIds.forEach((userId) => {
           notifyUserNotificationsChanged(userId, "admin-broadcast-deleted");
         });

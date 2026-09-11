@@ -90,6 +90,9 @@ type AdminBroadcastNotificationV2 = {
   translationStatus?: Record<string, string>;
   productId?: number;
   productName?: string;
+  recipientUserId?: number;
+  recipientName?: string;
+  recipientEmail?: string;
   createdBy?: string;
   createdAt: number;
 };
@@ -844,6 +847,19 @@ function normalizeAdminBroadcastNotification(item: unknown): AdminBroadcastNotif
     notification.productName = productName;
   }
 
+  const recipientUserId = toNumber(record.recipientUserId ?? record.recipient_user_id);
+  if (recipientUserId > 0) {
+    notification.recipientUserId = recipientUserId;
+  }
+  const recipientName = String(record.recipientName ?? record.recipient_name ?? "").trim();
+  if (recipientName) {
+    notification.recipientName = recipientName;
+  }
+  const recipientEmail = String(record.recipientEmail ?? record.recipient_email ?? "").trim();
+  if (recipientEmail) {
+    notification.recipientEmail = recipientEmail;
+  }
+
   const createdBy = String(record.createdBy ?? record.created_by ?? "").trim();
   if (createdBy) {
     notification.createdBy = createdBy;
@@ -1401,7 +1417,7 @@ async function adminDeleteProduct(token: string, productId: number): Promise<voi
 
 async function adminSendBroadcastNotification(
   token: string,
-  input: { title: string; message: string; productId?: number | null },
+  input: { title: string; message: string; productId?: number | null; recipientUserId?: number | null },
 ): Promise<{ deliveredTo: number }> {
   const response = await adminRequest<unknown>("/api/admin/notifications/broadcast", {
     method: "POST",
@@ -1410,6 +1426,7 @@ async function adminSendBroadcastNotification(
       title: input.title,
       message: input.message,
       productId: input.productId ?? null,
+      recipientUserId: input.recipientUserId ?? null,
     },
   });
   const record = asRecord(response);
@@ -1582,6 +1599,7 @@ export default function AdminPanelV2() {
   const [broadcastTitle, setBroadcastTitle] = React.useState("");
   const [broadcastMessage, setBroadcastMessage] = React.useState("");
   const [broadcastProductId, setBroadcastProductId] = React.useState("");
+  const [broadcastRecipientUserId, setBroadcastRecipientUserId] = React.useState("");
   const [broadcastStatus, setBroadcastStatus] = React.useState("");
   const [broadcastError, setBroadcastError] = React.useState("");
   const [isSendingBroadcast, setIsSendingBroadcast] = React.useState(false);
@@ -1778,6 +1796,7 @@ export default function AdminPanelV2() {
         setSessionEmail(currentEmail);
         setEmail(currentEmail);
         await loadUsers(storedToken);
+        await loadProducts(storedToken);
         await loadVisitors(storedToken, getTodayDateKey(), { silent: true });
         await loadSecurityEvents(storedToken, { silent: true });
       } catch (error) {
@@ -1841,6 +1860,7 @@ export default function AdminPanelV2() {
       persistRememberedAdminPassword(normalizedPassword, rememberPassword);
       persistSession(session);
       await loadUsers(session.token);
+      await loadProducts(session.token);
       await loadVisitors(session.token, getTodayDateKey(), { silent: true });
       await loadSecurityEvents(session.token, { silent: true });
     } catch (error) {
@@ -1886,6 +1906,7 @@ export default function AdminPanelV2() {
       setBroadcastTitle("");
       setBroadcastMessage("");
       setBroadcastProductId("");
+      setBroadcastRecipientUserId("");
       setBroadcastStatus("");
       setBroadcastError("");
       setIsSendingBroadcast(false);
@@ -2197,6 +2218,9 @@ export default function AdminPanelV2() {
     const productId = Number(broadcastProductId);
     const normalizedProductId =
       Number.isInteger(productId) && productId > 0 ? productId : null;
+    const recipientUserId = Number(broadcastRecipientUserId);
+    const normalizedRecipientUserId =
+      Number.isInteger(recipientUserId) && recipientUserId > 0 ? recipientUserId : null;
 
     if (!title || !message) {
       setBroadcastError("Preencha título e mensagem da notificação.");
@@ -2211,11 +2235,17 @@ export default function AdminPanelV2() {
         title,
         message,
         productId: normalizedProductId,
+        recipientUserId: normalizedRecipientUserId,
       });
       setBroadcastTitle("");
       setBroadcastMessage("");
       setBroadcastProductId("");
-      setBroadcastStatus(`Notificação enviada para ${result.deliveredTo} usuário(s) ativo(s).`);
+      setBroadcastRecipientUserId("");
+      setBroadcastStatus(
+        normalizedRecipientUserId
+          ? "Notificação enviada para o usuário selecionado."
+          : `Notificação enviada para ${result.deliveredTo} usuário(s) ativo(s).`,
+      );
       await loadBroadcastNotifications(authToken, { silent: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao enviar notificação.";
@@ -2610,7 +2640,7 @@ export default function AdminPanelV2() {
 
 	        {activeView === "overview" ? (
 	          <section className="space-y-4">
-	            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+	            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
 	              <article className="border border-stone-200 bg-white p-4 sm:p-5">
 	                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
 	                  Usuários
@@ -2618,6 +2648,15 @@ export default function AdminPanelV2() {
 	                <p className="mt-2 text-2xl font-semibold text-stone-900">{users.length}</p>
 	                <p className="mt-1 text-xs text-stone-500">
 	                  Pessoas cadastradas para publicar e interagir.
+	                </p>
+	              </article>
+	              <article className="border border-stone-200 bg-white p-4 sm:p-5">
+	                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
+	                  Produtos
+	                </p>
+	                <p className="mt-2 text-2xl font-semibold text-stone-900">{products.length}</p>
+	                <p className="mt-1 text-xs text-stone-500">
+	                  Itens carregados para moderação no painel.
 	                </p>
 	              </article>
 	              <article className="border border-stone-200 bg-white p-4 sm:p-5">
@@ -2930,6 +2969,26 @@ export default function AdminPanelV2() {
                     </div>
                     <div className="space-y-3 border border-stone-100 bg-stone-50 p-3">
                       <label className="block text-xs uppercase tracking-[0.12em] text-stone-500">
+                        Destinatário
+                      </label>
+                      <select
+                        value={broadcastRecipientUserId}
+                        onChange={(event) => setBroadcastRecipientUserId(event.target.value)}
+                        className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
+                      >
+                        <option value="">Todos os usuários reais</option>
+                        {users.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            #{user.id} {user.name} - {user.email}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs leading-relaxed text-stone-500">
+                        Para enviar a apenas uma pessoa, selecione o usuário. Para broadcast geral,
+                        deixe em todos.
+                      </p>
+
+                      <label className="block text-xs uppercase tracking-[0.12em] text-stone-500">
                         Anúncio patrocinado opcional
                       </label>
                       <select
@@ -2979,7 +3038,11 @@ export default function AdminPanelV2() {
                     className="inline-flex items-center justify-center gap-2 bg-stone-900 px-4 py-2.5 text-xs uppercase tracking-[0.14em] text-white hover:bg-black disabled:opacity-60"
                   >
                     <Bell className="h-3.5 w-3.5" />
-                    {isSendingBroadcast ? "Enviando..." : "Enviar para todos"}
+                    {isSendingBroadcast
+                      ? "Enviando..."
+                      : broadcastRecipientUserId
+                        ? "Enviar para usuário"
+                        : "Enviar para todos"}
                   </button>
                 </form>
               </article>
@@ -3049,6 +3112,13 @@ export default function AdminPanelV2() {
                                 </span>
                               ) : (
                                 <span>Sem anúncio vinculado</span>
+                              )}
+                              {notification.recipientUserId ? (
+                                <span>
+                                  Para: {notification.recipientName || notification.recipientEmail || `Usuário ${notification.recipientUserId}`}
+                                </span>
+                              ) : (
+                                <span>Para: todos</span>
                               )}
                               {notification.createdBy ? (
                                 <span>Admin: {notification.createdBy}</span>
