@@ -408,6 +408,7 @@ export default function App() {
   const [savedPublications, setSavedPublications] = React.useState<PublicationDto[]>([]);
   const [likedPublicationIds, setLikedPublicationIds] = React.useState<string[]>([]);
   const [likedPublications, setLikedPublications] = React.useState<PublicationDto[]>([]);
+  const [deletedPublicationIds, setDeletedPublicationIds] = React.useState<number[]>([]);
   const [pendingPublicationCount, setPendingPublicationCount] = React.useState(0);
   const [cartToast, setCartToast] = React.useState<{
     id: number;
@@ -2840,6 +2841,7 @@ export default function App() {
   const socialPosts = React.useMemo<SocialPost[]>(
     () => {
       const publicationsById = new globalThis.Map<number, PublicationDto>();
+      const deletedIds = new Set(deletedPublicationIds);
       publicationFeed.forEach((publication) => publicationsById.set(publication.id, publication));
       savedPublications.forEach((publication) => {
         if (!publicationsById.has(publication.id)) {
@@ -2857,21 +2859,24 @@ export default function App() {
         }
       });
 
-      return Array.from(publicationsById.values()).map((publication) => ({
-        id: socialPostIdFromPublicationId(publication.id),
-        companyId: socialCompanyIdFromEstablishmentId(publication.establishmentId),
-        authorAvatarUrl:
-          publication.ownerId === currentUser?.id
-            ? memberProfilePhoto
-            : String(publication.ownerAvatarUrl ?? "").trim() || undefined,
-        imageUrl: publication.imageUrl,
-        caption: publication.caption || "",
-        createdAt: toIsoFromUnixOrMillis(publication.createdAt),
-        comments: toSocialComments(publicationCommentsById[publication.id] ?? []),
-        likesCount: publication.likesCount ?? 0,
-      }));
+      return Array.from(publicationsById.values())
+        .filter((publication) => !deletedIds.has(publication.id))
+        .map((publication) => ({
+          id: socialPostIdFromPublicationId(publication.id),
+          companyId: socialCompanyIdFromEstablishmentId(publication.establishmentId),
+          authorAvatarUrl:
+            publication.ownerId === currentUser?.id
+              ? memberProfilePhoto
+              : String(publication.ownerAvatarUrl ?? "").trim() || undefined,
+          imageUrl: publication.imageUrl,
+          caption: publication.caption || "",
+          createdAt: toIsoFromUnixOrMillis(publication.createdAt),
+          comments: toSocialComments(publicationCommentsById[publication.id] ?? []),
+          likesCount: publication.likesCount ?? 0,
+        }));
     },
     [
+      deletedPublicationIds,
       publicationCommentsById,
       publicationFeed,
       likedPublications,
@@ -2898,6 +2903,7 @@ export default function App() {
 
   const likedPublicationItems = React.useMemo(() => {
     const byId = new globalThis.Map<number, PublicationDto>();
+    const deletedIds = new Set(deletedPublicationIds);
     likedPublications.forEach((publication) => byId.set(publication.id, publication));
     [...publicationFeed, ...savedPublications, ...selectedEstablishmentPublications].forEach((publication) => {
       const socialPostId = socialPostIdFromPublicationId(publication.id);
@@ -2905,8 +2911,9 @@ export default function App() {
         byId.set(publication.id, publication);
       }
     });
-    return Array.from(byId.values());
+    return Array.from(byId.values()).filter((publication) => !deletedIds.has(publication.id));
   }, [
+    deletedPublicationIds,
     likedPublicationIds,
     likedPublications,
     publicationFeed,
@@ -2996,6 +3003,39 @@ export default function App() {
       current.map((item) => (item.id === publication.id ? publication : item)),
     );
   }, []);
+
+  const removePublicationFromLocalState = React.useCallback(
+    (publicationId: number, publication?: PublicationDto | null) => {
+      const postId = socialPostIdFromPublicationId(publicationId);
+      setDeletedPublicationIds((current) =>
+        current.includes(publicationId) ? current : [...current, publicationId],
+      );
+      setPublicationFeed((current) => current.filter((item) => item.id !== publicationId));
+      setSelectedEstablishmentPublications((current) =>
+        current.filter((item) => item.id !== publicationId),
+      );
+      setSavedPublications((current) => current.filter((item) => item.id !== publicationId));
+      setLikedPublications((current) => current.filter((item) => item.id !== publicationId));
+      setSavedPublicationIds((current) => current.filter((id) => id !== postId));
+      setLikedPublicationIds((current) => current.filter((id) => id !== postId));
+      setSelectedPublication((current) => (current?.id === publicationId ? null : current));
+      setEditingSocialPublication((current) => (current?.id === publicationId ? null : current));
+      setPublicationCommentsById((current) => {
+        if (!(publicationId in current)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[publicationId];
+        return next;
+      });
+      setMyEstablishment((current) =>
+        current && publication && current.id === publication.establishmentId
+          ? { ...current, publicationCount: Math.max(0, (current.publicationCount ?? 1) - 1) }
+          : current,
+      );
+    },
+    [socialPostIdFromPublicationId],
+  );
 
   const openSocialPublicationEditor = React.useCallback(
     (postId: string) => {
@@ -3239,7 +3279,11 @@ export default function App() {
         return;
       }
 
-      const publication = publicationFeed.find((item) => item.id === publicationId);
+      const publication =
+        publicationFeed.find((item) => item.id === publicationId) ??
+        selectedEstablishmentPublications.find((item) => item.id === publicationId) ??
+        savedPublications.find((item) => item.id === publicationId) ??
+        likedPublications.find((item) => item.id === publicationId);
       if (!publication) {
         return;
       }
@@ -3252,23 +3296,7 @@ export default function App() {
 
       try {
         await api.deletePublication(publicationId);
-        setPublicationFeed((current) => current.filter((item) => item.id !== publicationId));
-        setSelectedEstablishmentPublications((current) =>
-          current.filter((item) => item.id !== publicationId),
-        );
-        setSelectedPublication((current) => (current?.id === publicationId ? null : current));
-        setPublicationCommentsById((current) => {
-          const next = { ...current };
-          delete next[publicationId];
-          return next;
-        });
-        setSavedPublicationIds((current) => current.filter((id) => id !== postId));
-        setSavedPublications((current) => current.filter((item) => item.id !== publicationId));
-        setMyEstablishment((current) =>
-          current && current.id === publication.establishmentId
-            ? { ...current, publicationCount: Math.max(0, (current.publicationCount ?? 1) - 1) }
-            : current,
-        );
+        removePublicationFromLocalState(publicationId, publication);
         void api.getEstablishments({ search: debouncedSearchQuery, category: activeCategory, limit: 80 })
           .then(setEstablishments)
           .catch(() => null);
@@ -3281,8 +3309,12 @@ export default function App() {
       currentUser?.id,
       debouncedSearchQuery,
       hasMemberAccess,
+      likedPublications,
       publicationFeed,
       publicationIdFromSocialPostId,
+      removePublicationFromLocalState,
+      savedPublications,
+      selectedEstablishmentPublications,
     ],
   );
 
@@ -3547,19 +3579,11 @@ export default function App() {
               }));
             }}
             onDeleted={(publicationId) => {
+              const deletedPublication =
+                selectedPublication?.id === publicationId ? selectedPublication : null;
               setSelectedPublication(null);
               setFocusedPublicationCommentId(null);
-              setSelectedEstablishmentPublications((current) =>
-                current.filter((item) => item.id !== publicationId),
-              );
-              setPublicationFeed((current) => current.filter((item) => item.id !== publicationId));
-              setSavedPublicationIds((current) => current.filter((id) => id !== `publication_${publicationId}`));
-              setSavedPublications((current) => current.filter((item) => item.id !== publicationId));
-              setMyEstablishment((current) =>
-                current
-                  ? { ...current, publicationCount: Math.max(0, (current.publicationCount ?? 1) - 1) }
-                  : current,
-              );
+              removePublicationFromLocalState(publicationId, deletedPublication);
               void api.getEstablishments({ search: debouncedSearchQuery, category: activeCategory, limit: 80 })
                 .then(setEstablishments)
                 .catch(() => null);

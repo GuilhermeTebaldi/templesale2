@@ -713,13 +713,15 @@ async function buildTranslationsForText(
 
   await Promise.all(
     SUPPORTED_APP_LOCALES.map(async (locale) => {
-      const translated = await translateTextToLocale(normalizedText, locale);
-      if (!translated) {
-  throw new Error(`Falha ao traduzir conteúdo para ${locale}. A notificação não foi enviada.`);
-}
-
-translations[locale] = translated;
-status[locale] = "translated";
+      try {
+        const translated = await translateTextToLocale(normalizedText, locale);
+        translations[locale] = translated || normalizedText;
+        status[locale] = translated ? "translated" : "fallback";
+      } catch (error) {
+        console.warn(`Skipping ${locale} translation after provider failure:`, error);
+        translations[locale] = normalizedText;
+        status[locale] = "fallback";
+      }
     }),
   );
 
