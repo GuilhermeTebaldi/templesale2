@@ -10,7 +10,7 @@ const CINEMA_BRAND_FONT =
 
 export default function PostAuthIntroOverlay({ onComplete }: PostAuthIntroOverlayProps) {
   React.useEffect(() => {
-    const timer = window.setTimeout(onComplete, 4800);
+    const timer = window.setTimeout(onComplete, 3500);
     return () => window.clearTimeout(timer);
   }, [onComplete]);
 
@@ -20,7 +20,7 @@ export default function PostAuthIntroOverlay({ onComplete }: PostAuthIntroOverla
       initial={{ opacity: 1 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 1.2, ease: 'easeInOut' }}
+      transition={{ duration: 0.5, ease: 'easeInOut' }}
       className="fixed inset-0 z-[100000] flex items-center justify-center bg-black text-white"
       aria-live="polite"
     >
