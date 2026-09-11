@@ -23,10 +23,15 @@ export interface AuthSubmitPayload {
 interface AuthProps {
   onSubmit: (payload: AuthSubmitPayload) => Promise<void>;
   onClose: () => void;
+  onSimulateSignupIntro?: () => void;
   defaultMode?: AuthMode;
 }
 
-export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
+export default function Auth({
+  onClose,
+  onSimulateSignupIntro,
+  defaultMode = "register",
+}: AuthProps) {
   const { t } = useI18n();
   const { loginWithRedirect, isLoading } = useAuth0();
   const [mode] = React.useState<AuthMode>(defaultMode);
@@ -146,6 +151,16 @@ export default function Auth({ onClose, defaultMode = "register" }: AuthProps) {
               ? t("Processando...")
               : t("Continuar com Google")}
           </button>
+
+          {onSimulateSignupIntro && (
+            <button
+              type="button"
+              onClick={onSimulateSignupIntro}
+              className="w-full border border-neutral-800 bg-neutral-900 px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-200 shadow-sm transition-all hover:border-neutral-600 hover:bg-neutral-800"
+            >
+              Simular cadastro
+            </button>
+          )}
         </div>
       </motion.div>
     </div>

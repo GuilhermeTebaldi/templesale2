@@ -112,6 +112,78 @@ html {
   animation: templesale-btn-absorb 360ms cubic-bezier(0.175, 0.885, 0.32, 1.4);
 }
 
+@keyframes templesale-brand-letter-intro {
+  0% {
+    opacity: 0;
+    transform: translateY(9px) scale(0.74);
+    filter: blur(5px);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.14);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes templesale-brand-text-reveal {
+  0% {
+    max-width: 0;
+    opacity: 0;
+    transform: translateX(14px);
+    filter: blur(4px);
+  }
+  100% {
+    max-width: 4.8em;
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
+}
+
+.ts-brand-cinema-intro {
+  display: inline-flex;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.ts-brand-cinema-pending {
+  display: inline-flex;
+  align-items: baseline;
+  opacity: 0;
+  white-space: nowrap;
+}
+
+.ts-brand-cinema-intro .ts-brand-letter {
+  display: inline-block;
+  opacity: 0;
+  animation: templesale-brand-letter-intro 680ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity, filter;
+}
+
+.ts-brand-cinema-intro .ts-brand-letter-s {
+  animation-delay: 120ms;
+}
+
+.ts-brand-cinema-intro .ts-brand-rest {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  vertical-align: baseline;
+  animation: templesale-brand-text-reveal 720ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: 520ms;
+  will-change: max-width, transform, opacity, filter;
+}
+
+.ts-brand-cinema-intro .ts-brand-rest-sale {
+  animation-delay: 620ms;
+}
+
 .ts-profile-editor input,
 .ts-profile-editor textarea,
 .ts-profile-editor select {

@@ -333,7 +333,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className="max-w-xl mx-auto px-2 sm:px-4 py-2 sm:py-4 space-y-4 sm:space-y-6"
+      className="mx-auto w-full max-w-xl px-0 py-2 sm:px-4 sm:py-4 space-y-4 sm:space-y-6"
     >
       {/* PULL-TO-REFRESH VISUAL BAR / INDICATOR */}
       <div
@@ -414,7 +414,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
             <article
               key={post.id}
               id={`feed-post-${post.id}`}
-              className="relative bg-neutral-900 border border-neutral-800/90 rounded-2xl overflow-hidden shadow-xl"
+              className="relative overflow-hidden border-y border-neutral-800/90 bg-neutral-900 shadow-xl sm:rounded-2xl sm:border"
             >
               {/* Efeito Visual Mágico: Logomarca TempleSale surge no local exato do clique na foto e voa até o botão de curtir */}
               {flyingLikes[post.id] && (

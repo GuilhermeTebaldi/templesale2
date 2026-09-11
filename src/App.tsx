@@ -15,6 +15,7 @@ import { CompanySearch as SocialCompanySearch } from "./components/CompanySearch
 import { CompanyProfileDrawer as SocialCompanyProfileDrawer, type SupportedLanguage as SocialSupportedLanguage } from "./components/CompanyProfileDrawer";
 import { NotificationsPopover as SocialNotificationsPopover } from "./components/NotificationsPopover";
 import { TempleSaleLogo as SocialTempleSaleLogo } from "./components/TempleSaleLogo";
+import PostAuthIntroOverlay from "./components/PostAuthIntroOverlay";
 import Auth, { type AuthMode, type AuthSubmitPayload } from "./components/Auth";
 import MeusAnuncios from "./components/MeusAnuncios";
 import EditePerfil from "./components/EditePerfil";
@@ -343,6 +344,7 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = React.useState(false);
   const [authModalMode, setAuthModalMode] = React.useState<AuthMode>("register");
   const [currentUser, setCurrentUser] = React.useState<SessionUser | null>(null);
+  const [isPostAuthIntroOpen, setIsPostAuthIntroOpen] = React.useState(false);
   const [profileCompletionMessage, setProfileCompletionMessage] = React.useState("");
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = React.useState(false);
@@ -948,6 +950,7 @@ export default function App() {
         if (!cancelled) {
           setCurrentUser(user);
           setIsAuthModalOpen(false);
+          setIsPostAuthIntroOpen(true);
           writeAuth0Diagnostic("sync-completed", {
             userId: user.id,
             email: user.email,
@@ -1479,6 +1482,7 @@ export default function App() {
 
     setCurrentUser(user);
     setIsAuthModalOpen(false);
+    setIsPostAuthIntroOpen(true);
   };
 
   const handleLocaleChange = React.useCallback(
@@ -3333,6 +3337,18 @@ export default function App() {
             onSubmit={handleAuthSubmit}
             defaultMode={authModalMode}
             onClose={() => setIsAuthModalOpen(false)}
+            onSimulateSignupIntro={() => {
+              setIsAuthModalOpen(false);
+              setIsPostAuthIntroOpen(true);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isPostAuthIntroOpen && (
+          <PostAuthIntroOverlay
+            onComplete={() => setIsPostAuthIntroOpen(false)}
           />
         )}
       </AnimatePresence>

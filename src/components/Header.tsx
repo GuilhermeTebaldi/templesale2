@@ -6,10 +6,14 @@ import {
   Home,
   Building2,
   MapPin,
-  Heart,
+  Menu,
 } from 'lucide-react';
 import { Company, ActiveTab, Auth0User } from '../types';
-import { TempleSaleLogo } from './TempleSaleLogo';
+import {
+  getNetworkLoadingSnapshot,
+  subscribeNetworkLoading,
+} from '../lib/networkActivity';
+import { TempleSaleLikeIcon } from './TempleSaleLikeIcon';
 import { ProgressiveProductImage } from './ProductCard';
 
 interface HeaderProps {
@@ -26,6 +30,8 @@ interface HeaderProps {
   onSearchChange: (query: string) => void;
 }
 
+const CINEMA_BRAND_FONT = '"Copperplate", "Copperplate Gothic Light", fantasy';
+
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
@@ -39,8 +45,54 @@ export const Header: React.FC<HeaderProps> = ({
   searchQuery,
   onSearchChange,
 }) => {
+  const [hasBrandIntroStarted, setHasBrandIntroStarted] = React.useState(false);
+  const [hasObservedGlobalLoading, setHasObservedGlobalLoading] = React.useState(false);
+  const [canFallbackBrandIntroStart, setCanFallbackBrandIntroStart] = React.useState(false);
+  const isGlobalLoadingVisible = React.useSyncExternalStore(
+    subscribeNetworkLoading,
+    getNetworkLoadingSnapshot,
+    () => false,
+  );
   const profileImage = user.picture || activeCompany.logo;
   const profileLabel = user.name || activeCompany.name;
+  const hasRegisteredAccount = user.isAuthenticated;
+
+  React.useEffect(() => {
+    if (isGlobalLoadingVisible) {
+      setHasObservedGlobalLoading(true);
+    }
+  }, [isGlobalLoadingVisible]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const fallbackTimer = window.setTimeout(() => {
+      setCanFallbackBrandIntroStart(true);
+    }, 900);
+
+    return () => window.clearTimeout(fallbackTimer);
+  }, []);
+
+  React.useEffect(() => {
+    if (
+      isGlobalLoadingVisible ||
+      hasBrandIntroStarted ||
+      (!hasObservedGlobalLoading && !canFallbackBrandIntroStart)
+    ) {
+      return;
+    }
+
+    const introTimer = window.setTimeout(() => {
+      setHasBrandIntroStarted(true);
+    }, 220);
+
+    return () => window.clearTimeout(introTimer);
+  }, [
+    canFallbackBrandIntroStart,
+    hasBrandIntroStarted,
+    hasObservedGlobalLoading,
+    isGlobalLoadingVisible,
+  ]);
 
   return (
     <>
@@ -49,22 +101,29 @@ export const Header: React.FC<HeaderProps> = ({
         id="main-header"
         className="sticky top-0 z-40 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800"
       >
-        <div className="max-w-6xl mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-4">
-          {/* Brand / Logo: Mais pequeno, delicado, Temple em âmbar e Sale em esmeralda */}
-          <div className="flex items-center space-x-2 shrink-0">
+        <div className="relative max-w-6xl mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-end gap-2 sm:gap-4">
+          <div className="absolute inset-y-0 left-3 right-32 flex items-center justify-center sm:static sm:mr-auto sm:w-auto sm:justify-start">
             <button
-              id="brand-logo-btn"
+              id="brand-text-btn"
               onClick={() => {
                 setActiveTab('feed');
                 onSearchChange('');
               }}
-              className="flex items-center space-x-2 text-left group cursor-pointer"
+              className="text-[22px] font-semibold tracking-[0.03em] text-white transition-opacity active:opacity-70 sm:text-[24px] sm:hover:opacity-85"
+              style={{ fontFamily: CINEMA_BRAND_FONT }}
               title="TempleSale - Ir para o feed"
             >
-              <TempleSaleLogo className="w-6 h-6 sm:w-7 sm:h-7 group-hover:scale-105 transition-transform" />
-              <span className="text-[15px] sm:text-[17px] tracking-tight select-none">
-                <span className="text-amber-400 font-medium group-hover:text-amber-300 transition-colors">Temple</span>
-                <span className="text-emerald-400 font-semibold ml-0.5 group-hover:text-emerald-300 transition-colors">Sale</span>
+              <span
+                className={
+                  hasBrandIntroStarted
+                    ? 'ts-brand-cinema-intro'
+                    : 'ts-brand-cinema-pending'
+                }
+              >
+                <span className="ts-brand-letter ts-brand-letter-t">T</span>
+                <span className="ts-brand-rest ts-brand-rest-temple">emple</span>
+                <span className="ts-brand-letter ts-brand-letter-s">S</span>
+                <span className="ts-brand-rest ts-brand-rest-sale">ale</span>
               </span>
             </button>
           </div>
@@ -140,7 +199,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="p-2 text-neutral-300 hover:text-red-300 rounded-xl hover:bg-neutral-800/80 transition-all active:scale-95 cursor-pointer"
                 title="Curtidas"
               >
-                <Heart className="w-5 h-5" />
+                <TempleSaleLikeIcon liked={false} className="w-5 h-5" />
               </button>
             )}
 
@@ -180,18 +239,24 @@ export const Header: React.FC<HeaderProps> = ({
               id="btn-user-company-menu"
               onClick={onOpenCompanyModal}
               className="flex items-center space-x-2 p-1.5 rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer"
-              title="Gerenciar dados da empresa"
+              title={hasRegisteredAccount ? 'Gerenciar dados da empresa' : 'Entrar ou cadastrar'}
             >
-              <div className="relative h-7 w-7 overflow-hidden rounded-full border border-neutral-700">
-                <ProgressiveProductImage
-                  src={profileImage}
-                  alt={profileLabel}
-                  className="relative h-full w-full rounded-full object-cover"
-                  loading="eager"
-                  fetchPriority="high"
-                  variant="thumbnail"
-                />
-              </div>
+              {hasRegisteredAccount ? (
+                <div className="relative h-7 w-7 overflow-hidden rounded-full border border-neutral-700">
+                  <ProgressiveProductImage
+                    src={profileImage}
+                    alt={profileLabel}
+                    className="relative h-full w-full rounded-full object-cover"
+                    loading="eager"
+                    fetchPriority="high"
+                    variant="thumbnail"
+                  />
+                </div>
+              ) : (
+                <div className="flex h-7 w-7 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800 text-neutral-200">
+                  <Menu className="h-4.5 w-4.5" />
+                </div>
+              )}
             </button>
           </div>
 
@@ -217,7 +282,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="relative p-2 text-neutral-300 active:text-red-300 rounded-full hover:bg-neutral-800/80 transition-colors cursor-pointer"
                 title="Curtidas"
               >
-                <Heart className="w-5 h-5" />
+                <TempleSaleLikeIcon liked={false} className="w-5 h-5" />
               </button>
             )}
 
@@ -226,18 +291,24 @@ export const Header: React.FC<HeaderProps> = ({
               id="btn-mobile-avatar"
               onClick={onOpenCompanyModal}
               className="p-0.5 rounded-full hover:ring-2 hover:ring-neutral-700 active:scale-95 transition-all cursor-pointer"
-              title="Menu da Empresa"
+              title={hasRegisteredAccount ? 'Menu da Empresa' : 'Entrar ou cadastrar'}
             >
-              <div className="relative h-7 w-7 overflow-hidden rounded-full border border-neutral-700/80 shadow-xs">
-                <ProgressiveProductImage
-                  src={profileImage}
-                  alt={profileLabel}
-                  className="relative h-full w-full rounded-full object-cover"
-                  loading="eager"
-                  fetchPriority="high"
-                  variant="thumbnail"
-                />
-              </div>
+              {hasRegisteredAccount ? (
+                <div className="relative h-7 w-7 overflow-hidden rounded-full border border-neutral-700/80 shadow-xs">
+                  <ProgressiveProductImage
+                    src={profileImage}
+                    alt={profileLabel}
+                    className="relative h-full w-full rounded-full object-cover"
+                    loading="eager"
+                    fetchPriority="high"
+                    variant="thumbnail"
+                  />
+                </div>
+              ) : (
+                <div className="flex h-7 w-7 items-center justify-center rounded-full border border-neutral-700/80 bg-neutral-800 text-neutral-200 shadow-xs">
+                  <Menu className="h-4.5 w-4.5" />
+                </div>
+              )}
             </button>
           </div>
         </div>
