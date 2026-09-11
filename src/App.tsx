@@ -3548,6 +3548,10 @@ export default function App() {
         onClose={() => setIsNotificationsOpen(false)}
         notifications={socialNotifications}
         onSelectNotification={(notification) => {
+          if (notification.type === "admin") {
+            markNotificationAsRead(notification.id);
+            return;
+          }
           const originalNotification = notificationsToDisplay.find((item) => item.id === notification.id);
           if (originalNotification) {
             void handleNotificationClick(originalNotification);

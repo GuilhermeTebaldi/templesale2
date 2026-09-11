@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Bell, CheckCheck, MessageCircle, X } from 'lucide-react';
 import { AppNotification } from '../types';
 
@@ -17,6 +17,8 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
   onSelectNotification,
   onMarkAllAsRead,
 }) => {
+  const [expandedNotificationIds, setExpandedNotificationIds] = useState<string[]>([]);
+
   // Lock background scrolling completely while notification drawer is open
   useEffect(() => {
     if (!isOpen) return;
@@ -130,61 +132,83 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
               </p>
             </div>
           ) : (
-            notifications.map((notif) => (
-              <div
-                key={notif.id}
-                onClick={() => {
-                  onSelectNotification(notif);
-                  onClose();
-                }}
-                className={`p-3 rounded-xl flex items-center space-x-3 cursor-pointer transition-colors ${
-                  notif.read
-                    ? 'hover:bg-neutral-800/40 opacity-75'
-                    : 'bg-neutral-950/60 hover:bg-neutral-800/70 border-l-2 border-amber-400'
-                }`}
-              >
-                {/* User avatar indicator */}
-                <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-[10px] text-neutral-200 shrink-0 uppercase">
-                  {notif.authorName.slice(0, 2)}
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs leading-snug">
-                    <span className="font-bold text-neutral-100 mr-1">
-                      {notif.authorName}
-                    </span>
-                    <span className="text-neutral-300">
-                      {notif.type === 'admin' ? 'enviou:' : 'comentou:'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-neutral-400 italic line-clamp-1 mt-0.5">
-                    "{notif.text}"
-                  </p>
-                  <div className="flex items-center space-x-2 text-[10px] text-neutral-500 mt-1">
-                    <span className="text-emerald-400 flex items-center space-x-1">
-                      {notif.type === 'admin' ? (
-                        <Bell className="w-3 h-3" />
-                      ) : (
-                        <MessageCircle className="w-3 h-3" />
-                      )}
-                      <span>{notif.type === 'admin' ? 'Ver mensagem' : 'Ver foto'}</span>
-                    </span>
-                    <span>•</span>
-                    <span>{formatRelativeTime(notif.createdAt)}</span>
-                  </div>
-                </div>
-
-                {/* Thumbnail of the post */}
-                <img
-                  src={notif.postImageUrl}
-                  alt={notif.type === 'admin' ? 'TempleSale' : 'Foto'}
-                  className={`w-11 h-11 rounded-lg border border-neutral-700/80 shrink-0 ${
-                    notif.type === 'admin' ? 'bg-neutral-950 object-contain p-2' : 'object-cover'
+            notifications.map((notif) => {
+              const isAdminNotification = notif.type === 'admin';
+              const isExpanded = expandedNotificationIds.includes(notif.id);
+              return (
+                <div
+                  key={notif.id}
+                  onClick={() => {
+                    if (isAdminNotification) {
+                      setExpandedNotificationIds((current) =>
+                        current.includes(notif.id)
+                          ? current.filter((id) => id !== notif.id)
+                          : [...current, notif.id],
+                      );
+                      onSelectNotification(notif);
+                      return;
+                    }
+                    onSelectNotification(notif);
+                    onClose();
+                  }}
+                  className={`p-3 rounded-xl cursor-pointer transition-colors ${
+                    notif.read
+                      ? 'hover:bg-neutral-800/40 opacity-75'
+                      : 'bg-neutral-950/60 hover:bg-neutral-800/70 border-l-2 border-amber-400'
                   }`}
-                />
-              </div>
-            ))
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-[10px] text-neutral-200 shrink-0 uppercase">
+                      {notif.authorName.slice(0, 2)}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs leading-snug">
+                        <span className="font-bold text-neutral-100 mr-1">
+                          {notif.authorName}
+                        </span>
+                        <span className="text-neutral-300">
+                          {isAdminNotification ? 'enviou:' : 'comentou:'}
+                        </span>
+                      </div>
+                      <p className={`text-xs text-neutral-400 italic mt-0.5 ${isExpanded ? '' : 'line-clamp-1'}`}>
+                        "{notif.text}"
+                      </p>
+                      <div className="flex items-center space-x-2 text-[10px] text-neutral-500 mt-1">
+                        <span className="text-emerald-400 flex items-center space-x-1">
+                          {isAdminNotification ? (
+                            <Bell className="w-3 h-3" />
+                          ) : (
+                            <MessageCircle className="w-3 h-3" />
+                          )}
+                          <span>
+                            {isAdminNotification
+                              ? isExpanded ? 'Ocultar mensagem' : 'Ver mensagem'
+                              : 'Ver foto'}
+                          </span>
+                        </span>
+                        <span>•</span>
+                        <span>{formatRelativeTime(notif.createdAt)}</span>
+                      </div>
+                    </div>
+
+                    <img
+                      src={notif.postImageUrl}
+                      alt={isAdminNotification ? 'TempleSale' : 'Foto'}
+                      className={`w-11 h-11 rounded-lg border border-neutral-700/80 shrink-0 ${
+                        isAdminNotification ? 'bg-neutral-950 object-contain p-2' : 'object-cover'
+                      }`}
+                    />
+                  </div>
+
+                  {isAdminNotification && isExpanded && (
+                    <div className="mt-3 rounded-xl border border-neutral-800 bg-neutral-950/70 px-3 py-2.5 text-xs leading-relaxed text-neutral-200">
+                      {notif.text}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       </div>
