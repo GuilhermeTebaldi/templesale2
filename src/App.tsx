@@ -927,6 +927,7 @@ export default function App() {
 
     let cancelled = false;
     auth0SyncAttemptedRef.current = true;
+    setIsPostAuthIntroOpen(true);
 
     const syncAuth0Session = async () => {
       try {
@@ -950,7 +951,6 @@ export default function App() {
         if (!cancelled) {
           setCurrentUser(user);
           setIsAuthModalOpen(false);
-          setIsPostAuthIntroOpen(true);
           writeAuth0Diagnostic("sync-completed", {
             userId: user.id,
             email: user.email,
@@ -1475,6 +1475,8 @@ export default function App() {
     const password = payload.password.trim();
     const name = payload.name.trim();
 
+    setIsPostAuthIntroOpen(true);
+
     const user =
       payload.mode === "register"
         ? await api.register({ name, email, password })
@@ -1482,7 +1484,6 @@ export default function App() {
 
     setCurrentUser(user);
     setIsAuthModalOpen(false);
-    setIsPostAuthIntroOpen(true);
   };
 
   const handleLocaleChange = React.useCallback(
@@ -3337,10 +3338,6 @@ export default function App() {
             onSubmit={handleAuthSubmit}
             defaultMode={authModalMode}
             onClose={() => setIsAuthModalOpen(false)}
-            onSimulateSignupIntro={() => {
-              setIsAuthModalOpen(false);
-              setIsPostAuthIntroOpen(true);
-            }}
           />
         )}
       </AnimatePresence>
