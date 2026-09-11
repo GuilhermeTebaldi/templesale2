@@ -263,6 +263,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
 
             const latestPosts = companyPosts.slice(0, 3);
             const profilePhoto =
+              company.ownerAvatarUrl ||
               latestPosts.find((post) => post.authorAvatarUrl)?.authorAvatarUrl ||
               company.logo;
 

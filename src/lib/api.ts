@@ -249,6 +249,7 @@ export interface EstablishmentDto {
   slug: string;
   category: string;
   logoUrl?: string;
+  ownerAvatarUrl?: string;
   coverUrl?: string;
   description?: string;
   city?: string;
@@ -1502,7 +1503,8 @@ function normalizeEstablishmentItem(value: unknown): EstablishmentDto | null {
     name,
     slug: toStringValue(firstDefined(parsed, ["slug"])) || String(id),
     category: toStringValue(firstDefined(parsed, ["category", "businessCategory", "business_category"])) || "Altro",
-    logoUrl: toStringValue(firstDefined(parsed, ["logoUrl", "logo_url", "avatarUrl", "avatar_url"])),
+    logoUrl: toStringValue(firstDefined(parsed, ["logoUrl", "logo_url"])),
+    ownerAvatarUrl: toStringValue(firstDefined(parsed, ["ownerAvatarUrl", "owner_avatar_url"])),
     coverUrl: toStringValue(firstDefined(parsed, ["coverUrl", "cover_url"])),
     description: toStringValue(firstDefined(parsed, ["description"])),
     city: toStringValue(firstDefined(parsed, ["city"])),

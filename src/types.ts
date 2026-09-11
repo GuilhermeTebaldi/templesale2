@@ -26,6 +26,7 @@ export interface Company {
   category: string;
   city: string;
   description: string;
+  ownerAvatarUrl?: string;
   whatsapp: string;
   address: string;
   mapQuery?: string;

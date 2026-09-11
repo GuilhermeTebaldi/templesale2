@@ -2658,6 +2658,7 @@ export default function App() {
         slug: publication.establishmentSlug || existing?.slug || String(publication.establishmentId),
         category: publication.establishmentCategory || existing?.category || "Altro",
         logoUrl: publication.establishmentLogoUrl || existing?.logoUrl || "",
+        ownerAvatarUrl: publication.ownerAvatarUrl || existing?.ownerAvatarUrl || "",
         coverUrl: publication.establishmentCoverUrl || existing?.coverUrl || "",
         description: existing?.description || "",
         city: publication.establishmentCity || existing?.city || "",
@@ -2761,6 +2762,10 @@ export default function App() {
       name: establishment.name,
       logo:
         normalizeCompanyLogoForLayout(establishment.logoUrl || establishment.coverUrl),
+      ownerAvatarUrl:
+        establishment.ownerId === currentUser?.id
+          ? memberProfilePhoto
+          : String(establishment.ownerAvatarUrl ?? "").trim(),
       category: establishment.category || t("Attività"),
       city: establishment.city || currentUser?.city || "",
       description: establishment.description || "",
@@ -2777,8 +2782,10 @@ export default function App() {
   }, [
     buildEstablishmentFromPublication,
     currentUser?.city,
+    currentUser?.id,
     currentUser?.whatsappNumber,
     establishments,
+    memberProfilePhoto,
     myEstablishment,
     publicationFeed,
     socialCompanyIdFromEstablishmentId,
@@ -2790,6 +2797,7 @@ export default function App() {
       id: myEstablishment ? socialCompanyIdFromEstablishmentId(myEstablishment.id) : "company_guest",
       name: myEstablishment?.name || currentUser?.name || BRAND_NAME,
       logo: companyProfileLogo,
+      ownerAvatarUrl: memberProfilePhoto,
       category: myEstablishment?.category || t("Attività"),
       city: myEstablishment?.city || currentUser?.city || "",
       description: myEstablishment?.description || "",
@@ -2804,7 +2812,7 @@ export default function App() {
       createdAt: new Date().toISOString(),
     };
     return socialCompanies.find((company) => company.isOwner) || fallbackCompany;
-  }, [companyProfileLogo, currentUser, myEstablishment, socialCompanies, socialCompanyIdFromEstablishmentId, t]);
+  }, [companyProfileLogo, currentUser, memberProfilePhoto, myEstablishment, socialCompanies, socialCompanyIdFromEstablishmentId, t]);
 
   React.useEffect(() => {
     if (!socialSelectedCompanyId && activeSocialCompany.id) {
@@ -3418,7 +3426,8 @@ export default function App() {
             profilePhotoUrl={
               selectedSocialCompany.id === activeSocialCompany.id
                 ? memberProfilePhoto
-                : selectedSocialCompanyPosts.find((post) => post.authorAvatarUrl)?.authorAvatarUrl
+                : selectedSocialCompany.ownerAvatarUrl ||
+                  selectedSocialCompanyPosts.find((post) => post.authorAvatarUrl)?.authorAvatarUrl
             }
             onBack={() => changeSocialTab("feed")}
             onOpenPost={openSocialPost}

@@ -74,6 +74,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
   const totalLikes = posts.reduce((sum, p) => sum + (p.likesCount || 0), 0);
   const displayProfilePhoto =
     String(profilePhotoUrl ?? "").trim() ||
+    String(company.ownerAvatarUrl ?? "").trim() ||
     posts.find((post) => String(post.authorAvatarUrl ?? "").trim())?.authorAvatarUrl ||
     company.logo;
 

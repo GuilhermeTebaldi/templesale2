@@ -257,6 +257,7 @@ type EstablishmentRecord = {
   slug: string;
   category: string;
   logoUrl?: string;
+  ownerAvatarUrl?: string;
   coverUrl?: string;
   description?: string;
   city?: string;
@@ -1421,6 +1422,7 @@ function normalizeEstablishmentRow(row: Record<string, unknown>): EstablishmentR
     slug: String(row.slug ?? "").trim(),
     category: String(row.category ?? "").trim() || "Altro",
     logoUrl: toNullableString(row.logo_url) ?? "",
+    ownerAvatarUrl: toNullableString(row.owner_avatar_url) ?? "",
     coverUrl: toNullableString(row.cover_url) ?? "",
     description: toNullableString(row.description) ?? "",
     city: toNullableString(row.city) ?? "",
@@ -3773,9 +3775,11 @@ async function selectEstablishmentByIdOrSlugRow(idOrSlug: string): Promise<Estab
       `
         SELECT
           e.*,
+          NULLIF(BTRIM(u.avatar_url), '') AS owner_avatar_url,
           (SELECT COUNT(*)::INT FROM products pc WHERE pc.establishment_id = e.id) AS product_count,
           (SELECT COUNT(*)::INT FROM establishment_publications epc WHERE epc.establishment_id = e.id) AS publication_count
         FROM establishments e
+        LEFT JOIN users u ON u.id = e.owner_user_id
         WHERE ${where}
         LIMIT 1
       `,
@@ -3790,9 +3794,11 @@ async function selectEstablishmentByIdOrSlugRow(idOrSlug: string): Promise<Estab
       `
         SELECT
           e.*,
+          NULLIF(TRIM(u.avatar_url), '') AS owner_avatar_url,
           (SELECT COUNT(*) FROM products pc WHERE pc.establishment_id = e.id) AS product_count,
           (SELECT COUNT(*) FROM establishment_publications epc WHERE epc.establishment_id = e.id) AS publication_count
         FROM establishments e
+        LEFT JOIN users u ON u.id = e.owner_user_id
         WHERE ${sqliteWhere}
         LIMIT 1
       `,
@@ -3867,6 +3873,7 @@ async function selectEstablishmentsRows(input: {
       `
         SELECT
           e.*,
+          MAX(NULLIF(BTRIM(u.avatar_url), '')) AS owner_avatar_url,
           (
             SELECT COUNT(*)::INT
             FROM establishment_publications epc
@@ -3878,6 +3885,7 @@ async function selectEstablishmentsRows(input: {
             WHERE pc.establishment_id = e.id
           ) AS product_count
         FROM establishments e
+        LEFT JOIN users u ON u.id = e.owner_user_id
         LEFT JOIN products p ON p.establishment_id = e.id
         LEFT JOIN establishment_publications ep ON ep.establishment_id = e.id
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
@@ -3945,6 +3953,7 @@ async function selectEstablishmentsRows(input: {
       `
         SELECT
           e.*,
+          MAX(NULLIF(TRIM(u.avatar_url), '')) AS owner_avatar_url,
           (
             SELECT COUNT(*)
             FROM establishment_publications epc
@@ -3956,6 +3965,7 @@ async function selectEstablishmentsRows(input: {
             WHERE pc.establishment_id = e.id
           ) AS product_count
         FROM establishments e
+        LEFT JOIN users u ON u.id = e.owner_user_id
         LEFT JOIN products p ON p.establishment_id = e.id
         LEFT JOIN establishment_publications ep ON ep.establishment_id = e.id
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
@@ -7681,7 +7691,7 @@ async function linkAuth0UserRecord(input: {
             ELSE name
           END,
           avatar_url = CASE
-            WHEN $3 <> '' THEN $3
+            WHEN $3 <> '' AND (avatar_url IS NULL OR BTRIM(avatar_url) = '') THEN $3
             ELSE avatar_url
           END
         WHERE id = $4
@@ -7704,7 +7714,7 @@ async function linkAuth0UserRecord(input: {
             ELSE name
           END,
           avatar_url = CASE
-            WHEN ? <> '' THEN ?
+            WHEN ? <> '' AND (avatar_url IS NULL OR TRIM(avatar_url) = '') THEN ?
             ELSE avatar_url
           END
         WHERE id = ?
@@ -11193,6 +11203,15 @@ async function bootstrap() {
       const name = String(profileClaims.name ?? claims.name ?? "").trim();
       const picture = String(profileClaims.picture ?? claims.picture ?? "").trim();
       let user = await selectUserByAuth0SubRow(auth0Sub);
+      if (user && picture && !String(user.avatar_url ?? "").trim()) {
+        await linkAuth0UserRecord({
+          userId: user.id,
+          auth0Sub,
+          name,
+          picture,
+        });
+        user = await selectUserByIdRow(user.id);
+      }
 
       if (!user) {
         const existingByEmail = await selectUserByEmailRow(email);
