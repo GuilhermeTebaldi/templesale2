@@ -138,14 +138,14 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
               return (
                 <div
                   key={notif.id}
-                  onClick={() => {
+                  onClick={(event) => {
+                    event.stopPropagation();
                     if (isAdminNotification) {
                       setExpandedNotificationIds((current) =>
                         current.includes(notif.id)
                           ? current.filter((id) => id !== notif.id)
                           : [...current, notif.id],
                       );
-                      onSelectNotification(notif);
                       return;
                     }
                     onSelectNotification(notif);
