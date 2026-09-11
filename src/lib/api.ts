@@ -2837,9 +2837,10 @@ export const api = {
     }
     return establishment;
   },
-  async getEstablishment(idOrSlug: number | string) {
+  async getEstablishment(idOrSlug: number | string, input: { publicationsLimit?: number } = {}) {
+    const publicationsLimit = Math.min(Math.max(Math.floor(Number(input.publicationsLimit ?? 21)), 1), 60);
     const query = new URLSearchParams({
-      publicationsLimit: "60",
+      publicationsLimit: String(publicationsLimit),
     });
     const payload = await request<unknown>(
       `/api/establishments/${encodeURIComponent(String(idOrSlug))}?${query.toString()}`,

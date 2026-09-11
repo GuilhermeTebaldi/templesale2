@@ -72,6 +72,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
   )}`;
 
   const totalLikes = posts.reduce((sum, p) => sum + (p.likesCount || 0), 0);
+  const totalPublications = company.publicationCount ?? posts.length;
   const displayProfilePhoto =
     String(profilePhotoUrl ?? "").trim() ||
     String(company.ownerAvatarUrl ?? "").trim() ||
@@ -185,7 +186,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
           <div className="flex-1 flex items-center justify-around text-center">
             <div className="cursor-default">
               <div className="text-base sm:text-lg font-bold text-neutral-100">
-                {posts.length}
+                {totalPublications}
               </div>
               <div className="text-[11px] sm:text-xs text-neutral-400">
                 publicações

@@ -122,6 +122,8 @@ const CART_UNSEEN_STORAGE_KEY = "templesale_cart_unseen_alert";
 const READ_NOTIFICATIONS_STORAGE_KEY = "templesale_read_notifications";
 const LIKED_PUBLICATIONS_STORAGE_KEY = "templesale_liked_publications";
 const SAVED_PUBLICATIONS_STORAGE_KEY = "templesale_saved_publications";
+const ESTABLISHMENT_PROFILE_INITIAL_PUBLICATIONS_LIMIT = 21;
+const ESTABLISHMENT_PROFILE_MORE_PUBLICATIONS_LIMIT = 12;
 const MOBILE_INITIAL_PRODUCT_LIMIT = 30;
 const MOBILE_MORE_PRODUCT_LIMIT = 20;
 const DESKTOP_PRODUCT_LIMIT = 36;
@@ -1792,11 +1794,16 @@ export default function App() {
       }
     }
     try {
-      const payload = await api.getEstablishment(idOrSlug);
+      const payload = await api.getEstablishment(idOrSlug, {
+        publicationsLimit: ESTABLISHMENT_PROFILE_INITIAL_PUBLICATIONS_LIMIT,
+      });
       setSelectedEstablishment(payload.establishment);
       setSelectedEstablishmentProducts(payload.products as Product[]);
       setSelectedEstablishmentPublications(payload.publications);
-      setHasMoreSelectedEstablishmentPublications(payload.publications.length >= 60);
+      setHasMoreSelectedEstablishmentPublications(
+        (payload.establishment.publicationCount ?? payload.publications.length) >
+          payload.publications.length,
+      );
       setNextSelectedEstablishmentPublicationsOffset(payload.publications.length);
       setIsEstablishmentPageOpen(true);
       if (typeof window !== "undefined") {
@@ -1825,7 +1832,7 @@ export default function App() {
     try {
       const page = await api.getEstablishmentPublications({
         establishmentId,
-        limit: 30,
+        limit: ESTABLISHMENT_PROFILE_MORE_PUBLICATIONS_LIMIT,
         offset: nextSelectedEstablishmentPublicationsOffset,
       });
       setSelectedEstablishmentPublications((current) => {
@@ -2756,6 +2763,9 @@ export default function App() {
     if (myEstablishment) {
       byId.set(myEstablishment.id, myEstablishment);
     }
+    if (selectedEstablishment) {
+      byId.set(selectedEstablishment.id, selectedEstablishment);
+    }
     publicationFeed.forEach((publication) => {
       if (byId.has(publication.establishmentId)) {
         return;
@@ -2783,6 +2793,7 @@ export default function App() {
       hours: establishment.openingHours || "",
       keywords: establishment.keywords?.length ? establishment.keywords : [establishment.category, establishment.city].filter(Boolean),
       isOwner: myEstablishment?.id === establishment.id,
+      publicationCount: establishment.publicationCount ?? 0,
       createdAt: new Date().toISOString(),
     }));
   }, [
@@ -2794,6 +2805,7 @@ export default function App() {
     memberProfilePhoto,
     myEstablishment,
     publicationFeed,
+    selectedEstablishment,
     socialCompanyIdFromEstablishmentId,
     t,
   ]);
@@ -2815,6 +2827,7 @@ export default function App() {
       hours: myEstablishment?.openingHours || "",
       keywords: [myEstablishment?.category, myEstablishment?.city].filter(Boolean) as string[],
       isOwner: Boolean(myEstablishment),
+      publicationCount: myEstablishment?.publicationCount ?? 0,
       createdAt: new Date().toISOString(),
     };
     return socialCompanies.find((company) => company.isOwner) || fallbackCompany;
@@ -2901,10 +2914,42 @@ export default function App() {
       activeSocialCompany,
     [activeSocialCompany, socialCompanies, socialSelectedCompanyId],
   );
-  const selectedSocialCompanyPosts = React.useMemo(
-    () => socialPosts.filter((post) => post.companyId === selectedSocialCompany.id),
-    [selectedSocialCompany.id, socialPosts],
-  );
+  const selectedSocialCompanyPosts = React.useMemo(() => {
+    const selectedEstablishmentId = establishmentIdFromSocialCompanyId(selectedSocialCompany.id);
+    if (selectedEstablishmentId && selectedEstablishment?.id === selectedEstablishmentId) {
+      const deletedIds = new Set(deletedPublicationIds);
+      return selectedEstablishmentPublications
+        .filter((publication) => !deletedIds.has(publication.id))
+        .map((publication) => ({
+          id: socialPostIdFromPublicationId(publication.id),
+          companyId: socialCompanyIdFromEstablishmentId(publication.establishmentId),
+          authorAvatarUrl:
+            publication.ownerId === currentUser?.id
+              ? memberProfilePhoto
+              : String(publication.ownerAvatarUrl ?? "").trim() || undefined,
+          imageUrl: publication.imageUrl,
+          caption: publication.caption || "",
+          createdAt: toIsoFromUnixOrMillis(publication.createdAt),
+          comments: toSocialComments(publicationCommentsById[publication.id] ?? []),
+          likesCount: publication.likesCount ?? 0,
+        }));
+    }
+
+    return socialPosts.filter((post) => post.companyId === selectedSocialCompany.id);
+  }, [
+    currentUser?.id,
+    deletedPublicationIds,
+    establishmentIdFromSocialCompanyId,
+    memberProfilePhoto,
+    publicationCommentsById,
+    selectedEstablishment?.id,
+    selectedEstablishmentPublications,
+    selectedSocialCompany.id,
+    socialCompanyIdFromEstablishmentId,
+    socialPostIdFromPublicationId,
+    socialPosts,
+    toSocialComments,
+  ]);
 
   const likedPublicationItems = React.useMemo(() => {
     const byId = new globalThis.Map<number, PublicationDto>();

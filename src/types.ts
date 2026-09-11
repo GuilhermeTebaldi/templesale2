@@ -35,6 +35,7 @@ export interface Company {
   hours: string;
   keywords: string[];
   isOwner?: boolean;
+  publicationCount?: number;
   createdAt: string;
 }
 
