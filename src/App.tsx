@@ -3606,10 +3606,10 @@ export default function App() {
         onSearchChange={setSearchQuery}
       />
 
-      <main className="flex-1 pb-24 sm:pb-16">
+      <main className="flex-1 pb-24 sm:pb-16 sm:pl-[72px]">
         <div style={{ display: socialActiveTab === "feed" ? "block" : "none" }}>
           {pendingPublicationCount > 0 && (
-            <div className="sticky top-14 sm:top-16 z-30 mx-auto max-w-xl px-3 pt-2">
+            <div className="sticky top-14 z-30 mx-auto max-w-xl px-3 pt-2 sm:top-16 sm:max-w-3xl">
               <div className="overflow-hidden rounded-full border border-neutral-200 bg-white/95 shadow-sm">
                 <div className="flex items-center justify-between px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
                   <span>Publicando foto</span>
@@ -3710,7 +3710,7 @@ export default function App() {
         </div>
       </main>
 
-      <footer className="border-t border-neutral-900 py-6 mb-16 sm:mb-0 text-center text-xs text-neutral-400">
+      <footer className="border-t border-neutral-900 py-6 mb-16 text-center text-xs text-neutral-400 sm:mb-0 sm:pl-[72px]">
         <div className="max-w-4xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center space-x-2">
             <SocialTempleSaleLogo className="w-5 h-5" />

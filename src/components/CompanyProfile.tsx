@@ -103,7 +103,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
   }, [hasMorePosts, isLoadingMorePosts, onLoadMorePosts]);
 
   return (
-    <div id="company-profile-view" className="max-w-xl mx-auto px-0 sm:px-4 py-0 sm:py-4 space-y-4">
+    <div id="company-profile-view" className="mx-auto max-w-xl px-0 py-0 sm:max-w-3xl sm:px-4 sm:py-4 space-y-4">
       {/* 1. TOP BAR DO PERFIL */}
       <div className="sticky top-14 sm:top-16 z-40 bg-neutral-950/95 backdrop-blur-md border-b border-neutral-800/80 px-4 py-2.5 flex items-center justify-between">
         <div className="flex items-center space-x-3">

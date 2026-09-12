@@ -29,7 +29,21 @@ export default function Curtidas({
   const { t, locale } = useI18n();
   const [removingProductId, setRemovingProductId] = React.useState<number | null>(null);
   const [removingPublicationId, setRemovingPublicationId] = React.useState<number | null>(null);
+  const [isDesktopDrawer, setIsDesktopDrawer] = React.useState(false);
   const hasItems = products.length > 0 || publications.length > 0;
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(min-width: 640px)");
+    const updateDrawerMode = () => setIsDesktopDrawer(mediaQuery.matches);
+
+    updateDrawerMode();
+    mediaQuery.addEventListener("change", updateDrawerMode);
+    return () => mediaQuery.removeEventListener("change", updateDrawerMode);
+  }, []);
 
   const handleRemove = async (id: number) => {
     if (removingProductId === id) {
@@ -57,24 +71,24 @@ export default function Curtidas({
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: "100%" }}
+      initial={{ opacity: 0, x: isDesktopDrawer ? -420 : "100%" }}
       animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: "100%" }}
+      exit={{ opacity: 0, x: isDesktopDrawer ? -420 : "100%" }}
       transition={{ type: "spring", damping: 30, stiffness: 300 }}
-      className="fixed inset-0 z-150 bg-neutral-950 text-neutral-100 flex flex-col"
+      className="fixed inset-0 z-150 flex flex-col bg-neutral-950 text-neutral-100 shadow-2xl shadow-black/50 sm:inset-y-16 sm:left-[72px] sm:right-auto sm:w-[390px] sm:border-r sm:border-neutral-800"
     >
-      <div className="p-5 sm:p-8 flex justify-between items-center border-b border-neutral-800 bg-neutral-900/95 backdrop-blur-md">
+      <div className="flex items-center justify-between border-b border-neutral-800 bg-neutral-900/95 p-5 backdrop-blur-md sm:px-5 sm:py-4">
         <div className="flex items-center gap-4">
-          <Heart className="w-6 h-6 text-red-300" />
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{t("Preferiti")}</h2>
+          <Heart className="h-6 w-6 text-red-300" />
+          <h2 className="text-xl font-bold tracking-tight">{t("Preferiti")}</h2>
         </div>
         <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full transition-colors">
           <X className="w-6 h-6 text-neutral-300" />
         </button>
       </div>
 
-      <div className="grow overflow-y-auto overscroll-contain p-4 sm:p-8">
-        <div className="max-w-4xl mx-auto">
+      <div className="grow overflow-y-auto overscroll-contain p-4 sm:p-4">
+        <div className="mx-auto max-w-4xl sm:max-w-none">
           {!hasItems ? (
             <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-10 text-center shadow-2xl">
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-neutral-800 bg-neutral-950">
@@ -92,7 +106,7 @@ export default function Curtidas({
                     <ImageIcon className="h-3.5 w-3.5" />
                     <span>Publicações curtidas</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  <div className="grid grid-cols-3 gap-2">
                     {publications.map((publication) => {
                       const isRemoving = removingPublicationId === publication.id;
                       const title = publication.establishmentName || publication.caption || "Publicação";
@@ -149,7 +163,7 @@ export default function Curtidas({
                   <motion.div
                     key={product.id}
                     layout
-                    className="flex gap-4 sm:gap-6 p-3 sm:p-4 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl transition-colors hover:border-neutral-700 group"
+                    className="group flex gap-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-3 shadow-2xl transition-colors hover:border-neutral-700"
                   >
                     <div className="w-24 h-32 bg-neutral-950 overflow-hidden shrink-0 rounded-xl border border-neutral-800">
                       <ProgressiveProductImage
@@ -164,7 +178,7 @@ export default function Curtidas({
                     <div className="grow flex flex-col justify-between py-1">
                       <div>
                         <div className="flex justify-between items-start">
-                          <h3 className="font-bold text-base sm:text-lg text-neutral-100">{product.name}</h3>
+                          <h3 className="text-base font-bold text-neutral-100">{product.name}</h3>
                           <span className="text-sm font-mono text-neutral-200">
                             {formatCompactPriceFromUnknown(product.price, locale, {
                               priceNegotiable: product.priceNegotiable,

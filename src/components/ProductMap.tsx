@@ -1784,8 +1784,8 @@ export default function ProductMap({
     >
       <div className="relative w-full h-full font-sans text-neutral-100">
         <div
-       className="absolute left-2 right-2 sm:left-4 sm:right-4 top-[max(8px,calc(env(safe-area-inset-top)+8px))] sm:top-[max(14px,calc(env(safe-area-inset-top)+12px))] z-[3000] flex items-start gap-1.5 sm:gap-3 pointer-events-none"  >
-          <div className="relative z-30 flex min-w-0 flex-1 items-center gap-2 sm:gap-3 rounded-xl border border-neutral-800 bg-neutral-950/94 p-2 sm:p-3 shadow-2xl backdrop-blur-md pointer-events-auto">
+       className="absolute left-2 right-2 top-[max(8px,calc(env(safe-area-inset-top)+8px))] z-[3000] flex items-start gap-1.5 pointer-events-none sm:left-[96px] sm:right-auto sm:top-6 sm:w-[460px] sm:gap-2"  >
+          <div className="relative z-30 flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-950/94 p-2 shadow-2xl backdrop-blur-md pointer-events-auto sm:gap-2.5">
            <div className="hidden sm:flex shrink-0 items-center gap-3">
   <div className="w-10 h-10 bg-white text-neutral-950 rounded-full flex items-center justify-center">
     <Store size={19} />
@@ -1825,7 +1825,7 @@ export default function ProductMap({
                     setIsTopSearchResultsOpen(false);
                   }
                 }}
-                className="w-full pl-9 sm:pl-10 pr-9 sm:pr-10 py-2 bg-neutral-900 border border-neutral-800 rounded-lg sm:rounded-xl text-xs sm:text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-500 transition-all" />
+                className="w-full pl-9 pr-9 py-2 bg-neutral-900 border border-neutral-800 rounded-lg sm:rounded-xl text-xs sm:text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-500 transition-all" />
               {normalizedTopSearchQuery && (
                 <button
                   type="button"
@@ -1844,7 +1844,7 @@ export default function ProductMap({
                 </button>
               )}
               {shouldShowTopSearchResults && (
-                <div className="absolute z-40 top-[calc(100%+8px)] left-0 right-0 bg-neutral-950/98 backdrop-blur-md border border-neutral-800 rounded-xl shadow-2xl overflow-hidden">
+                <div className="absolute z-40 top-[calc(100%+8px)] left-0 right-0 bg-neutral-950/98 backdrop-blur-md border border-neutral-800 rounded-xl shadow-2xl overflow-hidden sm:max-h-[min(520px,calc(100vh-120px))]">
                   <div className="px-3 py-2 border-b border-neutral-800 bg-neutral-900/90 flex items-center justify-between gap-3">
                     <span className="text-[10px] uppercase tracking-[0.14em] font-bold text-emerald-400">
                       {t("Lojas encontradas")}
@@ -1859,7 +1859,7 @@ export default function ProductMap({
                       {t("Sem resultados para esta busca.")}
                     </p>
                   ) : (
-                    <div className="max-h-72 overflow-y-auto">
+                    <div className="max-h-72 overflow-y-auto sm:max-h-[440px]">
          {topSearchResults.map((product) => {
   const distanceSummary =
     buildMapDistanceSummary(savedUserLocation, product);
@@ -1992,7 +1992,7 @@ export default function ProductMap({
                   aria-label={t("Abrir no Google Maps")}
                 >
                   <ExternalLink size={15} />
-                  <span className="text-[9px] uppercase tracking-[0.06em] font-semibold leading-tight">
+                  <span className="hidden text-[9px] uppercase tracking-[0.06em] font-semibold leading-tight lg:inline">
                     {t("Abrir no Google Maps")}
                   </span>
                 </a>

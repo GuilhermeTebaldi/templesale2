@@ -57,6 +57,12 @@ export const Header: React.FC<HeaderProps> = ({
   const profileImage = user.picture || activeCompany.logo;
   const profileLabel = user.name || activeCompany.name;
   const hasRegisteredAccount = user.isAuthenticated;
+  const desktopRailButtonClass = (isActive = false) =>
+    `group relative flex h-11 w-11 items-center justify-center rounded-2xl transition-all active:scale-95 ${
+      isActive
+        ? 'bg-neutral-800 text-white'
+        : 'text-neutral-300 hover:bg-neutral-900 hover:text-white'
+    }`;
 
   React.useEffect(() => {
     if (isGlobalLoadingVisible) {
@@ -178,8 +184,8 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
-          {/* Desktop Navigation Tabs */}
-          <div className="hidden sm:flex items-center space-x-1 sm:space-x-2 shrink-0">
+          {/* Desktop navigation lives in the left rail below. */}
+          <div className="hidden items-center space-x-1 sm:space-x-2 shrink-0">
             {/* Feed Tab */}
             <button
               id="tab-btn-feed"
@@ -374,6 +380,122 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </header>
       <div aria-hidden="true" className="h-14 shrink-0 sm:h-16" />
+
+      {/* DESKTOP LEFT RAIL */}
+      <aside
+        id="desktop-left-nav"
+        className="fixed bottom-0 left-0 top-16 z-40 hidden w-[72px] flex-col items-center justify-between border-r border-neutral-900 bg-black/95 px-2 py-4 backdrop-blur-md sm:flex"
+      >
+        <div className="flex flex-col items-center gap-2">
+          <button
+            id="desktop-rail-feed"
+            onClick={() => setActiveTab('feed')}
+            className={desktopRailButtonClass(activeTab === 'feed')}
+            title="Feed"
+            aria-label="Feed"
+          >
+            <Home className="h-6 w-6" />
+          </button>
+
+          <button
+            id="desktop-rail-search"
+            onClick={() => setActiveTab('search')}
+            className={desktopRailButtonClass(activeTab === 'search')}
+            title="Buscar"
+            aria-label="Buscar"
+          >
+            <Search className="h-6 w-6" />
+          </button>
+
+          <button
+            id="desktop-rail-map"
+            onClick={() => setActiveTab('map')}
+            hidden={hasRegisteredAccount}
+            className={desktopRailButtonClass(activeTab === 'map')}
+            title="Mapa"
+            aria-label="Mapa"
+          >
+            <MapPin className="h-6 w-6" />
+          </button>
+
+          {onOpenFavorites && (
+            <button
+              id="desktop-rail-favorites"
+              onClick={onOpenFavorites}
+              hidden={hasRegisteredAccount}
+              className={desktopRailButtonClass(false)}
+              title="Favoritos"
+              aria-label="Favoritos"
+            >
+              <TempleSaleLikeIcon liked={false} className="h-6 w-6" />
+            </button>
+          )}
+
+          <button
+            id="desktop-rail-profile"
+            onClick={() => setActiveTab('profile')}
+            hidden={!hasRegisteredAccount}
+            className={desktopRailButtonClass(activeTab === 'profile')}
+            title="Empresa"
+            aria-label="Empresa"
+          >
+            <Building2 className="h-6 w-6" />
+          </button>
+
+          <button
+            id="desktop-rail-publish"
+            onClick={onOpenCreatePost}
+            hidden={!hasRegisteredAccount}
+            className="group relative mt-1 flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100 text-neutral-950 shadow-lg shadow-black/30 transition-all hover:bg-white active:scale-95"
+            title="Publicar"
+            aria-label="Publicar"
+          >
+            <Plus className="h-7 w-7 stroke-[2.8]" />
+          </button>
+
+          <button
+            id="desktop-rail-notifications"
+            onClick={onToggleNotifications}
+            hidden={!hasRegisteredAccount}
+            className={desktopRailButtonClass(false)}
+            title="Notificações"
+            aria-label="Notificações"
+          >
+            <Bell className="h-6 w-6" />
+            {unreadNotificationsCount > 0 && (
+              <span
+                id="desktop-rail-unread-badge"
+                className="absolute right-1.5 top-1.5 min-w-[16px] rounded-full bg-amber-400 px-1 text-center text-[9px] font-bold leading-4 text-neutral-950 ring-2 ring-black"
+              >
+                {unreadNotificationsCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        <button
+          id="desktop-rail-user-menu"
+          onClick={onOpenCompanyModal}
+          className="flex h-11 w-11 items-center justify-center rounded-2xl text-neutral-300 transition-all hover:bg-neutral-900 hover:text-white active:scale-95"
+          title={hasRegisteredAccount ? 'Gerenciar dados da empresa' : 'Entrar ou cadastrar'}
+          aria-label={hasRegisteredAccount ? 'Gerenciar dados da empresa' : 'Entrar ou cadastrar'}
+        >
+          {hasRegisteredAccount ? (
+            <div className="relative h-7 w-7 overflow-hidden rounded-full border border-neutral-700">
+              <ProgressiveProductImage
+                src={profileImage}
+                alt={profileLabel}
+                className="relative h-full w-full rounded-full object-cover"
+                loading="eager"
+                fetchPriority="high"
+                variant="thumbnail"
+              />
+            </div>
+          ) : (
+            <Menu className="h-6 w-6" />
+          )}
+        </button>
+      </aside>
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
       <nav

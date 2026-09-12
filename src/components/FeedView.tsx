@@ -333,7 +333,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className="mx-auto w-full max-w-xl px-0 py-2 sm:px-4 sm:py-4 space-y-4 sm:space-y-6"
+      className="mx-auto w-full max-w-xl px-0 py-2 sm:max-w-3xl sm:px-4 sm:py-4 space-y-4 sm:space-y-6"
     >
       {/* PULL-TO-REFRESH VISUAL BAR / INDICATOR */}
       <div
