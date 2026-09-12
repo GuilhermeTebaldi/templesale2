@@ -212,14 +212,15 @@ export default function NewPublication({
 
   return (
     <AnimatePresence>
-      <div
-        className="fixed inset-x-0 z-[120] flex items-start justify-center overflow-hidden overscroll-none bg-black text-neutral-100"
-        style={{
-          top: "var(--ts-publication-vv-top, 0px)",
-          height: "var(--ts-publication-vh, 100dvh)",
-        }}
-      >
-        <div className="relative h-full w-full max-w-lg overflow-hidden bg-black shadow-2xl">
+      <div className="fixed inset-0 z-[120] overflow-hidden overscroll-none bg-black text-neutral-100">
+        <div
+          className="absolute inset-x-0 flex items-start justify-center"
+          style={{
+            top: "var(--ts-publication-vv-top, 0px)",
+            height: "var(--ts-publication-vh, 100dvh)",
+          }}
+        >
+          <div className="relative h-full w-full max-w-lg overflow-hidden bg-black shadow-2xl">
           <button
             type="button"
             onClick={onClose}
@@ -363,6 +364,7 @@ export default function NewPublication({
               {errorMessage}
             </div>
           )}
+          </div>
         </div>
 
         {false && isTextEditorOpen && (
