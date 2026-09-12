@@ -14,6 +14,29 @@ body.ts-scroll-lock {
   touch-action: none;
 }
 
+/* Mantém o painel dentro da área realmente visível quando o Safari exibe suas barras. */
+.notifications-backdrop {
+  box-sizing: border-box;
+  height: 100dvh;
+  min-height: 100dvh;
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+.notifications-popover-card {
+  box-sizing: border-box;
+  max-height: calc(100dvh - 4.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+
+@media screen and (max-width: 639px) {
+  .notifications-backdrop {
+    padding-top: max(3.5rem, calc(3.5rem + env(safe-area-inset-top)));
+  }
+
+  .notifications-popover-card {
+    max-height: calc(100dvh - 4rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}
+
 /* Regra de Ouro da Apple/WebKit: fonte >= 16px impede o zoom indesejado ao focar em inputs */
 @media screen and (max-width: 768px) {
   input,

@@ -162,14 +162,14 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
   return (
     <div
       id="notifications-backdrop"
-      className="fixed inset-0 z-50 flex items-start justify-center p-2 pt-14 bg-black/60 backdrop-blur-xs overflow-hidden sm:items-start sm:justify-end sm:p-4 sm:pt-16 sm:pr-6"
+      className="notifications-backdrop fixed inset-0 z-50 flex items-start justify-center p-2 pt-14 bg-black/60 backdrop-blur-xs overflow-hidden sm:items-start sm:justify-end sm:p-4 sm:pt-16 sm:pr-6"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <div
         id="notifications-popover-card"
-        className="flex w-full max-w-sm max-h-[82vh] flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-150 sm:max-w-md"
+        className="notifications-popover-card flex w-full max-w-sm max-h-[82vh] flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-150 sm:max-w-md"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-neutral-800/90 bg-neutral-900 p-3.5 sm:p-4">
