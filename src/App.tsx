@@ -2644,12 +2644,12 @@ export default function App() {
     (company: SocialCompany) => {
       const establishmentIdMatch = /^company_(\d+)$/.exec(company.id);
       const establishmentId = establishmentIdMatch ? Number(establishmentIdMatch[1]) : null;
-      setMapInitialCategory("All");
-      setMapInitialFocusProductId(
-        establishmentId ? 1_000_000_000 + establishmentId : undefined,
-      );
-      setMapOpenWithResults(false);
-      setMapAutoFocusPanelSearch(false);
+     setMapInitialCategory(company.name);
+setMapInitialFocusProductId(
+  establishmentId ? 1_000_000_000 + establishmentId : undefined,
+);
+setMapOpenWithResults(true);
+setMapAutoFocusPanelSearch(true);
       setIsMenuOpen(false);
       setIsUserOpen(false);
       setIsMapOpen(true);
