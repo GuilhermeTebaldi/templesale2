@@ -1,27 +1,126 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, CheckCheck, MessageCircle, X } from 'lucide-react';
-import { AppNotification } from '../types';
+import {
+  Bell,
+  CheckCheck,
+  ChevronDown,
+  ChevronUp,
+  Heart,
+  MessageCircle,
+  ShoppingCart,
+  X,
+} from 'lucide-react';
+import type { NotificationDto } from '../lib/api';
 
 interface NotificationsPopoverProps {
   isOpen: boolean;
   onClose: () => void;
-  notifications: AppNotification[];
-  onSelectNotification: (notification: AppNotification) => void;
+  notifications: NotificationDto[];
+  readNotificationIds: ReadonlySet<string>;
+  fallbackImageUrl?: string;
+  onSelectNotification: (notification: NotificationDto) => void;
   onMarkAllAsRead: () => void;
 }
+
+const isAdministrativeNotification = (notification: NotificationDto) =>
+  notification.type === 'admin_broadcast' || notification.type === 'system_welcome';
+
+const hasNotificationDestination = (notification: NotificationDto) => {
+  switch (notification.type) {
+    case 'publication_comment':
+      return Number.isInteger(notification.publicationId) && notification.publicationId > 0;
+    case 'product_like':
+    case 'product_cart_interest':
+    case 'product_comment':
+      return Number.isInteger(notification.productId) && notification.productId > 0;
+    default:
+      return false;
+  }
+};
+
+const getNotificationAuthor = (notification: NotificationDto) => {
+  const actorName =
+    'actorName' in notification ? String(notification.actorName ?? '').trim() : '';
+  return actorName || (isAdministrativeNotification(notification) ? 'TempleSale' : 'Alguém');
+};
+
+const getNotificationImageUrl = (
+  notification: NotificationDto,
+  fallbackImageUrl?: string,
+) => {
+  const imageUrl =
+    'productImageUrl' in notification
+      ? String(notification.productImageUrl ?? '').trim()
+      : '';
+  return imageUrl || fallbackImageUrl || '';
+};
+
+const getNotificationIcon = (notification: NotificationDto) => {
+  if (notification.type === 'product_like') {
+    return <Heart className="w-3 h-3" />;
+  }
+  if (notification.type === 'product_cart_interest') {
+    return <ShoppingCart className="w-3 h-3" />;
+  }
+  if (
+    notification.type === 'product_comment' ||
+    notification.type === 'publication_comment'
+  ) {
+    return <MessageCircle className="w-3 h-3" />;
+  }
+  return <Bell className="w-3 h-3" />;
+};
+
+const getNotificationActionLabel = (notification: NotificationDto) => {
+  if (notification.type === 'product_like') {
+    return 'Abrir anúncio';
+  }
+  if (notification.type === 'product_cart_interest') {
+    return 'Abrir anúncio';
+  }
+  if (
+    notification.type === 'product_comment' ||
+    notification.type === 'publication_comment'
+  ) {
+    return 'Abrir publicação';
+  }
+  return 'Mensagem';
+};
+
+const formatRelativeTime = (createdAt: number) => {
+  const numericDate = Number(createdAt);
+  if (!Number.isFinite(numericDate)) {
+    return '';
+  }
+
+  const timestamp = numericDate < 1_000_000_000_000
+    ? numericDate * 1000
+    : numericDate;
+  const diffSec = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+
+  if (diffSec < 60) return 'Agora';
+  if (diffSec < 3600) return \`Há \${Math.floor(diffSec / 60)} min\`;
+  if (diffSec < 86400) return \`Há \${Math.floor(diffSec / 3600)} h\`;
+
+  const days = Math.floor(diffSec / 86400);
+  return days === 1 ? 'Há 1 dia' : \`Há \${days} dias\`;
+};
 
 export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
   isOpen,
   onClose,
   notifications,
+  readNotificationIds,
+  fallbackImageUrl,
   onSelectNotification,
   onMarkAllAsRead,
 }) => {
   const [expandedNotificationIds, setExpandedNotificationIds] = useState<string[]>([]);
 
-  // Lock background scrolling completely while notification drawer is open
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setExpandedNotificationIds([]);
+      return;
+    }
 
     const originalOverflow = document.body.style.overflow;
     const originalTouchAction = document.body.style.touchAction;
@@ -29,9 +128,12 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
     document.body.style.overflow = 'hidden';
     document.body.style.touchAction = 'none';
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
     };
+
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
@@ -43,47 +145,31 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
 
   if (!isOpen) return null;
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
-  const formatRelativeTime = (dateStr: string) => {
-    try {
-      const now = Date.now();
-      const time = new Date(dateStr).getTime();
-      const diffSec = Math.max(0, Math.floor((now - time) / 1000));
-      if (diffSec < 60) return 'Agora';
-      if (diffSec < 3600) return `Há ${Math.floor(diffSec / 60)} min`;
-      if (diffSec < 86400) return `Há ${Math.floor(diffSec / 3600)} h`;
-      const days = Math.floor(diffSec / 86400);
-      return days === 1 ? 'Há 1 dia' : `Há ${days} dias`;
-    } catch {
-      return dateStr;
-    }
-  };
+  const unreadCount = notifications.filter(
+    (notification) => !readNotificationIds.has(notification.id),
+  ).length;
 
   return (
     <div
       id="notifications-backdrop"
-      className="fixed inset-0 z-50 flex items-start sm:items-start justify-center sm:justify-end p-2 sm:p-4 pt-14 sm:pt-16 sm:pr-6 bg-black/60 backdrop-blur-xs overflow-hidden"
+      className="fixed inset-0 z-50 flex items-start justify-center p-2 pt-14 bg-black/60 backdrop-blur-xs overflow-hidden sm:items-start sm:justify-end sm:p-4 sm:pt-16 sm:pr-6"
       onClick={onClose}
     >
       <div
         id="notifications-popover-card"
-        className="w-full max-w-sm sm:max-w-md bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[82vh] animate-in fade-in slide-in-from-top-2 duration-150"
-        onClick={(e) => e.stopPropagation()}
+        className="flex w-full max-w-sm max-h-[82vh] flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-150 sm:max-w-md"
+        onClick={(event) => event.stopPropagation()}
       >
-        {/* Header do Sino */}
-        <div className="p-3.5 sm:p-4 border-b border-neutral-800/90 flex items-center justify-between bg-neutral-900 shrink-0">
+        <div className="flex shrink-0 items-center justify-between border-b border-neutral-800/90 bg-neutral-900 p-3.5 sm:p-4">
           <div className="flex items-center space-x-2">
-            <div className="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400">
-              <Bell className="w-4 h-4" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400">
+              <Bell className="h-4 w-4" />
             </div>
             <div>
               <div className="flex items-center space-x-1.5">
-                <h3 className="font-bold text-sm text-neutral-100">
-                  Notificações
-                </h3>
+                <h3 className="text-sm font-bold text-neutral-100">Notificações</h3>
                 {unreadCount > 0 && (
-                  <span className="bg-amber-400 text-neutral-950 font-bold text-[9px] px-1.5 py-0.2 rounded-full">
+                  <span className="rounded-full bg-amber-400 px-1.5 py-0.2 text-[9px] font-bold text-neutral-950">
                     {unreadCount} nova{unreadCount > 1 ? 's' : ''}
                   </span>
                 )}
@@ -96,114 +182,160 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
               <button
                 type="button"
                 onClick={onMarkAllAsRead}
-                className="text-[11px] text-neutral-400 hover:text-white px-2 py-1 rounded-lg hover:bg-neutral-800 flex items-center space-x-1 transition-colors cursor-pointer"
+                className="flex cursor-pointer items-center space-x-1 rounded-lg px-2 py-1 text-[11px] text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-white"
                 title="Marcar todas como lidas"
               >
-                <CheckCheck className="w-3.5 h-3.5" />
+                <CheckCheck className="h-3.5 w-3.5" />
                 <span>Marcar lidas</span>
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
+              className="cursor-pointer rounded-lg p-1.5 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-white"
               title="Fechar notificações"
             >
-              <X className="w-4 h-4" />
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        {/* Informative Sub-header showing flow */}
-        <div className="bg-neutral-950/80 px-4 py-2 border-b border-neutral-800/80 text-[11px] text-neutral-400 flex items-center justify-between shrink-0">
-          <span>Comentários em publicações</span>
+        <div className="shrink-0 border-b border-neutral-800/80 bg-neutral-950/80 px-4 py-2 text-[11px] text-neutral-400">
+          Atividades e mensagens recentes
         </div>
 
-        {/* Lista Rolável de Notificações: overscroll-contain impede que a página atrás se movimente */}
-        <div className="flex-1 overflow-y-auto overscroll-contain divide-y divide-neutral-800/60 p-1">
+        <div className="flex-1 divide-y divide-neutral-800/60 overflow-y-auto overscroll-contain p-1">
           {notifications.length === 0 ? (
-            <div className="py-12 px-6 text-center text-xs text-neutral-400 space-y-1.5">
-              <div className="w-10 h-10 rounded-full bg-neutral-800/60 mx-auto flex items-center justify-center text-neutral-400 mb-2">
-                <Bell className="w-5 h-5" />
+            <div className="space-y-1.5 px-6 py-12 text-center text-xs text-neutral-400">
+              <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-neutral-800/60 text-neutral-400">
+                <Bell className="h-5 w-5" />
               </div>
-              <p className="font-medium text-neutral-300">Nenhuma notificação por enquanto</p>
+              <p className="font-medium text-neutral-300">
+                Nenhuma notificação por enquanto
+              </p>
               <p className="text-[11px] text-neutral-500">
-                Quando alguém comentar nas fotos da empresa, o sino avisará você aqui.
+                Quando houver uma nova atividade, o sino avisará você aqui.
               </p>
             </div>
           ) : (
-            notifications.map((notif) => {
-              const isAdminNotification = notif.type === 'admin';
-              const isExpanded = expandedNotificationIds.includes(notif.id);
+            notifications.map((notification) => {
+              const isAdministrative = isAdministrativeNotification(notification);
+              const canExpandMessage =
+                isAdministrative &&
+                (notification.message.includes('\n') || notification.message.length > 100);
+              const isExpanded = expandedNotificationIds.includes(notification.id);
+              const canOpen = hasNotificationDestination(notification);
+              const isRead = readNotificationIds.has(notification.id);
+              const imageUrl = getNotificationImageUrl(notification, fallbackImageUrl);
+
               return (
                 <div
-                  key={notif.id}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (isAdminNotification) {
-                      setExpandedNotificationIds((current) =>
-                        current.includes(notif.id)
-                          ? current.filter((id) => id !== notif.id)
-                          : [...current, notif.id],
-                      );
-                      return;
-                    }
-                    onSelectNotification(notif);
-                    onClose();
-                  }}
-                  className={`p-3 rounded-xl cursor-pointer transition-colors ${
-                    notif.read
-                      ? 'hover:bg-neutral-800/40 opacity-75'
-                      : 'bg-neutral-950/60 hover:bg-neutral-800/70 border-l-2 border-amber-400'
-                  }`}
+                  key={notification.id}
+                  role={canOpen ? 'button' : undefined}
+                  tabIndex={canOpen ? 0 : undefined}
+                  onClick={
+                    canOpen
+                      ? () => onSelectNotification(notification)
+                      : undefined
+                  }
+                  onKeyDown={
+                    canOpen
+                      ? (event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            onSelectNotification(notification);
+                          }
+                        }
+                      : undefined
+                  }
+                  className={[
+                    'rounded-xl p-3 transition-colors',
+                    isRead ? 'opacity-75 hover:bg-neutral-800/40' : 'border-l-2 border-amber-400 bg-neutral-950/60 hover:bg-neutral-800/70',
+                    canOpen ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400/70' : '',
+                  ].join(' ')}
                 >
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-[10px] text-neutral-200 shrink-0 uppercase">
-                      {notif.authorName.slice(0, 2)}
+                  <div className="flex items-start space-x-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800 text-[10px] font-bold uppercase text-neutral-200">
+                      {getNotificationAuthor(notification).slice(0, 2)}
                     </div>
 
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="text-xs leading-snug">
-                        <span className="font-bold text-neutral-100 mr-1">
-                          {notif.authorName}
+                        <span className="mr-1 font-bold text-neutral-100">
+                          {isAdministrative ? getNotificationAuthor(notification) : notification.title}
                         </span>
-                        <span className="text-neutral-300">
-                          {isAdminNotification ? 'enviou:' : 'comentou:'}
-                        </span>
-                      </div>
-                      <p className={`text-xs text-neutral-400 italic mt-0.5 ${isExpanded ? '' : 'line-clamp-1'}`}>
-                        "{notif.text}"
-                      </p>
-                      <div className="flex items-center space-x-2 text-[10px] text-neutral-500 mt-1">
-                        <span className="text-emerald-400 flex items-center space-x-1">
-                          {isAdminNotification ? (
-                            <Bell className="w-3 h-3" />
-                          ) : (
-                            <MessageCircle className="w-3 h-3" />
-                          )}
-                          <span>
-                            {isAdminNotification
-                              ? isExpanded ? 'Ocultar mensagem' : 'Ver mensagem'
-                              : 'Ver foto'}
+                        {isAdministrative ? (
+                          <span className="text-neutral-300">enviou:</span>
+                        ) : (
+                          <span className="text-neutral-400">
+                            {getNotificationAuthor(notification)}
                           </span>
+                        )}
+                      </div>
+
+                      <p
+                        className={[
+                          'mt-0.5 text-xs italic text-neutral-400',
+                          isAdministrative && canExpandMessage ? 'line-clamp-2' : '',
+                        ].join(' ')}
+                      >
+                        "{notification.message}"
+                      </p>
+
+                      <div className="mt-1 flex items-center space-x-2 text-[10px] text-neutral-500">
+                        <span
+                          className={[
+                            'flex items-center space-x-1',
+                            canOpen ? 'text-emerald-400' : 'text-neutral-400',
+                          ].join(' ')}
+                        >
+                          {getNotificationIcon(notification)}
+                          <span>{getNotificationActionLabel(notification)}</span>
                         </span>
                         <span>•</span>
-                        <span>{formatRelativeTime(notif.createdAt)}</span>
+                        <span>{formatRelativeTime(notification.createdAt)}</span>
                       </div>
                     </div>
 
-                    <img
-                      src={notif.postImageUrl}
-                      alt={isAdminNotification ? 'TempleSale' : 'Foto'}
-                      className={`w-11 h-11 rounded-lg border border-neutral-700/80 shrink-0 ${
-                        isAdminNotification ? 'bg-neutral-950 object-contain p-2' : 'object-cover'
-                      }`}
-                    />
+                    {imageUrl ? (
+                      <img
+                        src={imageUrl}
+                        alt={isAdministrative ? 'TempleSale' : notification.title}
+                        className="h-11 w-11 shrink-0 rounded-lg border border-neutral-700/80 object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-neutral-700/80 bg-neutral-950 text-neutral-400">
+                        {getNotificationIcon(notification)}
+                      </div>
+                    )}
                   </div>
 
-                  {isAdminNotification && isExpanded && (
-                    <div className="mt-3 rounded-xl border border-neutral-800 bg-neutral-950/70 px-3 py-2.5 text-xs leading-relaxed text-neutral-200">
-                      {notif.text}
+                  {isAdministrative && canExpandMessage && (
+                    <button
+                      type="button"
+                      aria-expanded={isExpanded}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setExpandedNotificationIds((current) =>
+                          current.includes(notification.id)
+                            ? current.filter((id) => id !== notification.id)
+                            : [...current, notification.id],
+                        );
+                      }}
+                      className="mt-2 inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-[10px] text-emerald-400 transition-colors hover:bg-neutral-800 hover:text-emerald-300"
+                    >
+                      {isExpanded ? (
+                        <ChevronUp className="h-3 w-3" />
+                      ) : (
+                        <ChevronDown className="h-3 w-3" />
+                      )}
+                      <span>{isExpanded ? 'Ocultar mensagem' : 'Ver mensagem'}</span>
+                    </button>
+                  )}
+
+                  {isAdministrative && isExpanded && (
+                    <div className="mt-2.5 rounded-xl border border-neutral-800 bg-neutral-950/70 px-3 py-2.5 text-xs leading-relaxed text-neutral-200">
+                      {notification.message}
                     </div>
                   )}
                 </div>
