@@ -3324,47 +3324,63 @@ setMapAutoFocusPanelSearch(true);
     [publicationIdFromSocialPostId],
   );
 
-  const changeSocialTab = React.useCallback(
-    (tab: SocialActiveTab) => {
-      if (tab === "map") {
-       if (tab === "map") {
-  if (socialActiveTab === "feed") {
-          feedScrollPositionRef.current = window.scrollY || window.pageYOffset || 0;
-        }
-        openMapDefault();
-        return;
-      }
-      if (
-  tab === "feed" &&
-  typeof window !== "undefined" &&
-  window.location.pathname.startsWith("/attivita/")
-) {
-  window.history.replaceState({}, "", "/");
-}
-
-if (tab === "feed" && socialActiveTab === "feed") {
-        void loadPublicationFeedPage({ append: false });
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        return;
-      }
+ const changeSocialTab = React.useCallback(
+  (tab: SocialActiveTab) => {
+    if (tab === "map") {
       if (socialActiveTab === "feed") {
-        feedScrollPositionRef.current = window.scrollY || window.pageYOffset || 0;
+        feedScrollPositionRef.current =
+          window.scrollY || window.pageYOffset || 0;
       }
-      if (tab === "profile") {
-        setSocialSelectedCompanyId(activeSocialCompany.id);
-      }
-      setSocialActiveTab(tab);
+
+      openMapDefault();
+      return;
+    }
+
+    if (
+      tab === "feed" &&
+      typeof window !== "undefined" &&
+      window.location.pathname.startsWith("/attivita/")
+    ) {
+      window.history.replaceState({}, "", "/");
+    }
+
+    if (tab === "feed" && socialActiveTab === "feed") {
+      void loadPublicationFeedPage({ append: false });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    if (socialActiveTab === "feed") {
+      feedScrollPositionRef.current =
+        window.scrollY || window.pageYOffset || 0;
+    }
+
+    if (tab === "profile") {
+      setSocialSelectedCompanyId(activeSocialCompany.id);
+    }
+
+    setSocialActiveTab(tab);
+
     if (tab === "profile" || tab === "search") {
-  scrollWindowToTop();
-}
-      if (tab === "feed") {
-        window.requestAnimationFrame(() => {
-          window.scrollTo({ top: feedScrollPositionRef.current, behavior: "auto" });
+      scrollWindowToTop();
+    }
+
+    if (tab === "feed") {
+      window.requestAnimationFrame(() => {
+        window.scrollTo({
+          top: feedScrollPositionRef.current,
+          behavior: "auto",
         });
-      }
-    },
-   [activeSocialCompany.id, loadPublicationFeedPage, openMapDefault, socialActiveTab],
-  );
+      });
+    }
+  },
+  [
+    activeSocialCompany.id,
+    loadPublicationFeedPage,
+    openMapDefault,
+    socialActiveTab,
+  ],
+);
 
   const toggleSavedSocialPost = React.useCallback((postId: string) => {
     const publicationId = publicationIdFromSocialPostId(postId);
