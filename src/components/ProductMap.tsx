@@ -1,11 +1,12 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ExternalLink, MapPin, Search, Store, X } from "lucide-react";
+import { MapPin, MessageSquare, Search, Store, X } from "lucide-react";
 import { type Product } from "./ProductCard";
 import { useI18n } from "../i18n/provider";
 import { type AppLocale } from "../i18n";
 import { getCategoryLabel } from "../i18n/categories";
 import { api, type EstablishmentDto, type SessionUser } from "../lib/api";
+import { buildWhatsappUrl } from "../lib/whatsapp";
 
 interface ProductMapProps {
   products: Product[];
@@ -18,7 +19,6 @@ interface ProductMapProps {
   onOpenProduct?: (product: Product) => void;
   onOpenEstablishment?: (idOrSlug: number | string) => void;
   onAddToCart?: (product: Product) => void;
-  googleMapsUrl?: string;
   currentUser?: SessionUser | null;
   onUserLocationSaved?: (user: SessionUser) => void;
 }
@@ -48,40 +48,6 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-function buildGoogleMapsSearchUrl(latitude: number, longitude: number): string {
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${latitude},${longitude}`)}`;
-}
-
-function buildFocusedBalloonMarkerHtml(
-  label: string,
-  googleMapsHref: string,
-  googleMapsLabel: string,
-): string {
-  const safeLabel = escapeHtml(String(label ?? "").trim() || "Loja");
-  const safeGoogleMapsHref = escapeHtml(googleMapsHref);
-  const safeGoogleMapsLabel = escapeHtml(googleMapsLabel);
-  return `
-    <div style="position:relative;width:230px;height:96px;display:flex;justify-content:center;pointer-events:auto;">
-      <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:220px;padding:8px 10px 9px;background:#0a0a0a;border:1.5px solid #00c896;border-radius:15px;color:#ffffff;line-height:1.2;box-shadow:0 18px 32px rgba(0,0,0,0.38);pointer-events:auto;">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-          <span style="display:inline-block;width:7px;height:7px;border-radius:9999px;background:#00c896;"></span>
-          <span style="font-size:9px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:#d4d4d4;">
-            TempleSale
-          </span>
-        </div>
-        <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-          ${safeLabel}
-        </div>
-        <a href="${safeGoogleMapsHref}" target="_blank" rel="noopener noreferrer" style="margin-top:8px;display:flex;align-items:center;justify-content:center;width:100%;padding:5px 8px;background:#ffffff;border:1.5px solid #ffffff;border-radius:10px;color:#0a0a0a;font-size:10px;font-weight:800;text-decoration:none;letter-spacing:0.03em;pointer-events:auto;">
-          ${safeGoogleMapsLabel}
-        </a>
-      </div>
-      <div style="position:absolute;top:74px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:11px solid transparent;border-right:11px solid transparent;border-top:18px solid #00c896;"></div>
-      <div style="position:absolute;top:73px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-top:17px solid #0a0a0a;"></div>
-    </div>
-  `;
 }
 
 function calculateDistanceKm(from: LeafletLatLng | null, product: LocatedProduct): number | null {
@@ -778,7 +744,6 @@ export default function ProductMap({
   onOpenEstablishment,
   currentUser,
   onUserLocationSaved,
-  googleMapsUrl,
 }: ProductMapProps) {
   const { t, locale } = useI18n();
   const [searchedEstablishments, setSearchedEstablishments] = React.useState<EstablishmentDto[]>([]);
@@ -1000,13 +965,16 @@ export default function ProductMap({
   const filteredProducts = React.useMemo(() => {
     const normalized = normalizeSearchText(searchQuery);
     if (!normalized) {
+      if (initialFocusProductId) {
+        return productsWithLocation.filter((product) => product.id === initialFocusProductId);
+      }
       return [];
     }
 
     return productsWithLocation.filter((product) =>
       matchesProductSearch(product, normalized, locale),
     );
-  }, [locale, productsWithLocation, searchQuery]);
+  }, [initialFocusProductId, locale, productsWithLocation, searchQuery]);
 
   const filteredPanelProducts = React.useMemo(() => {
     const normalized = normalizeSearchText(panelSearchQuery);
@@ -1869,6 +1837,12 @@ export default function ProductMap({
 
   const isFocused =
     focusedMapItemKey === getMapItemKey(product);
+  const whatsappUrl = buildWhatsappUrl(
+    product.establishmentWhatsappCountryIso || product.sellerWhatsappCountryIso,
+    product.establishmentWhatsappNumber || product.sellerWhatsappNumber,
+    product.name,
+    { kind: "establishment" },
+  );
 
   return (
     <div
@@ -1948,25 +1922,35 @@ export default function ProductMap({
           </div>
 
           <div className="mt-2.5 flex items-center gap-2">
-            <span className="flex-1 rounded-lg border border-neutral-700 px-2.5 py-1.5 text-center text-[9px] font-bold uppercase tracking-wide text-neutral-300">
-              {isFocused
-                ? t("No mapa")
-                : t("Ver no mapa")}
-            </span>
-
             <button
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
-                openMapItem(product);
+                focusMapItem(product);
               }}
-              className="flex-1 rounded-lg border border-emerald-500/40 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-emerald-300 transition-colors hover:bg-emerald-500 hover:text-neutral-950"
-              aria-label={t("Abrir loja {name}", {
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-sky-500/40 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-sky-300 transition-colors hover:bg-sky-500 hover:text-neutral-950"
+              aria-label={t("Ver {name} no mapa", {
                 name: product.name,
               })}
             >
-              {t("Abrir")}
+              <MapPin className="h-3 w-3" />
+              {isFocused ? t("No mapa") : t("Mapa")}
             </button>
+
+            {whatsappUrl && (
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(event) => event.stopPropagation()}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-emerald-500/40 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-emerald-300 transition-colors hover:bg-emerald-500 hover:text-neutral-950"
+                aria-label={t("WhatsApp")}
+                title={t("WhatsApp")}
+              >
+                <MessageSquare className="h-3 w-3" />
+                WhatsApp
+              </a>
+            )}
           </div>
         </div>
       </div>
@@ -1981,24 +1965,6 @@ export default function ProductMap({
           </div>
 
           <div className="relative z-20 bg-neutral-950/94 backdrop-blur-md border border-neutral-800 rounded-xl p-1 shadow-2xl flex items-center gap-1 pointer-events-auto">
-            {googleMapsUrl && (
-              <>
-                <a
-                  href={googleMapsUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-2.5 py-2.5 rounded-lg text-neutral-300 hover:bg-neutral-900 hover:text-white transition-all duration-200 flex items-center gap-1.5"
-                  title={t("Abrir no Google Maps")}
-                  aria-label={t("Abrir no Google Maps")}
-                >
-                  <ExternalLink size={15} />
-                  <span className="hidden text-[9px] uppercase tracking-[0.06em] font-semibold leading-tight lg:inline">
-                    {t("Abrir no Google Maps")}
-                  </span>
-                </a>
-              </>
-            )}
-            {googleMapsUrl && <div className="w-px h-6 bg-neutral-800 mx-1" />}
             <button
               type="button"
               onClick={onClose}

@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { MapPin, MessageSquare, X, CheckCircle2, Sparkles, Search } from 'lucide-react';
 import { Company, Post } from '../types';
 import { ProgressiveProductImage } from './ProductCard';
+import { buildWhatsappUrl } from '../lib/whatsapp';
 
 interface CompanySearchProps {
   searchQuery: string;
@@ -9,6 +10,7 @@ interface CompanySearchProps {
   companies: Company[];
   posts: Post[];
   onSelectCompany: (companyId: string) => void;
+  onOpenMap?: (company: Company) => void;
   onOpenPost: (post: Post) => void;
 }
 
@@ -28,6 +30,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
   companies,
   posts,
   onSelectCompany,
+  onOpenMap,
   onOpenPost,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -256,10 +259,9 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
       ) : (
         <div className="space-y-3">
           {searchResults.map(({ company, companyPosts }) => {
-            const cleanWhatsAppNumber = company.whatsapp.replace(/\D/g, '');
-            const whatsappUrl = `https://wa.me/${cleanWhatsAppNumber}?text=${encodeURIComponent(
-              `Olá! Encontrei a empresa ${company.name} no TempleSale e gostaria de saber mais.`
-            )}`;
+            const whatsappUrl = buildWhatsappUrl(undefined, company.whatsapp, company.name, {
+              kind: 'establishment',
+            });
 
             const latestPosts = companyPosts.slice(0, 3);
             const profilePhoto =
@@ -307,17 +309,30 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
                     </div>
                   </div>
 
-                  {/* WhatsApp Direto */}
-                  <a
-                    href={whatsappUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs active:scale-95 transition-all shrink-0 cursor-pointer"
-                    title={`Conversar com ${company.name} no WhatsApp`}
-                  >
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">WhatsApp</span>
-                  </a>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onOpenMap?.(company)}
+                      className="flex items-center space-x-1.5 rounded-xl border border-sky-500/40 px-3 py-1.5 text-xs font-semibold text-sky-300 shadow-xs transition-all hover:bg-sky-500 hover:text-neutral-950 active:scale-95"
+                      title={`Ver ${company.name} no mapa TempleSale`}
+                    >
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Mapa</span>
+                    </button>
+
+                    {whatsappUrl && (
+                      <a
+                        href={whatsappUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs active:scale-95 transition-all cursor-pointer"
+                        title={`Conversar com ${company.name} no WhatsApp`}
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">WhatsApp</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
 
                 {/* As 3 últimas publicações enquadradas (Clicar na foto abre a publicação) */}

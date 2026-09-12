@@ -380,6 +380,7 @@ export default function App() {
   const [isUserOpen, setIsUserOpen] = React.useState(false);
   const [isMapOpen, setIsMapOpen] = React.useState(false);
   const [mapInitialCategory, setMapInitialCategory] = React.useState("All");
+  const [mapInitialFocusProductId, setMapInitialFocusProductId] = React.useState<number | undefined>(undefined);
   const [mapOpenWithResults, setMapOpenWithResults] = React.useState(false);
   const [mapAutoFocusPanelSearch, setMapAutoFocusPanelSearch] = React.useState(false);
   const [isNewProductOpen, setIsNewProductOpen] = React.useState(false);
@@ -2620,6 +2621,7 @@ export default function App() {
     (category?: string) => {
       const normalizedCategory = String(category ?? activeCategory).trim() || "All";
       setMapInitialCategory(normalizedCategory);
+      setMapInitialFocusProductId(undefined);
       setMapOpenWithResults(true);
       setMapAutoFocusPanelSearch(true);
       setIsMenuOpen(false);
@@ -2631,11 +2633,29 @@ export default function App() {
   const openMapDefault = React.useCallback(() => {
     const normalizedCategory = String(activeCategory).trim() || "All";
     setMapInitialCategory(normalizedCategory);
+    setMapInitialFocusProductId(undefined);
     setMapOpenWithResults(false);
     setMapAutoFocusPanelSearch(false);
     setIsMenuOpen(false);
     setIsMapOpen(true);
   }, [activeCategory]);
+
+  const openMapForCompany = React.useCallback(
+    (company: SocialCompany) => {
+      const establishmentIdMatch = /^company_(\d+)$/.exec(company.id);
+      const establishmentId = establishmentIdMatch ? Number(establishmentIdMatch[1]) : null;
+      setMapInitialCategory("All");
+      setMapInitialFocusProductId(
+        establishmentId ? 1_000_000_000 + establishmentId : undefined,
+      );
+      setMapOpenWithResults(false);
+      setMapAutoFocusPanelSearch(false);
+      setIsMenuOpen(false);
+      setIsUserOpen(false);
+      setIsMapOpen(true);
+    },
+    [],
+  );
 
   const scrollPageToTop = React.useCallback(() => {
     if (typeof window === "undefined" || typeof document === "undefined") {
@@ -2798,7 +2818,17 @@ export default function App() {
       });
   }, [catalogProducts, activeCategory, searchQuery, hasMaxPriceFilter, maxPriceFilter]);
 
-  const visibleEstablishments = React.useMemo(() => establishments, [establishments]);
+  const visibleEstablishments = React.useMemo(() => {
+    const byId = new globalThis.Map<number, EstablishmentDto>();
+    establishments.forEach((establishment) => byId.set(establishment.id, establishment));
+    if (myEstablishment) {
+      byId.set(myEstablishment.id, myEstablishment);
+    }
+    if (selectedEstablishment) {
+      byId.set(selectedEstablishment.id, selectedEstablishment);
+    }
+    return Array.from(byId.values());
+  }, [establishments, myEstablishment, selectedEstablishment]);
   const isDiscoveryMode = React.useMemo(
     () => debouncedSearchQuery.trim().length > 0 || activeCategory !== "All",
     [activeCategory, debouncedSearchQuery],
@@ -3553,17 +3583,20 @@ export default function App() {
           <ProductMap
             products={products}
             establishments={visibleEstablishments}
+            initialFocusProductId={mapInitialFocusProductId}
             initialCategory={mapInitialCategory}
             openResultsByDefault={mapOpenWithResults}
             autoFocusPanelSearch={mapAutoFocusPanelSearch}
             onOpenProduct={(product) => {
               setIsMapOpen(false);
+              setMapInitialFocusProductId(undefined);
               setMapOpenWithResults(false);
               setMapAutoFocusPanelSearch(false);
               openProductDetails(product);
             }}
             onOpenEstablishment={(idOrSlug) => {
               setIsMapOpen(false);
+              setMapInitialFocusProductId(undefined);
               setMapOpenWithResults(false);
               setMapAutoFocusPanelSearch(false);
               void openEstablishmentPage(idOrSlug);
@@ -3578,6 +3611,7 @@ export default function App() {
             }}
             onClose={() => {
               setIsMapOpen(false);
+              setMapInitialFocusProductId(undefined);
               setMapOpenWithResults(false);
               setMapAutoFocusPanelSearch(false);
             }}
@@ -3684,6 +3718,7 @@ export default function App() {
             onOpenCreatePost={handleOpenNewProduct}
             onEditCompany={() => setIsEditePerfilOpen(true)}
             onChangeCompanyPhoto={requestCompanyPhotoChange}
+            onOpenMap={openMapForCompany}
             onKeywordClick={(keyword) => {
               setSearchQuery(keyword);
               setSocialActiveTab("search");
@@ -3705,6 +3740,7 @@ export default function App() {
             companies={socialCompanies}
             posts={socialPosts}
             onSelectCompany={selectSocialCompany}
+            onOpenMap={openMapForCompany}
             onOpenPost={openSocialPost}
           />
         </div>

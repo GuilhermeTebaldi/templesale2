@@ -297,14 +297,6 @@ export default function ProductDetails({
     Number.isFinite(product.latitude) &&
     typeof product.longitude === "number" &&
     Number.isFinite(product.longitude);
-  const googleMapsUrl = React.useMemo(() => {
-    if (!hasCoordinates) {
-      return "";
-    }
-    const latitude = Number(product.latitude);
-    const longitude = Number(product.longitude);
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${latitude},${longitude}`)}`;
-  }, [hasCoordinates, product.latitude, product.longitude]);
   const sellerWhatsappCountryIso =
     product.establishmentWhatsappCountryIso ||
     resolvedSellerContact?.sellerWhatsappCountryIso ||
@@ -1521,7 +1513,6 @@ export default function ProductDetails({
             <ProductMap
               products={productsForMap}
               initialFocusProductId={product.id}
-              googleMapsUrl={googleMapsUrl || undefined}
               onOpenProduct={(nextProduct) => {
                 setIsLocationMapOpen(false);
                 onOpenProduct?.(nextProduct);

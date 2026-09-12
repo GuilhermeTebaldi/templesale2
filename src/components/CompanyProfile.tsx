@@ -6,7 +6,6 @@ import {
   Tag,
   Edit3,
   Plus,
-  Compass,
   MessageCircle,
   Grid3X3,
   CheckCircle2,
@@ -22,6 +21,7 @@ import { Company, Post } from '../types';
 import { TempleSaleLikeIcon } from './TempleSaleLikeIcon';
 import { TempleSaleAvatarFrame } from './TempleSaleAvatarFrame';
 import { ProgressiveProductImage } from './ProductCard';
+import { buildWhatsappUrl } from '../lib/whatsapp';
 
 interface CompanyProfileProps {
   company: Company;
@@ -33,6 +33,7 @@ interface CompanyProfileProps {
   onOpenCreatePost?: () => void;
   onEditCompany?: (company: Company) => void;
   onChangeCompanyPhoto?: () => void;
+  onOpenMap?: (company: Company) => void;
   onKeywordClick?: (keyword: string) => void;
   onDeletePost?: (postId: string) => void;
   onEditPost?: (postId: string) => void;
@@ -51,6 +52,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
   onOpenCreatePost,
   onEditCompany,
   onChangeCompanyPhoto,
+  onOpenMap,
   onKeywordClick,
   onDeletePost,
   onEditPost,
@@ -62,14 +64,9 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
-  const cleanWhatsAppNumber = company.whatsapp.replace(/\D/g, '');
-  const whatsappUrl = `https://wa.me/${cleanWhatsAppNumber}?text=${encodeURIComponent(
-    `Olá! Vi o perfil da empresa ${company.name} no TempleSale e gostaria de mais informações.`
-  )}`;
-
-  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    `${company.address} ${company.city}`
-  )}`;
+  const whatsappUrl = buildWhatsappUrl(undefined, company.whatsapp, company.name, {
+    kind: 'establishment',
+  });
 
   const totalLikes = posts.reduce((sum, p) => sum + (p.likesCount || 0), 0);
   const totalPublications = company.publicationCount ?? posts.length;
@@ -126,24 +123,25 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
         </div>
 
         <div className="flex items-center space-x-2">
-          <a
-            href={whatsappUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-1.5 text-neutral-300 hover:text-emerald-400 transition-colors"
-            title="WhatsApp"
-          >
-            <MessageSquare className="w-5 h-5" />
-          </a>
-          <a
-            href={googleMapsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          {whatsappUrl && (
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 text-neutral-300 hover:text-emerald-400 transition-colors"
+              title="WhatsApp"
+            >
+              <MessageSquare className="w-5 h-5" />
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={() => onOpenMap?.(company)}
             className="p-1.5 text-neutral-300 hover:text-white transition-colors"
-            title="Google Maps"
+            title="Mapa TempleSale"
           >
-            <Compass className="w-5 h-5" />
-          </a>
+            <MapPin className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
@@ -233,15 +231,14 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
               <span>{company.hours}</span>
             </div>
 
-            <a
-              href={googleMapsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() => onOpenMap?.(company)}
               className="flex items-center space-x-1.5 text-sky-400 hover:underline"
             >
               <MapPin className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">{company.address} • {company.city}</span>
-            </a>
+            </button>
           </div>
         </div>
 
@@ -289,30 +286,31 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
             </div>
 
             {/* Destaque Endereço */}
-            <a
-              href={googleMapsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() => onOpenMap?.(company)}
               className="flex flex-col items-center space-y-1 shrink-0 group"
             >
               <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl p-0.5 border border-neutral-800 group-hover:border-sky-400/60 transition-all flex items-center justify-center bg-neutral-900/90 group-hover:bg-neutral-800/80 shadow-xs">
                 <MapPin className="w-5 h-5 text-sky-400 group-hover:scale-110 transition-transform" />
               </div>
               <span className="text-[11px] text-neutral-300 font-medium">Endereço</span>
-            </a>
+            </button>
 
             {/* Destaque Contato */}
-            <a
-              href={whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex flex-col items-center space-y-1 shrink-0 group"
-            >
-              <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl p-0.5 border border-neutral-800 group-hover:border-emerald-400/60 transition-all flex items-center justify-center bg-neutral-900/90 group-hover:bg-neutral-800/80 shadow-xs">
-                <MessageSquare className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
-              </div>
-              <span className="text-[11px] text-neutral-300 font-medium">WhatsApp</span>
-            </a>
+            {whatsappUrl && (
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-col items-center space-y-1 shrink-0 group"
+              >
+                <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl p-0.5 border border-neutral-800 group-hover:border-emerald-400/60 transition-all flex items-center justify-center bg-neutral-900/90 group-hover:bg-neutral-800/80 shadow-xs">
+                  <MessageSquare className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                </div>
+                <span className="text-[11px] text-neutral-300 font-medium">WhatsApp</span>
+              </a>
+            )}
 
             {/* Destaque Palavras-chave */}
             <div
