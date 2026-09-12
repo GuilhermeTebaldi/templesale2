@@ -328,6 +328,21 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Mobile Right Controls: Sino no topo ao lado do Perfil/Avatar da Empresa */}
           <div className="flex sm:hidden items-center space-x-1.5">
+            {hasRegisteredAccount && (
+              <button
+                id="btn-mobile-search-top"
+                onClick={() => setActiveTab('search')}
+                className={`relative p-2 rounded-full transition-colors cursor-pointer ${
+                  activeTab === 'search'
+                    ? 'bg-neutral-800 text-white'
+                    : 'text-neutral-300 active:text-white hover:bg-neutral-800/80'
+                }`}
+                title="Buscar Empresas"
+              >
+                <Search className="w-5 h-5" />
+              </button>
+            )}
+
             {/* Sino no Topo (Mobile) */}
             <button
               id="btn-mobile-bell"
@@ -345,7 +360,7 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 id="btn-mobile-likes"
                 onClick={onOpenFavorites}
-                hidden
+                hidden={hasRegisteredAccount}
                 className="relative p-2 text-neutral-300 active:text-red-300 rounded-full hover:bg-neutral-800/80 transition-colors cursor-pointer"
                 title="Curtidas"
               >
@@ -385,7 +400,9 @@ export const Header: React.FC<HeaderProps> = ({
       <nav
         ref={mobileNavRef}
         id="mobile-bottom-nav"
-        className="sm:hidden fixed left-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 px-2 py-1 flex items-center justify-around will-change-[top]"
+        className={`sm:hidden fixed left-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 px-2 flex items-center justify-around will-change-[top] ${
+          hasRegisteredAccount ? 'pt-1 pb-2' : 'py-1'
+        }`}
         style={{
           bottom: mobileNavTop === null ? 0 : 'auto',
           top: mobileNavTop === null ? 'auto' : `${mobileNavTop}px`,
@@ -405,6 +422,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Search Tab */}
         <button
           onClick={() => setActiveTab('search')}
+          hidden={hasRegisteredAccount}
           className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-lg transition-colors ${
             activeTab === 'search' ? 'text-white' : 'text-neutral-400'
           }`}
@@ -417,13 +435,13 @@ export const Header: React.FC<HeaderProps> = ({
         {hasRegisteredAccount && (
           <button
             onClick={onOpenCreatePost}
-            className="flex flex-col items-center justify-center -mt-6 group cursor-pointer"
+            className="flex flex-col items-center justify-center -mt-4 group cursor-pointer"
             title="+ Publicar Foto"
           >
-            <div className="w-16 h-16 rounded-full bg-neutral-100 text-neutral-950 flex items-center justify-center shadow-2xl border-4 border-neutral-900 group-active:scale-95 transition-transform">
-              <Plus className="w-7 h-7 stroke-[2.8]" />
+            <div className="w-14 h-14 rounded-full bg-neutral-100 text-neutral-950 flex items-center justify-center shadow-2xl border-4 border-neutral-900 group-active:scale-95 transition-transform">
+              <Plus className="w-6 h-6 stroke-[2.8]" />
             </div>
-            <span className="text-[9px] font-bold text-neutral-100 mt-0.5">Publicar</span>
+            <span className="-mt-0.5 text-[9px] font-bold leading-none text-neutral-100">Publicar</span>
           </button>
         )}
 
