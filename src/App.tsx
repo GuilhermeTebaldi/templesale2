@@ -44,7 +44,6 @@ import { parsePriceToNumber } from "./lib/currency";
 import { buildWhatsappUrl } from "./lib/whatsapp";
 import type {
   ActiveTab as SocialActiveTab,
-  AppNotification as SocialAppNotification,
   Auth0User as SocialAuth0User,
   Company as SocialCompany,
   Post as SocialPost,
@@ -2287,14 +2286,26 @@ export default function App() {
   const handleNotificationClick = async (notification: NotificationDto) => {
     markNotificationAsRead(notification.id);
     setSwipedNotificationId(null);
-    if (notification.type === "publication_comment" && notification.publicationId) {
+
+    if (
+      notification.type === "admin_broadcast" ||
+      notification.type === "system_welcome"
+    ) {
+      return;
+    }
+
+    if (notification.type === "publication_comment") {
+      if (!Number.isInteger(notification.publicationId) || notification.publicationId <= 0) {
+        return;
+      }
+
+      setIsNotificationsOpen(false);
       try {
         const payload = await api.getPublication(notification.publicationId);
         setSelectedEstablishment(payload.establishment);
         setSelectedPublication(payload.publication);
         setFocusedPublicationCommentId(notification.commentId ?? null);
         setIsEstablishmentPageOpen(true);
-        setIsNotificationsOpen(false);
         if (typeof window !== "undefined") {
           window.history.pushState(
             { establishmentId: payload.establishment.id, publicationId: payload.publication.id },
@@ -2307,16 +2318,25 @@ export default function App() {
       }
       return;
     }
-    if (!("productId" in notification) || !notification.productId) {
+
+    if (
+      notification.type !== "product_like" &&
+      notification.type !== "product_cart_interest" &&
+      notification.type !== "product_comment"
+    ) {
       return;
     }
 
+    if (!Number.isInteger(notification.productId) || notification.productId <= 0) {
+      return;
+    }
+
+    setIsNotificationsOpen(false);
     const product = await resolveProductForNotification(notification.productId);
     if (!product) {
       return;
     }
 
-    setIsNotificationsOpen(false);
     openProductDetails(product, {
       focusCommentId: notification.type === "product_comment" ? notification.commentId ?? null : null,
     });
@@ -3150,44 +3170,6 @@ setMapAutoFocusPanelSearch(true);
     [activeSocialCompany.id, currentUser?.id, hasMemberAccess, memberEmail, memberName, memberProfilePhoto],
   );
 
-  const socialNotifications = React.useMemo<SocialAppNotification[]>(
-    () =>
-      notificationsToDisplay
-        .filter((notification) => notification.type === "publication_comment" || notification.type === "admin_broadcast")
-        .map((notification) => {
-          const isAdminBroadcast = notification.type === "admin_broadcast";
-          const publicationId =
-            !isAdminBroadcast && "publicationId" in notification && notification.publicationId
-              ? notification.publicationId
-              : 0;
-          const publication = publicationFeed.find((item) => item.id === publicationId);
-          return {
-            id: notification.id,
-            type: isAdminBroadcast ? "admin" : "comment",
-            postId: publicationId ? socialPostIdFromPublicationId(publicationId) : "",
-            companyId: publication
-              ? socialCompanyIdFromEstablishmentId(publication.establishmentId)
-              : activeSocialCompany.id,
-            postImageUrl:
-              String(("productImageUrl" in notification ? notification.productImageUrl : "") ?? "").trim() ||
-              (isAdminBroadcast ? TEMPLESALE_LOGO_FALLBACK : publication?.imageUrl || activeSocialCompany.logo),
-            authorName: String(("actorName" in notification ? notification.actorName : "") || notification.title || BRAND_NAME),
-            text: notification.message,
-            createdAt: toIsoFromUnixOrMillis(notification.createdAt),
-            read: readNotificationIdSet.has(notification.id),
-          };
-        }),
-    [
-      activeSocialCompany.id,
-      activeSocialCompany.logo,
-      notificationsToDisplay,
-      publicationFeed,
-      readNotificationIdSet,
-      socialCompanyIdFromEstablishmentId,
-      socialPostIdFromPublicationId,
-    ],
-  );
-
   const openSocialPost = React.useCallback(
     (post: SocialPost) => {
       const publicationId = publicationIdFromSocialPostId(post.id);
@@ -3814,21 +3796,11 @@ setMapAutoFocusPanelSearch(true);
       <SocialNotificationsPopover
         isOpen={isNotificationsOpen}
         onClose={() => setIsNotificationsOpen(false)}
-        notifications={socialNotifications}
+        notifications={notificationsToDisplay}
+        readNotificationIds={readNotificationIdSet}
+        fallbackImageUrl={TEMPLESALE_LOGO_FALLBACK}
         onSelectNotification={(notification) => {
-          if (notification.type === "admin") {
-            markNotificationAsRead(notification.id);
-            return;
-          }
-          const originalNotification = notificationsToDisplay.find((item) => item.id === notification.id);
-          if (originalNotification) {
-            void handleNotificationClick(originalNotification);
-            return;
-          }
-          const post = socialPosts.find((item) => item.id === notification.postId);
-          if (post) {
-            openSocialPost(post);
-          }
+          void handleNotificationClick(notification);
         }}
         onMarkAllAsRead={markAllNotificationsAsRead}
       />
