@@ -3293,9 +3293,9 @@ export default function App() {
 
   const selectSocialCompany = React.useCallback(
     (companyId: string) => {
-      if (socialActiveTab === "feed") {
-        feedScrollPositionRef.current = window.scrollY || window.pageYOffset || 0;
-      }
+    if (socialActiveTab === "feed") {
+  feedScrollPositionRef.current = window.scrollY || window.pageYOffset || 0;
+}
       setSocialSelectedCompanyId(companyId);
       setSocialActiveTab("profile");
       scrollWindowToTop();
@@ -3357,9 +3357,9 @@ export default function App() {
         setSocialSelectedCompanyId(activeSocialCompany.id);
       }
       setSocialActiveTab(tab);
-      if (tab === "profile") {
-        scrollWindowToTop();
-      }
+    if (tab === "profile" || tab === "search") {
+  scrollWindowToTop();
+}
       if (tab === "feed") {
         window.requestAnimationFrame(() => {
           window.scrollTo({ top: feedScrollPositionRef.current, behavior: "auto" });
@@ -3720,9 +3720,10 @@ export default function App() {
             onChangeCompanyPhoto={requestCompanyPhotoChange}
             onOpenMap={openMapForCompany}
             onKeywordClick={(keyword) => {
-              setSearchQuery(keyword);
-              setSocialActiveTab("search");
-            }}
+  setSearchQuery(keyword);
+  setSocialActiveTab("search");
+  scrollWindowToTop();
+}}
             onDeletePost={(postId) => {
               void deleteSocialPost(postId);
             }}

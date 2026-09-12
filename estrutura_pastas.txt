@@ -1,100 +1,125 @@
 .
-├── .DS_Store
-├── .env
-├── .env.example
-├── .env.remote.backup
-├── .github
-│   └── workflows
-│       ├── ci.yml
-│       ├── deploy-render-backend.yml
-│       └── deploy-vercel.yml
-├── .gitignore
-├── DEPLOY_AUTOMATICO.md
-├── backup_saleday.sql
-├── backup_saleday_templesale.sql
-├── data
-│   ├── local.db
-│   ├── local.db-shm
-│   └── local.db-wal
-├── dist
-│   ├── .well-known
-│   │   └── security.txt
-│   ├── assets
-│   │   ├── index-B7Ihc3NA.css
-│   │   ├── index-DcR2ouFT.js
-│   │   ├── logo-cropped-1772137225501-otUKBnii.png
-│   │   └── logo-cropped-1772137553672-BFDwaHxT.png
-│   └── index.html
-├── estrutura_pastas.txt
-├── index.html
-├── logo-cropped-1772137225501.png
-├── logo-cropped-1772137553672.png
-├── metadata.json
-├── package-lock.json
-├── package.json
-├── public
-│   └── .well-known
-│       └── security.txt
-├── seguranca.md
-├── server.ts
-├── src
-│   ├── App.tsx
-│   ├── components
-│   │   ├── AdminPanelV2.tsx
-│   │   ├── Auth.tsx
-│   │   ├── Carrinho.tsx
-│   │   ├── Curtidas.tsx
-│   │   ├── EditePerfil.tsx
-│   │   ├── FrameStudio.tsx
-│   │   ├── GlobalLoadingOverlay.tsx
-│   │   ├── LeafletMapPicker.tsx
-│   │   ├── MeusAnuncios.tsx
-│   │   ├── NewProduct.tsx
-│   │   ├── ProductCard.tsx
-│   │   ├── ProductDetails.tsx
-│   │   ├── ProductMap.tsx
-│   │   └── Vendedores.tsx
-│   ├── i18n
-│   │   ├── categories.ts
-│   │   ├── formatters.ts
-│   │   ├── index.ts
-│   │   ├── locales
-│   │   │   ├── ar-SA.ts
-│   │   │   ├── it-IT.ts
-│   │   │   └── pt-BR.ts
-│   │   └── provider.tsx
-│   ├── index.css
-│   ├── lib
-│   │   ├── api.ts
-│   │   ├── auth0-config.ts
-│   │   ├── currency.ts
-│   │   ├── negotiable-price.ts
-│   │   ├── networkActivity.ts
-│   │   ├── product-details.ts
-│   │   ├── product-images.ts
-│   │   ├── security-scanner.ts
-│   │   └── whatsapp.ts
-│   ├── main.tsx
-│   ├── server.js
-│   ├── services
-│   └── styles
-│       └── leaflet-critical.css
-├── templesale-frame-generator
-│   ├── .env.example
-│   ├── .gitignore
-│   ├── README.md
-│   ├── index.html
-│   ├── metadata.json
-│   ├── package-lock.json
-│   ├── package.json
-│   ├── src
-│   │   ├── App.tsx
-│   │   ├── index.css
-│   │   └── main.tsx
-│   ├── tsconfig.json
-│   └── vite.config.ts
-├── tsconfig.json
-├── vercel.json
-└── vite.config.ts
-
-18 directories, 80 files
+./.DS_Store
+./.env
+./.env.example
+./.env.remote.backup
+./.github
+./.github/workflows
+./.github/workflows/ci.yml
+./.github/workflows/deploy-render-backend.yml
+./.github/workflows/deploy-vercel.yml
+./.gitignore
+./DEPLOY_AUTOMATICO.md
+./backup_saleday.sql
+./backup_saleday_templesale.sql
+./data
+./data/local.db
+./data/local.db-shm
+./data/local.db-wal
+./estrutura_pastas.txt
+./index.html
+./logo-cropped-1772137225501.png
+./logo-cropped-1772137553672.png
+./metadata.json
+./migrations
+./migrations/2026-09-06-templesale-establishments.sql
+./migrations/2026-09-07-templesale-publications-comments.sql
+./package-lock.json
+./package.json
+./public
+./public/.well-known
+./public/.well-known/security.txt
+./public/templesale-logo.svg
+./seguranca.md
+./server.ts
+./src
+./src/App.tsx
+./src/components
+./src/components/AdminPanelV2.tsx
+./src/components/ArtGalleryProductCard.tsx
+./src/components/Auth.tsx
+./src/components/Carrinho.tsx
+./src/components/CompanyModal.tsx
+./src/components/CompanyProfile.tsx
+./src/components/CompanyProfileDrawer.tsx
+./src/components/CompanySearch.tsx
+./src/components/CreatePostModal.tsx
+./src/components/Curtidas.tsx
+./src/components/EditPublicationModal.tsx
+./src/components/EditePerfil.tsx
+./src/components/ElegantProductFilter.tsx
+./src/components/FeedView.tsx
+./src/components/FrameStudio.tsx
+./src/components/GlobalLoadingOverlay.tsx
+./src/components/Header.tsx
+./src/components/LeafletMapPicker.tsx
+./src/components/MeusAnuncios.tsx
+./src/components/NewProduct.tsx
+./src/components/NewPublication.tsx
+./src/components/NotificationsPopover.tsx
+./src/components/PostAuthIntroOverlay.tsx
+./src/components/PostDetailModal.tsx
+./src/components/ProductCard.tsx
+./src/components/ProductDetails.tsx
+./src/components/ProductMap.tsx
+./src/components/PublicationViewer.tsx
+./src/components/TempleSaleAvatarFrame.tsx
+./src/components/TempleSaleLikeIcon.tsx
+./src/components/TempleSaleLogo.tsx
+./src/components/Vendedores.tsx
+./src/components/photo-publisher
+./src/components/photo-publisher/components
+./src/components/photo-publisher/components/CameraCapture.tsx
+./src/components/photo-publisher/components/FilterControls.tsx
+./src/components/photo-publisher/components/OverlayToolbar.tsx
+./src/components/photo-publisher/components/PhotoEditorCanvas.tsx
+./src/components/photo-publisher/components/PostCaptionArea.tsx
+./src/components/photo-publisher/components/TextOverlayEditor.tsx
+./src/components/photo-publisher/data
+./src/components/photo-publisher/data/filters.ts
+./src/components/photo-publisher/types.ts
+./src/components/photo-publisher/utils
+./src/components/photo-publisher/utils/canvasRenderer.ts
+./src/i18n
+./src/i18n/categories.ts
+./src/i18n/formatters.ts
+./src/i18n/index.ts
+./src/i18n/locales
+./src/i18n/locales/ar-SA.ts
+./src/i18n/locales/it-IT.ts
+./src/i18n/locales/pt-BR.ts
+./src/i18n/provider.tsx
+./src/index.css
+./src/lib
+./src/lib/api.ts
+./src/lib/auth0-config.ts
+./src/lib/currency.ts
+./src/lib/negotiable-price.ts
+./src/lib/networkActivity.ts
+./src/lib/product-details.ts
+./src/lib/product-images.ts
+./src/lib/security-scanner.ts
+./src/lib/whatsapp.ts
+./src/main.tsx
+./src/server.js
+./src/services
+./src/styles
+./src/styles/leaflet-critical.css
+./src/types.ts
+./templesale-frame-generator
+./templesale-frame-generator/.env.example
+./templesale-frame-generator/.gitignore
+./templesale-frame-generator/README.md
+./templesale-frame-generator/index.html
+./templesale-frame-generator/metadata.json
+./templesale-frame-generator/package-lock.json
+./templesale-frame-generator/package.json
+./templesale-frame-generator/src
+./templesale-frame-generator/src/App.tsx
+./templesale-frame-generator/src/index.css
+./templesale-frame-generator/src/main.tsx
+./templesale-frame-generator/tsconfig.json
+./templesale-frame-generator/vite.config.ts
+./tsconfig.json
+./vercel.json
+./vite.config.ts
