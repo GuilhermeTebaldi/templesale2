@@ -715,15 +715,7 @@ export default function App() {
     void loadProductsPage({ append: false });
   }, [loadProductsPage]);
 
-  React.useEffect(() => {
-    if (!hasMemberAccess || !isMapOpen) {
-      return;
-    }
-    setIsMapOpen(false);
-    setMapOpenWithResults(false);
-    setMapAutoFocusPanelSearch(false);
-    setSocialActiveTab("feed");
-  }, [hasMemberAccess, isMapOpen]);
+ 
 
   React.useEffect(() => {
     if (typeof window === "undefined" || typeof navigator === "undefined") {
@@ -3335,11 +3327,8 @@ setMapAutoFocusPanelSearch(true);
   const changeSocialTab = React.useCallback(
     (tab: SocialActiveTab) => {
       if (tab === "map") {
-        if (hasMemberAccess) {
-          setSocialActiveTab("feed");
-          return;
-        }
-        if (socialActiveTab === "feed") {
+       if (tab === "map") {
+  if (socialActiveTab === "feed") {
           feedScrollPositionRef.current = window.scrollY || window.pageYOffset || 0;
         }
         openMapDefault();
@@ -3374,7 +3363,7 @@ if (tab === "feed" && socialActiveTab === "feed") {
         });
       }
     },
-    [activeSocialCompany.id, hasMemberAccess, loadPublicationFeedPage, openMapDefault, socialActiveTab],
+   [activeSocialCompany.id, loadPublicationFeedPage, openMapDefault, socialActiveTab],
   );
 
   const toggleSavedSocialPost = React.useCallback((postId: string) => {
