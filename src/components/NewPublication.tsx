@@ -209,7 +209,9 @@ export default function NewPublication({
           <button
             type="button"
             onClick={onClose}
-            className="absolute right-3 top-3 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/70 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-neutral-900"
+            className={`absolute right-3 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/70 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-neutral-900 ${
+              currentImage ? "top-14" : "top-3"
+            }`}
             aria-label={t("Fechar")}
           >
             <X className="h-4.5 w-4.5" />
@@ -271,9 +273,10 @@ export default function NewPublication({
                 }}
                 onRemoveOverlay={handleRemoveOverlay}
                 onDimensionsChange={setContainerDims}
+                enableTextOverlays={false}
               />
 
-              {selectedOverlay && (
+              {false && selectedOverlay && (
                 <div className="z-30 shrink-0">
                   <OverlayToolbar
                     selectedItem={selectedOverlay}
@@ -344,7 +347,7 @@ export default function NewPublication({
           )}
         </div>
 
-        {isTextEditorOpen && (
+        {false && isTextEditorOpen && (
           <TextOverlayEditor
             initialOverlay={editingOverlay}
             onSave={handleSaveOverlay}

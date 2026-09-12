@@ -173,15 +173,15 @@ export const Header: React.FC<HeaderProps> = ({
         id="main-header"
         className="sticky top-0 z-40 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800"
       >
-        <div className="relative max-w-6xl mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-end gap-2 sm:gap-4">
-          <div className="absolute inset-y-0 left-3 right-32 flex items-center justify-center sm:static sm:mr-auto sm:w-auto sm:justify-start">
+        <div className="relative max-w-6xl mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-end gap-2 sm:justify-between sm:gap-4">
+          <div className="absolute inset-y-0 left-3 right-32 flex items-center justify-center sm:left-1/2 sm:right-auto sm:-translate-x-1/2">
             <button
               id="brand-text-btn"
               onClick={() => {
                 setActiveTab('feed');
                 onSearchChange('');
               }}
-              className="text-[22px] font-semibold tracking-[0.03em] text-white transition-opacity active:opacity-70 sm:text-[24px] sm:hover:opacity-85"
+              className="text-[22px] font-semibold tracking-[0.03em] text-white transition-opacity active:opacity-70 sm:text-[25px] sm:hover:opacity-85"
               style={{ fontFamily: CINEMA_BRAND_FONT }}
               title="TempleSale - Ir para o feed"
             >
@@ -236,6 +236,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               id="tab-btn-map"
               onClick={() => setActiveTab('map')}
+              hidden={hasRegisteredAccount}
               className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors cursor-pointer ${
                 activeTab === 'map'
                   ? 'bg-neutral-800 text-white'
@@ -251,6 +252,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               id="tab-btn-profile"
               onClick={() => setActiveTab('profile')}
+              hidden={!hasRegisteredAccount}
               className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors cursor-pointer ${
                 activeTab === 'profile'
                   ? 'bg-neutral-800 text-white'
@@ -264,33 +266,25 @@ export const Header: React.FC<HeaderProps> = ({
 
             <div className="h-6 w-px bg-neutral-800 mx-1" />
 
-            {onOpenFavorites && (
+            {/* + PUBLICAR Button (Desktop) */}
+            {hasRegisteredAccount && (
               <button
-                id="btn-header-likes"
-                onClick={onOpenFavorites}
-                className="p-2 text-neutral-300 hover:text-red-300 rounded-xl hover:bg-neutral-800/80 transition-all active:scale-95 cursor-pointer"
-                title="Curtidas"
+                id="btn-header-publish"
+                onClick={onOpenCreatePost}
+                className="-my-2 flex items-center space-x-2 rounded-2xl bg-neutral-100 px-5 py-3.5 text-sm font-black uppercase tracking-[0.14em] text-neutral-950 shadow-xl shadow-black/25 transition-all hover:-translate-y-0.5 hover:bg-white active:scale-98 cursor-pointer"
+                title="+ PUBLICAR foto da empresa"
               >
-                <TempleSaleLikeIcon liked={false} className="w-5 h-5" />
+                <Plus className="w-5 h-5" />
+                <span>Publicar</span>
               </button>
             )}
-
-            {/* + PUBLICAR Button (Desktop) */}
-            <button
-              id="btn-header-publish"
-              onClick={onOpenCreatePost}
-              className="flex items-center space-x-1.5 px-3.5 py-2 bg-neutral-100 hover:bg-white text-neutral-950 text-xs font-bold rounded-xl transition-all shadow-sm active:scale-98 cursor-pointer"
-              title="+ PUBLICAR foto da empresa"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ PUBLICAR</span>
-            </button>
 
             {/* SINO DE NOTIFICAÇÕES (Desktop) */}
             <div className="relative">
               <button
                 id="btn-bell-notifications"
                 onClick={onToggleNotifications}
+                hidden={!hasRegisteredAccount}
                 className="relative p-2 text-neutral-300 hover:text-white rounded-xl hover:bg-neutral-800/80 transition-all active:scale-95 cursor-pointer"
                 title="Notificações"
               >
@@ -351,6 +345,7 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 id="btn-mobile-likes"
                 onClick={onOpenFavorites}
+                hidden
                 className="relative p-2 text-neutral-300 active:text-red-300 rounded-full hover:bg-neutral-800/80 transition-colors cursor-pointer"
                 title="Curtidas"
               >
@@ -419,21 +414,24 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* + Publicar Central Highlight Button */}
-        <button
-          onClick={onOpenCreatePost}
-          className="flex flex-col items-center justify-center -mt-3.5 group cursor-pointer"
-          title="+ Publicar Foto"
-        >
-          <div className="w-11 h-11 rounded-full bg-neutral-100 text-neutral-950 flex items-center justify-center shadow-lg border-2 border-neutral-900 group-active:scale-95 transition-transform">
-            <Plus className="w-5 h-5 stroke-[2.5]" />
-          </div>
-          <span className="text-[9px] font-bold text-neutral-300 mt-0.5">Publicar</span>
-        </button>
+        {hasRegisteredAccount && (
+          <button
+            onClick={onOpenCreatePost}
+            className="flex flex-col items-center justify-center -mt-6 group cursor-pointer"
+            title="+ Publicar Foto"
+          >
+            <div className="w-16 h-16 rounded-full bg-neutral-100 text-neutral-950 flex items-center justify-center shadow-2xl border-4 border-neutral-900 group-active:scale-95 transition-transform">
+              <Plus className="w-7 h-7 stroke-[2.8]" />
+            </div>
+            <span className="text-[9px] font-bold text-neutral-100 mt-0.5">Publicar</span>
+          </button>
+        )}
 
         {/* Mapa Tab */}
         <button
           id="mobile-tab-btn-map"
           onClick={() => setActiveTab('map')}
+          hidden={hasRegisteredAccount}
           className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-lg transition-colors cursor-pointer ${
             activeTab === 'map' ? 'text-white' : 'text-neutral-400'
           }`}
@@ -446,6 +444,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Minha Empresa Tab */}
         <button
           onClick={() => setActiveTab('profile')}
+          hidden={!hasRegisteredAccount}
           className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-lg transition-colors ${
             activeTab === 'profile' ? 'text-white' : 'text-neutral-400'
           }`}

@@ -715,6 +715,16 @@ export default function App() {
   }, [loadProductsPage]);
 
   React.useEffect(() => {
+    if (!hasMemberAccess || !isMapOpen) {
+      return;
+    }
+    setIsMapOpen(false);
+    setMapOpenWithResults(false);
+    setMapAutoFocusPanelSearch(false);
+    setSocialActiveTab("feed");
+  }, [hasMemberAccess, isMapOpen]);
+
+  React.useEffect(() => {
     if (typeof window === "undefined" || typeof navigator === "undefined") {
       return;
     }
@@ -3295,6 +3305,10 @@ export default function App() {
   const changeSocialTab = React.useCallback(
     (tab: SocialActiveTab) => {
       if (tab === "map") {
+        if (hasMemberAccess) {
+          setSocialActiveTab("feed");
+          return;
+        }
         if (socialActiveTab === "feed") {
           feedScrollPositionRef.current = window.scrollY || window.pageYOffset || 0;
         }
@@ -3322,7 +3336,7 @@ export default function App() {
         });
       }
     },
-    [activeSocialCompany.id, loadPublicationFeedPage, openMapDefault, socialActiveTab],
+    [activeSocialCompany.id, hasMemberAccess, loadPublicationFeedPage, openMapDefault, socialActiveTab],
   );
 
   const toggleSavedSocialPost = React.useCallback((postId: string) => {
@@ -3414,6 +3428,10 @@ export default function App() {
     setSavedPublications((current) => current.map(updateCount));
     setSelectedPublication((current) => (current?.id === publicationId ? updateCount(current) : current));
 
+    if (!hasMemberAccess) {
+      return;
+    }
+
     void (wasLiked ? api.unlikePublication(publicationId) : api.likePublication(publicationId))
       .catch((error) => {
         if (isReadOnlyDevWriteError(error)) {
@@ -3449,6 +3467,7 @@ export default function App() {
         setSelectedPublication((current) => (current?.id === publicationId ? rollbackCount(current) : current));
       });
   }, [
+    hasMemberAccess,
     likedPublicationIds,
     likedPublications,
     publicationFeed,

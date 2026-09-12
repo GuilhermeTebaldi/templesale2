@@ -101,7 +101,7 @@ export default function Auth({
   };
 
   return (
-    <div className="fixed inset-0 z-200 flex items-center justify-center bg-neutral-950 p-6 text-neutral-100">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-neutral-950 p-6 text-neutral-100">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -123,13 +123,13 @@ export default function Auth({
             <span className="text-emerald-400">Sale</span>
           </h1>
           <p className="text-xs uppercase tracking-[0.3em] text-neutral-400 font-medium">
-            {t("Acessar Conta")}
+            {t("Conta de Empresa")}
           </p>
         </div>
 
         <div className="space-y-6">
           <p className="text-center text-sm leading-relaxed text-neutral-300">
-            Entre com sua conta Google. Se for seu primeiro acesso, a conta TempleSale sera criada automaticamente.
+            Entre com Google para cadastrar ou gerenciar sua empresa no TempleSale. O perfil criado sera o perfil publico da sua loja.
           </p>
 
           {errorMessage && (
@@ -147,7 +147,7 @@ export default function Auth({
             </span>
             {isSubmitting || isLoading
               ? t("Processando...")
-              : t("Continuar com Google")}
+              : t("Cadastrar ou acessar empresa")}
           </button>
         </div>
       </motion.div>

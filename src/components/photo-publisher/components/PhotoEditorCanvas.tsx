@@ -28,6 +28,7 @@ interface PhotoEditorCanvasProps {
   onOpenTextEditor: (overlay?: OverlayItem) => void;
   onRemoveOverlay?: (id: string) => void;
   onDimensionsChange?: (dims: { width: number; height: number }) => void;
+  enableTextOverlays?: boolean;
 }
 
 export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
@@ -42,6 +43,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
   onUpdateOverlay,
   onOpenTextEditor,
   onDimensionsChange,
+  enableTextOverlays = true,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
@@ -464,6 +466,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
   return (
     <div className="relative w-full flex-1 min-h-0 flex flex-col items-center bg-black select-none overflow-hidden">
       {/* Top Floating Action Button: Add Text */}
+      {enableTextOverlays && (
       <div className="absolute top-3 left-3 z-30 pointer-events-auto">
         <button
           type="button"
@@ -475,6 +478,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
           + Texto / Emoji
         </button>
       </div>
+      )}
 
       {/* Main Full-Size Photo Viewport */}
       <div
@@ -525,7 +529,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
         )}
 
         {/* Overlay Elements */}
-        {overlays.map((item) => {
+        {enableTextOverlays && overlays.map((item) => {
           const isSelected = selectedOverlayId === item.id;
 
           let fontClass = 'font-sans';
