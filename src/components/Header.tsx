@@ -48,9 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [hasBrandIntroStarted, setHasBrandIntroStarted] = React.useState(false);
   const [hasObservedGlobalLoading, setHasObservedGlobalLoading] = React.useState(false);
   const [canFallbackBrandIntroStart, setCanFallbackBrandIntroStart] = React.useState(false);
-  const [mobileNavTop, setMobileNavTop] = React.useState<number | null>(null);
   const [isMobileKeyboardOpen, setIsMobileKeyboardOpen] = React.useState(false);
-  const mobileNavRef = React.useRef<HTMLElement | null>(null);
   const isGlobalLoadingVisible = React.useSyncExternalStore(
     subscribeNetworkLoading,
     getNetworkLoadingSnapshot,
@@ -101,19 +99,7 @@ export const Header: React.FC<HeaderProps> = ({
     if (typeof window === 'undefined') return;
 
     let frameId = 0;
-    let settleIntervalId: number | undefined;
-
-    const readMobileNavTop = () => {
-      const viewport = window.visualViewport;
-      const navHeight = mobileNavRef.current?.offsetHeight ?? 72;
-      if (!viewport) {
-        return window.innerHeight - navHeight;
-      }
-
-      return viewport.offsetTop + viewport.height - navHeight;
-    };
-
-    const updateMobileNavPosition = () => {
+    const updateKeyboardState = () => {
       const viewport = window.visualViewport;
       const activeElement = document.activeElement;
       const isTextInputFocused =
@@ -127,65 +113,34 @@ export const Header: React.FC<HeaderProps> = ({
           window.innerHeight - viewport.height > 150,
       );
       setIsMobileKeyboardOpen((current) => (current === keyboardOpen ? current : keyboardOpen));
-
-      if (keyboardOpen) {
-        return;
-      }
-
-      const nextTop = Math.max(0, Math.round(readMobileNavTop()));
-      setMobileNavTop((currentTop) => (currentTop === nextTop ? currentTop : nextTop));
     };
 
-    const scheduleMobileNavPosition = () => {
+    const scheduleKeyboardState = () => {
       if (frameId) {
         return;
       }
       frameId = window.requestAnimationFrame(() => {
         frameId = 0;
-        updateMobileNavPosition();
+        updateKeyboardState();
       });
     };
 
-    const startScrollSettling = () => {
-      scheduleMobileNavPosition();
-      if (settleIntervalId) {
-        window.clearInterval(settleIntervalId);
-      }
-
-      let ticks = 0;
-      settleIntervalId = window.setInterval(() => {
-        ticks += 1;
-        scheduleMobileNavPosition();
-        if (ticks >= 12 && settleIntervalId) {
-          window.clearInterval(settleIntervalId);
-          settleIntervalId = undefined;
-        }
-      }, 80);
-    };
-
-    updateMobileNavPosition();
-    window.visualViewport?.addEventListener('resize', startScrollSettling);
-    window.visualViewport?.addEventListener('scroll', startScrollSettling);
-    window.addEventListener('resize', startScrollSettling);
-    window.addEventListener('orientationchange', startScrollSettling);
-    window.addEventListener('scroll', startScrollSettling, { passive: true });
-    window.addEventListener('focusin', startScrollSettling);
-    window.addEventListener('focusout', startScrollSettling);
+    updateKeyboardState();
+    window.visualViewport?.addEventListener('resize', scheduleKeyboardState);
+    window.addEventListener('resize', scheduleKeyboardState);
+    window.addEventListener('orientationchange', scheduleKeyboardState);
+    window.addEventListener('focusin', scheduleKeyboardState);
+    window.addEventListener('focusout', scheduleKeyboardState);
 
     return () => {
       if (frameId) {
         window.cancelAnimationFrame(frameId);
       }
-      if (settleIntervalId) {
-        window.clearInterval(settleIntervalId);
-      }
-      window.visualViewport?.removeEventListener('resize', startScrollSettling);
-      window.visualViewport?.removeEventListener('scroll', startScrollSettling);
-      window.removeEventListener('resize', startScrollSettling);
-      window.removeEventListener('orientationchange', startScrollSettling);
-      window.removeEventListener('scroll', startScrollSettling);
-      window.removeEventListener('focusin', startScrollSettling);
-      window.removeEventListener('focusout', startScrollSettling);
+      window.visualViewport?.removeEventListener('resize', scheduleKeyboardState);
+      window.removeEventListener('resize', scheduleKeyboardState);
+      window.removeEventListener('orientationchange', scheduleKeyboardState);
+      window.removeEventListener('focusin', scheduleKeyboardState);
+      window.removeEventListener('focusout', scheduleKeyboardState);
     };
   }, []);
 
@@ -194,7 +149,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* TOP HEADER (Desktop & Mobile) */}
       <header
         id="main-header"
-        className="sticky top-0 z-40 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800"
+        className="fixed inset-x-0 top-0 z-50 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800"
       >
         <div className="relative max-w-6xl mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-end gap-2 sm:justify-between sm:gap-4">
           <div className="absolute inset-y-0 left-3 right-32 flex items-center justify-center sm:left-1/2 sm:right-auto sm:-translate-x-1/2">
@@ -418,18 +373,14 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       </header>
+      <div aria-hidden="true" className="h-14 shrink-0 sm:h-16" />
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
       <nav
-        ref={mobileNavRef}
         id="mobile-bottom-nav"
-        className={`sm:hidden fixed left-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 px-2 flex items-center justify-around will-change-[top] ${
+        className={`sm:hidden fixed inset-x-0 bottom-0 z-50 bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 px-2 flex items-center justify-around ${
           hasRegisteredAccount ? 'pt-1 pb-2' : 'py-1'
-        } ${isMobileKeyboardOpen ? 'pointer-events-none opacity-0' : 'opacity-100'} transition-opacity duration-150`}
-        style={{
-          bottom: mobileNavTop === null ? 0 : 'auto',
-          top: mobileNavTop === null ? 'auto' : `${mobileNavTop}px`,
-        }}
+        } ${isMobileKeyboardOpen ? 'pointer-events-none translate-y-full opacity-0' : 'translate-y-0 opacity-100'} transition-[opacity,transform] duration-150`}
       >
         {/* Feed Tab */}
         <button
