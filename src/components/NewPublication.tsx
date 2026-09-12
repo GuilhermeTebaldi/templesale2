@@ -66,6 +66,7 @@ export default function NewPublication({
   const [caption, setCaption] = React.useState("");
   const [isPublishing, setIsPublishing] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState("");
+  const [isKeyboardOpen, setIsKeyboardOpen] = React.useState(false);
 
   const selectedOverlay = overlays.find((overlay) => overlay.id === selectedOverlayId);
 
@@ -74,21 +75,28 @@ export default function NewPublication({
       return;
     }
 
-    const updateViewportHeight = () => {
-      const height = window.visualViewport?.height ?? window.innerHeight;
+    const updateViewport = () => {
+      const viewport = window.visualViewport;
+      const height = viewport?.height ?? window.innerHeight;
+      const offsetTop = viewport?.offsetTop ?? 0;
+      const keyboardOpen = Boolean(viewport) && window.innerHeight - height > 120;
+
+      setIsKeyboardOpen(keyboardOpen);
       document.documentElement.style.setProperty("--ts-publication-vh", `${height}px`);
+      document.documentElement.style.setProperty("--ts-publication-vv-top", `${offsetTop}px`);
     };
 
-    updateViewportHeight();
-    window.visualViewport?.addEventListener("resize", updateViewportHeight);
-    window.visualViewport?.addEventListener("scroll", updateViewportHeight);
-    window.addEventListener("resize", updateViewportHeight);
+    updateViewport();
+    window.visualViewport?.addEventListener("resize", updateViewport);
+    window.visualViewport?.addEventListener("scroll", updateViewport);
+    window.addEventListener("resize", updateViewport);
 
     return () => {
-      window.visualViewport?.removeEventListener("resize", updateViewportHeight);
-      window.visualViewport?.removeEventListener("scroll", updateViewportHeight);
-      window.removeEventListener("resize", updateViewportHeight);
+      window.visualViewport?.removeEventListener("resize", updateViewport);
+      window.visualViewport?.removeEventListener("scroll", updateViewport);
+      window.removeEventListener("resize", updateViewport);
       document.documentElement.style.removeProperty("--ts-publication-vh");
+      document.documentElement.style.removeProperty("--ts-publication-vv-top");
     };
   }, []);
 
@@ -204,8 +212,14 @@ export default function NewPublication({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[120] flex items-start justify-center overflow-hidden overscroll-none bg-black text-neutral-100">
-        <div className="relative h-[var(--ts-publication-vh,100dvh)] w-full max-w-lg overflow-hidden bg-black shadow-2xl">
+      <div
+        className="fixed inset-x-0 z-[120] flex items-start justify-center overflow-hidden overscroll-none bg-black text-neutral-100"
+        style={{
+          top: "var(--ts-publication-vv-top, 0px)",
+          height: "var(--ts-publication-vh, 100dvh)",
+        }}
+      >
+        <div className="relative h-full w-full max-w-lg overflow-hidden bg-black shadow-2xl">
           <button
             type="button"
             onClick={onClose}
@@ -224,7 +238,11 @@ export default function NewPublication({
           ) : (
             <main
               id="editor-main-layout"
-              className="relative flex h-full w-full flex-col overflow-hidden bg-black"
+              className={`relative flex h-full min-h-0 w-full flex-col ${
+                isKeyboardOpen
+                  ? "overflow-y-auto overscroll-contain ts-publication-keyboard-open"
+                  : "overflow-hidden"
+              } bg-black`}
             >
               <header className="z-20 flex shrink-0 items-center justify-between border-b border-neutral-800/80 bg-neutral-950/90 px-4 py-2.5 backdrop-blur-md">
                 <button
