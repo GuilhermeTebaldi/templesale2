@@ -49,6 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [hasObservedGlobalLoading, setHasObservedGlobalLoading] = React.useState(false);
   const [canFallbackBrandIntroStart, setCanFallbackBrandIntroStart] = React.useState(false);
   const [mobileNavTop, setMobileNavTop] = React.useState<number | null>(null);
+  const [isMobileKeyboardOpen, setIsMobileKeyboardOpen] = React.useState(false);
   const mobileNavRef = React.useRef<HTMLElement | null>(null);
   const isGlobalLoadingVisible = React.useSyncExternalStore(
     subscribeNetworkLoading,
@@ -113,6 +114,24 @@ export const Header: React.FC<HeaderProps> = ({
     };
 
     const updateMobileNavPosition = () => {
+      const viewport = window.visualViewport;
+      const activeElement = document.activeElement;
+      const isTextInputFocused =
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement instanceof HTMLSelectElement ||
+        Boolean(activeElement?.getAttribute('contenteditable'));
+      const keyboardOpen = Boolean(
+        viewport &&
+          isTextInputFocused &&
+          window.innerHeight - viewport.height > 150,
+      );
+      setIsMobileKeyboardOpen((current) => (current === keyboardOpen ? current : keyboardOpen));
+
+      if (keyboardOpen) {
+        return;
+      }
+
       const nextTop = Math.max(0, Math.round(readMobileNavTop()));
       setMobileNavTop((currentTop) => (currentTop === nextTop ? currentTop : nextTop));
     };
@@ -150,6 +169,8 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener('resize', startScrollSettling);
     window.addEventListener('orientationchange', startScrollSettling);
     window.addEventListener('scroll', startScrollSettling, { passive: true });
+    window.addEventListener('focusin', startScrollSettling);
+    window.addEventListener('focusout', startScrollSettling);
 
     return () => {
       if (frameId) {
@@ -163,6 +184,8 @@ export const Header: React.FC<HeaderProps> = ({
       window.removeEventListener('resize', startScrollSettling);
       window.removeEventListener('orientationchange', startScrollSettling);
       window.removeEventListener('scroll', startScrollSettling);
+      window.removeEventListener('focusin', startScrollSettling);
+      window.removeEventListener('focusout', startScrollSettling);
     };
   }, []);
 
@@ -402,7 +425,7 @@ export const Header: React.FC<HeaderProps> = ({
         id="mobile-bottom-nav"
         className={`sm:hidden fixed left-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 px-2 flex items-center justify-around will-change-[top] ${
           hasRegisteredAccount ? 'pt-1 pb-2' : 'py-1'
-        }`}
+        } ${isMobileKeyboardOpen ? 'pointer-events-none opacity-0' : 'opacity-100'} transition-opacity duration-150`}
         style={{
           bottom: mobileNavTop === null ? 0 : 'auto',
           top: mobileNavTop === null ? 'auto' : `${mobileNavTop}px`,
@@ -411,7 +434,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Feed Tab */}
         <button
           onClick={() => setActiveTab('feed')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-lg transition-colors ${
+          className={`flex h-12 min-w-16 flex-col items-center justify-end rounded-lg px-2.5 pb-1 transition-colors ${
             activeTab === 'feed' ? 'text-white' : 'text-neutral-400'
           }`}
         >
@@ -423,7 +446,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={() => setActiveTab('search')}
           hidden={hasRegisteredAccount}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-lg transition-colors ${
+          className={`flex h-12 min-w-16 flex-col items-center justify-end rounded-lg px-2.5 pb-1 transition-colors ${
             activeTab === 'search' ? 'text-white' : 'text-neutral-400'
           }`}
         >
@@ -435,13 +458,13 @@ export const Header: React.FC<HeaderProps> = ({
         {hasRegisteredAccount && (
           <button
             onClick={onOpenCreatePost}
-            className="flex flex-col items-center justify-center -mt-4 group cursor-pointer"
+            className="group flex h-12 min-w-16 flex-col items-center justify-end rounded-lg px-2.5 pb-1 cursor-pointer"
             title="+ Publicar Foto"
           >
-            <div className="w-14 h-14 rounded-full bg-neutral-100 text-neutral-950 flex items-center justify-center shadow-2xl border-4 border-neutral-900 group-active:scale-95 transition-transform">
+            <div className="mb-0.5 flex h-14 w-14 -translate-y-3 items-center justify-center rounded-full border-4 border-neutral-900 bg-neutral-100 text-neutral-950 shadow-2xl transition-transform group-active:-translate-y-3 group-active:scale-95">
               <Plus className="w-6 h-6 stroke-[2.8]" />
             </div>
-            <span className="-mt-0.5 text-[9px] font-bold leading-none text-neutral-100">Publicar</span>
+            <span className="-mt-3 text-[10px] font-bold leading-none text-neutral-100">Publicar</span>
           </button>
         )}
 
@@ -450,7 +473,7 @@ export const Header: React.FC<HeaderProps> = ({
           id="mobile-tab-btn-map"
           onClick={() => setActiveTab('map')}
           hidden={hasRegisteredAccount}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-lg transition-colors cursor-pointer ${
+          className={`flex h-12 min-w-16 flex-col items-center justify-end rounded-lg px-2.5 pb-1 transition-colors cursor-pointer ${
             activeTab === 'map' ? 'text-white' : 'text-neutral-400'
           }`}
           title="Mapa de Empresas"
@@ -463,7 +486,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={() => setActiveTab('profile')}
           hidden={!hasRegisteredAccount}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-lg transition-colors ${
+          className={`flex h-12 min-w-16 flex-col items-center justify-end rounded-lg px-2.5 pb-1 transition-colors ${
             activeTab === 'profile' ? 'text-white' : 'text-neutral-400'
           }`}
         >
