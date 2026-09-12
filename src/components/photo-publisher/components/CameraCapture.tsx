@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { api } from '../../../lib/api';
 import {
   Camera,
   Image as ImageIcon,
@@ -52,6 +53,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
         await videoRef.current.play().catch(() => {});
       }
       setIsStartingCamera(false);
+      void api.saveCameraPermissionGranted().catch(() => {});
     } catch (err) {
       const error = err as Error;
       console.warn('Camera stream error:', error);
@@ -78,9 +80,20 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
         if (!cancelled && permission?.state === 'granted') {
           shouldAutoStartCameraRef.current = true;
           await startCamera();
+          return;
         }
       } catch {
-        // Browsers that do not expose camera permission state will show the manual start button.
+        // Continue with the account-level permission record below.
+      }
+
+      try {
+        const storedPermission = await api.getCameraPermissionStatus();
+        if (!cancelled && storedPermission.granted) {
+          shouldAutoStartCameraRef.current = true;
+          await startCamera();
+        }
+      } catch {
+        // Unauthenticated/legacy deployments keep the manual camera button available.
       }
     };
 

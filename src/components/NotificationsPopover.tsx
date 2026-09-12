@@ -26,17 +26,22 @@ const isAdministrativeNotification = (notification: NotificationDto) =>
 
 const hasNotificationDestination = (notification: NotificationDto) => {
   switch (notification.type) {
+    case 'publication_like':
     case 'publication_comment':
       return Number.isInteger(notification.publicationId) && notification.publicationId > 0;
     case 'product_like':
     case 'product_cart_interest':
     case 'product_comment':
       return Number.isInteger(notification.productId) && notification.productId > 0;
+    case 'admin_broadcast':
+      return (
+        (Number.isInteger(notification.publicationId) && notification.publicationId > 0) ||
+        (Number.isInteger(notification.productId) && notification.productId > 0)
+      );
     default:
       return false;
   }
 };
-
 const getNotificationAuthor = (notification: NotificationDto) => {
   const actorName =
     'actorName' in notification ? String(notification.actorName ?? '').trim() : '';
@@ -55,7 +60,7 @@ const getNotificationImageUrl = (
 };
 
 const getNotificationIcon = (notification: NotificationDto) => {
-  if (notification.type === 'product_like') {
+  if (notification.type === 'product_like' || notification.type === 'publication_like') {
     return <Heart className="w-3 h-3" />;
   }
   if (notification.type === 'product_cart_interest') {
@@ -71,21 +76,26 @@ const getNotificationIcon = (notification: NotificationDto) => {
 };
 
 const getNotificationActionLabel = (notification: NotificationDto) => {
-  if (notification.type === 'product_like') {
+  if (notification.type === 'admin_broadcast') {
+    if (Number.isInteger(notification.publicationId) && notification.publicationId > 0) {
+      return 'Abrir publicação';
+    }
+    if (Number.isInteger(notification.productId) && notification.productId > 0) {
+      return 'Abrir anúncio';
+    }
+    return 'Mensagem';
+  }
+  if (notification.type === 'product_like' || notification.type === 'product_cart_interest') {
     return 'Abrir anúncio';
   }
-  if (notification.type === 'product_cart_interest') {
+  if (notification.type === 'product_comment') {
     return 'Abrir anúncio';
   }
-  if (
-    notification.type === 'product_comment' ||
-    notification.type === 'publication_comment'
-  ) {
+  if (notification.type === 'publication_like' || notification.type === 'publication_comment') {
     return 'Abrir publicação';
   }
   return 'Mensagem';
 };
-
 const formatRelativeTime = (createdAt: number) => {
   const numericDate = Number(createdAt);
   if (!Number.isFinite(numericDate)) {

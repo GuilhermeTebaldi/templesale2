@@ -83,6 +83,13 @@ type AdminProductsResponseV2 = {
   nextOffset: number;
 };
 
+type AdminPublicationV2 = {
+  id: number;
+  caption: string;
+  establishmentName: string;
+  ownerName?: string;
+};
+
 type AdminBroadcastNotificationV2 = {
   id: number;
   title: string;
@@ -90,6 +97,8 @@ type AdminBroadcastNotificationV2 = {
   translationStatus?: Record<string, string>;
   productId?: number;
   productName?: string;
+  publicationId?: number;
+  publicationName?: string;
   recipientUserId?: number;
   recipientName?: string;
   recipientEmail?: string;
@@ -622,6 +631,58 @@ function normalizeAdminProductsResponse(payload: unknown): AdminProductsResponse
   };
 }
 
+function normalizeAdminPublication(item: unknown): AdminPublicationV2 | null {
+  const record = asRecord(item);
+  if (!record) {
+    return null;
+  }
+
+  const id = toNumber(record.id ?? record.publicationId ?? record.publication_id);
+  if (id <= 0) {
+    return null;
+  }
+
+  const caption = String(record.caption ?? record.description ?? "").trim();
+  const establishmentRecord = asRecord(record.establishment);
+  const ownerRecord = asRecord(record.owner);
+  const establishmentName = String(
+    record.establishmentName ??
+      record.establishment_name ??
+      establishmentRecord?.name ??
+      "",
+  ).trim();
+  const ownerName = String(
+    record.ownerName ??
+      record.owner_name ??
+      record.ownerUserName ??
+      record.owner_user_name ??
+      ownerRecord?.name ??
+      "",
+  ).trim();
+
+  return {
+    id,
+    caption: caption || "Publicação sem legenda",
+    establishmentName: establishmentName || "Estabelecimento",
+    ...(ownerName ? { ownerName } : {}),
+  };
+}
+
+function normalizeAdminPublicationList(payload: unknown): AdminPublicationV2[] {
+  const record = asRecord(payload);
+  const candidates = record
+    ? [record.publications, record.items, record.data, record.rows]
+    : [payload];
+  const rawItems = candidates.find((candidate) => Array.isArray(candidate));
+  if (!Array.isArray(rawItems)) {
+    return [];
+  }
+
+  return rawItems
+    .map((item) => normalizeAdminPublication(item))
+    .filter((item): item is AdminPublicationV2 => item !== null);
+}
+
 function toNumber(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -845,6 +906,20 @@ function normalizeAdminBroadcastNotification(item: unknown): AdminBroadcastNotif
   const productName = String(record.productName ?? record.product_name ?? "").trim();
   if (productName) {
     notification.productName = productName;
+  }
+
+  const publicationId = toNumber(record.publicationId ?? record.publication_id);
+  if (publicationId > 0) {
+    notification.publicationId = publicationId;
+  }
+
+  const publicationName = String(
+    record.publicationName ?? record.publication_name ?? "",
+  ).trim();
+  if (publicationName) {
+    notification.publicationName = publicationName;
+  } else if (publicationId > 0 && productName) {
+    notification.publicationName = productName;
   }
 
   const recipientUserId = toNumber(record.recipientUserId ?? record.recipient_user_id);
@@ -1365,6 +1440,22 @@ async function adminGetProducts(
   return normalizeAdminProductsResponse(response);
 }
 
+async function adminGetPublications(
+  token: string,
+  query = "",
+): Promise<AdminPublicationV2[]> {
+  const params = new URLSearchParams();
+  const normalizedQuery = query.trim();
+  if (normalizedQuery) {
+    params.set("q", normalizedQuery);
+  }
+  params.set("limit", "60");
+  const response = await adminRequest<unknown>(`/api/admin/publications?${params.toString()}`, {
+    token,
+  });
+  return normalizeAdminPublicationList(response);
+}
+
 async function adminGetVisitors(
   token: string,
   day: string,
@@ -1417,7 +1508,13 @@ async function adminDeleteProduct(token: string, productId: number): Promise<voi
 
 async function adminSendBroadcastNotification(
   token: string,
-  input: { title: string; message: string; productId?: number | null; recipientUserId?: number | null },
+  input: {
+    title: string;
+    message: string;
+    productId?: number | null;
+    publicationId?: number | null;
+    recipientUserId?: number | null;
+  },
 ): Promise<{ deliveredTo: number }> {
   const response = await adminRequest<unknown>("/api/admin/notifications/broadcast", {
     method: "POST",
@@ -1426,6 +1523,7 @@ async function adminSendBroadcastNotification(
       title: input.title,
       message: input.message,
       productId: input.productId ?? null,
+      publicationId: input.publicationId ?? null,
       recipientUserId: input.recipientUserId ?? null,
     },
   });
@@ -1599,6 +1697,10 @@ export default function AdminPanelV2() {
   const [broadcastTitle, setBroadcastTitle] = React.useState("");
   const [broadcastMessage, setBroadcastMessage] = React.useState("");
   const [broadcastProductId, setBroadcastProductId] = React.useState("");
+  const [broadcastPublicationId, setBroadcastPublicationId] = React.useState("");
+  const [publications, setPublications] = React.useState<AdminPublicationV2[]>([]);
+  const [isLoadingPublications, setIsLoadingPublications] = React.useState(false);
+  const [publicationsError, setPublicationsError] = React.useState("");
   const [broadcastRecipientUserId, setBroadcastRecipientUserId] = React.useState("");
   const [broadcastStatus, setBroadcastStatus] = React.useState("");
   const [broadcastError, setBroadcastError] = React.useState("");
@@ -1697,6 +1799,21 @@ export default function AdminPanelV2() {
     },
     [],
   );
+
+  const loadPublications = React.useCallback(async (token: string, searchQuery = "") => {
+    setIsLoadingPublications(true);
+    setPublicationsError("");
+    try {
+      setPublications(await adminGetPublications(token, searchQuery));
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha ao carregar publicações.";
+      setPublications([]);
+      setPublicationsError(message);
+    } finally {
+      setIsLoadingPublications(false);
+    }
+  }, []);
 
   const loadBroadcastNotifications = React.useCallback(
     async (token: string, options?: { silent?: boolean }) => {
@@ -1797,6 +1914,7 @@ export default function AdminPanelV2() {
         setEmail(currentEmail);
         await loadUsers(storedToken);
         await loadProducts(storedToken);
+        await loadPublications(storedToken);
         await loadVisitors(storedToken, getTodayDateKey(), { silent: true });
         await loadSecurityEvents(storedToken, { silent: true });
       } catch (error) {
@@ -1827,7 +1945,7 @@ export default function AdminPanelV2() {
     return () => {
       cancelled = true;
     };
-  }, [loadSecurityEvents, loadUsers, loadVisitors]);
+  }, [loadProducts, loadPublications, loadSecurityEvents, loadUsers, loadVisitors]);
 
   React.useEffect(() => {
     if (!selectedUser) {
@@ -1861,6 +1979,7 @@ export default function AdminPanelV2() {
       persistSession(session);
       await loadUsers(session.token);
       await loadProducts(session.token);
+      await loadPublications(session.token);
       await loadVisitors(session.token, getTodayDateKey(), { silent: true });
       await loadSecurityEvents(session.token, { silent: true });
     } catch (error) {
@@ -1896,6 +2015,9 @@ export default function AdminPanelV2() {
       setIsLoadingVisitors(false);
       setVisitorsError("");
       setProducts([]);
+      setPublications([]);
+      setPublicationsError("");
+      setIsLoadingPublications(false);
       setProductQuery("");
       setProductsNextOffset(0);
       setProductsHasMore(false);
@@ -1906,6 +2028,7 @@ export default function AdminPanelV2() {
       setBroadcastTitle("");
       setBroadcastMessage("");
       setBroadcastProductId("");
+      setBroadcastPublicationId("");
       setBroadcastRecipientUserId("");
       setBroadcastStatus("");
       setBroadcastError("");
@@ -2218,6 +2341,9 @@ export default function AdminPanelV2() {
     const productId = Number(broadcastProductId);
     const normalizedProductId =
       Number.isInteger(productId) && productId > 0 ? productId : null;
+    const publicationId = Number(broadcastPublicationId);
+    const normalizedPublicationId =
+      Number.isInteger(publicationId) && publicationId > 0 ? publicationId : null;
     const recipientUserId = Number(broadcastRecipientUserId);
     const normalizedRecipientUserId =
       Number.isInteger(recipientUserId) && recipientUserId > 0 ? recipientUserId : null;
@@ -2235,11 +2361,13 @@ export default function AdminPanelV2() {
         title,
         message,
         productId: normalizedProductId,
+        publicationId: normalizedPublicationId,
         recipientUserId: normalizedRecipientUserId,
       });
       setBroadcastTitle("");
       setBroadcastMessage("");
       setBroadcastProductId("");
+      setBroadcastPublicationId("");
       setBroadcastRecipientUserId("");
       setBroadcastStatus(
         normalizedRecipientUserId
@@ -2412,7 +2540,7 @@ export default function AdminPanelV2() {
       return;
     }
     void loadBroadcastNotifications(authToken);
-  }, [activeView, authToken, loadBroadcastNotifications, sessionEmail]);
+  }, [activeView, authToken, loadBroadcastNotifications, loadPublications, sessionEmail]);
 
   const selectedResetCode = selectedUser ? pendingResetCodesByUserId[selectedUser.id] ?? "" : "";
   const selectedWhatsappResetUrl =
@@ -2938,7 +3066,7 @@ export default function AdminPanelV2() {
                     </h2>
                     <p className="mt-1 text-xs text-stone-500">
                       Use para avisos do site, problemas operacionais ou anúncio patrocinado.
-                      Se escolher um produto, o clique no sino abre esse anúncio.
+                      Se escolher um produto ou publicação, o clique no sino abre o conteúdo vinculado.
                     </p>
                   </div>
                 </div>
@@ -2993,7 +3121,12 @@ export default function AdminPanelV2() {
                       </label>
                       <select
                         value={broadcastProductId}
-                        onChange={(event) => setBroadcastProductId(event.target.value)}
+                        onChange={(event) => {
+                          setBroadcastProductId(event.target.value);
+                          if (event.target.value) {
+                            setBroadcastPublicationId("");
+                          }
+                        }}
                         className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
                       >
                         <option value="">Sem anúncio</option>
@@ -3018,6 +3151,36 @@ export default function AdminPanelV2() {
                         <Package className="h-3.5 w-3.5" />
                         Procurar produto
                       </button>
+                      
+                      <label className="block text-xs uppercase tracking-[0.12em] text-stone-500">
+                        Publicação vinculada opcional
+                      </label>
+                      <select
+                        value={broadcastPublicationId}
+                        onChange={(event) => {
+                          setBroadcastPublicationId(event.target.value);
+                          if (event.target.value) {
+                            setBroadcastProductId("");
+                          }
+                        }}
+                        className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
+                      >
+                        <option value="">Sem publicação</option>
+                        {publications.map((publication) => (
+                          <option key={publication.id} value={publication.id}>
+                            #{publication.id} {publication.establishmentName} — {publication.caption.slice(0, 70)}
+                          </option>
+                        ))}
+                      </select>
+                      {isLoadingPublications ? (
+                        <p className="text-xs text-stone-500">Carregando publicações...</p>
+                      ) : null}
+                      {publicationsError ? (
+                        <p className="text-xs text-red-600">{publicationsError}</p>
+                      ) : null}
+                      <p className="text-xs leading-relaxed text-stone-500">
+                        Escolha um produto ou uma publicação. O conteúdo vinculado será aberto no perfil de quem publicou.
+                      </p>
                     </div>
                   </div>
 
@@ -3062,7 +3225,10 @@ export default function AdminPanelV2() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => void loadBroadcastNotifications(authToken)}
+                    onClick={() => {
+                      void loadBroadcastNotifications(authToken);
+                      void loadPublications(authToken);
+                    }}
                     disabled={isLoadingBroadcastNotifications}
                     className="inline-flex items-center justify-center gap-2 border border-stone-300 bg-white px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-900 disabled:opacity-60"
                   >
@@ -3105,13 +3271,18 @@ export default function AdminPanelV2() {
                             </p>
                             <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-500">
                               <span>{formatDateTime(notification.createdAt)}</span>
-                              {notification.productId ? (
+                              {notification.publicationId ? (
+                                <span>
+                                  Publicação: #{notification.publicationId}{" "}
+                                  {notification.publicationName || "publicação vinculada"}
+                                </span>
+                              ) : notification.productId ? (
                                 <span>
                                   Produto: #{notification.productId}{" "}
                                   {notification.productName || "anúncio vinculado"}
                                 </span>
                               ) : (
-                                <span>Sem anúncio vinculado</span>
+                                <span>Sem anúncio ou publicação vinculada</span>
                               )}
                               {notification.recipientUserId ? (
                                 <span>

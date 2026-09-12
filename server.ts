@@ -124,6 +124,7 @@ type ProductCommentRecord = {
 
 type NotificationEventType =
   | "product_like"
+  | "publication_like"
   | "product_cart_interest"
   | "product_comment"
   | "publication_comment"
@@ -174,6 +175,7 @@ type AdminBroadcastNotificationRecord = {
   messageTranslations: Partial<Record<AppLocale, string>>;
   translationStatus: Partial<Record<AppLocale, string>>;
   productId?: number;
+  publicationId?: number;
   productName?: string;
   recipientUserId?: number;
   recipientName?: string;
@@ -1619,9 +1621,11 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
       ? "product_cart_interest"
       : rawType === "product_comment"
         ? "product_comment"
-        : rawType === "publication_comment"
-          ? "publication_comment"
-          : rawType === "admin_broadcast"
+        : rawType === "publication_like"
+          ? "publication_like"
+          : rawType === "publication_comment"
+            ? "publication_comment"
+            : rawType === "admin_broadcast"
             ? "admin_broadcast"
             : "product_like";
   const productId = toNullableNumber(row.product_id);
@@ -2282,6 +2286,7 @@ function initializeSqliteDatabase() {
       location_latitude REAL,
       location_longitude REAL,
       preferred_locale TEXT NOT NULL DEFAULT 'it-IT',
+      camera_permission_granted_at INTEGER,
       is_banned INTEGER NOT NULL DEFAULT 0,
       ban_reason TEXT NOT NULL DEFAULT '',
       new_product_defaults TEXT NOT NULL DEFAULT '{}',
@@ -2421,10 +2426,12 @@ function initializeSqliteDatabase() {
       message_translations TEXT NOT NULL DEFAULT '{}',
       translation_status TEXT NOT NULL DEFAULT '{}',
       product_id INTEGER,
+      publication_id INTEGER,
       recipient_user_id INTEGER,
       created_by TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
+      FOREIGN KEY (publication_id) REFERENCES establishment_publications(id) ON DELETE SET NULL,
       FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
@@ -2630,6 +2637,9 @@ function initializeSqliteDatabase() {
   }
   if (!userColumns.some((column) => column.name === "preferred_locale")) {
     db.exec("ALTER TABLE users ADD COLUMN preferred_locale TEXT NOT NULL DEFAULT 'it-IT'");
+  }
+  if (!userColumns.some((column) => column.name === "camera_permission_granted_at")) {
+    db.exec("ALTER TABLE users ADD COLUMN camera_permission_granted_at INTEGER");
   }
   if (!userColumns.some((column) => column.name === "auth0_sub")) {
     db.exec("ALTER TABLE users ADD COLUMN auth0_sub TEXT");
@@ -2917,6 +2927,7 @@ async function ensurePostgresEstablishmentSchema() {
       )
     `,
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS device_id TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS camera_permission_granted_at BIGINT",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_device_id_unique ON users(device_id) WHERE device_id IS NOT NULL AND device_id <> ''",
     "ALTER TABLE establishments ADD COLUMN IF NOT EXISTS keywords TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE establishment_publications ADD COLUMN IF NOT EXISTS establishment_id BIGINT REFERENCES establishments(id) ON DELETE CASCADE",
@@ -3042,6 +3053,7 @@ async function initializePostgresDatabase() {
         location_latitude DOUBLE PRECISION,
         location_longitude DOUBLE PRECISION,
         preferred_locale TEXT NOT NULL DEFAULT 'it-IT',
+        camera_permission_granted_at BIGINT,
         is_banned BOOLEAN NOT NULL DEFAULT FALSE,
         ban_reason TEXT NOT NULL DEFAULT '',
         new_product_defaults TEXT NOT NULL DEFAULT '{}',
@@ -3194,6 +3206,7 @@ async function initializePostgresDatabase() {
         message_translations TEXT NOT NULL DEFAULT '{}',
         translation_status TEXT NOT NULL DEFAULT '{}',
         product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
+        publication_id BIGINT REFERENCES establishment_publications(id) ON DELETE SET NULL,
         recipient_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
         created_by TEXT NOT NULL DEFAULT '',
         created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
@@ -3242,6 +3255,7 @@ async function initializePostgresDatabase() {
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS ban_reason TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_locale TEXT NOT NULL DEFAULT 'it-IT'",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS camera_permission_granted_at BIGINT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS user_id BIGINT",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS establishment_id BIGINT REFERENCES establishments(id) ON DELETE SET NULL",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS section_id BIGINT REFERENCES storefront_sections(id) ON DELETE SET NULL",
@@ -3296,6 +3310,7 @@ async function initializePostgresDatabase() {
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS message_translations TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS translation_status TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS product_id BIGINT",
+    "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS publication_id BIGINT",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS recipient_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)",
@@ -4476,6 +4491,84 @@ async function selectPublicationsFeedRows(input: {
     .all(fetchLimit, offset) as Array<Record<string, unknown>>;
   const rows = rawRows.slice(0, limit).map(normalizePublicationRow);
   return { rows, hasMore: rawRows.length > limit, nextOffset: offset + rows.length };
+}
+
+
+async function selectAdminPublicationRows(search: string, limit: number): Promise<EstablishmentPublicationRecord[]> {
+  const normalizedSearch = String(search ?? '').trim();
+  const normalizedLimit = Math.min(Math.max(Math.floor(Number(limit) || 36), 1), 100);
+  const searchPattern = `%${normalizedSearch}%`;
+
+  if (pgPool) {
+    const result = await pgPool.query<Record<string, unknown>>(
+      `
+        SELECT
+          ep.*,
+          e.name AS establishment_name,
+          e.slug AS establishment_slug,
+          e.category AS establishment_category,
+          e.city AS establishment_city,
+          e.logo_url AS establishment_logo_url,
+          e.cover_url AS establishment_cover_url,
+          u.avatar_url AS owner_avatar_url,
+          COALESCE(pl.likes_count, 0) AS likes_count
+        FROM establishment_publications ep
+        INNER JOIN establishments e ON e.id = ep.establishment_id
+        LEFT JOIN users u ON u.id = ep.owner_user_id
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
+        WHERE e.is_active = TRUE
+          AND (
+            ep.caption ILIKE $1
+            OR e.name ILIKE $1
+            OR COALESCE(u.name, '') ILIKE $1
+            OR COALESCE(u.email, '') ILIKE $1
+          )
+        ORDER BY ep.created_at DESC, ep.id DESC
+        LIMIT $2
+      `,
+      [searchPattern, normalizedLimit],
+    );
+    return result.rows.map(normalizePublicationRow);
+  }
+
+  const rows = requireSqliteDb()
+    .prepare(
+      `
+        SELECT
+          ep.*,
+          e.name AS establishment_name,
+          e.slug AS establishment_slug,
+          e.category AS establishment_category,
+          e.city AS establishment_city,
+          e.logo_url AS establishment_logo_url,
+          e.cover_url AS establishment_cover_url,
+          u.avatar_url AS owner_avatar_url,
+          COALESCE(pl.likes_count, 0) AS likes_count
+        FROM establishment_publications ep
+        INNER JOIN establishments e ON e.id = ep.establishment_id
+        LEFT JOIN users u ON u.id = ep.owner_user_id
+        LEFT JOIN (
+          SELECT publication_id, COUNT(*) AS likes_count
+          FROM publication_likes
+          GROUP BY publication_id
+        ) pl ON pl.publication_id = ep.id
+        WHERE e.is_active = 1
+          AND (
+            LOWER(COALESCE(ep.caption, '')) LIKE LOWER(?)
+            OR LOWER(COALESCE(e.name, '')) LIKE LOWER(?)
+            OR LOWER(COALESCE(u.name, '')) LIKE LOWER(?)
+            OR LOWER(COALESCE(u.email, '')) LIKE LOWER(?)
+          )
+        ORDER BY ep.created_at DESC, ep.id DESC
+        LIMIT ?
+      `,
+    )
+    .all(searchPattern, searchPattern, searchPattern, searchPattern, normalizedLimit) as Array<Record<string, unknown>>;
+  return rows.map(normalizePublicationRow);
 }
 
 async function selectSavedPublicationsByUserRows(userId: number): Promise<EstablishmentPublicationRecord[]> {
@@ -6150,6 +6243,7 @@ async function ensureAdminBroadcastNotificationsStorage(): Promise<void> {
         message_translations TEXT NOT NULL DEFAULT '{}',
         translation_status TEXT NOT NULL DEFAULT '{}',
         product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
+        publication_id BIGINT REFERENCES establishment_publications(id) ON DELETE SET NULL,
         created_by TEXT NOT NULL DEFAULT '',
         created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
       )
@@ -6157,6 +6251,7 @@ async function ensureAdminBroadcastNotificationsStorage(): Promise<void> {
     await pgPool.query("ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS title_translations TEXT NOT NULL DEFAULT '{}'");
     await pgPool.query("ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS message_translations TEXT NOT NULL DEFAULT '{}'");
     await pgPool.query("ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS translation_status TEXT NOT NULL DEFAULT '{}'");
+    await pgPool.query("ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS publication_id BIGINT REFERENCES establishment_publications(id) ON DELETE SET NULL");
     await pgPool.query("ALTER TABLE admin_broadcast_notifications ADD COLUMN IF NOT EXISTS recipient_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE");
     await pgPool.query(
       "CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_created ON admin_broadcast_notifications(created_at DESC)",
@@ -6176,10 +6271,12 @@ async function ensureAdminBroadcastNotificationsStorage(): Promise<void> {
       message_translations TEXT NOT NULL DEFAULT '{}',
       translation_status TEXT NOT NULL DEFAULT '{}',
       product_id INTEGER,
+      publication_id INTEGER,
       recipient_user_id INTEGER,
       created_by TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
+      FOREIGN KEY (publication_id) REFERENCES establishment_publications(id) ON DELETE SET NULL,
       FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_admin_broadcast_notifications_created
@@ -6198,6 +6295,9 @@ async function ensureAdminBroadcastNotificationsStorage(): Promise<void> {
   }
   if (!columns.some((column) => column.name === "translation_status")) {
     requireSqliteDb().exec("ALTER TABLE admin_broadcast_notifications ADD COLUMN translation_status TEXT NOT NULL DEFAULT '{}'");
+  }
+  if (!columns.some((column) => column.name === "publication_id")) {
+    requireSqliteDb().exec("ALTER TABLE admin_broadcast_notifications ADD COLUMN publication_id INTEGER");
   }
   if (!columns.some((column) => column.name === "recipient_user_id")) {
     requireSqliteDb().exec("ALTER TABLE admin_broadcast_notifications ADD COLUMN recipient_user_id INTEGER");
@@ -6287,6 +6387,7 @@ async function createAdminBroadcastNotificationRecord(input: {
   title: string;
   message: string;
   productId: number | null;
+  publicationId: number | null;
   recipientUserId: number | null;
   createdBy: string;
 }): Promise<number> {
@@ -6294,6 +6395,7 @@ async function createAdminBroadcastNotificationRecord(input: {
   const message = input.message.trim();
   const createdBy = input.createdBy.trim().toLowerCase();
   const productId = input.productId;
+  const publicationId = input.publicationId;
   const recipientUserId = input.recipientUserId;
 
   await ensureAdminBroadcastNotificationsStorage();
@@ -6304,10 +6406,19 @@ async function createAdminBroadcastNotificationRecord(input: {
   if (message.length < 2 || message.length > 600) {
     throw new Error("Mensagem deve ter entre 2 e 600 caracteres.");
   }
+  if (productId !== null && publicationId !== null) {
+    throw new Error("Não é possível vincular produto e publicação ao mesmo tempo.");
+  }
   if (productId !== null) {
     const product = await selectProductByIdRow(productId);
     if (!product) {
       throw new Error("Anúncio patrocinado não encontrado.");
+    }
+  }
+  if (publicationId !== null) {
+    const publication = await selectPublicationByIdRecord(publicationId);
+    if (!publication) {
+      throw new Error("Publicação vinculada não encontrada.");
     }
   }
   if (recipientUserId !== null) {
@@ -6333,10 +6444,11 @@ async function createAdminBroadcastNotificationRecord(input: {
           message_translations,
           translation_status,
           product_id,
+          publication_id,
           recipient_user_id,
           created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id
       `,
       [
@@ -6346,6 +6458,7 @@ async function createAdminBroadcastNotificationRecord(input: {
         messageTranslations,
         translationStatus,
         productId,
+        publicationId,
         recipientUserId,
         createdBy,
       ],
@@ -6364,11 +6477,12 @@ async function createAdminBroadcastNotificationRecord(input: {
           message_translations,
           translation_status,
           product_id,
+          publication_id,
           recipient_user_id,
           created_by,
           created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     )
     .run(
@@ -6378,6 +6492,7 @@ async function createAdminBroadcastNotificationRecord(input: {
       messageTranslations,
       translationStatus,
       productId,
+      publicationId,
       recipientUserId,
       createdBy,
       now,
@@ -6416,6 +6531,10 @@ function rowToAdminBroadcastNotification(row: Record<string, unknown>): AdminBro
   if (productId !== null) {
     normalized.productId = productId;
   }
+  const publicationId = toNullableNumber(row.publication_id);
+  if (publicationId !== null) {
+    normalized.publicationId = publicationId;
+  }
   const productName = String(row.product_name ?? "").trim();
   if (productName) {
     normalized.productName = productName;
@@ -6450,7 +6569,8 @@ async function selectAdminBroadcastNotificationRows(): Promise<AdminBroadcastNot
           b.message_translations,
           b.translation_status,
           b.product_id,
-          p.name AS product_name,
+          b.publication_id,
+          COALESCE(NULLIF(BTRIM(p.name), ''), NULLIF(BTRIM(ep.caption), ''), NULLIF(BTRIM(e.name), '')) AS product_name,
           b.recipient_user_id,
           COALESCE(NULLIF(BTRIM(recipient.name), ''), recipient.email) AS recipient_name,
           recipient.email AS recipient_email,
@@ -6458,6 +6578,8 @@ async function selectAdminBroadcastNotificationRows(): Promise<AdminBroadcastNot
           b.created_at
         FROM admin_broadcast_notifications b
         LEFT JOIN products p ON p.id = b.product_id
+        LEFT JOIN establishment_publications ep ON ep.id = b.publication_id
+        LEFT JOIN establishments e ON e.id = ep.establishment_id
         LEFT JOIN users recipient ON recipient.id = b.recipient_user_id
         ORDER BY
           CASE
@@ -6482,7 +6604,8 @@ async function selectAdminBroadcastNotificationRows(): Promise<AdminBroadcastNot
           b.message_translations,
           b.translation_status,
           b.product_id,
-          p.name AS product_name,
+          b.publication_id,
+          COALESCE(NULLIF(BTRIM(p.name), ''), NULLIF(BTRIM(ep.caption), ''), NULLIF(BTRIM(e.name), '')) AS product_name,
           b.recipient_user_id,
           COALESCE(NULLIF(TRIM(recipient.name), ''), recipient.email) AS recipient_name,
           recipient.email AS recipient_email,
@@ -6490,6 +6613,8 @@ async function selectAdminBroadcastNotificationRows(): Promise<AdminBroadcastNot
           b.created_at
         FROM admin_broadcast_notifications b
         LEFT JOIN products p ON p.id = b.product_id
+        LEFT JOIN establishment_publications ep ON ep.id = b.publication_id
+        LEFT JOIN establishments e ON e.id = ep.establishment_id
         LEFT JOIN users recipient ON recipient.id = b.recipient_user_id
         ORDER BY CAST(b.created_at AS INTEGER) DESC, b.id DESC
         LIMIT 120
@@ -6561,6 +6686,33 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           INNER JOIN products p ON p.id = l.product_id
           LEFT JOIN users lu ON lu.id = l.user_id
           WHERE p.user_id = $1 AND l.user_id <> $2
+
+          SELECT
+            'publication_like'::TEXT AS type,
+            l.user_id AS actor_user_id,
+            COALESCE(NULLIF(BTRIM(lu.name), ''), 'Alguém') AS actor_name,
+            NULLIF(BTRIM(lu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(BTRIM(lu.city), '') AS actor_city,
+            NULLIF(BTRIM(lu.country), '') AS actor_country,
+            NULL::BIGINT AS product_id,
+            ep.id AS publication_id,
+            COALESCE(NULLIF(BTRIM(ep.caption), ''), NULLIF(BTRIM(e.name), ''), 'pubblicazione') AS product_name,
+            COALESCE(NULLIF(BTRIM(ep.image_url), ''), NULLIF(BTRIM(e.logo_url), ''), NULLIF(BTRIM(e.cover_url), '')) AS product_image_url,
+            NULL::BIGINT AS comment_id,
+            l.created_at::TEXT AS created_at,
+            CASE
+              WHEN l.created_at::TEXT ~ '^[0-9]+$' THEN l.created_at::TEXT::BIGINT
+              ELSE EXTRACT(EPOCH FROM l.created_at::TEXT::TIMESTAMPTZ)::BIGINT
+            END AS sort_created_at,
+            'publication_like:' || l.user_id::TEXT || ':' || l.publication_id::TEXT || ':' || l.created_at::TEXT AS event_id,
+            NULL::TEXT AS title_translations,
+            NULL::TEXT AS message_translations,
+            NULL::TEXT AS recipient_locale
+          FROM publication_likes l
+          INNER JOIN establishment_publications ep ON ep.id = l.publication_id
+          INNER JOIN establishments e ON e.id = ep.establishment_id
+          LEFT JOIN users lu ON lu.id = l.user_id
+          WHERE ep.owner_user_id = $1 AND l.user_id <> $2
 
           UNION ALL
 
@@ -6723,9 +6875,9 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL::TEXT AS actor_city,
             NULL::TEXT AS actor_country,
             p.id AS product_id,
-            NULL::BIGINT AS publication_id,
-            COALESCE(NULLIF(BTRIM(b.message), ''), NULLIF(BTRIM(p.name), ''), 'Atualização TempleSale') AS product_name,
-            COALESCE(NULLIF(BTRIM(p.image), ''), NULLIF(BTRIM(p.image_url), '')) AS product_image_url,
+            ep.id AS publication_id,
+            COALESCE(NULLIF(BTRIM(b.message), ''), NULLIF(BTRIM(p.name), ''), NULLIF(BTRIM(ep.caption), ''), NULLIF(BTRIM(e.name), ''), 'Atualização TempleSale') AS product_name,
+            COALESCE(NULLIF(BTRIM(p.image), ''), NULLIF(BTRIM(p.image_url), ''), NULLIF(BTRIM(ep.image_url), ''), NULLIF(BTRIM(e.logo_url), ''), NULLIF(BTRIM(e.cover_url), '')) AS product_image_url,
             NULL::BIGINT AS comment_id,
             b.created_at::TEXT AS created_at,
             CASE
@@ -6738,6 +6890,8 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             recipient.preferred_locale AS recipient_locale
           FROM admin_broadcast_notifications b
           LEFT JOIN products p ON p.id = b.product_id
+          LEFT JOIN establishment_publications ep ON ep.id = b.publication_id
+          LEFT JOIN establishments e ON e.id = ep.establishment_id
           INNER JOIN users recipient ON recipient.id = $4
           WHERE (b.recipient_user_id IS NULL OR b.recipient_user_id = $5)
             AND (
@@ -6792,6 +6946,30 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           INNER JOIN products p ON p.id = l.product_id
           LEFT JOIN users lu ON lu.id = l.user_id
           WHERE p.user_id = ? AND l.user_id <> ?
+
+          SELECT
+            'publication_like' AS type,
+            l.user_id AS actor_user_id,
+            COALESCE(NULLIF(TRIM(lu.name), ''), 'Alguém') AS actor_name,
+            NULLIF(TRIM(lu.avatar_url), '') AS actor_avatar_url,
+            NULLIF(TRIM(lu.city), '') AS actor_city,
+            NULLIF(TRIM(lu.country), '') AS actor_country,
+            NULL AS product_id,
+            ep.id AS publication_id,
+            COALESCE(NULLIF(TRIM(ep.caption), ''), NULLIF(TRIM(e.name), ''), 'pubblicazione') AS product_name,
+            COALESCE(NULLIF(TRIM(ep.image_url), ''), NULLIF(TRIM(e.logo_url), ''), NULLIF(TRIM(e.cover_url), '')) AS product_image_url,
+            NULL AS comment_id,
+            l.created_at,
+            CAST(l.created_at AS INTEGER) AS sort_created_at,
+            'publication_like:' || l.user_id || ':' || l.publication_id || ':' || l.created_at AS event_id,
+            NULL AS title_translations,
+            NULL AS message_translations,
+            NULL AS recipient_locale
+          FROM publication_likes l
+          INNER JOIN establishment_publications ep ON ep.id = l.publication_id
+          INNER JOIN establishments e ON e.id = ep.establishment_id
+          LEFT JOIN users lu ON lu.id = l.user_id
+          WHERE ep.owner_user_id = ? AND l.user_id <> ?
 
           UNION ALL
 
@@ -6939,9 +7117,9 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL AS actor_city,
             NULL AS actor_country,
             p.id AS product_id,
-            NULL AS publication_id,
-            COALESCE(NULLIF(TRIM(b.message), ''), NULLIF(TRIM(p.name), ''), 'Atualização TempleSale') AS product_name,
-            COALESCE(NULLIF(TRIM(p.image), ''), NULLIF(TRIM(p.image_url), '')) AS product_image_url,
+            ep.id AS publication_id,
+            COALESCE(NULLIF(TRIM(b.message), ''), NULLIF(TRIM(p.name), ''), NULLIF(TRIM(ep.caption), ''), NULLIF(TRIM(e.name), ''), 'Atualização TempleSale') AS product_name,
+            COALESCE(NULLIF(TRIM(p.image), ''), NULLIF(TRIM(p.image_url), ''), NULLIF(TRIM(ep.image_url), ''), NULLIF(TRIM(e.logo_url), ''), NULLIF(TRIM(e.cover_url), '')) AS product_image_url,
             NULL AS comment_id,
             b.created_at,
             CAST(b.created_at AS INTEGER) AS sort_created_at,
@@ -6951,6 +7129,8 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             recipient.preferred_locale AS recipient_locale
           FROM admin_broadcast_notifications b
           LEFT JOIN products p ON p.id = b.product_id
+          LEFT JOIN establishment_publications ep ON ep.id = b.publication_id
+          LEFT JOIN establishments e ON e.id = ep.establishment_id
           INNER JOIN users recipient ON recipient.id = ?
           WHERE (b.recipient_user_id IS NULL OR b.recipient_user_id = ?)
             AND CAST(b.created_at AS INTEGER) >= CAST(recipient.created_at AS INTEGER)
@@ -6965,6 +7145,8 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
       `,
     )
     .all(
+      ownerId,
+      ownerId,
       ownerId,
       ownerId,
       ownerId,
@@ -8001,6 +8183,39 @@ async function updateUserPreferredLocaleRecord(userId: number, locale: AppLocale
     .run(locale, userId);
 }
 
+
+async function selectCameraPermissionGrantedAtRecord(userId: number): Promise<number | null> {
+  if (pgPool) {
+    const result = await pgPool.query<{ camera_permission_granted_at: number | string | null }>(
+      "SELECT camera_permission_granted_at FROM users WHERE id = $1",
+      [userId],
+    );
+    return toNullableNumber(result.rows[0]?.camera_permission_granted_at ?? null);
+  }
+
+  const row = requireSqliteDb()
+    .prepare("SELECT camera_permission_granted_at FROM users WHERE id = ?")
+    .get(userId) as { camera_permission_granted_at?: unknown } | undefined;
+  return toNullableNumber(row?.camera_permission_granted_at ?? null);
+}
+
+async function markCameraPermissionGrantedRecord(userId: number): Promise<number> {
+  const now = Math.floor(Date.now() / 1000);
+  if (pgPool) {
+    await pgPool.query(
+      "UPDATE users SET camera_permission_granted_at = COALESCE(camera_permission_granted_at, $1) WHERE id = $2",
+      [now, userId],
+    );
+  } else {
+    requireSqliteDb()
+      .prepare(
+        "UPDATE users SET camera_permission_granted_at = COALESCE(camera_permission_granted_at, @granted_at) WHERE id = @id",
+      )
+      .run({ granted_at: now, id: userId });
+  }
+
+  return (await selectCameraPermissionGrantedAtRecord(userId)) ?? now;
+}
 async function selectUserNewProductDraftDefaultsRecord(
   userId: number,
 ): Promise<NewProductDraftDefaults> {
@@ -8491,6 +8706,10 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
       normalized.productId = row.product_id;
       normalized.productName = productName;
     }
+    if (row.publication_id) {
+      normalized.publicationId = row.publication_id;
+      normalized.productName = productName;
+    }
     if (row.product_image_url) {
       normalized.productImageUrl = row.product_image_url;
     }
@@ -8519,6 +8738,8 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
           ? isProductCommentReply
             ? `${actorName} ha risposto al tuo commento.`
             : `${actorName} ha commentato la tua pubblicazione.`
+          : row.type === "publication_like"
+            ? `${actorName} curtiu sua publicação "${productName}".`
         : `${actorName} curtiu seu anúncio "${productName}".`;
 
   const normalized: NotificationRecord = {
@@ -10914,6 +11135,21 @@ async function bootstrap() {
     }
   });
 
+  app.get("/api/admin/publications", async (req, res) => {
+    if (!requireAdmin(req, res)) {
+      return;
+    }
+
+    try {
+      const search = String(req.query.q ?? req.query.search ?? '').trim();
+      const limit = normalizeProductPageLimit(req.query.limit, 60);
+      const publications = await selectAdminPublicationRows(search, limit);
+      res.json({ publications });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao listar publicações."; 
+      res.status(500).json({ error: message });
+    }
+  });
   app.post("/api/admin/notifications/broadcast", async (req, res) => {
     const adminSession = requireAdmin(req, res);
     if (!adminSession) {
@@ -10926,6 +11162,8 @@ async function bootstrap() {
       const message = normalizeTextField(body.message, "Mensagem", 600);
       const rawProductId = Number(body.productId ?? body.product_id);
       const productId = Number.isInteger(rawProductId) && rawProductId > 0 ? rawProductId : null;
+      const rawPublicationId = Number(body.publicationId ?? body.publication_id);
+      const publicationId = Number.isInteger(rawPublicationId) && rawPublicationId > 0 ? rawPublicationId : null;
       const rawRecipientUserId = Number(body.recipientUserId ?? body.recipient_user_id);
       const recipientUserId =
         Number.isInteger(rawRecipientUserId) && rawRecipientUserId > 0
@@ -10935,6 +11173,7 @@ async function bootstrap() {
         title,
         message,
         productId,
+        publicationId,
         recipientUserId,
         createdBy: adminSession.email,
       });
@@ -10950,7 +11189,13 @@ async function bootstrap() {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao enviar notificação.";
-      const statusCode = message.includes("não encontrado") || message.includes("deve ter") ? 400 : 500;
+      const statusCode =
+        message.includes("não encontrado") ||
+        message.includes("não encontrada") ||
+        message.includes("ao mesmo tempo") ||
+        message.includes("deve ter")
+          ? 400
+          : 500;
       res.status(statusCode).json({ error: message });
     }
   });
@@ -11403,6 +11648,38 @@ async function bootstrap() {
     }
   });
 
+  app.get("/api/profile/camera-permission", async (req, res) => {
+    const sessionUser = await requireAuth(req, res);
+    if (!sessionUser) {
+      return;
+    }
+
+    try {
+      const grantedAt = await selectCameraPermissionGrantedAtRecord(sessionUser.id);
+      res.json({
+        granted: grantedAt !== null && grantedAt > 0,
+        grantedAt,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao consultar a permissão da câmera."; 
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.put("/api/profile/camera-permission", async (req, res) => {
+    const sessionUser = await requireAuth(req, res);
+    if (!sessionUser) {
+      return;
+    }
+
+    try {
+      const grantedAt = await markCameraPermissionGrantedRecord(sessionUser.id);
+      res.json({ success: true, granted: true, grantedAt });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao salvar a permissão da câmera."; 
+      res.status(500).json({ error: message });
+    }
+  });
   app.put("/api/profile", async (req, res) => {
     const sessionUser = await requireAuth(req, res);
     if (!sessionUser) {

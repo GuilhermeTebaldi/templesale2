@@ -2002,13 +2002,16 @@ export default function App() {
     setFocusedCommentId(null);
 
     if (typeof window !== "undefined") {
+      const profilePath =
+        isEstablishmentPageOpen && selectedEstablishment
+          ? `/attivita/${encodeURIComponent(selectedEstablishment.slug || String(selectedEstablishment.id))}`
+          : "/";
       const currentLocation = `${window.location.pathname}${window.location.search}`;
-      if (currentLocation !== "/") {
-        window.history.replaceState({}, "", "/");
+      if (currentLocation !== profilePath) {
+        window.history.replaceState({}, "", profilePath);
       }
     }
-  }, []);
-
+  }, [isEstablishmentPageOpen, selectedEstablishment]);
   const hasResolvedProductFromUrl = React.useRef(false);
   React.useEffect(() => {
     if (hasResolvedProductFromUrl.current) {
@@ -2283,39 +2286,71 @@ export default function App() {
     }
   };
 
+  const openNotificationPublication = async (publicationId: number, commentId: number | null = null) => {
+    setIsNotificationsOpen(false);
+    try {
+      const payload = await api.getPublication(publicationId);
+      setSelectedProduct(null);
+      setFocusedCommentId(null);
+      setSelectedEstablishment(payload.establishment);
+      setSelectedEstablishmentPublications((current) => [
+        payload.publication,
+        ...current.filter((publication) => publication.id !== payload.publication.id),
+      ]);
+      setSelectedPublication(payload.publication);
+      setFocusedPublicationCommentId(commentId);
+      setIsEstablishmentPageOpen(true);
+      setSocialSelectedCompanyId(`company_${payload.establishment.id}`);
+      setSocialActiveTab("profile");
+      scrollWindowToTop();
+      if (typeof window !== "undefined") {
+        window.history.pushState(
+          { establishmentId: payload.establishment.id, publicationId: payload.publication.id },
+          "",
+          `/attivita/${encodeURIComponent(payload.establishment.slug || String(payload.establishment.id))}`,
+        );
+      }
+    } catch (error) {
+      console.error("Error loading notification publication:", error);
+    }
+  };
+
   const handleNotificationClick = async (notification: NotificationDto) => {
     markNotificationAsRead(notification.id);
     setSwipedNotificationId(null);
 
-    if (
-      notification.type === "admin_broadcast" ||
-      notification.type === "system_welcome"
-    ) {
+    if (notification.type === "system_welcome") {
       return;
     }
 
-    if (notification.type === "publication_comment") {
+    if (notification.type === "admin_broadcast") {
+      if (Number.isInteger(notification.publicationId) && notification.publicationId > 0) {
+        await openNotificationPublication(notification.publicationId);
+        return;
+      }
+      if (!Number.isInteger(notification.productId) || notification.productId <= 0) {
+        return;
+      }
+      setIsNotificationsOpen(false);
+      const product = await resolveProductForNotification(notification.productId);
+      if (!product) {
+        return;
+      }
+      if (product.establishmentId || product.establishmentSlug) {
+        await openEstablishmentPage(product.establishmentId ?? product.establishmentSlug ?? "");
+      }
+      openProductDetails(product);
+      return;
+    }
+
+    if (notification.type === "publication_comment" || notification.type === "publication_like") {
       if (!Number.isInteger(notification.publicationId) || notification.publicationId <= 0) {
         return;
       }
-
-      setIsNotificationsOpen(false);
-      try {
-        const payload = await api.getPublication(notification.publicationId);
-        setSelectedEstablishment(payload.establishment);
-        setSelectedPublication(payload.publication);
-        setFocusedPublicationCommentId(notification.commentId ?? null);
-        setIsEstablishmentPageOpen(true);
-        if (typeof window !== "undefined") {
-          window.history.pushState(
-            { establishmentId: payload.establishment.id, publicationId: payload.publication.id },
-            "",
-            `/attivita/${encodeURIComponent(payload.establishment.slug || String(payload.establishment.id))}`,
-          );
-        }
-      } catch (error) {
-        console.error("Error loading notification publication:", error);
-      }
+      await openNotificationPublication(
+        notification.publicationId,
+        notification.type === "publication_comment" ? notification.commentId ?? null : null,
+      );
       return;
     }
 
@@ -2326,17 +2361,14 @@ export default function App() {
     ) {
       return;
     }
-
     if (!Number.isInteger(notification.productId) || notification.productId <= 0) {
       return;
     }
-
     setIsNotificationsOpen(false);
     const product = await resolveProductForNotification(notification.productId);
     if (!product) {
       return;
     }
-
     openProductDetails(product, {
       focusCommentId: notification.type === "product_comment" ? notification.commentId ?? null : null,
     });
@@ -2344,7 +2376,6 @@ export default function App() {
       void openProductLikers(product);
     }
   };
-
   const handleDeleteNotification = async (notificationId: string) => {
     const notificationToDelete = notificationsToDisplay.find((notification) => notification.id === notificationId);
 

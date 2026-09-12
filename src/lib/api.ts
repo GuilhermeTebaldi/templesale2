@@ -117,6 +117,21 @@ export type NotificationDto =
     }
   | {
       id: string;
+      type: "publication_like";
+      title: string;
+      message: string;
+      createdAt: number;
+      actorUserId?: number;
+      actorName?: string;
+      actorAvatarUrl?: string;
+      actorCity?: string;
+      actorCountry?: string;
+      productName?: string;
+      productImageUrl?: string;
+      publicationId: number;
+    }
+  | {
+      id: string;
       type: "publication_comment";
       title: string;
       message: string;
@@ -141,6 +156,7 @@ export type NotificationDto =
       productName?: string;
       productImageUrl?: string;
       productId?: number;
+      publicationId?: number;
     }
   | {
       id: string;
@@ -2452,6 +2468,39 @@ export const api = {
       });
     } finally {
       clearAuthToken();
+    }
+  },
+  async getCameraPermissionStatus(): Promise<{ granted: boolean; grantedAt?: number }> {
+    try {
+      const raw = await request<unknown>("/api/profile/camera-permission", {
+        skipGlobalLoadingOverlay: true,
+      });
+      const parsed = parseJsonIfNeeded(raw);
+      const record = isRecord(parsed) ? parsed : {};
+      const grantedAt = toOptionalNumber(firstDefined(record, ["grantedAt", "granted_at"]));
+      return {
+        granted: Boolean(record.granted) || (grantedAt !== undefined && grantedAt > 0),
+        ...(grantedAt !== undefined ? { grantedAt } : {}),
+      };
+    } catch (error) {
+      if (isMissingApiRouteError(error)) {
+        return { granted: false };
+      }
+      return { granted: false };
+    }
+  },
+  async saveCameraPermissionGranted(): Promise<boolean> {
+    try {
+      const raw = await request<unknown>("/api/profile/camera-permission", {
+        method: "PUT",
+        body: JSON.stringify({ granted: true }),
+        skipGlobalLoadingOverlay: true,
+      });
+      const parsed = parseJsonIfNeeded(raw);
+      const record = isRecord(parsed) ? parsed : {};
+      return Boolean(record.success ?? record.granted);
+    } catch {
+      return false;
     }
   },
   async updateProfile(payload: UpdateProfileInput) {
