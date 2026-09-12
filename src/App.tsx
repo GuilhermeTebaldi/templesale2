@@ -3345,7 +3345,15 @@ export default function App() {
         openMapDefault();
         return;
       }
-      if (tab === "feed" && socialActiveTab === "feed") {
+      if (
+  tab === "feed" &&
+  typeof window !== "undefined" &&
+  window.location.pathname.startsWith("/attivita/")
+) {
+  window.history.replaceState({}, "", "/");
+}
+
+if (tab === "feed" && socialActiveTab === "feed") {
         void loadPublicationFeedPage({ append: false });
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
