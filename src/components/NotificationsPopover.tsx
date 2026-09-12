@@ -133,10 +133,10 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
     }
 
     const originalOverflow = document.body.style.overflow;
-    const originalTouchAction = document.body.style.touchAction;
+
 
     document.body.style.overflow = 'hidden';
-    document.body.style.touchAction = 'none';
+
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -148,7 +148,7 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
 
     return () => {
       document.body.style.overflow = originalOverflow;
-      document.body.style.touchAction = originalTouchAction;
+
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);
@@ -163,7 +163,9 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
     <div
       id="notifications-backdrop"
       className="fixed inset-0 z-50 flex items-start justify-center p-2 pt-14 bg-black/60 backdrop-blur-xs overflow-hidden sm:items-start sm:justify-end sm:p-4 sm:pt-16 sm:pr-6"
-      onClick={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
       <div
         id="notifications-popover-card"
@@ -241,27 +243,11 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
               return (
                 <div
                   key={notification.id}
-                  role={canOpen ? 'button' : undefined}
-                  tabIndex={canOpen ? 0 : undefined}
-                  onClick={
-                    canOpen
-                      ? () => onSelectNotification(notification)
-                      : undefined
-                  }
-                  onKeyDown={
-                    canOpen
-                      ? (event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            onSelectNotification(notification);
-                          }
-                        }
-                      : undefined
-                  }
+
                   className={[
                     'rounded-xl p-3 transition-colors',
                     isRead ? 'opacity-75 hover:bg-neutral-800/40' : 'border-l-2 border-amber-400 bg-neutral-950/60 hover:bg-neutral-800/70',
-                    canOpen ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400/70' : '',
+
                   ].join(' ')}
                 >
                   <div className="flex items-start space-x-3">
@@ -293,15 +279,21 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
                       </p>
 
                       <div className="mt-1 flex items-center space-x-2 text-[10px] text-neutral-500">
-                        <span
-                          className={[
-                            'flex items-center space-x-1',
-                            canOpen ? 'text-emerald-400' : 'text-neutral-400',
-                          ].join(' ')}
-                        >
-                          {getNotificationIcon(notification)}
-                          <span>{getNotificationActionLabel(notification)}</span>
-                        </span>
+                        {canOpen ? (
+                          <button
+                            type="button"
+                            onClick={() => onSelectNotification(notification)}
+                            className="flex items-center space-x-1 rounded px-1 py-2 text-emerald-400 focus-visible:ring-2 focus-visible:ring-amber-400"
+                          >
+                            {getNotificationIcon(notification)}
+                            <span>{getNotificationActionLabel(notification)}</span>
+                          </button>
+                        ) : (
+                          <span className="flex items-center space-x-1 text-neutral-400">
+                            {getNotificationIcon(notification)}
+                            <span>Mensagem</span>
+                          </span>
+                        )}
                         <span>•</span>
                         <span>{formatRelativeTime(notification.createdAt)}</span>
                       </div>

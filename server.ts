@@ -6687,6 +6687,8 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           LEFT JOIN users lu ON lu.id = l.user_id
           WHERE p.user_id = $1 AND l.user_id <> $2
 
+          UNION ALL
+
           SELECT
             'publication_like'::TEXT AS type,
             l.user_id AS actor_user_id,
@@ -6947,6 +6949,8 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           LEFT JOIN users lu ON lu.id = l.user_id
           WHERE p.user_id = ? AND l.user_id <> ?
 
+          UNION ALL
+
           SELECT
             'publication_like' AS type,
             l.user_id AS actor_user_id,
@@ -7134,11 +7138,11 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
           INNER JOIN users recipient ON recipient.id = ?
           WHERE (b.recipient_user_id IS NULL OR b.recipient_user_id = ?)
             AND CAST(b.created_at AS INTEGER) >= CAST(recipient.created_at AS INTEGER)
-        )
+        ) notifications
         WHERE NOT EXISTS (
           SELECT 1
           FROM notification_dismissals d
-          WHERE d.owner_user_id = ? AND d.event_id = event_id
+          WHERE d.owner_user_id = ? AND d.event_id = notifications.event_id
         )
         ORDER BY sort_created_at DESC, event_id DESC
         LIMIT 100

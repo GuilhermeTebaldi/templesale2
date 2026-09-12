@@ -549,8 +549,8 @@ export default function App() {
   const feedScrollPositionRef = React.useRef(0);
   const avatarButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const avatarPickerPanelRef = React.useRef<HTMLDivElement | null>(null);
-  const notificationsButtonRef = React.useRef<HTMLButtonElement | null>(null);
-  const notificationsPanelRef = React.useRef<HTMLDivElement | null>(null);
+
+
   const notificationUndoTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const homeSearchInputRef = React.useRef<HTMLInputElement | null>(null);
   const categoryDropdownRef = React.useRef<HTMLDivElement | null>(null);
@@ -1245,42 +1245,15 @@ export default function App() {
   }, [currentUser?.id, readNotificationsStorageKey]);
 
   React.useEffect(() => {
-    if (!isNotificationsOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
-      const target = event.target as Node | null;
-      if (!target) {
-        return;
-      }
-
-      if (notificationsPanelRef.current?.contains(target)) {
-        return;
-      }
-      if (notificationsButtonRef.current?.contains(target)) {
-        return;
-      }
-
-      setIsNotificationsOpen(false);
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsNotificationsOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("touchstart", handlePointerDown);
-    document.addEventListener("keydown", handleEscape);
-
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("touchstart", handlePointerDown);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [isNotificationsOpen]);
+    if (!isNotificationsOpen || !currentUser) return;
+    let cancelled = false;
+    void api.getNotifications().then((data) => {
+      if (!cancelled) setNotifications(asArray<NotificationDto>(data));
+    }).catch((error) => {
+      console.error("Error refreshing notifications:", error);
+    });
+    return () => { cancelled = true; };
+  }, [isNotificationsOpen, currentUser?.id]);
 
   React.useEffect(() => {
     if (!isCategoryDropdownOpen && !isPriceDropdownOpen) {

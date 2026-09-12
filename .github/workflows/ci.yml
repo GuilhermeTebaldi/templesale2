@@ -26,5 +26,8 @@ jobs:
       - name: Type check
         run: npm run lint
 
+      - name: Notification regression tests
+        run: node --experimental-sqlite --test tests/notifications.test.mjs
+
       - name: Build
         run: npm run build
