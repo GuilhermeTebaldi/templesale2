@@ -436,7 +436,7 @@ export default function EditePerfil({
       return;
     }
     if (normalizedEstablishmentName.length < 2) {
-      setErrorMessage(t("Nome attività deve ter pelo menos 2 caracteres."));
+      setErrorMessage(t("Informe o nome da empresa com pelo menos 2 caracteres."));
       return;
     }
     if (!isUsableTaxonomyLabel(formData.establishmentCategory)) {
@@ -515,7 +515,7 @@ export default function EditePerfil({
       <div className="p-5 sm:p-8 flex justify-between items-center border-b border-neutral-800 bg-neutral-900/95 backdrop-blur-md">
         <div className="flex items-center gap-4">
           <User className="w-6 h-6 text-amber-400" />
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{t("Editar Perfil")}</h2>
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{t("Editar perfil da empresa")}</h2>
         </div>
         <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full transition-colors">
           <X className="w-6 h-6 text-neutral-300" />
@@ -601,13 +601,13 @@ export default function EditePerfil({
               <div className="mb-5 flex items-center gap-3">
                 <Store className="h-4 w-4 text-amber-400" />
                 <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-neutral-200">
-                  {t("Dati attività")}
+                  {t("Dados da empresa")}
                 </h3>
               </div>
               <div className="space-y-6">
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
-                    {t("Nome attività")}
+                    {t("Nome da empresa (obrigatório)")}
                   </label>
                   <input
                     required
@@ -623,7 +623,7 @@ export default function EditePerfil({
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
-                    {t("Categoria attività")}
+                    {t("Categoria da empresa")}
                   </label>
                   <input
                     required
@@ -655,7 +655,7 @@ export default function EditePerfil({
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
-                    {t("Descrizione")}
+                    {t("Descrição da empresa")}
                   </label>
                   <textarea
                     rows={3}
@@ -732,7 +732,7 @@ export default function EditePerfil({
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
-                    {t("Orari")}
+                    {t("Horário de funcionamento")}
                   </label>
                   <input
                     type="text"
@@ -751,11 +751,11 @@ export default function EditePerfil({
               <div className="mb-5 flex items-center gap-3">
                 <User className="h-4 w-4 text-amber-400" />
                 <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-neutral-200">
-                  {t("Account")}
+                  {t("Dados do proprietário")}
                 </h3>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">{t("Nome proprietario")}</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">{t("Nome do proprietário")}</label>
                 <input 
                   required
                   minLength={2}
@@ -768,7 +768,7 @@ export default function EditePerfil({
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">{t("WhatsApp attività")}</label>
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">{t("WhatsApp da empresa")}</label>
               <div className="grid grid-cols-[1fr_2fr] gap-4">
                 <select
                   className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-neutral-100"
@@ -797,7 +797,7 @@ export default function EditePerfil({
                 <div className="flex items-center gap-3">
                   <MapPin className="h-4 w-4 text-amber-400" />
                   <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-neutral-200">
-                    {t("Posizione attività")}
+                    {t("Localização da empresa")}
                   </h3>
                 </div>
                 {locationStatus === "success" && selectedLocation && (
@@ -890,7 +890,7 @@ export default function EditePerfil({
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">{t("Rua")}</label>
+              <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">{t("Endereço da empresa")}</label>
               <input 
                 type="text"
                 className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-lg font-semibold text-neutral-100"
@@ -913,7 +913,7 @@ export default function EditePerfil({
             className="w-full rounded-2xl bg-neutral-100 text-neutral-950 py-5 text-xs uppercase tracking-[0.22em] font-bold flex items-center justify-center gap-3 hover:bg-white transition-all mt-8 disabled:bg-neutral-700 disabled:text-neutral-500"
           >
             <Save className="w-4 h-4" />
-            {isSaving ? t("Salvando...") : t("Salvar alterações")}
+            {isSaving ? t("Salvando...") : t("Salvar perfil da empresa")}
           </button>
         </form>
       </div>
