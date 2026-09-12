@@ -98,11 +98,11 @@ const formatRelativeTime = (createdAt: number) => {
   const diffSec = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
 
   if (diffSec < 60) return 'Agora';
-  if (diffSec < 3600) return \`Há \${Math.floor(diffSec / 60)} min\`;
-  if (diffSec < 86400) return \`Há \${Math.floor(diffSec / 3600)} h\`;
+  if (diffSec < 3600) return `Há ${Math.floor(diffSec / 60)} min`;
+  if (diffSec < 86400) return `Há ${Math.floor(diffSec / 3600)} h`;
 
   const days = Math.floor(diffSec / 86400);
-  return days === 1 ? 'Há 1 dia' : \`Há \${days} dias\`;
+  return days === 1 ? 'Há 1 dia' : `Há ${days} dias`;
 };
 
 export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
