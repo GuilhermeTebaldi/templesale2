@@ -8,6 +8,7 @@ import path from "node:path";
 import { Pool } from "pg";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
+import { initializeDiscovery, registerDiscovery, sqliteBindings } from "./server/discovery";
 import {
   NEGOTIABLE_PRICE_STORAGE_VALUE,
   isNegotiablePriceValue,
@@ -10242,6 +10243,16 @@ async function fetchTileFromProviders(
 async function bootstrap() {
   await initializeDatabase();
 
+  const discoveryQuery = async (sql: string, values: unknown[] = []): Promise<Record<string, any>[]> => {
+    if (pgPool) return (await pgPool.query(sql, values)).rows;
+    const bound = sqliteBindings(sql, values);
+    const statement = requireSqliteDb().prepare(bound.sql);
+    if (statement.reader) return statement.all(...bound.values) as Record<string, any>[];
+    statement.run(...bound.values);
+    return [];
+  };
+  if (!IS_DEV_REMOTE_DATABASE) await initializeDiscovery(discoveryQuery);
+
   const app = express();
   const isProduction = process.env.NODE_ENV === "production";
   const port = Number(process.env.PORT || 5173);
@@ -10369,6 +10380,15 @@ async function bootstrap() {
 
     return { email: ADMIN_EMAIL };
   };
+
+  registerDiscovery(app, {
+    query: discoveryQuery,
+    postgres: Boolean(pgPool),
+    readOnly: IS_DEV_REMOTE_DATABASE,
+    normalizeEstablishment: normalizeEstablishmentRow,
+    normalizePublication: normalizePublicationRow,
+    requireAdmin,
+  });
 
   app.get("/api/health", (_req, res) => {
     res.json({

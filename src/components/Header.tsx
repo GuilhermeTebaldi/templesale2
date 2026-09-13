@@ -167,7 +167,7 @@ export const Header: React.FC<HeaderProps> = ({
               }}
               className="text-[22px] font-semibold tracking-[0.03em] text-white transition-opacity active:opacity-70 sm:text-[25px] sm:hover:opacity-85"
               style={{ fontFamily: CINEMA_BRAND_FONT }}
-              title="TempleSale - Ir para o feed"
+              title="TempleSale - Início"
             >
               <span
                 className={
@@ -195,10 +195,10 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'bg-neutral-800 text-white'
                   : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50'
               }`}
-              title="Feed de Publicações de Empresas"
+              title="Descobrir empresas próximas"
             >
               <Home className="w-4 h-4" />
-              <span>Feed</span>
+              <span>Início</span>
             </button>
 
             {/* Search Tab */}
@@ -391,8 +391,8 @@ export const Header: React.FC<HeaderProps> = ({
             id="desktop-rail-feed"
             onClick={() => setActiveTab('feed')}
             className={desktopRailButtonClass(activeTab === 'feed')}
-            title="Feed"
-            aria-label="Feed"
+            title="Início"
+            aria-label="Início"
           >
             <Home className="h-6 w-6" />
           </button>
@@ -512,7 +512,7 @@ export const Header: React.FC<HeaderProps> = ({
           }`}
         >
           <Home className="w-4.5 h-4.5" />
-          <span className="text-[10px] font-medium mt-0.5">Feed</span>
+          <span className="text-[10px] font-medium mt-0.5">Início</span>
         </button>
 
         {/* Search Tab */}

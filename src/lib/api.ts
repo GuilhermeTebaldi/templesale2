@@ -258,6 +258,14 @@ export interface StorefrontSectionDto {
   productCount?: number;
 }
 
+export interface DiscoveryItem {
+  establishment: EstablishmentDto;
+  distanceKm: number | null;
+  publications: PublicationDto[];
+  products: Array<{ id: number; name: string; image: string; price: string }>;
+}
+export interface DiscoveryPage { items: DiscoveryItem[]; hasMore: boolean; nextOffset: number }
+
 export interface EstablishmentDto {
   id: number;
   ownerId: number;
@@ -2877,6 +2885,21 @@ export const api = {
       skipAuthToken: true,
     });
     return normalizeEstablishmentList(payload);
+  },
+  async getDiscovery(input: { lat?: number; lng?: number; city?: string; radius: number; search?: string; category?: string; offset?: number }, signal?: AbortSignal): Promise<DiscoveryPage> {
+    const query = new URLSearchParams({ radius: String(input.radius), limit: '12', offset: String(input.offset ?? 0) });
+    for (const key of ['lat', 'lng', 'city', 'search', 'category'] as const) {
+      if (input[key] !== undefined && input[key] !== '') query.set(key, String(input[key]));
+    }
+    const payload = await request<DiscoveryPage>(`/api/discovery?${query}`, { skipAuthToken: true, signal });
+    return { ...payload, items: payload.items.map(item => {
+      const establishment = normalizeEstablishmentItem(item.establishment);
+      if (!establishment) throw new Error('Resposta inválida ao carregar empresas próximas.');
+      return { ...item, establishment, publications: normalizePublicationList(item.publications) };
+    }) };
+  },
+  trackDiscovery(event: 'company_open' | 'whatsapp' | 'map', establishmentId: number) {
+    return request<void>('/api/discovery/events', { method: 'POST', skipAuthToken: true, keepalive: true, body: JSON.stringify({ event, establishmentId }) }).catch(() => undefined);
   },
   async getMyEstablishment() {
     const payload = await request<unknown>("/api/establishments/me");
