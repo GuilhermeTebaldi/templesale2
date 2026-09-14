@@ -10,6 +10,7 @@ import { buildWhatsappUrl } from "../lib/whatsapp";
 
 interface ProductMapProps {
   visitorLocation?: { lat: number; lng: number } | null;
+  initialSearchPoint?: { lat: number; lng: number } | null;
   products: Product[];
   establishments?: EstablishmentDto[];
   onClose: () => void;
@@ -659,6 +660,7 @@ function getSpreadMarkerPosition(
 export default function ProductMap({
   products,
   visitorLocation,
+  initialSearchPoint,
   establishments = [],
   onClose,
   initialFocusProductId,
@@ -669,7 +671,7 @@ export default function ProductMap({
   onOpenEstablishment,
 }: ProductMapProps) {
   const { t, locale } = useI18n();
-  const [mapSearchPoint, setMapSearchPoint] = React.useState<LeafletLatLng | null>(null);
+  const [mapSearchPoint, setMapSearchPoint] = React.useState<LeafletLatLng | null>(initialSearchPoint ?? null);
   const searchOrigin = mapSearchPoint ?? visitorLocation ?? null;
   const [mapSearchLoading, setMapSearchLoading] = React.useState(false);
   const [mapSearchError, setMapSearchError] = React.useState(false);

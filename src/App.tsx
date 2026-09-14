@@ -335,6 +335,7 @@ export default function App() {
   const [isMapOpen, setIsMapOpen] = React.useState(false);
   const [mapInitialCategory, setMapInitialCategory] = React.useState("All");
   const [mapInitialFocusProductId, setMapInitialFocusProductId] = React.useState<number | undefined>(undefined);
+  const [mapInitialSearchPoint, setMapInitialSearchPoint] = React.useState<{ lat: number; lng: number } | null>(null);
   const [mapOpenWithResults, setMapOpenWithResults] = React.useState(false);
   const [mapAutoFocusPanelSearch, setMapAutoFocusPanelSearch] = React.useState(false);
   const [isNewProductOpen, setIsNewProductOpen] = React.useState(false);
@@ -2543,6 +2544,7 @@ export default function App() {
       const normalizedCategory = String(category ?? activeCategory).trim() || "All";
       setMapInitialCategory(normalizedCategory);
       setMapInitialFocusProductId(undefined);
+      setMapInitialSearchPoint(null);
       setMapOpenWithResults(true);
       setMapAutoFocusPanelSearch(true);
       setIsMenuOpen(false);
@@ -2555,6 +2557,7 @@ export default function App() {
     const normalizedCategory = String(activeCategory).trim() || "All";
     setMapInitialCategory(normalizedCategory);
     setMapInitialFocusProductId(undefined);
+    setMapInitialSearchPoint(null);
     setMapOpenWithResults(false);
     setMapAutoFocusPanelSearch(false);
     setIsMenuOpen(false);
@@ -2562,15 +2565,22 @@ export default function App() {
   }, [activeCategory]);
 
   const openMapForCompany = React.useCallback(
-    (company: Pick<SocialCompany, 'id' | 'name'>) => {
+    (company: Pick<SocialCompany, "id" | "name" | "lat" | "lng">) => {
       const establishmentIdMatch = /^company_(\d+)$/.exec(company.id);
       const establishmentId = establishmentIdMatch ? Number(establishmentIdMatch[1]) : null;
-     setMapInitialCategory(company.name);
-setMapInitialFocusProductId(
-  establishmentId ? 1_000_000_000 + establishmentId : undefined,
-);
-setMapOpenWithResults(true);
-setMapAutoFocusPanelSearch(true);
+      const lat = Number(company.lat);
+      const lng = Number(company.lng);
+      setMapInitialCategory(company.name);
+      setMapInitialFocusProductId(
+        establishmentId ? 1_000_000_000 + establishmentId : undefined,
+      );
+      setMapInitialSearchPoint(
+        Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
+          ? { lat, lng }
+          : null,
+      );
+      setMapOpenWithResults(true);
+      setMapAutoFocusPanelSearch(true);
       setIsMenuOpen(false);
       setIsUserOpen(false);
       setIsMapOpen(true);
@@ -3489,12 +3499,14 @@ setMapAutoFocusPanelSearch(true);
             products={products}
             establishments={visibleEstablishments}
             initialFocusProductId={mapInitialFocusProductId}
+            initialSearchPoint={mapInitialSearchPoint}
             initialCategory={mapInitialCategory}
             openResultsByDefault={mapOpenWithResults}
             autoFocusPanelSearch={mapAutoFocusPanelSearch}
             onOpenProduct={(product) => {
               setIsMapOpen(false);
               setMapInitialFocusProductId(undefined);
+              setMapInitialSearchPoint(null);
               setMapOpenWithResults(false);
               setMapAutoFocusPanelSearch(false);
               openProductDetails(product);
@@ -3502,6 +3514,7 @@ setMapAutoFocusPanelSearch(true);
             onOpenEstablishment={(idOrSlug) => {
               setIsMapOpen(false);
               setMapInitialFocusProductId(undefined);
+              setMapInitialSearchPoint(null);
               setMapOpenWithResults(false);
               setMapAutoFocusPanelSearch(false);
               void openEstablishmentPage(idOrSlug);
@@ -3510,6 +3523,7 @@ setMapAutoFocusPanelSearch(true);
             onClose={() => {
               setIsMapOpen(false);
               setMapInitialFocusProductId(undefined);
+              setMapInitialSearchPoint(null);
               setMapOpenWithResults(false);
               setMapAutoFocusPanelSearch(false);
             }}
