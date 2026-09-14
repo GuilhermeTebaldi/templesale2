@@ -11580,56 +11580,11 @@ async function bootstrap() {
     }
   });
 
-  app.post("/api/auth/register", async (req, res) => {
-    try {
-      const body = req.body as Record<string, unknown>;
-      const name = String(body.name ?? "").trim();
-      const email = normalizeEmail(String(body.email ?? ""));
-      const password = String(body.password ?? "").trim();
-
-      if (name.length < 2) {
-        res.status(400).json({ error: "Nome deve ter pelo menos 2 caracteres." });
-        return;
-      }
-      if (!EMAIL_REGEX.test(email)) {
-        res.status(400).json({ error: "Email inválido." });
-        return;
-      }
-      if (password.length < 6) {
-        res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres." });
-        return;
-      }
-
-      const existingUser = await selectUserByEmailRow(email);
-      if (existingUser) {
-        res.status(409).json({ error: "Este email já está cadastrado." });
-        return;
-      }
-
-      const passwordCredentials = createPasswordCredentials(password);
-      const userId = await createUserRecord(
-        name,
-        email,
-        passwordCredentials.hash,
-        passwordCredentials.salt,
-      );
-
-      const createdUser = await selectUserByIdRow(userId);
-      if (!createdUser) {
-        res.status(500).json({ error: "Falha ao criar usuário." });
-        return;
-      }
-
-      const token = await createSession(createdUser.id);
-      setSessionCookie(res, token, isProduction);
-      res.status(201).json({
-        ...sanitizeUser(createdUser),
-        token,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao criar conta.";
-      res.status(500).json({ error: message });
-    }
+  app.post("/api/auth/register", (_req, res) => {
+    res.status(410).json({
+      error: "Cadastro por email e senha foi desativado. Use o acesso com Auth0.",
+      code: "AUTH0_REQUIRED",
+    });
   });
 
   app.post("/api/auth/login", async (req, res) => {
