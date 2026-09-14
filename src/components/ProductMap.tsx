@@ -989,6 +989,7 @@ export default function ProductMap({
 
   const focusMapItem = React.useCallback(
     (product: LocatedProduct) => {
+      if (product.establishmentId) void api.trackDiscovery('map', product.establishmentId);
       const visibleProducts = filteredProducts.slice(0, 80);
       const nearbyGroup = visibleProducts.filter(
         (item) => getNearbyMarkerGroupKey(item) === getNearbyMarkerGroupKey(product),
@@ -1804,7 +1805,10 @@ export default function ProductMap({
                 href={whatsappUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (product.establishmentId) void api.trackDiscovery('whatsapp', product.establishmentId);
+                }}
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-emerald-500/40 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-emerald-300 transition-colors hover:bg-emerald-500 hover:text-neutral-950"
                 aria-label={t("WhatsApp")}
                 title={t("WhatsApp")}
@@ -1864,19 +1868,6 @@ export default function ProductMap({
           </div>
         )}
 
-        {!leafletError && hasProductsWithLocation && !normalizedTopSearchQuery && (
-          <div className="absolute left-1/2 top-1/2 z-[1000] w-[min(360px,calc(100%-32px))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-neutral-800 bg-neutral-950/92 px-5 py-4 text-center shadow-2xl backdrop-blur-md">
-            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-neutral-950">
-              <MapPin size={20} />
-            </div>
-            <p className="text-sm font-semibold text-white">
-              {t("Busque uma loja no mapa")}
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-neutral-400">
-              {t("Digite nome, categoria ou cidade para mostrar os pontos e abrir a loja direto.")}
-            </p>
-          </div>
-        )}
 
         <div
           aria-hidden="true"

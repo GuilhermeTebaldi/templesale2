@@ -1,4 +1,5 @@
 import React from "react";
+import { usePublicationFeed } from "./lib/use-publication-feed";
 import { useAuth0 } from "@auth0/auth0-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Search, ShoppingBag, Menu, ArrowRight, Instagram, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, ChevronLeft, Heart, Plus, Minus, Share2, Bell, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown, ImagePlus, LoaderCircle, Trash2, Users, Mail, MessageCircle, Home, Filter } from "lucide-react";
@@ -357,6 +358,8 @@ export default function App() {
   const [myProducts, setMyProducts] = React.useState<Product[]>([]);
   const [likedProducts, setLikedProducts] = React.useState<Product[]>([]);
   const [establishments, setEstablishments] = React.useState<EstablishmentDto[]>([]);
+  const [establishmentListRevision, setEstablishmentListRevision] = React.useState(0);
+  const refreshEstablishments = React.useCallback(() => setEstablishmentListRevision(value => value + 1), []);
   const [myEstablishment, setMyEstablishment] = React.useState<EstablishmentDto | null>(null);
   const [selectedEstablishment, setSelectedEstablishment] = React.useState<EstablishmentDto | null>(null);
   const [, setSelectedEstablishmentProducts] = React.useState<Product[]>([]);
@@ -370,11 +373,6 @@ export default function App() {
   const [isEstablishmentPageOpen, setIsEstablishmentPageOpen] = React.useState(false);
   const [publicationFeed, setPublicationFeed] = React.useState<PublicationDto[]>([]);
   const [publicationCommentsById, setPublicationCommentsById] = React.useState<Record<number, ProductCommentDto[]>>({});
-  const [isLoadingPublicationFeed, setIsLoadingPublicationFeed] = React.useState(true);
-  const [isLoadingMorePublicationFeed, setIsLoadingMorePublicationFeed] = React.useState(false);
-  const [hasMorePublicationFeed, setHasMorePublicationFeed] = React.useState(false);
-  const [nextPublicationFeedOffset, setNextPublicationFeedOffset] = React.useState(0);
-  const [publicationFeedError, setPublicationFeedError] = React.useState("");
   const [isLoadingEstablishments, setIsLoadingEstablishments] = React.useState(false);
   const activityOnboardingShownRef = React.useRef<number | null>(null);
   const [cartQuantitiesByProductId, setCartQuantitiesByProductId] = React.useState<Record<number, number>>(
@@ -431,7 +429,6 @@ export default function App() {
   const [desktopProductGridColumns, setDesktopProductGridColumns] = React.useState<2 | 3 | 4>(3);
   const cartToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const productsRequestSequenceRef = React.useRef(0);
-  const publicationsRequestSequenceRef = React.useRef(0);
   const auth0SyncAttemptedRef = React.useRef(false);
   const hasMemberAccess = Boolean(currentUser);
   const cartStorageKey = React.useMemo(
@@ -468,9 +465,17 @@ export default function App() {
         isCurtidasOpen ||
         isCartOpen ||
         isEditePerfilOpen));
-  const { origin: discoveryOrigin } = useDiscoveryLocation(
-    isMapOpen || (!isOverlayBlockingScroll && (socialActiveTab === 'feed' || socialActiveTab === 'search')),
-  );
+  const { origin: discoveryOrigin } = useDiscoveryLocation(true);
+  const isFeedActive = socialActiveTab === 'feed' && !isOverlayBlockingScroll &&
+    !selectedPublication && !editingSocialPublication && !isNotificationsOpen;
+  const {
+    loadPage: loadPublicationFeedPage, markSeen: markFeedPostSeen,
+    isLoading: isLoadingPublicationFeed, isLoadingMore: isLoadingMorePublicationFeed,
+    hasMore: hasMorePublicationFeed, error: publicationFeedError,
+  } = usePublicationFeed({
+    origin: discoveryOrigin, active: isFeedActive, publications: publicationFeed,
+    setPublications: setPublicationFeed, deletedIds: deletedPublicationIds,
+  });
   const hasRequiredProfileForPublishing = React.useMemo(() => {
     if (!currentUser) {
       return false;
@@ -677,76 +682,6 @@ export default function App() {
 
  
 
-  const loadPublicationFeedPage = React.useCallback(
-    async ({
-      append,
-      offset = 0,
-    }: {
-      append: boolean;
-      offset?: number;
-    }): Promise<void> => {
-      const requestSequence = publicationsRequestSequenceRef.current + 1;
-      publicationsRequestSequenceRef.current = requestSequence;
-      const isLatestRequest = () => publicationsRequestSequenceRef.current === requestSequence;
-      const limit = append ? 8 : 18;
-
-      if (append) {
-        setIsLoadingMorePublicationFeed(true);
-      } else {
-        setIsLoadingPublicationFeed(true);
-        setPublicationFeedError("");
-      }
-
-      try {
-        const page = await api.getPublicationsFeed({
-          limit,
-          offset,
-          ...(discoveryOrigin && 'lat' in discoveryOrigin ? { lat: discoveryOrigin.lat, lng: discoveryOrigin.lng } : {}),
-        });
-        if (!isLatestRequest()) {
-          return;
-        }
-        setPublicationFeed((current) => {
-          if (!append) {
-            return page.publications;
-          }
-          const nextById = new globalThis.Map<number, PublicationDto>();
-          current.forEach((publication) => nextById.set(publication.id, publication));
-          page.publications.forEach((publication) => nextById.set(publication.id, publication));
-          return [...nextById.values()];
-        });
-        setHasMorePublicationFeed(page.hasMore);
-        setNextPublicationFeedOffset(page.nextOffset);
-        setPublicationFeedError("");
-      } catch (error) {
-        console.error("Error fetching publication feed:", error);
-        if (!isLatestRequest()) {
-          return;
-        }
-        setPublicationFeedError(error instanceof Error ? error.message : t("Falha ao carregar publicações."));
-        if (!append) {
-          setPublicationFeed([]);
-          setHasMorePublicationFeed(false);
-          setNextPublicationFeedOffset(0);
-        }
-      } finally {
-        if (!isLatestRequest()) {
-          return;
-        }
-        if (append) {
-          setIsLoadingMorePublicationFeed(false);
-        } else {
-          setIsLoadingPublicationFeed(false);
-        }
-      }
-    },
-    [discoveryOrigin, t],
-  );
-
-  React.useEffect(() => {
-    if (socialActiveTab === 'feed' || socialActiveTab === 'search') void loadPublicationFeedPage({ append: false });
-  }, [loadPublicationFeedPage, socialActiveTab]);
-
   React.useEffect(() => {
     const missingPublicationIds = publicationFeed
       .map((publication) => publication.id)
@@ -761,7 +696,7 @@ export default function App() {
     void Promise.all(
       missingPublicationIds.map(async (publicationId) => {
         try {
-          const comments = await api.getPublicationComments(publicationId);
+          const comments = await api.getPublicationComments(publicationId, true);
           return [publicationId, comments] as const;
         } catch (error) {
           console.error("Error loading publication comments for feed:", error);
@@ -788,35 +723,27 @@ export default function App() {
 
   React.useEffect(() => {
     if (socialActiveTab !== 'search' && socialActiveTab !== 'feed' && !isMapOpen) return;
-    let cancelled = false;
+    const controller = new AbortController();
     void (async () => {
       setIsLoadingEstablishments(true);
       try {
         const list = await api.getEstablishments({
           search: debouncedSearchQuery,
           category: activeCategory,
-          ...(discoveryOrigin && 'lat' in discoveryOrigin ? { lat: discoveryOrigin.lat, lng: discoveryOrigin.lng } : {}),
-          ...(discoveryOrigin && 'city' in discoveryOrigin ? { city: discoveryOrigin.city } : {}),
+          ...(discoveryOrigin?.lat !== undefined && discoveryOrigin.lng !== undefined ? { lat: discoveryOrigin.lat, lng: discoveryOrigin.lng } : {}),
+          ...(discoveryOrigin?.city ? { city: discoveryOrigin.city } : {}),
           limit: 80,
-        });
-        if (!cancelled) {
-          setEstablishments(list);
-        }
+          previews: socialActiveTab === 'search',
+        }, controller.signal);
+        if (!controller.signal.aborted) setEstablishments(list);
       } catch (error) {
-        console.error("Error fetching establishments:", error);
-        if (!cancelled) {
-          setEstablishments([]);
-        }
+        if (!controller.signal.aborted) console.error("Error fetching establishments:", error);
       } finally {
-        if (!cancelled) {
-          setIsLoadingEstablishments(false);
-        }
+        if (!controller.signal.aborted) setIsLoadingEstablishments(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeCategory, debouncedSearchQuery, discoveryOrigin, socialActiveTab, isMapOpen]);
+    return () => controller.abort();
+  }, [activeCategory, debouncedSearchQuery, discoveryOrigin, socialActiveTab, isMapOpen, establishmentListRevision]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1793,6 +1720,7 @@ export default function App() {
       const payload = await api.getEstablishment(idOrSlug, {
         publicationsLimit: ESTABLISHMENT_PROFILE_INITIAL_PUBLICATIONS_LIMIT,
       });
+      void api.trackDiscovery('company_open', payload.establishment.id);
       setSelectedEstablishment(payload.establishment);
       setSelectedEstablishmentProducts(payload.products as Product[]);
       setSelectedEstablishmentPublications(payload.publications);
@@ -2568,6 +2496,7 @@ export default function App() {
     (company: Pick<SocialCompany, "id" | "name" | "lat" | "lng">) => {
       const establishmentIdMatch = /^company_(\d+)$/.exec(company.id);
       const establishmentId = establishmentIdMatch ? Number(establishmentIdMatch[1]) : null;
+      void api.trackDiscovery('map', company.id);
       const lat = Number(company.lat);
       const lng = Number(company.lng);
       setMapInitialCategory(company.name);
@@ -2780,11 +2709,11 @@ export default function App() {
         coverUrl: publication.establishmentCoverUrl || existing?.coverUrl || "",
         description: existing?.description || "",
         city: publication.establishmentCity || existing?.city || "",
-        address: existing?.address || "",
-        latitude: existing?.latitude,
-        longitude: existing?.longitude,
-        whatsappCountryIso: existing?.whatsappCountryIso,
-        whatsappNumber: existing?.whatsappNumber,
+        address: publication.establishmentAddress || existing?.address || "",
+        latitude: publication.establishmentLatitude ?? existing?.latitude,
+        longitude: publication.establishmentLongitude ?? existing?.longitude,
+        whatsappCountryIso: publication.establishmentWhatsappCountryIso || existing?.whatsappCountryIso,
+        whatsappNumber: publication.establishmentWhatsappNumber || existing?.whatsappNumber,
         phone: existing?.phone,
         openingHours: existing?.openingHours,
         keywords: existing?.keywords ?? [],
@@ -2961,6 +2890,11 @@ export default function App() {
     }));
   }, [socialPostIdFromPublicationId]);
 
+  const searchPreviewPublications = React.useMemo(
+    () => establishments.flatMap(establishment => establishment.recentPublications ?? []),
+    [establishments],
+  );
+
   const socialPosts = React.useMemo<SocialPost[]>(
     () => {
       const publicationsById = new globalThis.Map<number, PublicationDto>();
@@ -2982,6 +2916,9 @@ export default function App() {
         }
       });
 
+      searchPreviewPublications.forEach(publication => {
+        if (!publicationsById.has(publication.id)) publicationsById.set(publication.id, publication);
+      });
       return Array.from(publicationsById.values())
         .filter((publication) => !deletedIds.has(publication.id))
         .map((publication) => ({
@@ -3002,6 +2939,7 @@ export default function App() {
       deletedPublicationIds,
       publicationCommentsById,
       publicationFeed,
+      searchPreviewPublications,
       likedPublications,
       savedPublications,
       selectedEstablishmentPublications,
@@ -3095,7 +3033,9 @@ export default function App() {
       const publication = publicationId
         ? publicationFeed.find((item) => item.id === publicationId) ??
           savedPublications.find((item) => item.id === publicationId) ??
-          selectedEstablishmentPublications.find((item) => item.id === publicationId)
+          selectedEstablishmentPublications.find((item) => item.id === publicationId) ??
+          likedPublications.find((item) => item.id === publicationId) ??
+          searchPreviewPublications.find((item) => item.id === publicationId)
         : null;
       if (!publication) {
         return;
@@ -3105,7 +3045,7 @@ export default function App() {
       setSelectedPublication(publication);
       setFocusedPublicationCommentId(null);
     },
-    [buildEstablishmentFromPublication, publicationFeed, publicationIdFromSocialPostId, savedPublications, selectedEstablishmentPublications],
+    [buildEstablishmentFromPublication, publicationFeed, publicationIdFromSocialPostId, savedPublications, selectedEstablishmentPublications, likedPublications, searchPreviewPublications],
   );
 
   const syncSocialPublication = React.useCallback((publication: PublicationDto) => {
@@ -3445,9 +3385,7 @@ export default function App() {
       try {
         await api.deletePublication(publicationId);
         removePublicationFromLocalState(publicationId, publication);
-        void api.getEstablishments({ search: debouncedSearchQuery, category: activeCategory, limit: 80 })
-          .then(setEstablishments)
-          .catch(() => null);
+        refreshEstablishments();
       } catch (error) {
         console.error("Error deleting social publication:", error);
       }
@@ -3461,6 +3399,7 @@ export default function App() {
       publicationFeed,
       publicationIdFromSocialPostId,
       removePublicationFromLocalState,
+      refreshEstablishments,
       savedPublications,
       selectedEstablishmentPublications,
     ],
@@ -3585,13 +3524,11 @@ export default function App() {
             onToggleSavePost={toggleSavedSocialPost}
             onRefresh={() => loadPublicationFeedPage({ append: false })}
             hasMorePosts={hasMorePublicationFeed}
-            isLoadingMorePosts={isLoadingMorePublicationFeed}
-            onLoadMorePosts={() =>
-              loadPublicationFeedPage({
-                append: true,
-                offset: nextPublicationFeedOffset,
-              })
-            }
+            isLoadingMorePosts={isLoadingPublicationFeed || isLoadingMorePublicationFeed}
+            isActive={isFeedActive}
+            onPostSeen={markFeedPostSeen}
+            origin={discoveryOrigin && 'lat' in discoveryOrigin ? discoveryOrigin : undefined}
+            onLoadMorePosts={() => loadPublicationFeedPage({ append: true })}
           />
         </div>
 
@@ -3760,9 +3697,7 @@ export default function App() {
               setSelectedPublication(null);
               setFocusedPublicationCommentId(null);
               removePublicationFromLocalState(publicationId, deletedPublication);
-              void api.getEstablishments({ search: debouncedSearchQuery, category: activeCategory, limit: 80 })
-                .then(setEstablishments)
-                .catch(() => null);
+              refreshEstablishments();
             }}
           />
         )}
@@ -3806,16 +3741,14 @@ export default function App() {
                 ownerAvatarUrl: currentUser?.avatarUrl,
               };
               setSelectedEstablishmentPublications((current) => [publicationWithEstablishment, ...current]);
-              setPublicationFeed((current) => [publicationWithEstablishment, ...current]);
+              void loadPublicationFeedPage({ append: false, preserveSeen: true });
               setMyEstablishment((current) =>
                 current
                   ? { ...current, publicationCount: (current.publicationCount ?? 0) + 1 }
                   : current,
               );
               void api.getMyEstablishment().then(setMyEstablishment).catch(() => null);
-              void api.getEstablishments({ search: debouncedSearchQuery, category: activeCategory, limit: 80 })
-                .then(setEstablishments)
-                .catch(() => null);
+              refreshEstablishments();
             }}
           />
         )}

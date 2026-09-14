@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { MapPin, MessageSquare, X, CheckCircle2, Sparkles, Search } from 'lucide-react';
 import { Company, Post } from '../types';
+import { api } from '../lib/api';
 import { ProgressiveProductImage } from './ProductCard';
 import { buildWhatsappUrl } from '../lib/whatsapp';
 import { distanceMeters } from '../lib/discovery-location';
@@ -61,7 +62,8 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
   // - legendas das publicações
   // E mostra EMPRESAS, não produtos.
   const searchResults = companies.map((company) => {
-    const companyPosts = posts.filter((p) => p.companyId === company.id);
+    const companyPosts = posts.filter((p) => p.companyId === company.id)
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
     const hasLocation =
       typeof company.lat === 'number' && Number.isFinite(company.lat) && company.lat >= -90 && company.lat <= 90 &&
       typeof company.lng === 'number' && Number.isFinite(company.lng) && company.lng >= -180 && company.lng <= 180;
@@ -354,6 +356,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
                     {whatsappUrl && (
                       <a
                         href={whatsappUrl}
+                onClick={() => void api.trackDiscovery('whatsapp', company.id)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs active:scale-95 transition-all cursor-pointer"
