@@ -5,10 +5,11 @@ import { type Product } from "./ProductCard";
 import { useI18n } from "../i18n/provider";
 import { type AppLocale } from "../i18n";
 import { getCategoryLabel } from "../i18n/categories";
-import { api, type EstablishmentDto, type SessionUser } from "../lib/api";
+import { api, type EstablishmentDto } from "../lib/api";
 import { buildWhatsappUrl } from "../lib/whatsapp";
 
 interface ProductMapProps {
+  visitorLocation?: { lat: number; lng: number } | null;
   products: Product[];
   establishments?: EstablishmentDto[];
   onClose: () => void;
@@ -19,8 +20,6 @@ interface ProductMapProps {
   onOpenProduct?: (product: Product) => void;
   onOpenEstablishment?: (idOrSlug: number | string) => void;
   onAddToCart?: (product: Product) => void;
-  currentUser?: SessionUser | null;
-  onUserLocationSaved?: (user: SessionUser) => void;
 }
 
 type LocatedProduct = Product & {
@@ -421,6 +420,7 @@ type LeafletPointerEvent = {
 };
 
 type LeafletMapInstance = {
+  fitBounds: (bounds: [number, number][], options?: unknown) => void;
   setView: (coords: [number, number], zoom?: number, options?: unknown) => void;
   on: (eventName: string, handler: (event: LeafletPointerEvent) => void) => void;
   remove: () => void;
@@ -515,8 +515,6 @@ const DEFAULT_MAP_CENTER: LeafletLatLng = {
   lat: -23.55052,
   lng: -46.633308,
 };
-const SAVED_MAP_LOCATION_STORAGE_KEY = "templesale_map_user_location";
-const MAP_LOCATION_PROMPTED_STORAGE_KEY = "templesale_map_location_prompted";
 const PRIMARY_TILE_URL = "/api/map-tiles/{z}/{x}/{y}.png";
 const SECONDARY_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const TERTIARY_TILE_URL =
@@ -536,80 +534,6 @@ const FOCUSED_POINT_MARKER_STYLE = {
   fillOpacity: 0.95,
 };
 let leafletAssetsPromise: Promise<LeafletGlobal> | null = null;
-
-function isValidMapLocation(value: LeafletLatLng | null | undefined): value is LeafletLatLng {
-  return Boolean(
-    value &&
-      Number.isFinite(value.lat) &&
-      Number.isFinite(value.lng) &&
-      value.lat >= -90 &&
-      value.lat <= 90 &&
-      value.lng >= -180 &&
-      value.lng <= 180,
-  );
-}
-
-function readSavedMapLocation(): LeafletLatLng | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(SAVED_MAP_LOCATION_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as Partial<LeafletLatLng>;
-    const location = {
-      lat: Number(parsed.lat),
-      lng: Number(parsed.lng),
-    };
-    return isValidMapLocation(location) ? location : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeSavedMapLocation(location: LeafletLatLng) {
-  if (typeof window === "undefined" || !isValidMapLocation(location)) {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(SAVED_MAP_LOCATION_STORAGE_KEY, JSON.stringify(location));
-    window.localStorage.setItem(MAP_LOCATION_PROMPTED_STORAGE_KEY, "true");
-  } catch {
-    // Local storage can be unavailable in restricted browser modes.
-  }
-}
-
-function hasPromptedForMapLocation(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-
-  try {
-    return window.localStorage.getItem(MAP_LOCATION_PROMPTED_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function markMapLocationPrompted() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(MAP_LOCATION_PROMPTED_STORAGE_KEY, "true");
-  } catch {
-    // Local storage can be unavailable in restricted browser modes.
-  }
-}
-
-function areMapLocationsEqual(left: LeafletLatLng, right: LeafletLatLng): boolean {
-  return Math.abs(left.lat - right.lat) < 0.000001 && Math.abs(left.lng - right.lng) < 0.000001;
-}
 
 function getLeafletFromWindow(): LeafletGlobal | undefined {
   return (window as unknown as { L?: LeafletGlobal }).L;
@@ -734,6 +658,7 @@ function getSpreadMarkerPosition(
 
 export default function ProductMap({
   products,
+  visitorLocation,
   establishments = [],
   onClose,
   initialFocusProductId,
@@ -742,8 +667,6 @@ export default function ProductMap({
   autoFocusPanelSearch,
   onOpenProduct,
   onOpenEstablishment,
-  currentUser,
-  onUserLocationSaved,
 }: ProductMapProps) {
   const { t, locale } = useI18n();
   const [searchedEstablishments, setSearchedEstablishments] = React.useState<EstablishmentDto[]>([]);
@@ -777,13 +700,10 @@ export default function ProductMap({
   const [panelSearchQuery, setPanelSearchQuery] = React.useState("");
   const [mapReadyVersion, setMapReadyVersion] = React.useState(0);
   const [sellerLocationByOwnerId, setSellerLocationByOwnerId] = React.useState<Record<number, string>>({});
-  const [savedUserLocation, setSavedUserLocation] = React.useState<LeafletLatLng | null>(() => {
-    const userLocation = {
-      lat: Number(currentUser?.locationLatitude),
-      lng: Number(currentUser?.locationLongitude),
-    };
-    return isValidMapLocation(userLocation) ? userLocation : readSavedMapLocation();
-  });
+  const savedUserLocation = visitorLocation ?? null;
+  const visitorLocationRef = React.useRef(savedUserLocation);
+  visitorLocationRef.current = savedUserLocation;
+  const visitorFramedRef = React.useRef(false);
   const overlayRef = React.useRef<HTMLDivElement | null>(null);
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<LeafletMapInstance | null>(null);
@@ -804,105 +724,32 @@ export default function ProductMap({
   const attemptedSellerCityOwnerIdsRef = React.useRef<Set<number>>(new Set());
   const topSearchContainerRef = React.useRef<HTMLDivElement | null>(null);
   const topSearchInputRef = React.useRef<HTMLInputElement | null>(null);
-  const lastProfileLocationSyncRef = React.useRef("");
+
 
   React.useEffect(() => {
-    const userLocation = {
-      lat: Number(currentUser?.locationLatitude),
-      lng: Number(currentUser?.locationLongitude),
-    };
-
-    if (isValidMapLocation(userLocation)) {
-      writeSavedMapLocation(userLocation);
-      setSavedUserLocation(userLocation);
+    const map = mapRef.current;
+    const L = leafletRef.current;
+    if (!map || !L || !savedUserLocation) return;
+    if (!visitorFramedRef.current) {
+      visitorFramedRef.current = true;
+      const target = productsWithLocationRef.current.find(item => item.id === initialFocusProductId);
+      if (target) {
+        map.fitBounds([[savedUserLocation.lat, savedUserLocation.lng], [target.latitude, target.longitude]], { padding: [48, 48], maxZoom: 15 });
+      } else {
+        map.setView([savedUserLocation.lat, savedUserLocation.lng], 13);
+      }
     }
-  }, [currentUser?.locationLatitude, currentUser?.locationLongitude]);
-
-  React.useEffect(() => {
-    if (savedUserLocation || typeof navigator === "undefined" || !navigator.geolocation) {
-      return;
-    }
-    if (hasPromptedForMapLocation()) {
-      return;
-    }
-
-    let cancelled = false;
-    markMapLocationPrompted();
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        if (cancelled) {
-          return;
-        }
-
-        const nextLocation = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        };
-
-        if (!isValidMapLocation(nextLocation)) {
-          return;
-        }
-
-        writeSavedMapLocation(nextLocation);
-        setSavedUserLocation(nextLocation);
-        mapRef.current?.setView([nextLocation.lat, nextLocation.lng], 13);
-
-        if (currentUser) {
-          lastProfileLocationSyncRef.current = `${currentUser.id}:${nextLocation.lat.toFixed(6)}:${nextLocation.lng.toFixed(6)}`;
-          void api
-            .updateProfileLocation(nextLocation.lat, nextLocation.lng)
-            .then((updatedUser) => {
-              if (updatedUser) {
-                onUserLocationSaved?.(updatedUser);
-              }
-            })
-            .catch(() => undefined);
-        }
-      },
-      () => {
-        markMapLocationPrompted();
-      },
-      {
-        enableHighAccuracy: false,
-        maximumAge: 24 * 60 * 60 * 1000,
-        timeout: 10000,
-      },
-    );
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUser, onUserLocationSaved, savedUserLocation]);
-
-  React.useEffect(() => {
-    if (!currentUser || !savedUserLocation) {
-      return;
-    }
-
-    const userLocation = {
-      lat: Number(currentUser.locationLatitude),
-      lng: Number(currentUser.locationLongitude),
-    };
-    if (isValidMapLocation(userLocation) && areMapLocationsEqual(userLocation, savedUserLocation)) {
-      return;
-    }
-
-    const syncKey = `${currentUser.id}:${savedUserLocation.lat.toFixed(6)}:${savedUserLocation.lng.toFixed(6)}`;
-    if (lastProfileLocationSyncRef.current === syncKey) {
-      return;
-    }
-    lastProfileLocationSyncRef.current = syncKey;
-
-    void api
-      .updateProfileLocation(savedUserLocation.lat, savedUserLocation.lng)
-      .then((updatedUser) => {
-        if (updatedUser) {
-          onUserLocationSaved?.(updatedUser);
-        }
-      })
-      .catch(() => undefined);
-  }, [currentUser, onUserLocationSaved, savedUserLocation]);
+    const marker = L.marker([savedUserLocation.lat, savedUserLocation.lng], {
+      title: t("Sua localização atual"),
+      zIndexOffset: 1000,
+      icon: L.divIcon({
+        className: "templesale-visitor-marker",
+        html: '<span style="display:block;width:18px;height:18px;border:3px solid white;border-radius:50%;background:#3b82f6;box-shadow:0 0 0 7px rgba(59,130,246,.22)"></span>',
+        iconSize: [18,18], iconAnchor: [9,9],
+      }),
+    }).addTo(map);
+    return () => { marker.remove(); };
+  }, [savedUserLocation?.lat, savedUserLocation?.lng, mapReadyVersion, initialFocusProductId, t]);
 
   React.useEffect(() => {
     isDrawingRef.current = isDrawing;
@@ -1202,6 +1049,8 @@ export default function ProductMap({
 
         leafletRef.current = L;
 
+        const savedUserLocation = visitorLocationRef.current;
+        visitorFramedRef.current = false;
         const firstProduct = productsWithLocationRef.current[0];
         const focusedProduct = initialFocusProductId
           ? productsWithLocationRef.current.find(
@@ -1221,6 +1070,9 @@ export default function ProductMap({
           attributionControl: false,
         });
         map.setView(mapCenter, focusedProduct ? 15 : savedUserLocation || firstProduct ? 13 : 12);
+        if (focusedProduct && savedUserLocation) {
+          map.fitBounds([[savedUserLocation.lat, savedUserLocation.lng], [focusedProduct.latitude, focusedProduct.longitude]], { padding: [48, 48], maxZoom: 15 });
+        }
         setMapInteractionForDrawing(map, isDrawingRef.current);
 
         const tileProviders = [PRIMARY_TILE_URL, SECONDARY_TILE_URL];
@@ -1546,7 +1398,6 @@ export default function ProductMap({
     clearMarkers,
     clearSelectionPolygon,
     initialFocusProductId,
-    savedUserLocation,
     t,
   ]);
 

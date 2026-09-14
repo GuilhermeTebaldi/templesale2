@@ -57,7 +57,7 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
   useEffect(() => {
     let cancelled = false;
     // Querying permission does not prompt; the active hook attempts the first request automatically.
-    if (active && !origin?.city && navigator.permissions) {
+    if (active && navigator.permissions) {
       void navigator.permissions.query({ name: 'geolocation' }).then(permission => {
         if (!cancelled && permission.state === 'granted') setEnabled(true);
       }).catch(() => undefined);

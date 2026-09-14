@@ -10,8 +10,7 @@ import PublicationViewer from "./components/PublicationViewer";
 import EditPublicationModal from "./components/EditPublicationModal";
 import { Header as SocialHeader } from "./components/Header";
 import { FeedView as SocialFeedView } from "./components/FeedView";
-import { NearbyDiscovery } from "./components/NearbyDiscovery";
-import { isValidGeoPoint, type DiscoveryOrigin } from "./lib/discovery-location";
+import { isValidGeoPoint, useDiscoveryLocation } from "./lib/discovery-location";
 import { CompanyProfile as SocialCompanyProfile } from "./components/CompanyProfile";
 import { CompanySearch as SocialCompanySearch } from "./components/CompanySearch";
 import { CompanyProfileDrawer as SocialCompanyProfileDrawer, type SupportedLanguage as SocialSupportedLanguage } from "./components/CompanyProfileDrawer";
@@ -409,8 +408,6 @@ export default function App() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState("");
   const [socialActiveTab, setSocialActiveTab] = React.useState<SocialActiveTab>("feed");
-  const [homeMode, setHomeMode] = React.useState<'nearby' | 'news'>('nearby');
-  const [discoveryOrigin, setDiscoveryOrigin] = React.useState<DiscoveryOrigin | null>(null);
   const [socialSelectedCompanyId, setSocialSelectedCompanyId] = React.useState<string>("");
   const [savedPublicationIds, setSavedPublicationIds] = React.useState<string[]>([]);
   const [savedPublications, setSavedPublications] = React.useState<PublicationDto[]>([]);
@@ -470,6 +467,9 @@ export default function App() {
         isCurtidasOpen ||
         isCartOpen ||
         isEditePerfilOpen));
+  const { origin: discoveryOrigin } = useDiscoveryLocation(
+    isMapOpen || (!isOverlayBlockingScroll && (socialActiveTab === 'feed' || socialActiveTab === 'search')),
+  );
   const hasRequiredProfileForPublishing = React.useMemo(() => {
     if (!currentUser) {
       return false;
@@ -743,8 +743,8 @@ export default function App() {
   );
 
   React.useEffect(() => {
-    if (homeMode === 'news' || socialActiveTab === 'search') void loadPublicationFeedPage({ append: false });
-  }, [loadPublicationFeedPage, homeMode, socialActiveTab]);
+    if (socialActiveTab === 'feed' || socialActiveTab === 'search') void loadPublicationFeedPage({ append: false });
+  }, [loadPublicationFeedPage, socialActiveTab]);
 
   React.useEffect(() => {
     const missingPublicationIds = publicationFeed
@@ -786,7 +786,7 @@ export default function App() {
   }, [publicationCommentsById, publicationFeed]);
 
   React.useEffect(() => {
-    if (socialActiveTab !== 'search' && !isMapOpen && homeMode !== 'news') return;
+    if (socialActiveTab !== 'search' && socialActiveTab !== 'feed' && !isMapOpen) return;
     let cancelled = false;
     void (async () => {
       setIsLoadingEstablishments(true);
@@ -815,7 +815,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeCategory, debouncedSearchQuery, discoveryOrigin, socialActiveTab, isMapOpen, homeMode]);
+  }, [activeCategory, debouncedSearchQuery, discoveryOrigin, socialActiveTab, isMapOpen]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -3237,7 +3237,7 @@ setMapAutoFocusPanelSearch(true);
     }
 
     if (tab === "feed" && socialActiveTab === "feed") {
-      if (homeMode === 'news') void loadPublicationFeedPage({ append: false });
+      void loadPublicationFeedPage({ append: false });
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
@@ -3268,7 +3268,6 @@ setMapAutoFocusPanelSearch(true);
   },
   [
     activeSocialCompany.id,
-    homeMode,
     loadPublicationFeedPage,
     openMapDefault,
     socialActiveTab,
@@ -3507,14 +3506,7 @@ setMapAutoFocusPanelSearch(true);
               setMapAutoFocusPanelSearch(false);
               void openEstablishmentPage(idOrSlug);
             }}
-            currentUser={currentUser}
-            onUserLocationSaved={(updatedUser) => {
-              setCurrentUser((current) => ({
-                ...(current ?? updatedUser),
-                locationLatitude: updatedUser.locationLatitude,
-                locationLongitude: updatedUser.locationLongitude,
-              }));
-            }}
+            visitorLocation={discoveryOrigin && "lat" in discoveryOrigin ? discoveryOrigin : null}
             onClose={() => {
               setIsMapOpen(false);
               setMapInitialFocusProductId(undefined);
@@ -3548,24 +3540,6 @@ setMapAutoFocusPanelSearch(true);
 
       <main className="flex-1 pb-24 sm:pb-16 sm:pl-[72px]">
         <div style={{ display: socialActiveTab === "feed" ? "block" : "none" }}>
-          <div className="mx-auto flex max-w-3xl gap-2 border-b border-neutral-800 px-4 pt-3" aria-label="Início">
-            {(['nearby', 'news'] as const).map(mode => <button key={mode} type="button" aria-pressed={homeMode === mode} onClick={() => { setHomeMode(mode); feedScrollPositionRef.current = 0; scrollWindowToTop(); }} className={`border-b-2 px-4 py-3 text-sm font-semibold ${homeMode === mode ? 'border-emerald-400 text-white' : 'border-transparent text-neutral-400'}`}>{t(mode === 'nearby' ? 'Perto de você' : 'Novidades')}</button>)}
-          </div>
-          <div hidden={homeMode !== 'nearby'}>
-            <NearbyDiscovery
-              active={socialActiveTab === 'feed' && homeMode === 'nearby' && !isOverlayBlockingScroll}
-              locationActive={!isOverlayBlockingScroll && (socialActiveTab === 'feed' || socialActiveTab === 'search')}
-              onOriginChange={setDiscoveryOrigin}
-              onOpenCompany={company => {
-                feedScrollPositionRef.current = window.scrollY;
-                void openEstablishmentPage(company);
-              }}
-              onOpenMap={company => {
-                setSelectedEstablishment(company);
-                openMapForCompany({ id: `company_${company.id}`, name: company.name });
-              }}
-            />
-          </div>
           {pendingPublicationCount > 0 && (
             <div className="sticky top-14 z-30 mx-auto max-w-xl px-3 pt-2 sm:top-16 sm:max-w-3xl">
               <div className="overflow-hidden rounded-full border border-neutral-200 bg-white/95 shadow-sm">
@@ -3579,8 +3553,11 @@ setMapAutoFocusPanelSearch(true);
               </div>
             </div>
           )}
-          {homeMode === 'news' && <SocialFeedView
-            posts={socialPosts}
+          <SocialFeedView
+            posts={publicationFeed.flatMap(publication => {
+              const post = socialPosts.find(item => item.id === socialPostIdFromPublicationId(publication.id));
+              return post ? [post] : [];
+            })}
             companies={socialCompanies}
             onOpenPost={openSocialPost}
             onSelectCompany={selectSocialCompany}
@@ -3601,7 +3578,7 @@ setMapAutoFocusPanelSearch(true);
                 offset: nextPublicationFeedOffset,
               })
             }
-          />}
+          />
         </div>
 
         {socialActiveTab === "profile" && !hasMemberAccess && selectedSocialCompany.id === activeSocialCompany.id && (
@@ -3662,7 +3639,11 @@ setMapAutoFocusPanelSearch(true);
           <SocialCompanySearch
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
-            companies={socialCompanies}
+            companies={establishments.flatMap(establishment => {
+              const company = socialCompanies.find(item => item.id === socialCompanyIdFromEstablishmentId(establishment.id));
+              return company ? [company] : [];
+            })}
+            serverResults
             posts={socialPosts}
             onSelectCompany={selectSocialCompany}
             onOpenMap={openMapForCompany}

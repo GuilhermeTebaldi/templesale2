@@ -13,6 +13,7 @@ interface CompanySearchProps {
   onSelectCompany: (companyId: string) => void;
   onOpenMap?: (company: Company) => void;
   onOpenPost: (post: Post) => void;
+  serverResults?: boolean;
   origin?: { lat: number; lng: number };
 }
 
@@ -35,6 +36,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
   onOpenMap,
   onOpenPost,
   origin,
+  serverResults = false,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -159,7 +161,8 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
       score,
       isMatch: matchedReasons.length > 0,
     };
-  }).filter((res) => res.isMatch && res.hasLocation).sort((left, right) => {
+  }).filter((res) => (serverResults || res.isMatch) && res.hasLocation).sort((left, right) => {
+    if (serverResults) return 0;
     if (left.distanceKm !== right.distanceKm) {
       if (left.distanceKm === null) return 1;
       if (right.distanceKm === null) return -1;
