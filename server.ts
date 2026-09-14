@@ -8,6 +8,7 @@ import path from "node:path";
 import { Pool } from "pg";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
+import { initializeDiscovery, registerDiscovery, sqliteBindings } from "./server/discovery";
 import {
   NEGOTIABLE_PRICE_STORAGE_VALUE,
   isNegotiablePriceValue,
@@ -1293,6 +1294,43 @@ function toNullableNumber(value: unknown): number | null {
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+type GeoPoint = { latitude: number; longitude: number };
+
+function parseGeoPoint(
+  latitudeValue: unknown,
+  longitudeValue: unknown,
+  errorMessage = "A localização da empresa é obrigatória e deve ter latitude e longitude válidas.",
+): GeoPoint {
+  const latitude = toNullableNumber(latitudeValue);
+  const longitude = toNullableNumber(longitudeValue);
+  if (
+    latitude === null ||
+    longitude === null ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    throw new Error(errorMessage);
+  }
+  return { latitude, longitude };
+}
+
+function parseOptionalGeoPoint(
+  latitudeValue: unknown,
+  longitudeValue: unknown,
+): GeoPoint | undefined {
+  const hasLatitude = latitudeValue !== undefined;
+  const hasLongitude = longitudeValue !== undefined;
+  if (!hasLatitude && !hasLongitude) {
+    return undefined;
+  }
+  if (hasLatitude !== hasLongitude) {
+    throw new Error("Informe latitude e longitude juntas.");
+  }
+  return parseGeoPoint(latitudeValue, longitudeValue, "Localização inválida.");
 }
 
 function toRequiredNumber(value: unknown): number {
@@ -3714,8 +3752,10 @@ async function ensureDefaultEstablishmentForUser(userId: number): Promise<Establ
     logoUrl: "",
     city: user.city ?? "",
     address: [user.street, user.neighborhood].filter(Boolean).join(", "),
-    latitude: user.location_latitude,
-    longitude: user.location_longitude,
+    // A visitor/map position is not the company's address. The owner must
+    // choose and save the establishment location explicitly in the profile.
+    latitude: null,
+    longitude: null,
     whatsappCountryIso: user.whatsapp_country_iso ?? "IT",
     whatsappNumber: user.whatsapp_number ?? "",
     phone: user.whatsapp_number ?? "",
@@ -3830,6 +3870,9 @@ async function selectEstablishmentsRows(input: {
   city?: string;
   ownerId?: number;
   limit?: number;
+  latitude?: number;
+  longitude?: number;
+  requireLocation?: boolean;
 }): Promise<EstablishmentRecord[]> {
   const search = String(input.search ?? "").trim().toLowerCase();
   const normalizedSearchKey = normalizeTaxonomyKey(search);
@@ -3846,6 +3889,11 @@ async function selectEstablishmentsRows(input: {
     };
     if (input.ownerId) {
       whereParts.push(`e.owner_user_id = ${addValue(input.ownerId)}`);
+    }
+    if (input.requireLocation) {
+      whereParts.push(
+        "e.latitude IS NOT NULL AND e.longitude IS NOT NULL AND e.latitude BETWEEN -90 AND 90 AND e.longitude BETWEEN -180 AND 180",
+      );
     }
     if (category && category !== "All") {
       whereParts.push(`e.category = ${addValue(category)}`);
@@ -3886,6 +3934,12 @@ async function selectEstablishmentsRows(input: {
         END,
       `
       : "";
+    let distanceOrder = "";
+    if (input.latitude !== undefined && input.longitude !== undefined) {
+      const latRef = addValue(input.latitude);
+      const lngRef = addValue(input.longitude);
+      distanceOrder = `CASE WHEN e.latitude IS NULL OR e.longitude IS NULL THEN 1 ELSE 0 END ASC, 12742.0 * ASIN(SQRT(LEAST(1.0, POWER(SIN(RADIANS(e.latitude - ${latRef}) / 2), 2) + COS(RADIANS(${latRef})) * COS(RADIANS(e.latitude)) * POWER(SIN(RADIANS(e.longitude - ${lngRef}) / 2), 2)))) ASC,`;
+    }
     const result = await pgPool.query<Record<string, unknown>>(
       `
         SELECT
@@ -3908,7 +3962,7 @@ async function selectEstablishmentsRows(input: {
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
         WHERE ${whereParts.join(" AND ")}
         GROUP BY e.id
-        ORDER BY ${searchOrder} publication_count DESC, product_count DESC, e.id DESC
+        ORDER BY ${distanceOrder} ${searchOrder} publication_count DESC, product_count DESC, e.id DESC
         LIMIT ${addValue(limit)}
       `,
       values,
@@ -3921,6 +3975,11 @@ async function selectEstablishmentsRows(input: {
   if (input.ownerId) {
     whereParts.push("e.owner_user_id = ?");
     values.push(input.ownerId);
+  }
+  if (input.requireLocation) {
+    whereParts.push(
+      "e.latitude IS NOT NULL AND e.longitude IS NOT NULL AND e.latitude BETWEEN -90 AND 90 AND e.longitude BETWEEN -180 AND 180",
+    );
   }
   if (category && category !== "All") {
     whereParts.push("e.category = ?");
@@ -3961,6 +4020,12 @@ async function selectEstablishmentsRows(input: {
         END,
       `
     : "";
+  const sqliteDistanceOrder = input.latitude !== undefined && input.longitude !== undefined
+    ? "CASE WHEN e.latitude IS NULL OR e.longitude IS NULL THEN 1 ELSE 0 END ASC, 12742.0 * ASIN(MIN(1.0, POWER(SIN(RADIANS(e.latitude - ?) / 2), 2) + COS(RADIANS(?)) * COS(RADIANS(e.latitude)) * POWER(SIN(RADIANS(e.longitude - ?) / 2), 2)))) ASC,"
+    : "";
+  if (input.latitude !== undefined && input.longitude !== undefined) {
+    values.push(input.latitude, input.latitude, input.longitude);
+  }
   if (search) {
     values.push(search, search, `%"${normalizedSearchKey || search}"%`, `%${search}%`, `%${search}%`);
   }
@@ -3988,7 +4053,7 @@ async function selectEstablishmentsRows(input: {
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
         WHERE ${whereParts.join(" AND ")}
         GROUP BY e.id
-        ORDER BY ${sqliteSearchOrder} publication_count DESC, product_count DESC, e.id DESC
+        ORDER BY ${sqliteDistanceOrder} ${sqliteSearchOrder} publication_count DESC, product_count DESC, e.id DESC
         LIMIT ?
       `,
     )
@@ -4159,6 +4224,10 @@ async function updateEstablishmentRecord(establishmentId: number, ownerId: numbe
   if (name.length < 2) {
     throw new Error("Nome attivita obbligatorio.");
   }
+  const location = parseGeoPoint(
+    input.latitude === undefined ? current.latitude : input.latitude,
+    input.longitude === undefined ? current.longitude : input.longitude,
+  );
   const values = {
     id: establishmentId,
     name,
@@ -4169,8 +4238,8 @@ async function updateEstablishmentRecord(establishmentId: number, ownerId: numbe
     description: String(input.description ?? current.description ?? "").trim(),
     city: String(input.city ?? current.city ?? "").trim(),
     address: String(input.address ?? current.address ?? "").trim(),
-    latitude: toNullableNumber(input.latitude ?? current.latitude),
-    longitude: toNullableNumber(input.longitude ?? current.longitude),
+    latitude: location.latitude,
+    longitude: location.longitude,
     whatsapp_country_iso: String(input.whatsappCountryIso ?? current.whatsappCountryIso ?? "IT").trim() || "IT",
     whatsapp_number: String(input.whatsappNumber ?? current.whatsappNumber ?? "").replace(/\D/g, ""),
     phone: String(input.phone ?? current.phone ?? "").replace(/\D/g, ""),
@@ -4427,11 +4496,14 @@ async function selectPublicationsByEstablishmentPageRows(input: {
 async function selectPublicationsFeedRows(input: {
   limit?: number;
   offset?: number;
+  latitude?: number;
+  longitude?: number;
 } = {}): Promise<{ rows: EstablishmentPublicationRecord[]; hasMore: boolean; nextOffset: number }> {
   const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 12)), 1), 36);
   const offset = Math.max(Math.floor(Number(input.offset ?? 0)), 0);
   const fetchLimit = limit + 1;
   if (pgPool) {
+    const nearby = input.latitude !== undefined && input.longitude !== undefined;
     const result = await pgPool.query<Record<string, unknown>>(
       `
         SELECT
@@ -4443,7 +4515,7 @@ async function selectPublicationsFeedRows(input: {
           e.logo_url AS establishment_logo_url,
           e.cover_url AS establishment_cover_url,
           u.avatar_url AS owner_avatar_url,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          COALESCE(pl.likes_count, 0) AS likes_count${nearby ? ", CASE WHEN e.latitude IS NULL OR e.longitude IS NULL THEN NULL ELSE 12742.0 * ASIN(SQRT(LEAST(1.0, POWER(SIN(RADIANS(e.latitude - $3) / 2), 2) + COS(RADIANS($3)) * COS(RADIANS(e.latitude)) * POWER(SIN(RADIANS(e.longitude - $4) / 2), 2))))) END AS distance_km" : ""}
         FROM establishment_publications ep
         INNER JOIN establishments e ON e.id = ep.establishment_id
         LEFT JOIN users u ON u.id = ep.owner_user_id
@@ -4453,15 +4525,18 @@ async function selectPublicationsFeedRows(input: {
           GROUP BY publication_id
         ) pl ON pl.publication_id = ep.id
         WHERE e.is_active = TRUE
-        ORDER BY ep.created_at DESC, ep.id DESC
+          AND e.latitude IS NOT NULL AND e.longitude IS NOT NULL
+          AND e.latitude BETWEEN -90 AND 90 AND e.longitude BETWEEN -180 AND 180
+        ORDER BY ${nearby ? "distance_km ASC NULLS LAST, " : ""}ep.created_at DESC, ep.id DESC
         LIMIT $1 OFFSET $2
       `,
-      [fetchLimit, offset],
+      nearby ? [fetchLimit, offset, input.latitude, input.longitude] : [fetchLimit, offset],
     );
     const rows = result.rows.slice(0, limit).map(normalizePublicationRow);
     return { rows, hasMore: result.rows.length > limit, nextOffset: offset + rows.length };
   }
 
+  const nearby = input.latitude !== undefined && input.longitude !== undefined;
   const rawRows = requireSqliteDb()
     .prepare(
       `
@@ -4474,7 +4549,8 @@ async function selectPublicationsFeedRows(input: {
           e.logo_url AS establishment_logo_url,
           e.cover_url AS establishment_cover_url,
           u.avatar_url AS owner_avatar_url,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          COALESCE(pl.likes_count, 0) AS likes_count,
+          ${nearby ? "CASE WHEN e.latitude IS NULL OR e.longitude IS NULL THEN NULL ELSE 12742.0 * ASIN(MIN(1.0, POWER(SIN(RADIANS(e.latitude - ?) / 2), 2) + COS(RADIANS(?)) * COS(RADIANS(e.latitude)) * POWER(SIN(RADIANS(e.longitude - ?) / 2), 2)))) END AS distance_km" : "NULL AS distance_km"}
         FROM establishment_publications ep
         INNER JOIN establishments e ON e.id = ep.establishment_id
         LEFT JOIN users u ON u.id = ep.owner_user_id
@@ -4484,11 +4560,13 @@ async function selectPublicationsFeedRows(input: {
           GROUP BY publication_id
         ) pl ON pl.publication_id = ep.id
         WHERE e.is_active = 1
-        ORDER BY ep.created_at DESC, ep.id DESC
+          AND e.latitude IS NOT NULL AND e.longitude IS NOT NULL
+          AND e.latitude BETWEEN -90 AND 90 AND e.longitude BETWEEN -180 AND 180
+        ORDER BY ${nearby ? "CASE WHEN distance_km IS NULL THEN 1 ELSE 0 END ASC, distance_km ASC, " : ""}ep.created_at DESC, ep.id DESC
         LIMIT ? OFFSET ?
       `,
     )
-    .all(fetchLimit, offset) as Array<Record<string, unknown>>;
+    .all(...(nearby ? [input.latitude, input.latitude, input.longitude, fetchLimit, offset] : [fetchLimit, offset])) as Array<Record<string, unknown>>;
   const rows = rawRows.slice(0, limit).map(normalizePublicationRow);
   return { rows, hasMore: rawRows.length > limit, nextOffset: offset + rows.length };
 }
@@ -4866,6 +4944,7 @@ async function createPublicationRecord(
   if (!establishment || establishment.ownerId !== ownerId) {
     throw new Error("Attivita non autorizzata.");
   }
+  parseGeoPoint(establishment.latitude, establishment.longitude);
   const media = normalizeImages(input.media, String(input.imageUrl ?? ""));
   const imageUrl = media[0] || "";
   if (!imageUrl) {
@@ -7178,6 +7257,7 @@ async function createProductRecord(
   if (!establishment) {
     throw new Error("Crie uma attivita antes de publicar.");
   }
+  parseGeoPoint(establishment.latitude, establishment.longitude);
   const sectionId = normalized.sectionId;
   if (sectionId !== null) {
     const sections = await selectStorefrontSectionsRows(establishment.id);
@@ -10242,6 +10322,16 @@ async function fetchTileFromProviders(
 async function bootstrap() {
   await initializeDatabase();
 
+  const discoveryQuery = async (sql: string, values: unknown[] = []): Promise<Record<string, any>[]> => {
+    if (pgPool) return (await pgPool.query(sql, values)).rows;
+    const bound = sqliteBindings(sql, values);
+    const statement = requireSqliteDb().prepare(bound.sql);
+    if (statement.reader) return statement.all(...bound.values) as Record<string, any>[];
+    statement.run(...bound.values);
+    return [];
+  };
+  if (!IS_DEV_REMOTE_DATABASE) await initializeDiscovery(discoveryQuery);
+
   const app = express();
   const isProduction = process.env.NODE_ENV === "production";
   const port = Number(process.env.PORT || 5173);
@@ -10369,6 +10459,15 @@ async function bootstrap() {
 
     return { email: ADMIN_EMAIL };
   };
+
+  registerDiscovery(app, {
+    query: discoveryQuery,
+    postgres: Boolean(pgPool),
+    readOnly: IS_DEV_REMOTE_DATABASE,
+    normalizeEstablishment: normalizeEstablishmentRow,
+    normalizePublication: normalizePublicationRow,
+    requireAdmin,
+  });
 
   app.get("/api/health", (_req, res) => {
     res.json({
@@ -11891,12 +11990,22 @@ async function bootstrap() {
   });
 
   app.get("/api/establishments", async (req, res) => {
+    let location: GeoPoint | undefined;
+    try {
+      location = parseOptionalGeoPoint(req.query.lat, req.query.lng);
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : "Localização inválida." });
+      return;
+    }
     try {
       const rows = await selectEstablishmentsRows({
         search: normalizeTextField(req.query.search ?? "", "Busca", 120),
         category: normalizeTextField(req.query.category ?? "All", "Categoria", 120),
         city: normalizeTextField(req.query.city ?? "", "Cidade", 120),
         limit: Number(req.query.limit ?? 60),
+        latitude: location?.latitude,
+        longitude: location?.longitude,
+        requireLocation: true,
       });
       res.json({ establishments: rows });
     } catch (error) {
@@ -11941,8 +12050,8 @@ async function bootstrap() {
           description: String(body.description ?? existing.description ?? ""),
           city: String(body.city ?? existing.city ?? ""),
           address: String(body.address ?? existing.address ?? ""),
-          latitude: toNullableNumber(body.latitude ?? existing.latitude) ?? undefined,
-          longitude: toNullableNumber(body.longitude ?? existing.longitude) ?? undefined,
+          latitude: body.latitude === undefined ? existing.latitude : (body.latitude as number),
+          longitude: body.longitude === undefined ? existing.longitude : (body.longitude as number),
           whatsappCountryIso: String(body.whatsappCountryIso ?? existing.whatsappCountryIso ?? "IT"),
           whatsappNumber: String(body.whatsappNumber ?? existing.whatsappNumber ?? ""),
           phone: String(body.phone ?? existing.phone ?? ""),
@@ -11959,6 +12068,7 @@ async function bootstrap() {
         res.status(400).json({ error: "Nome attivita obbligatorio." });
         return;
       }
+      const location = parseGeoPoint(body.latitude, body.longitude);
       const id = await createEstablishmentRecord({
         ownerId: user.id,
         name,
@@ -11968,8 +12078,8 @@ async function bootstrap() {
         description: normalizeTextField(body.description ?? "", "Descrizione", 2000),
         city: normalizeTextField(body.city ?? "", "Citta", 120),
         address: normalizeTextField(body.address ?? "", "Indirizzo", 240),
-        latitude: toNullableNumber(body.latitude),
-        longitude: toNullableNumber(body.longitude),
+        latitude: location.latitude,
+        longitude: location.longitude,
         whatsappCountryIso: String(body.whatsappCountryIso ?? user.whatsappCountryIso ?? "IT"),
         whatsappNumber: String(body.whatsappNumber ?? user.whatsappNumber ?? "").replace(/\D/g, ""),
         phone: String(body.phone ?? body.whatsappNumber ?? user.whatsappNumber ?? "").replace(/\D/g, ""),
@@ -12092,10 +12202,19 @@ async function bootstrap() {
   });
 
   app.get("/api/publications", async (req, res) => {
+    let location: GeoPoint | undefined;
+    try {
+      location = parseOptionalGeoPoint(req.query.lat, req.query.lng);
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : "Localização inválida." });
+      return;
+    }
     try {
       const page = await selectPublicationsFeedRows({
         limit: Number(req.query.limit ?? 12),
         offset: Number(req.query.offset ?? 0),
+        latitude: location?.latitude,
+        longitude: location?.longitude,
       });
       res.json({
         publications: page.rows,
@@ -13153,6 +13272,7 @@ async function bootstrap() {
         res.status(403).json({ error: "Non puoi modificare questa attivita." });
         return;
       }
+      parseGeoPoint(establishment.latitude, establishment.longitude);
       if (!existing.establishment_id) {
         await assignProductsWithoutEstablishmentToUserDefault(user.id, establishment.id);
       }

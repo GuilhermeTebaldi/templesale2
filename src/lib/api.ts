@@ -258,6 +258,14 @@ export interface StorefrontSectionDto {
   productCount?: number;
 }
 
+export interface DiscoveryItem {
+  establishment: EstablishmentDto;
+  distanceKm: number | null;
+  publications: PublicationDto[];
+  products: Array<{ id: number; name: string; image: string; price: string }>;
+}
+export interface DiscoveryPage { items: DiscoveryItem[]; hasMore: boolean; nextOffset: number }
+
 export interface EstablishmentDto {
   id: number;
   ownerId: number;
@@ -2857,6 +2865,8 @@ export const api = {
     category?: string;
     city?: string;
     limit?: number;
+    lat?: number;
+    lng?: number;
   } = {}) {
     const query = new URLSearchParams();
     const search = String(input.search ?? "").trim();
@@ -2872,11 +2882,30 @@ export const api = {
     if (city) {
       query.set("city", city);
     }
+    if (input.lat !== undefined && input.lng !== undefined) {
+      query.set("lat", String(input.lat));
+      query.set("lng", String(input.lng));
+    }
     query.set("limit", String(limit));
     const payload = await request<unknown>(`/api/establishments?${query.toString()}`, {
       skipAuthToken: true,
     });
     return normalizeEstablishmentList(payload);
+  },
+  async getDiscovery(input: { lat?: number; lng?: number; city?: string; radius: number; search?: string; category?: string; offset?: number }, signal?: AbortSignal): Promise<DiscoveryPage> {
+    const query = new URLSearchParams({ radius: String(input.radius), limit: '12', offset: String(input.offset ?? 0) });
+    for (const key of ['lat', 'lng', 'city', 'search', 'category'] as const) {
+      if (input[key] !== undefined && input[key] !== '') query.set(key, String(input[key]));
+    }
+    const payload = await request<DiscoveryPage>(`/api/discovery?${query}`, { skipAuthToken: true, signal });
+    return { ...payload, items: payload.items.map(item => {
+      const establishment = normalizeEstablishmentItem(item.establishment);
+      if (!establishment) throw new Error('Resposta inválida ao carregar empresas próximas.');
+      return { ...item, establishment, publications: normalizePublicationList(item.publications) };
+    }) };
+  },
+  trackDiscovery(event: 'company_open' | 'whatsapp' | 'map', establishmentId: number) {
+    return request<void>('/api/discovery/events', { method: 'POST', skipAuthToken: true, keepalive: true, body: JSON.stringify({ event, establishmentId }) }).catch(() => undefined);
   },
   async getMyEstablishment() {
     const payload = await request<unknown>("/api/establishments/me");
@@ -2919,13 +2948,17 @@ export const api = {
     );
     return normalizePublicationPage(payload, limit, offset);
   },
-  async getPublicationsFeed(input: { limit?: number; offset?: number } = {}) {
+  async getPublicationsFeed(input: { limit?: number; offset?: number; lat?: number; lng?: number } = {}) {
     const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 12)), 1), 36);
     const offset = Math.max(Math.floor(Number(input.offset ?? 0)), 0);
     const query = new URLSearchParams({
       limit: String(limit),
       offset: String(offset),
     });
+    if (input.lat !== undefined && input.lng !== undefined) {
+      query.set("lat", String(input.lat));
+      query.set("lng", String(input.lng));
+    }
     const payload = await request<unknown>(`/api/publications?${query.toString()}`, {
       skipAuthToken: true,
     });

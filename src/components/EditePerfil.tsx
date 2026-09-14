@@ -151,15 +151,11 @@ export default function EditePerfil({
     latitude:
       typeof initialEstablishment?.latitude === "number"
         ? String(initialEstablishment.latitude)
-        : typeof initialData?.locationLatitude === "number"
-          ? String(initialData.locationLatitude)
-          : "",
+        : "",
     longitude:
       typeof initialEstablishment?.longitude === "number"
         ? String(initialEstablishment.longitude)
-        : typeof initialData?.locationLongitude === "number"
-          ? String(initialData.locationLongitude)
-          : "",
+        : "",
   });
 
   React.useEffect(() => {
@@ -180,15 +176,11 @@ export default function EditePerfil({
       latitude:
         typeof initialEstablishment?.latitude === "number"
           ? String(initialEstablishment.latitude)
-          : typeof initialData?.locationLatitude === "number"
-            ? String(initialData.locationLatitude)
-            : "",
+          : "",
       longitude:
         typeof initialEstablishment?.longitude === "number"
           ? String(initialEstablishment.longitude)
-          : typeof initialData?.locationLongitude === "number"
-            ? String(initialData.locationLongitude)
-            : "",
+          : "",
     });
     setErrorMessage(initialErrorMessage);
     setKeywordInput("");
@@ -196,14 +188,10 @@ export default function EditePerfil({
       parseGeoPoint(
         typeof initialEstablishment?.latitude === "number"
           ? String(initialEstablishment.latitude)
-          : typeof initialData?.locationLatitude === "number"
-            ? String(initialData.locationLatitude)
-            : "",
+          : "",
         typeof initialEstablishment?.longitude === "number"
           ? String(initialEstablishment.longitude)
-          : typeof initialData?.locationLongitude === "number"
-            ? String(initialData.locationLongitude)
-            : "",
+          : "",
       )
         ? "success"
         : null,
@@ -407,7 +395,7 @@ export default function EditePerfil({
         setIsResolvingLocation(false);
         setLocationStatus("error");
         setErrorMessage(
-          t("Nao foi possivel capturar sua localizacao neste momento. Preencha cidade/endereco manualmente."),
+          t("Nao foi possivel capturar sua localizacao neste momento. Escolha um ponto no mapa para continuar."),
         );
       },
       { enableHighAccuracy: true, timeout: 10000 },
@@ -456,6 +444,11 @@ export default function EditePerfil({
       setErrorMessage(t("Numero de WhatsApp invalido."));
       return;
     }
+    if (!selectedLocation) {
+      setLocationStatus("error");
+      setErrorMessage(t("Defina a localização da empresa usando o GPS ou escolhendo um ponto no mapa."));
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -488,8 +481,8 @@ export default function EditePerfil({
         keywords: establishmentKeywords,
         city: profilePayload.city,
         address: profilePayload.street,
-        latitude: Number.isFinite(Number(formData.latitude)) ? Number(formData.latitude) : undefined,
-        longitude: Number.isFinite(Number(formData.longitude)) ? Number(formData.longitude) : undefined,
+        latitude: selectedLocation.latitude,
+        longitude: selectedLocation.longitude,
         whatsappCountryIso: profilePayload.whatsappCountryIso,
         whatsappNumber: profilePayload.whatsappNumber,
         phone: profilePayload.whatsappNumber,
@@ -833,6 +826,11 @@ export default function EditePerfil({
                   ? `${selectedLocation.latitude.toFixed(6)}, ${selectedLocation.longitude.toFixed(6)}`
                   : t("Nenhuma localização registrada ainda.")}
               </p>
+              {!selectedLocation && (
+                <p className="mt-2 text-xs text-amber-300">
+                  {t("A localização é obrigatória para a empresa aparecer e publicar.")}
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-6">

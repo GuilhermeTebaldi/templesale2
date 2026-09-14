@@ -10,6 +10,8 @@ import PublicationViewer from "./components/PublicationViewer";
 import EditPublicationModal from "./components/EditPublicationModal";
 import { Header as SocialHeader } from "./components/Header";
 import { FeedView as SocialFeedView } from "./components/FeedView";
+import { NearbyDiscovery } from "./components/NearbyDiscovery";
+import { isValidGeoPoint, type DiscoveryOrigin } from "./lib/discovery-location";
 import { CompanyProfile as SocialCompanyProfile } from "./components/CompanyProfile";
 import { CompanySearch as SocialCompanySearch } from "./components/CompanySearch";
 import { CompanyProfileDrawer as SocialCompanyProfileDrawer, type SupportedLanguage as SocialSupportedLanguage } from "./components/CompanyProfileDrawer";
@@ -316,52 +318,6 @@ function scrollWindowToTop(behavior: ScrollBehavior = "auto"): void {
   });
 }
 
-const SAVED_MAP_LOCATION_STORAGE_KEY = "templesale_map_user_location";
-const MAP_LOCATION_PROMPTED_STORAGE_KEY = "templesale_map_location_prompted";
-
-function readSavedBrowserLocation(): { lat: number; lng: number } | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(SAVED_MAP_LOCATION_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as { lat?: unknown; lng?: unknown };
-    const lat = Number(parsed.lat);
-    const lng = Number(parsed.lng);
-    if (
-      Number.isFinite(lat) &&
-      Number.isFinite(lng) &&
-      lat >= -90 &&
-      lat <= 90 &&
-      lng >= -180 &&
-      lng <= 180
-    ) {
-      return { lat, lng };
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-function writeSavedBrowserLocation(location: { lat: number; lng: number }) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(SAVED_MAP_LOCATION_STORAGE_KEY, JSON.stringify(location));
-    window.localStorage.setItem(MAP_LOCATION_PROMPTED_STORAGE_KEY, "true");
-  } catch {
-    // localStorage can be disabled in restricted browser modes.
-  }
-}
-
 export default function App() {
   const { locale, setLocale, t } = useI18n();
   const {
@@ -453,6 +409,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState("");
   const [socialActiveTab, setSocialActiveTab] = React.useState<SocialActiveTab>("feed");
+  const [homeMode, setHomeMode] = React.useState<'nearby' | 'news'>('nearby');
+  const [discoveryOrigin, setDiscoveryOrigin] = React.useState<DiscoveryOrigin | null>(null);
   const [socialSelectedCompanyId, setSocialSelectedCompanyId] = React.useState<string>("");
   const [savedPublicationIds, setSavedPublicationIds] = React.useState<string[]>([]);
   const [savedPublications, setSavedPublications] = React.useState<PublicationDto[]>([]);
@@ -524,6 +482,7 @@ export default function App() {
     const activityName = String(myEstablishment?.name ?? "").trim();
     const activityCategory = String(myEstablishment?.category ?? "").trim();
     const activityCity = String(myEstablishment?.city ?? "").trim();
+    const activityHasLocation = isValidGeoPoint(myEstablishment?.latitude, myEstablishment?.longitude);
     const activityWhatsapp = String(myEstablishment?.whatsappNumber ?? currentUser.whatsappNumber ?? "")
       .replace(/\D/g, "")
       .trim();
@@ -536,7 +495,8 @@ export default function App() {
       activityCategory.length >= 2 &&
       activityCategory !== "Altro" &&
       activityCity.length >= 2 &&
-      activityWhatsapp.length >= 6
+      activityWhatsapp.length >= 6 &&
+      activityHasLocation
     );
   }, [currentUser, myEstablishment]);
   const memberName = currentUser?.name || t("Membro cadastrado");
@@ -711,82 +671,10 @@ export default function App() {
   );
 
   React.useEffect(() => {
-    void loadProductsPage({ append: false });
-  }, [loadProductsPage]);
+    if (isMapOpen) void loadProductsPage({ append: false });
+  }, [loadProductsPage, isMapOpen]);
 
  
-
-  React.useEffect(() => {
-    if (typeof window === "undefined" || typeof navigator === "undefined") {
-      return;
-    }
-
-    const savedLocation = readSavedBrowserLocation();
-    if (savedLocation) {
-      if (currentUser && currentUser.locationLatitude === undefined && currentUser.locationLongitude === undefined) {
-        setCurrentUser((user) =>
-          user
-            ? {
-                ...user,
-                locationLatitude: savedLocation.lat,
-                locationLongitude: savedLocation.lng,
-              }
-            : user,
-        );
-      }
-      return;
-    }
-
-    if (!navigator.geolocation) {
-      return;
-    }
-
-    try {
-      if (window.localStorage.getItem(MAP_LOCATION_PROMPTED_STORAGE_KEY) === "true") {
-        return;
-      }
-      window.localStorage.setItem(MAP_LOCATION_PROMPTED_STORAGE_KEY, "true");
-    } catch {
-      // Continue without the prompt marker if storage is unavailable.
-    }
-
-    let cancelled = false;
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        if (cancelled) {
-          return;
-        }
-
-        const nextLocation = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        };
-        writeSavedBrowserLocation(nextLocation);
-        setCurrentUser((user) =>
-          user
-            ? {
-                ...user,
-                locationLatitude: nextLocation.lat,
-                locationLongitude: nextLocation.lng,
-              }
-            : user,
-        );
-        if (currentUser) {
-          void api.updateProfileLocation(nextLocation.lat, nextLocation.lng).catch(() => undefined);
-        }
-      },
-      () => undefined,
-      {
-        enableHighAccuracy: false,
-        maximumAge: 30 * 24 * 60 * 60 * 1000,
-        timeout: 10000,
-      },
-    );
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUser?.id, currentUser?.locationLatitude, currentUser?.locationLongitude]);
 
   const loadPublicationFeedPage = React.useCallback(
     async ({
@@ -809,7 +697,11 @@ export default function App() {
       }
 
       try {
-        const page = await api.getPublicationsFeed({ limit, offset });
+        const page = await api.getPublicationsFeed({
+          limit,
+          offset,
+          ...(discoveryOrigin && 'lat' in discoveryOrigin ? { lat: discoveryOrigin.lat, lng: discoveryOrigin.lng } : {}),
+        });
         if (!isLatestRequest()) {
           return;
         }
@@ -847,12 +739,12 @@ export default function App() {
         }
       }
     },
-    [t],
+    [discoveryOrigin, t],
   );
 
   React.useEffect(() => {
-    void loadPublicationFeedPage({ append: false });
-  }, [loadPublicationFeedPage]);
+    if (homeMode === 'news' || socialActiveTab === 'search') void loadPublicationFeedPage({ append: false });
+  }, [loadPublicationFeedPage, homeMode, socialActiveTab]);
 
   React.useEffect(() => {
     const missingPublicationIds = publicationFeed
@@ -894,6 +786,7 @@ export default function App() {
   }, [publicationCommentsById, publicationFeed]);
 
   React.useEffect(() => {
+    if (socialActiveTab !== 'search' && !isMapOpen && homeMode !== 'news') return;
     let cancelled = false;
     void (async () => {
       setIsLoadingEstablishments(true);
@@ -901,6 +794,8 @@ export default function App() {
         const list = await api.getEstablishments({
           search: debouncedSearchQuery,
           category: activeCategory,
+          ...(discoveryOrigin && 'lat' in discoveryOrigin ? { lat: discoveryOrigin.lat, lng: discoveryOrigin.lng } : {}),
+          ...(discoveryOrigin && 'city' in discoveryOrigin ? { city: discoveryOrigin.city } : {}),
           limit: 80,
         });
         if (!cancelled) {
@@ -920,7 +815,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeCategory, debouncedSearchQuery]);
+  }, [activeCategory, debouncedSearchQuery, discoveryOrigin, socialActiveTab, isMapOpen, homeMode]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -959,6 +854,9 @@ export default function App() {
         : "",
       myEstablishment.category === "Altro" ? t("categoria") : "",
       !String(myEstablishment.city ?? "").trim() ? t("cidade") : "",
+      !isValidGeoPoint(myEstablishment.latitude, myEstablishment.longitude)
+        ? t("localização da empresa")
+        : "",
       !String(myEstablishment.whatsappNumber ?? "").replace(/\D/g, "").trim()
         ? t("WhatsApp")
         : "",
@@ -2419,15 +2317,6 @@ export default function App() {
     profileData: UpdateProfileInput,
     establishmentData?: Partial<EstablishmentDto>,
   ) => {
-    const updatedUser = await api.updateProfile(profileData);
-    const mergedUser: SessionUser = {
-      ...(currentUser ?? updatedUser),
-      ...updatedUser,
-      name: updatedUser.name || profileData.name,
-      whatsappCountryIso:
-        updatedUser.whatsappCountryIso || profileData.whatsappCountryIso,
-      whatsappNumber: updatedUser.whatsappNumber || profileData.whatsappNumber,
-    };
     let establishmentLatitude =
       typeof establishmentData?.latitude === "number" && Number.isFinite(establishmentData.latitude)
         ? establishmentData.latitude
@@ -2456,21 +2345,32 @@ export default function App() {
       }
     }
 
-    if (
-      typeof establishmentLatitude === "number" &&
-      typeof establishmentLongitude === "number"
-    ) {
-      const updatedLocationUser = await api.updateProfileLocation(
-        establishmentLatitude,
-        establishmentLongitude,
-      ).catch(() => null);
-      if (updatedLocationUser) {
-        mergedUser.locationLatitude = updatedLocationUser.locationLatitude;
-        mergedUser.locationLongitude = updatedLocationUser.locationLongitude;
-      } else {
-        mergedUser.locationLatitude = establishmentLatitude;
-        mergedUser.locationLongitude = establishmentLongitude;
-      }
+    if (!isValidGeoPoint(establishmentLatitude, establishmentLongitude)) {
+      throw new Error(t("Defina a localização da empresa usando o GPS ou escolhendo um ponto no mapa."));
+    }
+    const locationLatitude = establishmentLatitude as number;
+    const locationLongitude = establishmentLongitude as number;
+
+    const updatedUser = await api.updateProfile(profileData);
+    const mergedUser: SessionUser = {
+      ...(currentUser ?? updatedUser),
+      ...updatedUser,
+      name: updatedUser.name || profileData.name,
+      whatsappCountryIso:
+        updatedUser.whatsappCountryIso || profileData.whatsappCountryIso,
+      whatsappNumber: updatedUser.whatsappNumber || profileData.whatsappNumber,
+    };
+
+    const updatedLocationUser = await api.updateProfileLocation(
+      locationLatitude,
+      locationLongitude,
+    ).catch(() => null);
+    if (updatedLocationUser) {
+      mergedUser.locationLatitude = updatedLocationUser.locationLatitude;
+      mergedUser.locationLongitude = updatedLocationUser.locationLongitude;
+    } else {
+      mergedUser.locationLatitude = locationLatitude;
+      mergedUser.locationLongitude = locationLongitude;
     }
 
     setCurrentUser(mergedUser);
@@ -2486,8 +2386,8 @@ export default function App() {
       address:
         establishmentData?.address ??
         [mergedUser.street, mergedUser.neighborhood].filter(Boolean).join(", "),
-      latitude: establishmentLatitude,
-      longitude: establishmentLongitude,
+      latitude: locationLatitude,
+      longitude: locationLongitude,
       whatsappCountryIso: establishmentData?.whatsappCountryIso ?? mergedUser.whatsappCountryIso,
       whatsappNumber: establishmentData?.whatsappNumber ?? mergedUser.whatsappNumber,
       phone: establishmentData?.phone ?? mergedUser.whatsappNumber,
@@ -2533,6 +2433,11 @@ export default function App() {
         ...updatedUser,
         avatarUrl: updatedUser.avatarUrl || uploadResult.url,
       };
+      if (!myEstablishment || !isValidGeoPoint(myEstablishment.latitude, myEstablishment.longitude)) {
+        setCurrentUser(mergedUser);
+        setIsAvatarPickerOpen(false);
+        return;
+      }
       const savedEstablishment = await api.saveEstablishment({
         id: myEstablishment?.id,
         name: myEstablishment?.name || mergedUser.name,
@@ -2622,7 +2527,7 @@ export default function App() {
     if (!hasRequiredProfileForPublishing) {
       setIsNewProductOpen(false);
       setProfileCompletionMessage(
-        t("Complete nome, categoria, cidade e WhatsApp da sua attività antes de publicar."),
+        t("Complete nome, categoria, cidade, localização e WhatsApp da sua attività antes de publicar."),
       );
       setIsEditePerfilOpen(true);
       return;
@@ -2657,7 +2562,7 @@ export default function App() {
   }, [activeCategory]);
 
   const openMapForCompany = React.useCallback(
-    (company: SocialCompany) => {
+    (company: Pick<SocialCompany, 'id' | 'name'>) => {
       const establishmentIdMatch = /^company_(\d+)$/.exec(company.id);
       const establishmentId = establishmentIdMatch ? Number(establishmentIdMatch[1]) : null;
      setMapInitialCategory(company.name);
@@ -3179,7 +3084,8 @@ setMapAutoFocusPanelSearch(true);
       const publicationId = publicationIdFromSocialPostId(post.id);
       const publication = publicationId
         ? publicationFeed.find((item) => item.id === publicationId) ??
-          savedPublications.find((item) => item.id === publicationId)
+          savedPublications.find((item) => item.id === publicationId) ??
+          selectedEstablishmentPublications.find((item) => item.id === publicationId)
         : null;
       if (!publication) {
         return;
@@ -3189,7 +3095,7 @@ setMapAutoFocusPanelSearch(true);
       setSelectedPublication(publication);
       setFocusedPublicationCommentId(null);
     },
-    [buildEstablishmentFromPublication, publicationFeed, publicationIdFromSocialPostId, savedPublications],
+    [buildEstablishmentFromPublication, publicationFeed, publicationIdFromSocialPostId, savedPublications, selectedEstablishmentPublications],
   );
 
   const syncSocialPublication = React.useCallback((publication: PublicationDto) => {
@@ -3279,8 +3185,8 @@ setMapAutoFocusPanelSearch(true);
       scrollWindowToTop();
       const establishmentId = establishmentIdFromSocialCompanyId(companyId);
       const establishment = establishmentId ? establishments.find((item) => item.id === establishmentId) : null;
-      if (establishment) {
-        void openEstablishmentPage(establishment);
+      if (establishmentId) {
+        void openEstablishmentPage(establishment ?? establishmentId);
       }
     },
     [establishmentIdFromSocialCompanyId, establishments, openEstablishmentPage, socialActiveTab],
@@ -3331,7 +3237,7 @@ setMapAutoFocusPanelSearch(true);
     }
 
     if (tab === "feed" && socialActiveTab === "feed") {
-      void loadPublicationFeedPage({ append: false });
+      if (homeMode === 'news') void loadPublicationFeedPage({ append: false });
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
@@ -3362,6 +3268,7 @@ setMapAutoFocusPanelSearch(true);
   },
   [
     activeSocialCompany.id,
+    homeMode,
     loadPublicationFeedPage,
     openMapDefault,
     socialActiveTab,
@@ -3641,6 +3548,24 @@ setMapAutoFocusPanelSearch(true);
 
       <main className="flex-1 pb-24 sm:pb-16 sm:pl-[72px]">
         <div style={{ display: socialActiveTab === "feed" ? "block" : "none" }}>
+          <div className="mx-auto flex max-w-3xl gap-2 border-b border-neutral-800 px-4 pt-3" aria-label="Início">
+            {(['nearby', 'news'] as const).map(mode => <button key={mode} type="button" aria-pressed={homeMode === mode} onClick={() => { setHomeMode(mode); feedScrollPositionRef.current = 0; scrollWindowToTop(); }} className={`border-b-2 px-4 py-3 text-sm font-semibold ${homeMode === mode ? 'border-emerald-400 text-white' : 'border-transparent text-neutral-400'}`}>{t(mode === 'nearby' ? 'Perto de você' : 'Novidades')}</button>)}
+          </div>
+          <div hidden={homeMode !== 'nearby'}>
+            <NearbyDiscovery
+              active={socialActiveTab === 'feed' && homeMode === 'nearby' && !isOverlayBlockingScroll}
+              locationActive={!isOverlayBlockingScroll && (socialActiveTab === 'feed' || socialActiveTab === 'search')}
+              onOriginChange={setDiscoveryOrigin}
+              onOpenCompany={company => {
+                feedScrollPositionRef.current = window.scrollY;
+                void openEstablishmentPage(company);
+              }}
+              onOpenMap={company => {
+                setSelectedEstablishment(company);
+                openMapForCompany({ id: `company_${company.id}`, name: company.name });
+              }}
+            />
+          </div>
           {pendingPublicationCount > 0 && (
             <div className="sticky top-14 z-30 mx-auto max-w-xl px-3 pt-2 sm:top-16 sm:max-w-3xl">
               <div className="overflow-hidden rounded-full border border-neutral-200 bg-white/95 shadow-sm">
@@ -3654,7 +3579,7 @@ setMapAutoFocusPanelSearch(true);
               </div>
             </div>
           )}
-          <SocialFeedView
+          {homeMode === 'news' && <SocialFeedView
             posts={socialPosts}
             companies={socialCompanies}
             onOpenPost={openSocialPost}
@@ -3676,7 +3601,7 @@ setMapAutoFocusPanelSearch(true);
                 offset: nextPublicationFeedOffset,
               })
             }
-          />
+          />}
         </div>
 
         {socialActiveTab === "profile" && !hasMemberAccess && selectedSocialCompany.id === activeSocialCompany.id && (
@@ -3742,6 +3667,7 @@ setMapAutoFocusPanelSearch(true);
             onSelectCompany={selectSocialCompany}
             onOpenMap={openMapForCompany}
             onOpenPost={openSocialPost}
+            origin={discoveryOrigin && "lat" in discoveryOrigin ? discoveryOrigin : undefined}
           />
         </div>
       </main>
