@@ -50,8 +50,9 @@ export function usePublicationFeed(input: {
     setError('');
     captureVisible();
     const previous = latest.current.publications;
-    const protectedItems = mode === 'append' ? previous : mode === 'nearby' ? protectedFeedPrefix(previous, seen.current) : [];
-    const excluded = new Set(protectedItems.map(item => item.establishmentId));
+    const protectedItems: PublicationDto[] =
+      mode === 'append' ? previous : mode === 'nearby' ? protectedFeedPrefix(previous, seen.current) : [];
+    const excluded = new Set<number>(protectedItems.map(item => item.establishmentId));
     const location = latest.current.origin;
     let cursor = mode === 'append' ? paging.current.cursor : undefined;
     let offset = mode === 'append' ? paging.current.offset : 0;
@@ -75,7 +76,7 @@ export function usePublicationFeed(input: {
         if (canContinue && !candidates.some(item => !excluded.has(item.establishmentId))) continue;
         captureVisible();
         if (mode === 'reset') seen.current.clear();
-        const protectedIds = new Set(seen.current);
+        const protectedIds = new Set<number>(seen.current);
         latest.current.setPublications(current => mergePublicationFeed(
           current, candidates, protectedIds, mode,
         ).filter(item => !latest.current.deletedIds.includes(item.id)));
