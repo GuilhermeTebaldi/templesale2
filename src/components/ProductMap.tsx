@@ -421,6 +421,14 @@ type LeafletPointerEvent = {
 };
 
 type LeafletMapInstance = {
+  options?: { rotate?: boolean };
+  touchGestures?: {
+    enable: () => void;
+    disable: () => void;
+    _stopRotateInertia?: () => void;
+  };
+  dragRotate?: { enable: () => void; disable: () => void };
+  shiftKeyRotate?: { enable: () => void; disable: () => void };
   fitBounds: (bounds: [number, number][], options?: unknown) => void;
   setView: (coords: [number, number], zoom?: number, options?: unknown) => void;
   on: (eventName: string, handler: (event: LeafletPointerEvent) => void) => void;
@@ -483,6 +491,7 @@ type LeafletTileLayerInstance = {
 };
 
 type LeafletGlobal = {
+  Map?: { prototype: { setBearing?: (degrees: number) => void } };
   map: (container: HTMLElement, options?: unknown) => LeafletMapInstance;
   tileLayer: (url: string, options?: unknown) => LeafletTileLayerInstance;
   marker: (coords: [number, number], options?: unknown) => LeafletMarkerInstance;
@@ -512,6 +521,10 @@ const LEAFLET_JS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
 const LEAFLET_CSS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
 const LEAFLET_SCRIPT_ID = "templesale-leaflet-js";
 const LEAFLET_STYLE_ID = "templesale-leaflet-css";
+const ROTATION_SCRIPT_ID = "templesale-leaflet-rotation-js";
+const ROTATION_JS_URL = "https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.2.4/dist/leaflet-rotate.umd.min.js";
+const ROTATION_INTEGRITY = "sha384-eYPnMdGW5hE3EidfQzVtTqcv8JEKwVlkz1xFC0MuxhGfCk+ltrVxWBZ7A2mnnFpc";
+let rotationAssetsPromise: Promise<boolean> | null = null;
 const DEFAULT_MAP_CENTER: LeafletLatLng = {
   lat: -23.55052,
   lng: -46.633308,
@@ -540,7 +553,7 @@ function getLeafletFromWindow(): LeafletGlobal | undefined {
   return (window as unknown as { L?: LeafletGlobal }).L;
 }
 
-function ensureLeafletAssets(): Promise<LeafletGlobal> {
+export function ensureLeafletAssets(): Promise<LeafletGlobal> {
   const existingLeaflet = getLeafletFromWindow();
   if (existingLeaflet) {
     return Promise.resolve(existingLeaflet);
@@ -607,8 +620,42 @@ function ensureLeafletAssets(): Promise<LeafletGlobal> {
   return leafletAssetsPromise;
 }
 
-function setMapInteractionForDrawing(map: LeafletMapInstance, isDrawing: boolean) {
+export function ensureLeafletRotation(L: LeafletGlobal): Promise<boolean> {
+  if (typeof L.Map?.prototype.setBearing === "function") return Promise.resolve(true);
+  if (rotationAssetsPromise) return rotationAssetsPromise;
+  rotationAssetsPromise = new Promise<boolean>((resolve) => {
+    const script = document.createElement("script");
+    script.id = ROTATION_SCRIPT_ID;
+    script.src = ROTATION_JS_URL;
+    script.integrity = ROTATION_INTEGRITY;
+    script.crossOrigin = "anonymous";
+    script.async = true;
+    const finish = (ready: boolean) => {
+      window.clearTimeout(timeout);
+      script.onload = null;
+      script.onerror = null;
+      if (!ready) {
+        script.remove();
+        rotationAssetsPromise = null;
+        console.warn("Rotação indisponível; mantendo os controles originais do mapa.");
+      }
+      resolve(ready);
+    };
+    const timeout = window.setTimeout(() => finish(false), 8000);
+    script.onload = () => finish(typeof L.Map?.prototype.setBearing === "function");
+    script.onerror = () => finish(false);
+    document.head.appendChild(script);
+  });
+  return rotationAssetsPromise;
+}
+
+export function setMapInteractionForDrawing(map: LeafletMapInstance, isDrawing: boolean) {
   if (isDrawing) {
+    // Version 0.2.4 does not cancel touch rotation inertia in disable().
+    map.touchGestures?._stopRotateInertia?.();
+    map.touchGestures?.disable();
+    map.dragRotate?.disable();
+    map.shiftKeyRotate?.disable();
     map.dragging.disable();
     map.touchZoom?.disable();
     map.doubleClickZoom?.disable();
@@ -620,7 +667,16 @@ function setMapInteractionForDrawing(map: LeafletMapInstance, isDrawing: boolean
   }
 
   map.dragging.enable();
-  map.touchZoom?.enable();
+  if (map.options?.rotate) {
+    // The extension handles pinch and rotation together; do not run Leaflet's
+    // original pinch handler in parallel or the map will jump during gestures.
+    map.touchZoom?.disable();
+    map.touchGestures?.enable();
+    map.dragRotate?.enable();
+    map.shiftKeyRotate?.enable();
+  } else {
+    map.touchZoom?.enable();
+  }
   map.doubleClickZoom?.enable();
   map.scrollWheelZoom?.enable();
   map.boxZoom?.enable();
@@ -1048,6 +1104,7 @@ export default function ProductMap({
 
       try {
         const L = await ensureLeafletAssets();
+        const rotationReady = await ensureLeafletRotation(L);
         if (cancelled || !mapContainerRef.current) {
           return;
         }
@@ -1073,6 +1130,11 @@ export default function ProductMap({
         const map = L.map(mapContainerRef.current, {
           zoomControl: false,
           attributionControl: false,
+          rotate: rotationReady,
+          touchRotate: rotationReady,
+          dragRotate: rotationReady,
+          shiftKeyRotate: rotationReady,
+          rotateControl: false,
         });
         map.setView(mapCenter, focusedProduct ? 15 : savedUserLocation || firstProduct ? 13 : 12);
         if (focusedProduct && savedUserLocation) {
@@ -1399,6 +1461,7 @@ export default function ProductMap({
       }
       clearTileFallbackTimer();
       if (mapRef.current) {
+        mapRef.current.touchGestures?._stopRotateInertia?.();
         mapRef.current.remove();
         mapRef.current = null;
       }
