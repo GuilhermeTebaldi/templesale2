@@ -1,3 +1,4 @@
+import { buildLocalFeedQuery } from "./server/local-feed";
 import cors from "cors";
 import crypto, { type JsonWebKey as NodeJsonWebKey } from "node:crypto";
 import Database from "better-sqlite3";
@@ -4021,7 +4022,7 @@ async function selectEstablishmentsRows(input: {
       `
     : "";
   const sqliteDistanceOrder = input.latitude !== undefined && input.longitude !== undefined
-    ? "CASE WHEN e.latitude IS NULL OR e.longitude IS NULL THEN 1 ELSE 0 END ASC, 12742.0 * ASIN(MIN(1.0, POWER(SIN(RADIANS(e.latitude - ?) / 2), 2) + COS(RADIANS(?)) * COS(RADIANS(e.latitude)) * POWER(SIN(RADIANS(e.longitude - ?) / 2), 2)))) ASC,"
+    ? "CASE WHEN e.latitude IS NULL OR e.longitude IS NULL THEN 1 ELSE 0 END ASC, 12742.0 * ASIN(SQRT(MIN(1.0, POWER(SIN(RADIANS(e.latitude - ?) / 2), 2) + COS(RADIANS(?)) * COS(RADIANS(e.latitude)) * POWER(SIN(RADIANS(e.longitude - ?) / 2), 2)))) ASC,"
     : "";
   if (input.latitude !== undefined && input.longitude !== undefined) {
     values.push(input.latitude, input.latitude, input.longitude);
@@ -4501,72 +4502,14 @@ async function selectPublicationsFeedRows(input: {
 } = {}): Promise<{ rows: EstablishmentPublicationRecord[]; hasMore: boolean; nextOffset: number }> {
   const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 12)), 1), 36);
   const offset = Math.max(Math.floor(Number(input.offset ?? 0)), 0);
-  const fetchLimit = limit + 1;
+  const built = buildLocalFeedQuery({ ...input, limit, offset }, Boolean(pgPool));
+  let rawRows: Record<string, unknown>[];
   if (pgPool) {
-    const nearby = input.latitude !== undefined && input.longitude !== undefined;
-    const result = await pgPool.query<Record<string, unknown>>(
-      `
-        SELECT
-          ep.*,
-          e.name AS establishment_name,
-          e.slug AS establishment_slug,
-          e.category AS establishment_category,
-          e.city AS establishment_city,
-          e.logo_url AS establishment_logo_url,
-          e.cover_url AS establishment_cover_url,
-          u.avatar_url AS owner_avatar_url,
-          COALESCE(pl.likes_count, 0) AS likes_count${nearby ? ", CASE WHEN e.latitude IS NULL OR e.longitude IS NULL THEN NULL ELSE 12742.0 * ASIN(SQRT(LEAST(1.0, POWER(SIN(RADIANS(e.latitude - $3) / 2), 2) + COS(RADIANS($3)) * COS(RADIANS(e.latitude)) * POWER(SIN(RADIANS(e.longitude - $4) / 2), 2))))) END AS distance_km" : ""}
-        FROM establishment_publications ep
-        INNER JOIN establishments e ON e.id = ep.establishment_id
-        LEFT JOIN users u ON u.id = ep.owner_user_id
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
-        WHERE e.is_active = TRUE
-          AND e.latitude IS NOT NULL AND e.longitude IS NOT NULL
-          AND e.latitude BETWEEN -90 AND 90 AND e.longitude BETWEEN -180 AND 180
-        ORDER BY ${nearby ? "distance_km ASC NULLS LAST, " : ""}ep.created_at DESC, ep.id DESC
-        LIMIT $1 OFFSET $2
-      `,
-      nearby ? [fetchLimit, offset, input.latitude, input.longitude] : [fetchLimit, offset],
-    );
-    const rows = result.rows.slice(0, limit).map(normalizePublicationRow);
-    return { rows, hasMore: result.rows.length > limit, nextOffset: offset + rows.length };
+    rawRows = (await pgPool.query(built.sql, built.values)).rows;
+  } else {
+    const bound = sqliteBindings(built.sql, built.values);
+    rawRows = requireSqliteDb().prepare(bound.sql).all(...bound.values) as Record<string, unknown>[];
   }
-
-  const nearby = input.latitude !== undefined && input.longitude !== undefined;
-  const rawRows = requireSqliteDb()
-    .prepare(
-      `
-        SELECT
-          ep.*,
-          e.name AS establishment_name,
-          e.slug AS establishment_slug,
-          e.category AS establishment_category,
-          e.city AS establishment_city,
-          e.logo_url AS establishment_logo_url,
-          e.cover_url AS establishment_cover_url,
-          u.avatar_url AS owner_avatar_url,
-          COALESCE(pl.likes_count, 0) AS likes_count,
-          ${nearby ? "CASE WHEN e.latitude IS NULL OR e.longitude IS NULL THEN NULL ELSE 12742.0 * ASIN(MIN(1.0, POWER(SIN(RADIANS(e.latitude - ?) / 2), 2) + COS(RADIANS(?)) * COS(RADIANS(e.latitude)) * POWER(SIN(RADIANS(e.longitude - ?) / 2), 2)))) END AS distance_km" : "NULL AS distance_km"}
-        FROM establishment_publications ep
-        INNER JOIN establishments e ON e.id = ep.establishment_id
-        LEFT JOIN users u ON u.id = ep.owner_user_id
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
-        WHERE e.is_active = 1
-          AND e.latitude IS NOT NULL AND e.longitude IS NOT NULL
-          AND e.latitude BETWEEN -90 AND 90 AND e.longitude BETWEEN -180 AND 180
-        ORDER BY ${nearby ? "CASE WHEN distance_km IS NULL THEN 1 ELSE 0 END ASC, distance_km ASC, " : ""}ep.created_at DESC, ep.id DESC
-        LIMIT ? OFFSET ?
-      `,
-    )
-    .all(...(nearby ? [input.latitude, input.latitude, input.longitude, fetchLimit, offset] : [fetchLimit, offset])) as Array<Record<string, unknown>>;
   const rows = rawRows.slice(0, limit).map(normalizePublicationRow);
   return { rows, hasMore: rawRows.length > limit, nextOffset: offset + rows.length };
 }

@@ -1,4 +1,7 @@
 export const itITTranslations: Record<string, string> = {
+  "Até 5 km do ponto escolhido": "Entro 5 km dal punto scelto",
+  "Buscar neste ponto do mapa...": "Cerca in questo punto della mappa...",
+  "Buscando…": "Ricerca…",
   "Perto de você": "Vicino a te",
   "Novidades": "Novità",
   "Encontre produtos e empresas na sua região.": "Scopri prodotti e attività nella tua zona.",

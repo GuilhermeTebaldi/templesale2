@@ -669,6 +669,10 @@ export default function ProductMap({
   onOpenEstablishment,
 }: ProductMapProps) {
   const { t, locale } = useI18n();
+  const [mapSearchPoint, setMapSearchPoint] = React.useState<LeafletLatLng | null>(null);
+  const searchOrigin = mapSearchPoint ?? visitorLocation ?? null;
+  const [mapSearchLoading, setMapSearchLoading] = React.useState(false);
+  const [mapSearchError, setMapSearchError] = React.useState(false);
   const [searchedEstablishments, setSearchedEstablishments] = React.useState<EstablishmentDto[]>([]);
   const productsWithLocation = React.useMemo(
     () =>
@@ -730,7 +734,7 @@ export default function ProductMap({
     const map = mapRef.current;
     const L = leafletRef.current;
     if (!map || !L || !savedUserLocation) return;
-    if (!visitorFramedRef.current) {
+    if (!visitorFramedRef.current && !mapSearchPoint) {
       visitorFramedRef.current = true;
       const target = productsWithLocationRef.current.find(item => item.id === initialFocusProductId);
       if (target) {
@@ -741,6 +745,7 @@ export default function ProductMap({
     }
     const marker = L.marker([savedUserLocation.lat, savedUserLocation.lng], {
       title: t("Sua localização atual"),
+      bubblingMouseEvents: false,
       zIndexOffset: 1000,
       icon: L.divIcon({
         className: "templesale-visitor-marker",
@@ -749,7 +754,7 @@ export default function ProductMap({
       }),
     }).addTo(map);
     return () => { marker.remove(); };
-  }, [savedUserLocation?.lat, savedUserLocation?.lng, mapReadyVersion, initialFocusProductId, t]);
+  }, [savedUserLocation?.lat, savedUserLocation?.lng, mapReadyVersion, initialFocusProductId, mapSearchPoint, t]);
 
   React.useEffect(() => {
     isDrawingRef.current = isDrawing;
@@ -810,18 +815,18 @@ export default function ProductMap({
   }, [productsWithLocation]);
 
   const filteredProducts = React.useMemo(() => {
-    const normalized = normalizeSearchText(searchQuery);
-    if (!normalized) {
-      if (initialFocusProductId) {
-        return productsWithLocation.filter((product) => product.id === initialFocusProductId);
+    if (searchOrigin) {
+      const nearby = searchedEstablishments.map(toLocatedEstablishment).filter((item): item is LocatedProduct => item !== null);
+      if (!mapSearchPoint && !searchQuery.trim() && initialFocusProductId) {
+        const target = productsWithLocation.find(item => item.id === initialFocusProductId);
+        if (target && !nearby.some(item => getMapItemKey(item) === getMapItemKey(target))) return [target, ...nearby];
       }
-      return [];
+      return nearby;
     }
-
-    return productsWithLocation.filter((product) =>
-      matchesProductSearch(product, normalized, locale),
-    );
-  }, [initialFocusProductId, locale, productsWithLocation, searchQuery]);
+    return productsWithLocation.filter(item => searchQuery.trim()
+      ? matchesProductSearch(item, normalizeSearchText(searchQuery), locale)
+      : item.id === initialFocusProductId);
+  }, [searchOrigin, searchedEstablishments, mapSearchPoint, searchQuery, initialFocusProductId, productsWithLocation, locale]);
 
   const filteredPanelProducts = React.useMemo(() => {
     const normalized = normalizeSearchText(panelSearchQuery);
@@ -839,13 +844,13 @@ export default function ProductMap({
     [searchQuery],
   );
   const topSearchResults = React.useMemo(() => {
-    if (!normalizedTopSearchQuery) {
+    if (!normalizedTopSearchQuery && !mapSearchPoint) {
       return [];
     }
     return filteredProducts.slice(0, 50);
-  }, [filteredProducts, normalizedTopSearchQuery]);
+  }, [filteredProducts, normalizedTopSearchQuery, mapSearchPoint]);
   const shouldShowTopSearchResults =
-    normalizedTopSearchQuery.length > 0 && isTopSearchResultsOpen;
+    (normalizedTopSearchQuery.length > 0 || Boolean(mapSearchPoint)) && isTopSearchResultsOpen;
 
   React.useEffect(() => {
     if (!focusedMapItemKey) {
@@ -858,36 +863,33 @@ export default function ProductMap({
   }, [filteredProducts, focusedMapItemKey]);
 
   React.useEffect(() => {
-    const trimmedQuery = searchQuery.trim();
-    if (!normalizeSearchText(trimmedQuery)) {
-      setSearchedEstablishments([]);
-      return;
-    }
-
-    let cancelled = false;
-    const searchTimer = window.setTimeout(() => {
-      void api
-        .getEstablishments({
-          search: trimmedQuery,
-          limit: 150,
-        })
-        .then((items) => {
-          if (!cancelled) {
-            setSearchedEstablishments(items);
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setSearchedEstablishments([]);
-          }
-        });
+    const controller = new AbortController();
+    setSearchedEstablishments([]);
+    setMapSearchLoading(true);
+    setMapSearchError(false);
+    const timer = window.setTimeout(() => {
+      const request = searchOrigin
+        ? api.getDiscovery({ ...searchOrigin, radius: 5, search: searchQuery.trim() }, controller.signal).then(page => page.items.map(item => item.establishment))
+        : api.getEstablishments({ search: searchQuery.trim(), limit: 50 });
+      void request.then(items => {
+        if (!controller.signal.aborted) setSearchedEstablishments(items);
+      }).catch(() => {
+        if (!controller.signal.aborted) setMapSearchError(true);
+      }).finally(() => {
+        if (!controller.signal.aborted) setMapSearchLoading(false);
+      });
     }, 260);
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [searchQuery, searchOrigin?.lat, searchOrigin?.lng]);
 
-    return () => {
-      cancelled = true;
-      window.clearTimeout(searchTimer);
-    };
-  }, [searchQuery]);
+  React.useEffect(() => {
+    if (!mapSearchPoint || !mapRef.current || !leafletRef.current) return;
+    const marker = leafletRef.current.circleMarker([mapSearchPoint.lat, mapSearchPoint.lng], {
+      radius: 10, color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.4, weight: 3,
+      interactive: false,
+    }).addTo(mapRef.current);
+    return () => { marker.remove(); };
+  }, [mapSearchPoint, mapReadyVersion]);
 
   React.useEffect(() => {
     const normalizedInitialCategory = String(initialCategory ?? "").trim();
@@ -1256,6 +1258,12 @@ export default function ProductMap({
           setIsDrawing(false);
         };
 
+        map.on("click", event => {
+          if (isDrawingRef.current || !event.latlng) return;
+          setMapSearchPoint({ lat: event.latlng.lat, lng: event.latlng.lng });
+          setFocusedMapItemKey(null);
+          setIsTopSearchResultsOpen(true);
+        });
         map.on("mousedown", startDrawingAt);
         map.on("mousemove", moveDrawing);
         map.on("mouseup", finalizeDrawing);
@@ -1441,11 +1449,12 @@ export default function ProductMap({
         nearbyGroup.length,
       );
       const storeMarker = L.marker(markerPosition, {
+          bubblingMouseEvents: false,
        icon: L.divIcon({
   className: "templesale-store-map-marker",
   html: buildStoreMarkerHtml(
     product,
-    buildMapDistanceSummary(savedUserLocation, product),
+    buildMapDistanceSummary(searchOrigin, product),
   ),
   iconSize: [190, 68],
   iconAnchor: [95, 62],
@@ -1459,7 +1468,7 @@ export default function ProductMap({
 
       return [storeMarker];
     });
-  }, [clearMarkers, filteredProducts, focusedMapItemKey, initialFocusProductId, mapReadyVersion, openMapItem, savedUserLocation, t]);
+  }, [clearMarkers, filteredProducts, focusedMapItemKey, initialFocusProductId, mapReadyVersion, openMapItem, searchOrigin, t]);
 
   React.useEffect(() => {
     if (!showResults || currentPolygon.length < 3) {
@@ -1621,7 +1630,7 @@ export default function ProductMap({
               <input
                 ref={topSearchInputRef}
                 type="text"
-                placeholder={t("Buscar lojas, categorias ou cidade...")}
+                placeholder={t(mapSearchPoint ? "Buscar neste ponto do mapa..." : "Buscar lojas, categorias ou cidade...")}
                 value={searchQuery}
                 onFocus={() => {
                   if (normalizeSearchText(searchQuery)) {
@@ -1666,7 +1675,7 @@ export default function ProductMap({
                 <div className="absolute z-40 top-[calc(100%+8px)] left-0 right-0 bg-neutral-950/98 backdrop-blur-md border border-neutral-800 rounded-xl shadow-2xl overflow-hidden sm:max-h-[min(520px,calc(100vh-120px))]">
                   <div className="px-3 py-2 border-b border-neutral-800 bg-neutral-900/90 flex items-center justify-between gap-3">
                     <span className="text-[10px] uppercase tracking-[0.14em] font-bold text-emerald-400">
-                      {t("Lojas encontradas")}
+                      {mapSearchPoint ? t("Até 5 km do ponto escolhido") : t("Lojas encontradas")}
                     </span>
                     <span className="text-[10px] text-neutral-500">
                       {t("{count} resultado(s)", { count: filteredProducts.length })}
@@ -1675,13 +1684,13 @@ export default function ProductMap({
 
                   {topSearchResults.length === 0 ? (
                     <p className="px-3 py-4 text-xs text-neutral-400">
-                      {t("Sem resultados para esta busca.")}
+                      {mapSearchLoading ? t("Buscando…") : mapSearchError ? t("Não foi possível carregar empresas próximas.") : t("Sem resultados para esta busca.")}
                     </p>
                   ) : (
                     <div className="max-h-72 overflow-y-auto sm:max-h-[440px]">
          {topSearchResults.map((product) => {
   const distanceSummary =
-    buildMapDistanceSummary(savedUserLocation, product);
+    buildMapDistanceSummary(searchOrigin, product);
 
   const locationSummary =
     buildMapLocationSummary(product);

@@ -18,3 +18,12 @@ A infraestrutura de descoberta por raio e as validações obrigatórias de coord
 - node --experimental-sqlite --test tests/notifications.test.mjs
 
 A validação de GPS real e enquadramento no iPhone depende de teste no dispositivo.
+
+
+## Origem temporária no mapa e fotos recentes
+
+Um toque na área livre do mapa define um ponto de busca apenas naquela sessão do mapa. A consulta usa a rota de descoberta por raio (5 km), preserva a ordem do servidor e não mistura resultados fora da área. O ponto é laranja; o visitante permanece azul. As distâncias dos resultados se referem ao ponto escolhido. Fechar o mapa descarta essa origem temporária.
+
+No feed com GPS, o servidor seleciona até três publicações recentes de cada empresa antes da paginação, ordenando empresas por distância e fotos por data. A vitrine continua contendo todas as fotos. Sem GPS, o feed mantém a ordem cronológica.
+
+O teste de regressão do feed verifica limite por empresa, ordem das fotos, deslocamento da origem e paginação.

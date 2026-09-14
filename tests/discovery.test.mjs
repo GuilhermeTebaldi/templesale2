@@ -1,3 +1,4 @@
+import { buildLocalFeedQuery } from '../server/local-feed.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
@@ -93,4 +94,28 @@ test('GPS requires both elapsed time and meaningful movement', () => {
   assert.equal(shouldUpdateLocation(previous,{lat:41.61,lng:12.5},110000),false);
   assert.equal(shouldUpdateLocation(previous,{lat:41.6001,lng:12.5},150000),false);
   assert.equal(shouldUpdateLocation(previous,{lat:41.61,lng:12.5},150000),true);
+});
+
+
+test('feed selects recent photos per company, then orders and paginates by distance', async () => {
+  const f = await fixture();
+  try {
+    await f.db.exec(`
+      ALTER TABLE establishments ADD COLUMN slug TEXT DEFAULT '';
+      ALTER TABLE establishments ADD COLUMN cover_url TEXT DEFAULT '';
+      ALTER TABLE establishment_publications ADD COLUMN owner_user_id INTEGER;
+      CREATE TABLE users(id INTEGER PRIMARY KEY, avatar_url TEXT);
+      CREATE TABLE publication_likes(publication_id INTEGER);
+    `);
+    const load = async (extra = {}) => {
+      const built = buildLocalFeedQuery({latitude:41.6,longitude:12.5,limit:3,offset:0,...extra},false);
+      return f.query(built.sql,built.values);
+    };
+    const rows = await load();
+    assert.deepEqual(rows.map(row=>row.id), [4,3,2,5]);
+    assert.ok(rows[3].distance_km > 1 && rows[3].distance_km < 1.2);
+    assert.deepEqual((await load({offset:3})).map(row=>row.id), [5]);
+    assert.deepEqual((await load({latitude:41.61})).map(row=>row.id), [5,4,3,2]);
+    assert.deepEqual((await load({latitude:undefined,longitude:undefined,limit:10})).map(row=>row.id),[5,4,3,2,1]);
+  } finally { await f.close(); }
 });

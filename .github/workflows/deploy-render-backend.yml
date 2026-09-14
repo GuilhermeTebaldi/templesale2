@@ -27,6 +27,7 @@ jobs:
           filters: |
             backend:
               - 'server.ts'
+              - 'server/**'
               - 'src/server.js'
               - 'api/**'
               - 'backend/**'
