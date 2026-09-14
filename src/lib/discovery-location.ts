@@ -57,7 +57,7 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
   useEffect(() => {
     let cancelled = false;
     // Querying permission does not prompt; the active hook attempts the first request automatically.
-    if (active && navigator.permissions) {
+    if (active && !origin?.city && navigator.permissions) {
       void navigator.permissions.query({ name: 'geolocation' }).then(permission => {
         if (!cancelled && permission.state === 'granted') setEnabled(true);
       }).catch(() => undefined);
@@ -90,7 +90,12 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
       if (cancelled) return;
       setLocating(false);
       setError(failure.code === 1 ? 'Localização não autorizada. Escolha uma cidade ou libere a permissão no navegador.' : 'Não foi possível obter sua localização. Tente novamente ou escolha uma cidade.');
-      setEnabled(false);
+      if (failure.code === 1) {
+        setEnabled(false);
+        previous.current = null;
+        setOrigin(current => current?.city ? current : null);
+      }
+      // Timeouts and temporary signal loss do not stop movement updates.
     }, { enableHighAccuracy: false, maximumAge: 30000, timeout: 15000 });
     return () => { cancelled = true; navigator.geolocation.clearWatch(watch); };
   }, [active, enabled, visible]);

@@ -18,6 +18,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { Company, Post } from '../types';
+import { api } from '../lib/api';
 import { TempleSaleLikeIcon } from './TempleSaleLikeIcon';
 import { TempleSaleAvatarFrame } from './TempleSaleAvatarFrame';
 import { ProgressiveProductImage } from './ProductCard';
@@ -126,6 +127,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
           {whatsappUrl && (
             <a
               href={whatsappUrl}
+                onClick={() => void api.trackDiscovery('whatsapp', company.id)}
               target="_blank"
               rel="noopener noreferrer"
               className="p-1.5 text-neutral-300 hover:text-emerald-400 transition-colors"
@@ -301,6 +303,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
             {whatsappUrl && (
               <a
                 href={whatsappUrl}
+                onClick={() => void api.trackDiscovery('whatsapp', company.id)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex flex-col items-center space-y-1 shrink-0 group"

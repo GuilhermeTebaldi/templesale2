@@ -149,11 +149,11 @@ export function registerDiscovery(app: Express, deps: {
     }
   });
 
-  const events = new Set(['company_open', 'whatsapp', 'map']);
+  const events = new Set(['company_open', 'whatsapp', 'map', 'search']);
   const recent = new Map<string, number>();
   app.post('/api/discovery/events', async (req, res) => {
     const { event, establishmentId } = req.body ?? {};
-    if (!events.has(event) || !Number.isSafeInteger(establishmentId) || establishmentId <= 0) {
+    if (!events.has(event) || !Number.isSafeInteger(establishmentId) || (event === 'search' ? establishmentId !== 0 : establishmentId <= 0)) {
       res.status(400).json({ error: 'Evento inválido.' }); return;
     }
     // Bounded in-memory debounce; no visitor identifier is persisted.
@@ -163,16 +163,23 @@ export function registerDiscovery(app: Express, deps: {
     if (recent.has(key) || recent.size >= 10000) { res.sendStatus(204); return; }
     recent.set(key, now);
     try {
-      const active = await query(`SELECT id FROM establishments WHERE id = $1 AND is_active = ${deps.postgres ? 'TRUE' : '1'}`, [establishmentId]);
+      const active = event === 'search' ? [true] : await query(`SELECT id FROM establishments WHERE id = $1 AND is_active = ${deps.postgres ? 'TRUE' : '1'}`, [establishmentId]);
       if (active.length) await track(event, establishmentId);
       res.sendStatus(204);
     } catch (error) { console.error('Discovery metric failed:', error); res.sendStatus(503); }
   });
   app.get('/api/admin/discovery-metrics', async (req, res) => {
-    if (!deps.requireAdmin(req, res)) return;
+    if (!await deps.requireAdmin(req, res)) return;
     try {
       const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-      res.json({ metrics: await query('SELECT * FROM discovery_metrics WHERE day >= $1 ORDER BY day DESC, event, establishment_id', [since]) });
+      const [metrics, locations] = await Promise.all([
+        query('SELECT * FROM discovery_metrics WHERE day >= $1 ORDER BY day DESC, event, establishment_id', [since]),
+        query(`SELECT id, name, city FROM establishments
+          WHERE is_active = ${deps.postgres ? 'TRUE' : '1'} AND
+          (latitude IS NULL OR longitude IS NULL OR latitude NOT BETWEEN -90 AND 90 OR longitude NOT BETWEEN -180 AND 180)
+          ORDER BY id`),
+      ]);
+      res.json({ metrics, locationAudit: { missingCoordinates: locations.length, establishments: locations } });
     } catch (error) { console.error('Discovery metrics failed:', error); res.sendStatus(503); }
   });
 }

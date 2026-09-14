@@ -14,10 +14,15 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { Company, Post } from '../types';
+import { api } from '../lib/api';
+import { distanceMeters, isValidGeoPoint } from '../lib/discovery-location';
 import { TempleSaleLikeIcon } from './TempleSaleLikeIcon';
 import { ProgressiveProductImage } from './ProductCard';
 
 interface FeedViewProps {
+  isActive?: boolean;
+  onPostSeen?: (postId: string) => void;
+  origin?: { lat: number; lng: number };
   posts: Post[];
   companies: Company[];
   onOpenPost: (post: Post) => void;
@@ -46,6 +51,9 @@ const QUICK_EMOJIS = ['❤️', '👏', '🔥', '✨'];
 
 export const FeedView: React.FC<FeedViewProps> = ({
   posts,
+  isActive = true,
+  onPostSeen,
+  origin,
   companies,
   onOpenPost,
   onSelectCompany,
@@ -78,7 +86,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
 
   useEffect(() => {
     const sentinel = loadMoreRef.current;
-    if (!sentinel || !onLoadMorePosts) {
+    if (!isActive || !sentinel || !onLoadMorePosts) {
       return;
     }
 
@@ -94,7 +102,21 @@ export const FeedView: React.FC<FeedViewProps> = ({
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasMorePosts, isLoadingMorePosts, onLoadMorePosts]);
+  }, [isActive, hasMorePosts, isLoadingMorePosts, onLoadMorePosts]);
+
+  useEffect(() => {
+    if (!isActive || !onPostSeen) return;
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) onPostSeen(entry.target.id.replace('feed-post-', ''));
+      }
+    }, { rootMargin: '0px 0px 240px 0px', threshold: 0 });
+    for (const post of posts) {
+      const element = document.getElementById('feed-post-' + post.id);
+      if (element) observer.observe(element);
+    }
+    return () => observer.disconnect();
+  }, [isActive, onPostSeen, posts]);
 
   // Pull-to-refresh touch handlers
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -398,6 +420,10 @@ export const FeedView: React.FC<FeedViewProps> = ({
 
           const isLiked = likedPostIds ? likedPostIds.includes(post.id) : false;
           const isSaved = savedPostIds ? savedPostIds.includes(post.id) : !!internalSavedPosts[post.id];
+          const distanceKm = origin && isValidGeoPoint(company.lat, company.lng)
+            ? distanceMeters(origin, { lat: company.lat!, lng: company.lng! }) / 1000 : null;
+          const distanceLabel = distanceKm === null ? '' : distanceKm < 1
+            ? Math.round(distanceKm * 1000) + ' m' : distanceKm.toFixed(1).replace('.', ',') + ' km';
           const likesCount = post.likesCount || 0;
           const currentCommentText = commentInputs[post.id] || '';
           const authorAvatarUrl = post.authorAvatarUrl || company.logo;
@@ -458,7 +484,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     </h3>
                     <div className="flex items-center text-[11px] text-neutral-400 space-x-1 truncate">
                       <MapPin className="w-3 h-3 text-neutral-500 shrink-0" />
-                      <span className="truncate">{company.city}</span>
+                      <span className="truncate">{[distanceLabel, company.city].filter(Boolean).join(" · ")}</span>
                       <span>•</span>
                       <span className="text-neutral-300 truncate">{company.category}</span>
                     </div>
@@ -468,6 +494,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 {/* Botão de WhatsApp direto da empresa */}
                 <a
                   href={whatsappUrl}
+                  onClick={() => void api.trackDiscovery('whatsapp', company.id)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-800/60 text-emerald-300 text-xs font-medium transition-colors shrink-0"
@@ -532,6 +559,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     {/* Compartilhar WhatsApp */}
                     <a
                       href={whatsappUrl}
+                  onClick={() => void api.trackDiscovery('whatsapp', company.id)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-neutral-200 hover:text-white transition-transform active:scale-125"

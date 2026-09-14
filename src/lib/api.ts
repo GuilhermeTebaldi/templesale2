@@ -53,6 +53,7 @@ export interface ProductPageDto {
 }
 
 export interface PublicationPageDto {
+  nextCursor?: string | null;
   publications: PublicationDto[];
   hasMore: boolean;
   nextOffset: number;
@@ -288,6 +289,7 @@ export interface EstablishmentDto {
   isActive?: boolean;
   productCount: number;
   publicationCount?: number;
+  recentPublications?: PublicationDto[];
   sections?: StorefrontSectionDto[];
 }
 
@@ -308,6 +310,12 @@ export interface PublicationDto {
   establishmentCity?: string;
   establishmentLogoUrl?: string;
   establishmentCoverUrl?: string;
+  establishmentLatitude?: number;
+  establishmentLongitude?: number;
+  establishmentAddress?: string;
+  establishmentWhatsappCountryIso?: string;
+  establishmentWhatsappNumber?: string;
+  distanceKm?: number;
   ownerAvatarUrl?: string;
 }
 
@@ -1441,6 +1449,12 @@ function normalizePublicationItem(value: unknown): PublicationDto | null {
     updatedAt: toNonNegativeInteger(firstDefined(parsed, ["updatedAt", "updated_at"])) ?? 0,
     likesCount: toNonNegativeInteger(firstDefined(parsed, ["likesCount", "likes_count"])) ?? 0,
     legacyProductId: toOptionalNumber(firstDefined(parsed, ["legacyProductId", "legacy_product_id"])),
+    establishmentLatitude: toOptionalNumber(parsed.establishmentLatitude),
+    establishmentLongitude: toOptionalNumber(parsed.establishmentLongitude),
+    establishmentAddress: toStringValue(parsed.establishmentAddress),
+    establishmentWhatsappCountryIso: toStringValue(parsed.establishmentWhatsappCountryIso),
+    establishmentWhatsappNumber: toStringValue(parsed.establishmentWhatsappNumber),
+    distanceKm: toOptionalNumber(parsed.distanceKm),
   };
   const establishmentName = toStringValue(firstDefined(parsed, ["establishmentName", "establishment_name"]));
   const establishmentSlug = toStringValue(firstDefined(parsed, ["establishmentSlug", "establishment_slug"]));
@@ -1549,6 +1563,7 @@ function normalizeEstablishmentItem(value: unknown): EstablishmentDto | null {
     publicationCount:
       toNonNegativeInteger(firstDefined(parsed, ["publicationCount", "publication_count"])) ?? 0,
     sections: normalizeStorefrontSectionList(firstDefined(parsed, ["sections"]) ?? []),
+    recentPublications: normalizePublicationList(firstDefined(parsed, ["recentPublications"]) ?? []),
   };
   if (latitude !== undefined) {
     establishment.latitude = latitude;
@@ -1723,6 +1738,8 @@ function normalizePublicationPage(value: unknown, fallbackLimit: number, fallbac
   const limit = toNonNegativeInteger(firstDefined(pagination, ["limit"])) ?? fallbackLimit;
   const offset = toNonNegativeInteger(firstDefined(pagination, ["offset"])) ?? fallbackOffset;
   return {
+    ...(Object.prototype.hasOwnProperty.call(pagination, 'nextCursor')
+      ? { nextCursor: typeof pagination.nextCursor === 'string' ? pagination.nextCursor : null } : {}),
     publications,
     hasMore,
     nextOffset,
@@ -2867,7 +2884,8 @@ export const api = {
     limit?: number;
     lat?: number;
     lng?: number;
-  } = {}) {
+    previews?: boolean;
+  } = {}, signal?: AbortSignal) {
     const query = new URLSearchParams();
     const search = String(input.search ?? "").trim();
     const category = String(input.category ?? "").trim();
@@ -2887,9 +2905,11 @@ export const api = {
       query.set("lng", String(input.lng));
     }
     query.set("limit", String(limit));
+    if (input.previews) query.set('previews', '3');
     const payload = await request<unknown>(`/api/establishments?${query.toString()}`, {
-      skipAuthToken: true,
+      skipAuthToken: true, signal, cache: 'no-store', skipGlobalLoadingOverlay: true,
     });
+    if (search) void api.trackDiscovery('search');
     return normalizeEstablishmentList(payload);
   },
   async getDiscovery(input: { lat?: number; lng?: number; city?: string; radius: number; search?: string; category?: string; offset?: number }, signal?: AbortSignal): Promise<DiscoveryPage> {
@@ -2904,8 +2924,13 @@ export const api = {
       return { ...item, establishment, publications: normalizePublicationList(item.publications) };
     }) };
   },
-  trackDiscovery(event: 'company_open' | 'whatsapp' | 'map', establishmentId: number) {
-    return request<void>('/api/discovery/events', { method: 'POST', skipAuthToken: true, keepalive: true, body: JSON.stringify({ event, establishmentId }) }).catch(() => undefined);
+  trackDiscovery(event: 'company_open' | 'whatsapp' | 'map' | 'search', companyId: number | string = 0) {
+    const establishmentId = typeof companyId === 'string' ? Number(companyId.replace(/^company_/, '')) : companyId;
+    if (!Number.isSafeInteger(establishmentId) || (event === 'search' ? establishmentId !== 0 : establishmentId <= 0)) return Promise.resolve();
+    return request<void>('/api/discovery/events', {
+      method: 'POST', skipAuthToken: true, keepalive: true, skipGlobalLoadingOverlay: true,
+      body: JSON.stringify({ event, establishmentId }),
+    }).catch(() => undefined);
   },
   async getMyEstablishment() {
     const payload = await request<unknown>("/api/establishments/me");
@@ -2948,7 +2973,7 @@ export const api = {
     );
     return normalizePublicationPage(payload, limit, offset);
   },
-  async getPublicationsFeed(input: { limit?: number; offset?: number; lat?: number; lng?: number } = {}) {
+  async getPublicationsFeed(input: { limit?: number; offset?: number; lat?: number; lng?: number; pagination?: 'cursor'; cursor?: string | null; excludeIds?: number[] } = {}, signal?: AbortSignal) {
     const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 12)), 1), 36);
     const offset = Math.max(Math.floor(Number(input.offset ?? 0)), 0);
     const query = new URLSearchParams({
@@ -2959,8 +2984,11 @@ export const api = {
       query.set("lat", String(input.lat));
       query.set("lng", String(input.lng));
     }
+    if (input.pagination) query.set('pagination', input.pagination);
+    if (input.cursor) query.set('cursor', input.cursor);
+    if (input.excludeIds?.length) query.set('exclude', input.excludeIds.slice(0, 200).join(','));
     const payload = await request<unknown>(`/api/publications?${query.toString()}`, {
-      skipAuthToken: true,
+      skipAuthToken: true, signal, cache: 'no-store', skipGlobalLoadingOverlay: true,
     });
     return normalizePublicationPage(payload, limit, offset);
   },
@@ -3068,14 +3096,14 @@ export const api = {
     });
     return true;
   },
-  async getPublicationComments(publicationId: number) {
+  async getPublicationComments(publicationId: number, background = false) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
       throw new Error("ID de publicação inválido.");
     }
 
     try {
       const payload = await request<unknown>(`/api/publications/${publicationId}/comments`, {
-        skipAuthToken: true,
+        skipAuthToken: true, skipGlobalLoadingOverlay: background,
       });
       return normalizeProductCommentList(payload);
     } catch (error) {

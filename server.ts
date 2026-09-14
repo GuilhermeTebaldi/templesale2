@@ -1,4 +1,5 @@
-import { buildLocalFeedQuery } from "./server/local-feed";
+import { buildLocalFeedQuery, buildPublicationPreviewsQuery, encodeFeedCursor, parseFeedCursor, parseFeedExclusions, type FeedCursor } from "./server/local-feed";
+import { createAdminSessionToken as createSignedAdminSessionToken, verifyAdminSessionToken as verifySignedAdminSessionToken } from "./server/admin-session";
 import cors from "cors";
 import crypto, { type JsonWebKey as NodeJsonWebKey } from "node:crypto";
 import Database from "better-sqlite3";
@@ -296,6 +297,12 @@ type EstablishmentPublicationRecord = {
   establishmentCity?: string;
   establishmentLogoUrl?: string;
   establishmentCoverUrl?: string;
+  establishmentLatitude?: number;
+  establishmentLongitude?: number;
+  establishmentAddress?: string;
+  establishmentWhatsappCountryIso?: string;
+  establishmentWhatsappNumber?: string;
+  distanceKm?: number;
   ownerAvatarUrl?: string;
 };
 
@@ -859,27 +866,14 @@ let auth0JwksCache: { fetchedAt: number; keys: Auth0JsonWebKey[] } | null = null
 const AUTH0_DEBUG_LOGS = !IS_PRODUCTION;
 const SESSION_COOKIE_NAME = "templesale_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 365;
-const DEFAULT_ADMIN_EMAIL = "templesale@admin.com";
-const DEFAULT_ADMIN_PASSWORD = "Gui@1604";
-const ADMIN_EMAIL =
-  normalizeCredentialValue(process.env.ADMIN_EMAIL ?? DEFAULT_ADMIN_EMAIL, true) ||
-  DEFAULT_ADMIN_EMAIL;
-const ADMIN_PASSWORD =
-  normalizeCredentialValue(process.env.ADMIN_PASSWORD ?? DEFAULT_ADMIN_PASSWORD, false) ||
-  DEFAULT_ADMIN_PASSWORD;
-const DEFAULT_ADMIN_TEST_AREA_PASSWORD = "@2t2b";
-const ADMIN_TEST_AREA_PASSWORD =
-  normalizeCredentialValue(
-    process.env.ADMIN_TEST_AREA_PASSWORD ?? DEFAULT_ADMIN_TEST_AREA_PASSWORD,
-    false,
-  ) || DEFAULT_ADMIN_TEST_AREA_PASSWORD;
 const ADMIN_EMAIL_ALIASES = parseCredentialAliases(process.env.ADMIN_EMAIL_ALIASES, true);
 const ADMIN_PASSWORD_ALIASES = parseCredentialAliases(process.env.ADMIN_PASSWORD_ALIASES, false);
 const ADMIN_API_KEY_ALIASES = parseCredentialAliases(process.env.ADMIN_API_KEY_ALIASES, false);
-const ADMIN_EMAIL_CANDIDATES = Array.from(new Set([ADMIN_EMAIL, ...ADMIN_EMAIL_ALIASES]));
-const ADMIN_PASSWORD_CANDIDATES = Array.from(
-  new Set([ADMIN_PASSWORD, ...ADMIN_PASSWORD_ALIASES]),
-);
+const ADMIN_EMAIL = normalizeCredentialValue(process.env.ADMIN_EMAIL ?? "", true) || ADMIN_EMAIL_ALIASES[0] || "";
+const ADMIN_PASSWORD = normalizeCredentialValue(process.env.ADMIN_PASSWORD ?? "", false);
+const ADMIN_TEST_AREA_PASSWORD = normalizeCredentialValue(process.env.ADMIN_TEST_AREA_PASSWORD ?? "", false);
+const ADMIN_EMAIL_CANDIDATES = Array.from(new Set([ADMIN_EMAIL, ...ADMIN_EMAIL_ALIASES].filter(Boolean)));
+const ADMIN_PASSWORD_CANDIDATES = Array.from(new Set([ADMIN_PASSWORD, ...ADMIN_PASSWORD_ALIASES].filter(Boolean)));
 const ADMIN_API_KEY_CANDIDATES = Array.from(
   new Set(
     [
@@ -890,9 +884,7 @@ const ADMIN_API_KEY_CANDIDATES = Array.from(
 );
 const ADMIN_SESSION_COOKIE_NAME = "templesale_admin_session";
 const ADMIN_SESSION_TTL_SECONDS = 60 * 60 * 12;
-const ADMIN_SESSION_SECRET = String(
-  process.env.ADMIN_SESSION_SECRET ?? "templesale_admin_secret",
-).trim();
+const ADMIN_SESSION_SECRET = String(process.env.ADMIN_SESSION_SECRET ?? "").trim();
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAP_TILE_PROVIDER_TEMPLATES = [
   "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -1527,6 +1519,12 @@ function normalizePublicationRow(row: Record<string, unknown>): EstablishmentPub
     updatedAt: toRequiredNonNegativeInteger(row.updated_at, Math.floor(Date.now() / 1000)),
     likesCount: toRequiredNonNegativeInteger(row.likes_count, 0),
     ...(legacyProductId !== null ? { legacyProductId } : {}),
+    establishmentLatitude: toNullableNumber(row.establishment_latitude) ?? undefined,
+    establishmentLongitude: toNullableNumber(row.establishment_longitude) ?? undefined,
+    establishmentAddress: toNullableString(row.establishment_address) ?? undefined,
+    establishmentWhatsappCountryIso: toNullableString(row.establishment_whatsapp_country_iso) ?? undefined,
+    establishmentWhatsappNumber: toNullableString(row.establishment_whatsapp_number) ?? undefined,
+    distanceKm: toNullableNumber(row.distance_km) ?? undefined,
   };
   const establishmentName = toNullableString(row.establishment_name);
   const establishmentSlug = toNullableString(row.establishment_slug);
@@ -4499,10 +4497,19 @@ async function selectPublicationsFeedRows(input: {
   offset?: number;
   latitude?: number;
   longitude?: number;
-} = {}): Promise<{ rows: EstablishmentPublicationRecord[]; hasMore: boolean; nextOffset: number }> {
+  cursorMode?: boolean;
+  cursor?: FeedCursor;
+  excludeIds?: number[];
+} = {}): Promise<{ rows: EstablishmentPublicationRecord[]; hasMore: boolean; nextOffset: number; nextCursor?: string | null }> {
   const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 12)), 1), 36);
   const offset = Math.max(Math.floor(Number(input.offset ?? 0)), 0);
-  const built = buildLocalFeedQuery({ ...input, limit, offset }, Boolean(pgPool));
+  let snapshotId = input.cursor?.snapshotId;
+  if (input.cursorMode && snapshotId === undefined) {
+    const sql = 'SELECT COALESCE(MAX(id), 0) AS max_id FROM establishment_publications';
+    const row = pgPool ? (await pgPool.query(sql)).rows[0] : requireSqliteDb().prepare(sql).get() as Record<string, unknown>;
+    snapshotId = Number(row.max_id);
+  }
+  const built = buildLocalFeedQuery({ ...input, limit, offset: input.cursorMode ? 0 : offset, snapshotId }, Boolean(pgPool));
   let rawRows: Record<string, unknown>[];
   if (pgPool) {
     rawRows = (await pgPool.query(built.sql, built.values)).rows;
@@ -4511,7 +4518,13 @@ async function selectPublicationsFeedRows(input: {
     rawRows = requireSqliteDb().prepare(bound.sql).all(...bound.values) as Record<string, unknown>[];
   }
   const rows = rawRows.slice(0, limit).map(normalizePublicationRow);
-  return { rows, hasMore: rawRows.length > limit, nextOffset: offset + rows.length };
+  return {
+    rows, hasMore: rawRows.length > limit, nextOffset: offset + rows.length,
+    ...(input.cursorMode ? {
+      nextCursor: rawRows.length > limit && rows.length
+        ? encodeFeedCursor(rawRows[rows.length - 1], snapshotId!, input) : null,
+    } : {}),
+  };
 }
 
 
@@ -9663,48 +9676,11 @@ async function fetchNominatimJson(pathname: string, params: URLSearchParams): Pr
 }
 
 function createAdminSessionToken(): string {
-  const expiresAt = Math.floor(Date.now() / 1000) + ADMIN_SESSION_TTL_SECONDS;
-  const nonce = crypto.randomBytes(16).toString("hex");
-  const payload = `${expiresAt}.${nonce}`;
-  const signature = crypto
-    .createHmac("sha256", ADMIN_SESSION_SECRET)
-    .update(payload)
-    .digest("hex");
-  return `${payload}.${signature}`;
+  return createSignedAdminSessionToken(ADMIN_SESSION_SECRET, ADMIN_SESSION_TTL_SECONDS);
 }
 
 function verifyAdminSessionToken(token: string): boolean {
-  const [expiresAtRaw, nonce, signature] = token.split(".");
-  if (!expiresAtRaw || !nonce || !signature) {
-    return false;
-  }
-  if (!/^\d+$/.test(expiresAtRaw)) {
-    return false;
-  }
-  if (!/^[a-f0-9]{32}$/i.test(nonce) || !/^[a-f0-9]{64}$/i.test(signature)) {
-    return false;
-  }
-
-  const payload = `${expiresAtRaw}.${nonce}`;
-  const expectedSignature = crypto
-    .createHmac("sha256", ADMIN_SESSION_SECRET)
-    .update(payload)
-    .digest("hex");
-  const providedBuffer = Buffer.from(signature, "hex");
-  const expectedBuffer = Buffer.from(expectedSignature, "hex");
-  if (providedBuffer.length !== expectedBuffer.length) {
-    return false;
-  }
-  if (!crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
-    return false;
-  }
-
-  const expiresAt = Number(expiresAtRaw);
-  if (!Number.isFinite(expiresAt)) {
-    return false;
-  }
-
-  return expiresAt > Math.floor(Date.now() / 1000);
+  return verifySignedAdminSessionToken(token, ADMIN_SESSION_SECRET);
 }
 
 function verifyAdminAccessToken(token: string): boolean {
@@ -10716,6 +10692,10 @@ async function bootstrap() {
   };
 
   const handleAdminLogin = (req: Request, res: Response) => {
+    if (!ADMIN_SESSION_SECRET || !ADMIN_EMAIL_CANDIDATES.length || !ADMIN_PASSWORD_CANDIDATES.length) {
+      res.status(503).json({ error: "Acesso administrativo não configurado no servidor." });
+      return;
+    }
     try {
       const body = req.body as Record<string, unknown>;
       const email = normalizeCredentialValue(body.email ?? "", true);
@@ -10830,7 +10810,7 @@ async function bootstrap() {
         return;
       }
 
-      if (!timingSafeEquals(password, ADMIN_TEST_AREA_PASSWORD)) {
+      if (!ADMIN_TEST_AREA_PASSWORD || !timingSafeEquals(password, ADMIN_TEST_AREA_PASSWORD)) {
         res.status(401).json({ error: "Senha da área de testes inválida." });
         return;
       }
@@ -11905,6 +11885,20 @@ async function bootstrap() {
         longitude: location?.longitude,
         requireLocation: true,
       });
+      if (req.query.previews === '3' && rows.length) {
+        const built = buildPublicationPreviewsQuery(rows.map(row => row.id));
+        const previews = (await discoveryQuery(built.sql, built.values)).map(normalizePublicationRow);
+        const byCompany = new Map<number, EstablishmentPublicationRecord[]>();
+        for (const publication of previews) {
+          const list = byCompany.get(publication.establishmentId) ?? [];
+          list.push(publication);
+          byCompany.set(publication.establishmentId, list);
+        }
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ establishments: rows.map(row => ({ ...row, recentPublications: byCompany.get(row.id) ?? [] })) });
+        return;
+      }
+      res.setHeader('Cache-Control', 'no-store');
       res.json({ establishments: rows });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao listar attivita.";
@@ -12101,19 +12095,32 @@ async function bootstrap() {
 
   app.get("/api/publications", async (req, res) => {
     let location: GeoPoint | undefined;
+    let cursor: FeedCursor | undefined;
+    let excludeIds: number[];
+    const cursorMode = req.query.pagination === 'cursor';
     try {
       location = parseOptionalGeoPoint(req.query.lat, req.query.lng);
+      cursor = parseFeedCursor(req.query.cursor, location ?? {});
+      excludeIds = parseFeedExclusions(req.query.exclude);
+      if (cursor && !cursorMode) throw new Error('Informe pagination=cursor.');
+      for (const [key, min] of [['limit', 1], ['offset', 0]] as const) {
+        const value = req.query[key];
+        if (value !== undefined && (typeof value !== 'string' || !/^\d+$/.test(value) ||
+            !Number.isSafeInteger(Number(value)) || Number(value) < min)) throw new Error('Paginação inválida.');
+      }
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : "Localização inválida." });
       return;
     }
     try {
       const page = await selectPublicationsFeedRows({
+        cursorMode, cursor, excludeIds,
         limit: Number(req.query.limit ?? 12),
         offset: Number(req.query.offset ?? 0),
         latitude: location?.latitude,
         longitude: location?.longitude,
       });
+      res.setHeader("Cache-Control", "no-store");
       res.json({
         publications: page.rows,
         pagination: {
@@ -12122,6 +12129,7 @@ async function bootstrap() {
           returned: page.rows.length,
           hasMore: page.hasMore,
           nextOffset: page.nextOffset,
+          ...(cursorMode ? { nextCursor: page.nextCursor } : {}),
         },
       });
     } catch (error) {
