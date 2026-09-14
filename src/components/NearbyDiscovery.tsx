@@ -1,7 +1,7 @@
 import React from 'react';
 import { MapPin, Search, Navigation, LoaderCircle, MessageCircle, ArrowRight } from 'lucide-react';
 import { api, type DiscoveryPage, type EstablishmentDto } from '../lib/api';
-import { useDiscoveryLocation } from '../lib/discovery-location';
+import { useDiscoveryLocation, type DiscoveryOrigin } from '../lib/discovery-location';
 import { buildWhatsappUrl } from '../lib/whatsapp';
 import { ProgressiveProductImage } from './ProductCard';
 import { useI18n } from '../i18n/provider';
@@ -9,11 +9,11 @@ import { useI18n } from '../i18n/provider';
 const CATEGORIES = ['All', 'Ristorante', 'Bar', 'Negozi', 'Barbieri', 'Officine', 'Mercati'];
 const emptyPage: DiscoveryPage = { items: [], hasMore: false, nextOffset: 0 };
 
-export function NearbyDiscovery({ active, onOpenCompany, onOpenMap }: {
-  active: boolean; onOpenCompany: (company: EstablishmentDto) => void; onOpenMap: (company: EstablishmentDto) => void;
+export function NearbyDiscovery({ active, locationActive = active, onOpenCompany, onOpenMap, onOriginChange }: {
+  active: boolean; locationActive?: boolean; onOpenCompany: (company: EstablishmentDto) => void; onOpenMap: (company: EstablishmentDto) => void; onOriginChange?: (origin: DiscoveryOrigin | null) => void;
 }) {
   const { t, locale } = useI18n();
-  const location = useDiscoveryLocation(active);
+  const location = useDiscoveryLocation(locationActive, onOriginChange);
   const [city, setCity] = React.useState(location.origin?.city || '');
   const [editingCity, setEditingCity] = React.useState(false);
   const [search, setSearch] = React.useState('');
@@ -68,11 +68,11 @@ export function NearbyDiscovery({ active, onOpenCompany, onOpenMap }: {
         </p>
         {(!location.origin || editingCity || location.error) && <>
           <p className="mt-3 text-sm leading-6 text-neutral-400">{t('Usamos sua localização para mostrar empresas e produtos próximos, somente enquanto esta página estiver aberta.')}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          {(location.error || location.origin) && <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={location.useGps} disabled={location.locating} className={buttonClass}>
-              <span className="flex items-center gap-2">{location.locating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Navigation className="h-4 w-4" />}{t('Usar minha localização')}</span>
+              <span className="flex items-center gap-2">{location.locating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Navigation className="h-4 w-4" />}{t(location.origin ? 'Atualizar localização' : 'Tentar localização')}</span>
             </button>
-          </div>
+          </div>}
           <form className="mt-3 flex gap-2" onSubmit={event => { event.preventDefault(); if (city.trim()) { location.useCity(city); setEditingCity(false); } }}>
             <input aria-label={t('Cidade')} value={city} onChange={event => setCity(event.target.value)} maxLength={120} required placeholder={t('Digite a cidade')} className="min-w-0 flex-1 rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-white" />
             <button className={buttonClass} type="submit">{t('Buscar')}</button>

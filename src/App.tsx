@@ -11,6 +11,7 @@ import EditPublicationModal from "./components/EditPublicationModal";
 import { Header as SocialHeader } from "./components/Header";
 import { FeedView as SocialFeedView } from "./components/FeedView";
 import { NearbyDiscovery } from "./components/NearbyDiscovery";
+import { isValidGeoPoint, type DiscoveryOrigin } from "./lib/discovery-location";
 import { CompanyProfile as SocialCompanyProfile } from "./components/CompanyProfile";
 import { CompanySearch as SocialCompanySearch } from "./components/CompanySearch";
 import { CompanyProfileDrawer as SocialCompanyProfileDrawer, type SupportedLanguage as SocialSupportedLanguage } from "./components/CompanyProfileDrawer";
@@ -409,6 +410,7 @@ export default function App() {
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState("");
   const [socialActiveTab, setSocialActiveTab] = React.useState<SocialActiveTab>("feed");
   const [homeMode, setHomeMode] = React.useState<'nearby' | 'news'>('nearby');
+  const [discoveryOrigin, setDiscoveryOrigin] = React.useState<DiscoveryOrigin | null>(null);
   const [socialSelectedCompanyId, setSocialSelectedCompanyId] = React.useState<string>("");
   const [savedPublicationIds, setSavedPublicationIds] = React.useState<string[]>([]);
   const [savedPublications, setSavedPublications] = React.useState<PublicationDto[]>([]);
@@ -480,6 +482,7 @@ export default function App() {
     const activityName = String(myEstablishment?.name ?? "").trim();
     const activityCategory = String(myEstablishment?.category ?? "").trim();
     const activityCity = String(myEstablishment?.city ?? "").trim();
+    const activityHasLocation = isValidGeoPoint(myEstablishment?.latitude, myEstablishment?.longitude);
     const activityWhatsapp = String(myEstablishment?.whatsappNumber ?? currentUser.whatsappNumber ?? "")
       .replace(/\D/g, "")
       .trim();
@@ -492,7 +495,8 @@ export default function App() {
       activityCategory.length >= 2 &&
       activityCategory !== "Altro" &&
       activityCity.length >= 2 &&
-      activityWhatsapp.length >= 6
+      activityWhatsapp.length >= 6 &&
+      activityHasLocation
     );
   }, [currentUser, myEstablishment]);
   const memberName = currentUser?.name || t("Membro cadastrado");
@@ -693,7 +697,11 @@ export default function App() {
       }
 
       try {
-        const page = await api.getPublicationsFeed({ limit, offset });
+        const page = await api.getPublicationsFeed({
+          limit,
+          offset,
+          ...(discoveryOrigin && 'lat' in discoveryOrigin ? { lat: discoveryOrigin.lat, lng: discoveryOrigin.lng } : {}),
+        });
         if (!isLatestRequest()) {
           return;
         }
@@ -731,7 +739,7 @@ export default function App() {
         }
       }
     },
-    [t],
+    [discoveryOrigin, t],
   );
 
   React.useEffect(() => {
@@ -786,6 +794,8 @@ export default function App() {
         const list = await api.getEstablishments({
           search: debouncedSearchQuery,
           category: activeCategory,
+          ...(discoveryOrigin && 'lat' in discoveryOrigin ? { lat: discoveryOrigin.lat, lng: discoveryOrigin.lng } : {}),
+          ...(discoveryOrigin && 'city' in discoveryOrigin ? { city: discoveryOrigin.city } : {}),
           limit: 80,
         });
         if (!cancelled) {
@@ -805,7 +815,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeCategory, debouncedSearchQuery, socialActiveTab, isMapOpen, homeMode]);
+  }, [activeCategory, debouncedSearchQuery, discoveryOrigin, socialActiveTab, isMapOpen, homeMode]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -844,6 +854,9 @@ export default function App() {
         : "",
       myEstablishment.category === "Altro" ? t("categoria") : "",
       !String(myEstablishment.city ?? "").trim() ? t("cidade") : "",
+      !isValidGeoPoint(myEstablishment.latitude, myEstablishment.longitude)
+        ? t("localização da empresa")
+        : "",
       !String(myEstablishment.whatsappNumber ?? "").replace(/\D/g, "").trim()
         ? t("WhatsApp")
         : "",
@@ -2304,15 +2317,6 @@ export default function App() {
     profileData: UpdateProfileInput,
     establishmentData?: Partial<EstablishmentDto>,
   ) => {
-    const updatedUser = await api.updateProfile(profileData);
-    const mergedUser: SessionUser = {
-      ...(currentUser ?? updatedUser),
-      ...updatedUser,
-      name: updatedUser.name || profileData.name,
-      whatsappCountryIso:
-        updatedUser.whatsappCountryIso || profileData.whatsappCountryIso,
-      whatsappNumber: updatedUser.whatsappNumber || profileData.whatsappNumber,
-    };
     let establishmentLatitude =
       typeof establishmentData?.latitude === "number" && Number.isFinite(establishmentData.latitude)
         ? establishmentData.latitude
@@ -2341,21 +2345,32 @@ export default function App() {
       }
     }
 
-    if (
-      typeof establishmentLatitude === "number" &&
-      typeof establishmentLongitude === "number"
-    ) {
-      const updatedLocationUser = await api.updateProfileLocation(
-        establishmentLatitude,
-        establishmentLongitude,
-      ).catch(() => null);
-      if (updatedLocationUser) {
-        mergedUser.locationLatitude = updatedLocationUser.locationLatitude;
-        mergedUser.locationLongitude = updatedLocationUser.locationLongitude;
-      } else {
-        mergedUser.locationLatitude = establishmentLatitude;
-        mergedUser.locationLongitude = establishmentLongitude;
-      }
+    if (!isValidGeoPoint(establishmentLatitude, establishmentLongitude)) {
+      throw new Error(t("Defina a localização da empresa usando o GPS ou escolhendo um ponto no mapa."));
+    }
+    const locationLatitude = establishmentLatitude as number;
+    const locationLongitude = establishmentLongitude as number;
+
+    const updatedUser = await api.updateProfile(profileData);
+    const mergedUser: SessionUser = {
+      ...(currentUser ?? updatedUser),
+      ...updatedUser,
+      name: updatedUser.name || profileData.name,
+      whatsappCountryIso:
+        updatedUser.whatsappCountryIso || profileData.whatsappCountryIso,
+      whatsappNumber: updatedUser.whatsappNumber || profileData.whatsappNumber,
+    };
+
+    const updatedLocationUser = await api.updateProfileLocation(
+      locationLatitude,
+      locationLongitude,
+    ).catch(() => null);
+    if (updatedLocationUser) {
+      mergedUser.locationLatitude = updatedLocationUser.locationLatitude;
+      mergedUser.locationLongitude = updatedLocationUser.locationLongitude;
+    } else {
+      mergedUser.locationLatitude = locationLatitude;
+      mergedUser.locationLongitude = locationLongitude;
     }
 
     setCurrentUser(mergedUser);
@@ -2371,8 +2386,8 @@ export default function App() {
       address:
         establishmentData?.address ??
         [mergedUser.street, mergedUser.neighborhood].filter(Boolean).join(", "),
-      latitude: establishmentLatitude,
-      longitude: establishmentLongitude,
+      latitude: locationLatitude,
+      longitude: locationLongitude,
       whatsappCountryIso: establishmentData?.whatsappCountryIso ?? mergedUser.whatsappCountryIso,
       whatsappNumber: establishmentData?.whatsappNumber ?? mergedUser.whatsappNumber,
       phone: establishmentData?.phone ?? mergedUser.whatsappNumber,
@@ -2418,6 +2433,11 @@ export default function App() {
         ...updatedUser,
         avatarUrl: updatedUser.avatarUrl || uploadResult.url,
       };
+      if (!myEstablishment || !isValidGeoPoint(myEstablishment.latitude, myEstablishment.longitude)) {
+        setCurrentUser(mergedUser);
+        setIsAvatarPickerOpen(false);
+        return;
+      }
       const savedEstablishment = await api.saveEstablishment({
         id: myEstablishment?.id,
         name: myEstablishment?.name || mergedUser.name,
@@ -2507,7 +2527,7 @@ export default function App() {
     if (!hasRequiredProfileForPublishing) {
       setIsNewProductOpen(false);
       setProfileCompletionMessage(
-        t("Complete nome, categoria, cidade e WhatsApp da sua attività antes de publicar."),
+        t("Complete nome, categoria, cidade, localização e WhatsApp da sua attività antes de publicar."),
       );
       setIsEditePerfilOpen(true);
       return;
@@ -3534,6 +3554,8 @@ setMapAutoFocusPanelSearch(true);
           <div hidden={homeMode !== 'nearby'}>
             <NearbyDiscovery
               active={socialActiveTab === 'feed' && homeMode === 'nearby' && !isOverlayBlockingScroll}
+              locationActive={!isOverlayBlockingScroll && (socialActiveTab === 'feed' || socialActiveTab === 'search')}
+              onOriginChange={setDiscoveryOrigin}
               onOpenCompany={company => {
                 feedScrollPositionRef.current = window.scrollY;
                 void openEstablishmentPage(company);
@@ -3645,6 +3667,7 @@ setMapAutoFocusPanelSearch(true);
             onSelectCompany={selectSocialCompany}
             onOpenMap={openMapForCompany}
             onOpenPost={openSocialPost}
+            origin={discoveryOrigin && "lat" in discoveryOrigin ? discoveryOrigin : undefined}
           />
         </div>
       </main>

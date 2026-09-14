@@ -34,7 +34,13 @@ export function parseDiscoveryInput(raw: Record<string, unknown>): DiscoveryInpu
 export function buildDiscoveryQuery(input: DiscoveryInput, postgres: boolean) {
   const values: unknown[] = [];
   const bind = (value: unknown) => { values.push(value); return `$${values.length}`; };
-  const where = [`COALESCE(e.is_active, ${postgres ? 'TRUE' : '1'}) = ${postgres ? 'TRUE' : '1'}`];
+  const where = [
+    `COALESCE(e.is_active, ${postgres ? 'TRUE' : '1'}) = ${postgres ? 'TRUE' : '1'}`,
+    'e.latitude IS NOT NULL',
+    'e.longitude IS NOT NULL',
+    'e.latitude BETWEEN -90 AND 90',
+    'e.longitude BETWEEN -180 AND 180',
+  ];
   let distance = 'NULL';
   if (input.lat !== undefined && input.lng !== undefined) {
     const angle = input.radius / 6371;

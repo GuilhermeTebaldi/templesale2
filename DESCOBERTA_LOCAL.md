@@ -4,10 +4,10 @@ A página inicial oferece **Perto de você** e **Novidades**. Novidades mantém 
 
 ## Comportamento
 
-- Primeiro acesso: explicação, botão de localização e cidade manual. Permissão já concedida permite atualizar a posição automaticamente. A posição salva é identificada como tal até chegar uma posição atual.
+- Primeiro acesso: o app tenta obter a localização automaticamente, explica o uso e oferece cidade manual quando o navegador negar ou não conseguir. Permissão já concedida permite atualizar a posição automaticamente. A posição salva é identificada como tal até chegar uma posição atual.
 - GPS somente com a Home de descoberta ativa e a página visível. Consultas por movimento exigem pelo menos 30 segundos e 150 metros. Posições com precisão pior que 1 km são rejeitadas.
-- Raio inicial de 5 km, ajustável. Cidade manual usa o nome cadastrado, sem inventar distâncias. Empresas sem coordenadas podem aparecer pela cidade.
-- Empresa é a referência geográfica da descoberta, inclusive quando um produto possui coordenadas diferentes. Não há reescrita das coordenadas históricas dos produtos.
+- Raio inicial de 5 km, ajustável. Cidade manual usa o nome cadastrado, sem inventar distâncias. Empresas sem coordenadas válidas ficam fora da descoberta pública, da busca e do feed até completarem o perfil.
+- Empresa é a referência geográfica da descoberta, inclusive quando um produto possui coordenadas diferentes. A posição do visitante/mapa não é usada como endereço da empresa. Não há reescrita das coordenadas históricas dos produtos.
 - Até 12 empresas por página na Home; até três publicações recentes por empresa. Na ausência de publicações, aparecem até três produtos. As fotos abrem a vitrine existente. Mapa e WhatsApp reutilizam os caminhos existentes.
 - A busca considera empresa, categoria, descrição, palavras-chave, produtos e legendas. Ordenação: distância, correspondência textual, atividade recente, preenchimento de logo/WhatsApp e ID como desempate.
 
@@ -18,6 +18,8 @@ A página inicial oferece **Perto de você** e **Novidades**. Novidades mantém 
 Alternativa manual: `GET /api/discovery?city=Ardea`. Filtros opcionais: `category` e `search`. Raio permitido: 0,1–50 km; limite: 1–24. Parâmetros inválidos retornam 400. O resultado inclui `items`, `hasMore` e `nextOffset`; cada item contém empresa, distância e prévias.
 
 O servidor aplica uma caixa geográfica indexável e depois a distância esférica exata antes da paginação. Considera polos e cruzamento do antimeridiano. SQL parametrizado em PostgreSQL e SQLite.
+
+Empresas só entram nos resultados públicos quando têm latitude e longitude válidas. O cadastro e a edição rejeitam coordenadas ausentes ou fora dos limites; publicações e produtos novos também são bloqueados sem localização da empresa.
 
 Na inicialização, acrescenta índices geográficos, de cidade e de publicações, além de `discovery_metrics`. Não apaga nem migra registros existentes. O modo de desenvolvimento com banco remoto continua sem escrever métricas ou executar essas adições.
 

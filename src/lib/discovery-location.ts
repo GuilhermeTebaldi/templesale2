@@ -4,13 +4,17 @@ export type DiscoveryOrigin = { lat: number; lng: number; city?: never } | { cit
 const CITY_KEY = 'templesale_discovery_city';
 const LOCATION_KEY = 'templesale_map_user_location';
 
+export function isValidGeoPoint(latitude: unknown, longitude: unknown): boolean {
+  return typeof latitude === 'number' && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
+    && typeof longitude === 'number' && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+}
+
 export function readDiscoveryOrigin(): DiscoveryOrigin | null {
   try {
     const city = localStorage.getItem(CITY_KEY)?.trim();
     if (city) return { city };
     const saved = JSON.parse(localStorage.getItem(LOCATION_KEY) || 'null');
-    if (saved && typeof saved.lat === 'number' && typeof saved.lng === 'number' && Number.isFinite(saved.lat) && Number.isFinite(saved.lng)
-      && Math.abs(saved.lat) <= 90 && Math.abs(saved.lng) <= 180) return { lat: saved.lat, lng: saved.lng };
+    if (saved && isValidGeoPoint(saved.lat, saved.lng)) return { lat: saved.lat, lng: saved.lng };
   } catch { /* Browsing without storage remains supported. */ }
   return null;
 }
@@ -25,13 +29,15 @@ export function shouldUpdateLocation(previous: { lat: number; lng: number; at: n
   return !previous || (now - previous.at >= 30000 && distanceMeters(previous, next) >= 150);
 }
 
-export function useDiscoveryLocation(active: boolean) {
+export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: DiscoveryOrigin | null) => void) {
   const [origin, setOrigin] = useState<DiscoveryOrigin | null>(readDiscoveryOrigin);
   const [enabled, setEnabled] = useState(false);
   const [visible, setVisible] = useState(() => document.visibilityState === 'visible');
   const [error, setError] = useState('');
   const [locating, setLocating] = useState(false);
   const [fresh, setFresh] = useState(false);
+  const autoPrompted = useRef(false);
+  useEffect(() => { onOriginChange?.(origin); }, [onOriginChange, origin]);
   const previous = useRef<{ lat: number; lng: number; at: number } | null>(null);
   const useGps = useCallback(() => {
     if (!navigator.geolocation) { setError('Este navegador não oferece localização. Escolha uma cidade.'); return; }
@@ -50,7 +56,7 @@ export function useDiscoveryLocation(active: boolean) {
   }, []);
   useEffect(() => {
     let cancelled = false;
-    // Querying permission does not prompt. A first prompt requires the user's button.
+    // Querying permission does not prompt; the active hook attempts the first request automatically.
     if (active && !origin?.city && navigator.permissions) {
       void navigator.permissions.query({ name: 'geolocation' }).then(permission => {
         if (!cancelled && permission.state === 'granted') setEnabled(true);
@@ -58,6 +64,11 @@ export function useDiscoveryLocation(active: boolean) {
     }
     return () => { cancelled = true; };
   }, [active, origin?.city]);
+  useEffect(() => {
+    if (!active || origin?.city || autoPrompted.current) return;
+    autoPrompted.current = true;
+    useGps();
+  }, [active, origin?.city, useGps]);
   useEffect(() => {
     if (!enabled || !active || !visible || !navigator.geolocation) return;
     let cancelled = false;

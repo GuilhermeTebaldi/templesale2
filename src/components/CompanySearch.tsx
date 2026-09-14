@@ -3,6 +3,7 @@ import { MapPin, MessageSquare, X, CheckCircle2, Sparkles, Search } from 'lucide
 import { Company, Post } from '../types';
 import { ProgressiveProductImage } from './ProductCard';
 import { buildWhatsappUrl } from '../lib/whatsapp';
+import { distanceMeters } from '../lib/discovery-location';
 
 interface CompanySearchProps {
   searchQuery: string;
@@ -12,6 +13,7 @@ interface CompanySearchProps {
   onSelectCompany: (companyId: string) => void;
   onOpenMap?: (company: Company) => void;
   onOpenPost: (post: Post) => void;
+  origin?: { lat: number; lng: number };
 }
 
 const QUICK_TAGS = ['bar', 'pizza', 'barbeiro', 'Ardea', 'birra', 'motor', 'café', 'moda'];
@@ -32,6 +34,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
   onSelectCompany,
   onOpenMap,
   onOpenPost,
+  origin,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -57,12 +60,20 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
   // E mostra EMPRESAS, não produtos.
   const searchResults = companies.map((company) => {
     const companyPosts = posts.filter((p) => p.companyId === company.id);
+    const hasLocation =
+      typeof company.lat === 'number' && Number.isFinite(company.lat) && company.lat >= -90 && company.lat <= 90 &&
+      typeof company.lng === 'number' && Number.isFinite(company.lng) && company.lng >= -180 && company.lng <= 180;
+    const distanceKm = origin && hasLocation
+      ? distanceMeters(origin, { lat: company.lat as number, lng: company.lng as number }) / 1000
+      : null;
 
     if (!query) {
       return {
         company,
         matchedReasons: [] as string[],
         companyPosts,
+        hasLocation,
+        distanceKm,
         isMatch: true,
       };
     }
@@ -143,10 +154,17 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
       company,
       matchedReasons,
       companyPosts,
+      hasLocation,
+      distanceKm,
       score,
       isMatch: matchedReasons.length > 0,
     };
-  }).filter((res) => res.isMatch).sort((left, right) => {
+  }).filter((res) => res.isMatch && res.hasLocation).sort((left, right) => {
+    if (left.distanceKm !== right.distanceKm) {
+      if (left.distanceKm === null) return 1;
+      if (right.distanceKm === null) return -1;
+      return left.distanceKm - right.distanceKm;
+    }
     if (!query) {
       return 0;
     }
@@ -258,7 +276,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
         </div>
       ) : (
         <div className="space-y-3">
-          {searchResults.map(({ company, companyPosts }) => {
+          {searchResults.map(({ company, companyPosts, distanceKm }) => {
             const whatsappUrl = buildWhatsappUrl(undefined, company.whatsapp, company.name, {
               kind: 'establishment',
             });
@@ -305,6 +323,16 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
                           <MapPin className="w-3 h-3 mr-0.5 shrink-0" />
                           <span className="truncate">{company.city}</span>
                         </span>
+                        {distanceKm !== null && (
+                          <>
+                            <span>•</span>
+                            <span className="shrink-0 text-emerald-300">
+                              {distanceKm < 1
+                                ? `${Math.round(distanceKm * 1000)} m`
+                                : `${distanceKm.toLocaleString(undefined, { maximumFractionDigits: 1 })} km`}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>

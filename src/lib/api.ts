@@ -2865,6 +2865,8 @@ export const api = {
     category?: string;
     city?: string;
     limit?: number;
+    lat?: number;
+    lng?: number;
   } = {}) {
     const query = new URLSearchParams();
     const search = String(input.search ?? "").trim();
@@ -2879,6 +2881,10 @@ export const api = {
     }
     if (city) {
       query.set("city", city);
+    }
+    if (input.lat !== undefined && input.lng !== undefined) {
+      query.set("lat", String(input.lat));
+      query.set("lng", String(input.lng));
     }
     query.set("limit", String(limit));
     const payload = await request<unknown>(`/api/establishments?${query.toString()}`, {
@@ -2942,13 +2948,17 @@ export const api = {
     );
     return normalizePublicationPage(payload, limit, offset);
   },
-  async getPublicationsFeed(input: { limit?: number; offset?: number } = {}) {
+  async getPublicationsFeed(input: { limit?: number; offset?: number; lat?: number; lng?: number } = {}) {
     const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 12)), 1), 36);
     const offset = Math.max(Math.floor(Number(input.offset ?? 0)), 0);
     const query = new URLSearchParams({
       limit: String(limit),
       offset: String(offset),
     });
+    if (input.lat !== undefined && input.lng !== undefined) {
+      query.set("lat", String(input.lat));
+      query.set("lng", String(input.lng));
+    }
     const payload = await request<unknown>(`/api/publications?${query.toString()}`, {
       skipAuthToken: true,
     });

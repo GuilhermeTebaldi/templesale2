@@ -56,9 +56,9 @@ for (const postgres of [false, true]) {
       assert.deepEqual((await run(f,input({lat:'89.999',lng:'0'}))).map(row => row.id), [6]);
       assert.deepEqual((await run(f,input({lat:'0',lng:'0'}))).map(row => row.id), [7]);
       const city = await run(f, parseDiscoveryInput({city:'ardea'}));
-      assert.equal(city.length, 7);
+      assert.equal(city.length, 6);
       assert.ok(city.every(row => row.distance_km === null));
-      assert.ok(city.some(row => row.id === 4));
+      assert.ok(!city.some(row => row.id === 4));
       assert.equal((await run(f,parseDiscoveryInput({city:'Roma'}))).length, 0);
       assert.deepEqual((await run(f,input({offset:'1'}))).map(row => row.id), [2]);
     } finally { await f.close(); }
