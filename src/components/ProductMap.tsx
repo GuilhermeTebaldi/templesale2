@@ -7,6 +7,7 @@ import { type AppLocale } from "../i18n";
 import { getCategoryLabel } from "../i18n/categories";
 import { api, type EstablishmentDto } from "../lib/api";
 import { buildWhatsappUrl } from "../lib/whatsapp";
+import { layoutMapMarkers, MAP_PIN_SIZE, MAP_PIN_ANCHOR, MAP_LABEL_SIZE, MAP_LABEL_ANCHOR } from "../lib/map-marker-layout";
 
 interface ProductMapProps {
   visitorLocation?: { lat: number; lng: number } | null;
@@ -111,6 +112,8 @@ function buildMapLocationSummary(product: LocatedProduct): string {
 function buildStoreMarkerHtml(
   product: LocatedProduct,
   distanceSummary: string,
+  compact = false,
+  distant = false,
 ): string {
   const storeName = String(
     product.establishmentName ||
@@ -158,6 +161,15 @@ function buildStoreMarkerHtml(
           font-weight:700;
         "
       >${safeStoreName.slice(0, 1).toUpperCase()}</div>`;
+
+  if (compact) {
+    return `<div style="position:relative;width:44px;height:48px;display:flex;align-items:flex-start;justify-content:center;pointer-events:none">
+      <span style="position:absolute;top:40px;left:17px;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid #00c896"></span>
+      <div style="position:relative;margin-top:${distant ? 24 : 2}px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border:2px solid #00c896;border-radius:50%;background:#0a0a0a;box-shadow:0 2px 5px #0005;width:${distant ? 18 : 40}px;height:${distant ? 18 : 40}px;overflow:hidden">
+        ${distant ? "" : imageMarkup}
+      </div>
+    </div>`;
+  }
 
   const distanceMarkup = safeDistanceSummary
     ? `<div
@@ -432,6 +444,11 @@ type LeafletMapInstance = {
   fitBounds: (bounds: [number, number][], options?: unknown) => void;
   setView: (coords: [number, number], zoom?: number, options?: unknown) => void;
   on: (eventName: string, handler: (event: LeafletPointerEvent) => void) => void;
+  off: (eventName: string, handler: (event: LeafletPointerEvent) => void) => void;
+  getZoom: () => number;
+  getMaxZoom: () => number;
+  getSize: () => { x: number; y: number };
+  latLngToContainerPoint: (coords: [number, number]) => { x: number; y: number };
   remove: () => void;
   invalidateSize?: (animate?: boolean) => void;
   containerPointToLatLng: (point: [number, number]) => LeafletLatLng;
@@ -684,33 +701,8 @@ export function setMapInteractionForDrawing(map: LeafletMapInstance, isDrawing: 
   map.tap?.enable();
 }
 
-function getNearbyMarkerGroupKey(product: LocatedProduct): string {
-  return `${product.latitude.toFixed(4)}:${product.longitude.toFixed(4)}`;
-}
-
 function getMapItemKey(product: LocatedProduct): string {
   return product.establishmentId ? `establishment:${product.establishmentId}` : `product:${product.id}`;
-}
-
-function getSpreadMarkerPosition(
-  product: LocatedProduct,
-  index: number,
-  total: number,
-): [number, number] {
-  if (total <= 1) {
-    return [product.latitude, product.longitude];
-  }
-
-  const angle = (Math.PI * 2 * index) / total - Math.PI / 2;
-  const radius = Math.min(0.00032, 0.0001 + total * 0.000018);
-  const latitudeOffset = Math.sin(angle) * radius;
-  const longitudeScale = Math.max(0.25, Math.cos((product.latitude * Math.PI) / 180));
-  const longitudeOffset = (Math.cos(angle) * radius) / longitudeScale;
-
-  return [
-    clamp(product.latitude + latitudeOffset, -90, 90),
-    clamp(product.longitude + longitudeOffset, -180, 180),
-  ];
 }
 
 export default function ProductMap({
@@ -758,6 +750,7 @@ export default function ProductMap({
   const [showResults, setShowResults] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [focusedMapItemKey, setFocusedMapItemKey] = React.useState<string | null>(null);
+  const [expandedClusterKeys, setExpandedClusterKeys] = React.useState<string[]>([]);
   const [isTopSearchResultsOpen, setIsTopSearchResultsOpen] = React.useState(false);
   const [panelSearchQuery, setPanelSearchQuery] = React.useState("");
   const [mapReadyVersion, setMapReadyVersion] = React.useState(0);
@@ -902,13 +895,18 @@ export default function ProductMap({
     [searchQuery],
   );
   const topSearchResults = React.useMemo(() => {
+    if (expandedClusterKeys.length) {
+      return filteredProducts.filter(product => expandedClusterKeys.includes(getMapItemKey(product)));
+    }
     if (!normalizedTopSearchQuery && !mapSearchPoint) {
       return [];
     }
     return filteredProducts.slice(0, 50);
-  }, [filteredProducts, normalizedTopSearchQuery, mapSearchPoint]);
+  }, [filteredProducts, normalizedTopSearchQuery, mapSearchPoint, expandedClusterKeys]);
   const shouldShowTopSearchResults =
-    (normalizedTopSearchQuery.length > 0 || Boolean(mapSearchPoint)) && isTopSearchResultsOpen;
+    (normalizedTopSearchQuery.length > 0 || Boolean(mapSearchPoint) || expandedClusterKeys.length > 0) && isTopSearchResultsOpen;
+
+  React.useEffect(() => { setExpandedClusterKeys([]); }, [filteredProducts]);
 
   React.useEffect(() => {
     if (!focusedMapItemKey) {
@@ -1046,18 +1044,13 @@ export default function ProductMap({
   const focusMapItem = React.useCallback(
     (product: LocatedProduct) => {
       if (product.establishmentId) void api.trackDiscovery('map', product.establishmentId);
-      const visibleProducts = filteredProducts.slice(0, 80);
-      const nearbyGroup = visibleProducts.filter(
-        (item) => getNearbyMarkerGroupKey(item) === getNearbyMarkerGroupKey(product),
-      );
-      const nearbyIndex = nearbyGroup.findIndex((item) => item.id === product.id);
       setFocusedMapItemKey(getMapItemKey(product));
       mapRef.current?.setView(
-        getSpreadMarkerPosition(product, Math.max(0, nearbyIndex), nearbyGroup.length),
-        nearbyGroup.length > 1 ? 17 : 16,
+        [product.latitude, product.longitude],
+        Math.max(16, mapRef.current.getZoom()),
       );
     },
-    [filteredProducts],
+    [],
   );
 
   const handleStartDrawingMode = () => {
@@ -1480,8 +1473,6 @@ export default function ProductMap({
       return;
     }
 
-    clearMarkers();
-
     const map = mapRef.current;
     const L = leafletRef.current;
     const orderedProducts = [...filteredProducts]
@@ -1490,51 +1481,71 @@ export default function ProductMap({
           a.id === initialFocusProductId || getMapItemKey(a) === focusedMapItemKey ? 1 : 0;
         const bIsFocused =
           b.id === initialFocusProductId || getMapItemKey(b) === focusedMapItemKey ? 1 : 0;
-        return aIsFocused - bIsFocused;
+        return bIsFocused - aIsFocused;
       })
       .slice(0, 80);
-    const nearbyGroups = orderedProducts.reduce((groups, product) => {
-      const groupKey = getNearbyMarkerGroupKey(product);
-      const group = groups.get(groupKey);
-      if (group) {
-        group.push(product);
-      } else {
-        groups.set(groupKey, [product]);
-      }
-      return groups;
-    }, new globalThis.Map<string, LocatedProduct[]>());
-
-    markersRef.current = orderedProducts.flatMap((product) => {
-      const isFocusedProduct =
-        product.id === initialFocusProductId || getMapItemKey(product) === focusedMapItemKey;
-      const nearbyGroup = nearbyGroups.get(getNearbyMarkerGroupKey(product)) ?? [product];
-      const nearbyIndex = nearbyGroup.findIndex((item) => item.id === product.id);
-      const markerPosition = getSpreadMarkerPosition(
-        product,
-        Math.max(0, nearbyIndex),
-        nearbyGroup.length,
-      );
-      const storeMarker = L.marker(markerPosition, {
+    const productByKey = new globalThis.Map(orderedProducts.map(product => [getMapItemKey(product), product]));
+    let updateTimer: number | undefined;
+    const renderMarkers = () => {
+      if (mapRef.current !== map) return;
+      const zoom = map.getZoom();
+      const reserved = [savedUserLocation, mapSearchPoint].filter(Boolean).map(point =>
+        map.latLngToContainerPoint([point!.lat, point!.lng]));
+      const groups = layoutMapMarkers(orderedProducts.map(product => ({
+        ...map.latLngToContainerPoint([product.latitude, product.longitude]),
+        key: getMapItemKey(product),
+        priority: product.id === initialFocusProductId || getMapItemKey(product) === focusedMapItemKey,
+      })), zoom, map.getSize(), reserved);
+      clearMarkers();
+      markersRef.current = groups.map(group => {
+        const members = group.keys.map(key => productByKey.get(key)!);
+        const product = members[0];
+        const clustered = members.length > 1;
+        const position = clustered ? map.containerPointToLatLng([group.x, group.y])
+          : { lat: product.latitude, lng: product.longitude };
+        const title = clustered ? t("{count} resultado(s)", { count: members.length })
+          : product.establishmentName || product.sellerName || product.name;
+        const storeMarker = L.marker([position.lat, position.lng], {
           bubblingMouseEvents: false,
-       icon: L.divIcon({
-  className: "templesale-store-map-marker",
-  html: buildStoreMarkerHtml(
-    product,
-    buildMapDistanceSummary(searchOrigin, product),
-  ),
-  iconSize: [190, 68],
-  iconAnchor: [95, 62],
-}),
-        zIndexOffset: isFocusedProduct ? 10000 : 0,
+          title,
+          icon: L.divIcon({
+            className: "templesale-store-map-marker",
+            html: clustered
+              ? `<div style="position:relative;width:44px;height:48px"><span style="position:absolute;top:40px;left:17px;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid #00c896"></span><div style="position:relative;width:44px;height:44px;box-sizing:border-box;border:3px solid #00c896;border-radius:50%;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;box-shadow:0 2px 5px #0005">${members.length}</div></div>`
+              : buildStoreMarkerHtml(product, buildMapDistanceSummary(searchOrigin, product), !group.detailed, zoom < 10),
+            iconSize: group.detailed ? MAP_LABEL_SIZE : [MAP_PIN_SIZE, MAP_PIN_ANCHOR[1]],
+            iconAnchor: group.detailed ? MAP_LABEL_ANCHOR : MAP_PIN_ANCHOR,
+          }),
+          zIndexOffset: members.some(item => item.id === initialFocusProductId || getMapItemKey(item) === focusedMapItemKey) ? 10000 : 0,
+        });
+        storeMarker.on("click", () => {
+          if (!clustered) { openMapItem(product); return; }
+          const maxZoom = Math.min(18, map.getMaxZoom());
+          if (map.getZoom() < maxZoom) {
+            map.setView([position.lat, position.lng], Math.min(maxZoom, map.getZoom() + 2));
+          } else {
+            // Same building or dense street: reuse the existing result list.
+            setExpandedClusterKeys(group.keys);
+            setIsTopSearchResultsOpen(true);
+          }
+        });
+        return storeMarker.addTo(map);
       });
-      storeMarker.on("click", () => {
-        openMapItem(product);
-      });
-      storeMarker.addTo(map);
+    };
+    // Wait for the gesture to settle; never query the backend when changing zoom/bearing.
+    const scheduleMarkers = () => {
+      window.clearTimeout(updateTimer);
+      updateTimer = window.setTimeout(renderMarkers, 100);
+    };
+    map.on("zoomend moveend rotate resize", scheduleMarkers);
+    renderMarkers();
 
-      return [storeMarker];
-    });
-  }, [clearMarkers, filteredProducts, focusedMapItemKey, initialFocusProductId, mapReadyVersion, openMapItem, searchOrigin, t]);
+    return () => {
+      window.clearTimeout(updateTimer);
+      map.off("zoomend moveend rotate resize", scheduleMarkers);
+      clearMarkers();
+    };
+  }, [clearMarkers, filteredProducts, focusedMapItemKey, initialFocusProductId, mapReadyVersion, openMapItem, searchOrigin, savedUserLocation, mapSearchPoint, t]);
 
   React.useEffect(() => {
     if (!showResults || currentPolygon.length < 3) {
@@ -1710,6 +1721,7 @@ export default function ProductMap({
                 }}
                 onChange={(event) => {
                   const nextQuery = event.target.value;
+                  setExpandedClusterKeys([]);
                   setSearchQuery(nextQuery);
                   setFocusedMapItemKey(null);
                   setIsTopSearchResultsOpen(normalizeSearchText(nextQuery).length > 0);
@@ -1744,7 +1756,7 @@ export default function ProductMap({
                       {mapSearchPoint ? t("Até 5 km do ponto escolhido") : t("Lojas encontradas")}
                     </span>
                     <span className="text-[10px] text-neutral-500">
-                      {t("{count} resultado(s)", { count: filteredProducts.length })}
+                      {t("{count} resultado(s)", { count: expandedClusterKeys.length ? topSearchResults.length : filteredProducts.length })}
                     </span>
                   </div>
 
