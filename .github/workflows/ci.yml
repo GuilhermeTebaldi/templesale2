@@ -48,5 +48,8 @@ jobs:
       - name: Local discovery regression tests
         run: node --import tsx --test tests/discovery.test.mjs tests/publication-feed.test.mjs tests/admin-session.test.mjs
 
+      - name: Map marker layout regression tests
+        run: node --import tsx --test tests/map-marker-layout.test.mjs
+
       - name: Build
         run: npm run build
