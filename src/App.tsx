@@ -1,5 +1,6 @@
 import React from "react";
 import { usePublicationFeed } from "./lib/use-publication-feed";
+import { FeedRequestGate } from "./lib/publication-feed";
 import { useAuth0 } from "@auth0/auth0-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Search, ShoppingBag, Menu, ArrowRight, Instagram, X, User, Package, CreditCard, Settings, LogOut, ChevronRight, ChevronLeft, Heart, Plus, Minus, Share2, Bell, Globe, MapPin, RotateCcw, Map, Store, Languages, FileText, Shield, HelpCircle, ChevronDown, ImagePlus, LoaderCircle, Trash2, Users, Mail, MessageCircle, Home, Filter } from "lucide-react";
@@ -364,6 +365,10 @@ export default function App() {
   const [selectedEstablishment, setSelectedEstablishment] = React.useState<EstablishmentDto | null>(null);
   const [, setSelectedEstablishmentProducts] = React.useState<Product[]>([]);
   const [selectedEstablishmentPublications, setSelectedEstablishmentPublications] = React.useState<PublicationDto[]>([]);
+  const [profilePublicationsEstablishmentId, setProfilePublicationsEstablishmentId] = React.useState<number | null>(null);
+  const [profilePublicationsError, setProfilePublicationsError] = React.useState("");
+  const profilePublicationsGate = React.useRef(new FeedRequestGate());
+  const hasResolvedProductFromUrl = React.useRef(false);
   const [isLoadingMoreSelectedEstablishmentPublications, setIsLoadingMoreSelectedEstablishmentPublications] = React.useState(false);
   const [hasMoreSelectedEstablishmentPublications, setHasMoreSelectedEstablishmentPublications] = React.useState(false);
   const [nextSelectedEstablishmentPublicationsOffset, setNextSelectedEstablishmentPublicationsOffset] = React.useState(0);
@@ -1697,12 +1702,18 @@ export default function App() {
               String(item.id) === String(establishment) ||
               String(item.slug ?? "") === String(establishment),
           ) ?? null;
+    const request = profilePublicationsGate.current.begin();
+    hasResolvedProductFromUrl.current = true;
+    setProfilePublicationsEstablishmentId(cachedEstablishment?.id ?? null);
+    setSelectedEstablishmentPublications([]);
+    setHasMoreSelectedEstablishmentPublications(false);
+    setNextSelectedEstablishmentPublicationsOffset(0);
+    setIsLoadingMoreSelectedEstablishmentPublications(true);
+    setProfilePublicationsError("");
+    setSocialActiveTab("profile");
     if (cachedEstablishment) {
       setSelectedEstablishment(cachedEstablishment);
       setSelectedEstablishmentProducts([]);
-      setSelectedEstablishmentPublications([]);
-      setHasMoreSelectedEstablishmentPublications(false);
-      setNextSelectedEstablishmentPublicationsOffset(0);
       setIsEstablishmentPageOpen(true);
       setSelectedProduct(null);
       setSocialSelectedCompanyId(`company_${cachedEstablishment.id}`);
@@ -1720,11 +1731,14 @@ export default function App() {
       const payload = await api.getEstablishment(idOrSlug, {
         publicationsLimit: ESTABLISHMENT_PROFILE_INITIAL_PUBLICATIONS_LIMIT,
       });
+      if (!profilePublicationsGate.current.accepts(request)) return;
       void api.trackDiscovery('company_open', payload.establishment.id);
       setSelectedEstablishment(payload.establishment);
       setSelectedEstablishmentProducts(payload.products as Product[]);
+      setProfilePublicationsEstablishmentId(payload.establishment.id);
       setSelectedEstablishmentPublications(payload.publications);
       setHasMoreSelectedEstablishmentPublications(
+        payload.publications.length >= ESTABLISHMENT_PROFILE_INITIAL_PUBLICATIONS_LIMIT ||
         (payload.establishment.publicationCount ?? payload.publications.length) >
           payload.publications.length,
       );
@@ -1742,27 +1756,52 @@ export default function App() {
         );
       }
     } catch (error) {
+      if (!profilePublicationsGate.current.accepts(request)) return;
+      setProfilePublicationsError("Não foi possível carregar as fotos deste perfil.");
       console.error("Error opening establishment:", error);
+    } finally {
+      if (profilePublicationsGate.current.accepts(request)) {
+        profilePublicationsGate.current.finish(request);
+        setIsLoadingMoreSelectedEstablishmentPublications(false);
+      }
     }
   }, [establishments]);
 
+  React.useEffect(() => {
+    if (socialActiveTab !== "profile") {
+      profilePublicationsGate.current.cancel();
+      setIsLoadingMoreSelectedEstablishmentPublications(false);
+    }
+  }, [socialActiveTab]);
+
+  React.useEffect(() => () => {
+    profilePublicationsGate.current.cancel();
+    hasResolvedProductFromUrl.current = false;
+  }, []);
+
   const loadMoreSelectedEstablishmentPublications = React.useCallback(async () => {
-    const establishmentId = selectedEstablishment?.id;
+    const establishmentId = profilePublicationsEstablishmentId;
     if (
       !establishmentId ||
+      socialActiveTab !== "profile" ||
+      socialSelectedCompanyId !== `company_${establishmentId}` ||
+      profilePublicationsGate.current.busy ||
       isLoadingMoreSelectedEstablishmentPublications ||
       !hasMoreSelectedEstablishmentPublications
     ) {
       return;
     }
 
+    const request = profilePublicationsGate.current.begin();
     setIsLoadingMoreSelectedEstablishmentPublications(true);
+    setProfilePublicationsError("");
     try {
       const page = await api.getEstablishmentPublications({
         establishmentId,
         limit: ESTABLISHMENT_PROFILE_MORE_PUBLICATIONS_LIMIT,
         offset: nextSelectedEstablishmentPublicationsOffset,
       });
+      if (!profilePublicationsGate.current.accepts(request)) return;
       setSelectedEstablishmentPublications((current) => {
         const nextById = new globalThis.Map<number, PublicationDto>();
         current.forEach((publication) => nextById.set(publication.id, publication));
@@ -1772,18 +1811,29 @@ export default function App() {
       setHasMoreSelectedEstablishmentPublications(page.hasMore);
       setNextSelectedEstablishmentPublicationsOffset(page.nextOffset);
     } catch (error) {
+      if (!profilePublicationsGate.current.accepts(request)) return;
+      setProfilePublicationsError("Não foi possível carregar as próximas fotos.");
       console.error("Error loading more establishment publications:", error);
     } finally {
-      setIsLoadingMoreSelectedEstablishmentPublications(false);
+      if (profilePublicationsGate.current.accepts(request)) {
+        profilePublicationsGate.current.finish(request);
+        setIsLoadingMoreSelectedEstablishmentPublications(false);
+      }
     }
   }, [
     hasMoreSelectedEstablishmentPublications,
     isLoadingMoreSelectedEstablishmentPublications,
     nextSelectedEstablishmentPublicationsOffset,
-    selectedEstablishment?.id,
+    profilePublicationsEstablishmentId,
+    socialActiveTab,
+    socialSelectedCompanyId,
   ]);
 
   const closeEstablishmentPage = React.useCallback(() => {
+    profilePublicationsGate.current.cancel();
+    setProfilePublicationsEstablishmentId(null);
+    setProfilePublicationsError("");
+    setIsLoadingMoreSelectedEstablishmentPublications(false);
     setIsEstablishmentPageOpen(false);
     setSelectedEstablishment(null);
     setSelectedEstablishmentProducts([]);
@@ -1812,12 +1862,11 @@ export default function App() {
       }
     }
   }, [isEstablishmentPageOpen, selectedEstablishment]);
-  const hasResolvedProductFromUrl = React.useRef(false);
   React.useEffect(() => {
     if (hasResolvedProductFromUrl.current) {
       return;
     }
-    if (products.length === 0 || typeof window === "undefined") {
+    if (typeof window === "undefined") {
       return;
     }
 
@@ -1827,6 +1876,8 @@ export default function App() {
       void openEstablishmentPage(decodeURIComponent(establishmentMatch[1]));
       return;
     }
+
+    if (products.length === 0) return;
 
     const slugFromPathname = resolveProductSlugFromPathname(window.location.pathname);
     if (slugFromPathname) {
@@ -2092,11 +2143,7 @@ export default function App() {
       const payload = await api.getPublication(publicationId);
       setSelectedProduct(null);
       setFocusedCommentId(null);
-      setSelectedEstablishment(payload.establishment);
-      setSelectedEstablishmentPublications((current) => [
-        payload.publication,
-        ...current.filter((publication) => publication.id !== payload.publication.id),
-      ]);
+      void openEstablishmentPage(payload.establishment);
       setSelectedPublication(payload.publication);
       setFocusedPublicationCommentId(commentId);
       setIsEstablishmentPageOpen(true);
@@ -2959,10 +3006,10 @@ export default function App() {
   );
   const selectedSocialCompanyPosts = React.useMemo(() => {
     const selectedEstablishmentId = establishmentIdFromSocialCompanyId(selectedSocialCompany.id);
-    if (selectedEstablishmentId && selectedEstablishment?.id === selectedEstablishmentId) {
+    if (selectedEstablishmentId && profilePublicationsEstablishmentId === selectedEstablishmentId) {
       const deletedIds = new Set(deletedPublicationIds);
       return selectedEstablishmentPublications
-        .filter((publication) => !deletedIds.has(publication.id))
+        .filter((publication) => publication.establishmentId === selectedEstablishmentId && !deletedIds.has(publication.id))
         .map((publication) => ({
           id: socialPostIdFromPublicationId(publication.id),
           companyId: socialCompanyIdFromEstablishmentId(publication.establishmentId),
@@ -2985,7 +3032,7 @@ export default function App() {
     establishmentIdFromSocialCompanyId,
     memberProfilePhoto,
     publicationCommentsById,
-    selectedEstablishment?.id,
+    profilePublicationsEstablishmentId,
     selectedEstablishmentPublications,
     selectedSocialCompany.id,
     socialCompanyIdFromEstablishmentId,
@@ -3134,13 +3181,22 @@ export default function App() {
       setSocialActiveTab("profile");
       scrollWindowToTop();
       const establishmentId = establishmentIdFromSocialCompanyId(companyId);
-      const establishment = establishmentId ? establishments.find((item) => item.id === establishmentId) : null;
+      const establishment = establishmentId
+        ? establishments.find((item) => item.id === establishmentId) ??
+          (myEstablishment?.id === establishmentId ? myEstablishment : null)
+        : null;
       if (establishmentId) {
         void openEstablishmentPage(establishment ?? establishmentId);
       }
     },
-    [establishmentIdFromSocialCompanyId, establishments, openEstablishmentPage, socialActiveTab],
+    [establishmentIdFromSocialCompanyId, establishments, myEstablishment, openEstablishmentPage, socialActiveTab],
   );
+
+  React.useEffect(() => {
+    if (socialActiveTab === "profile" && socialSelectedCompanyId === "company_guest" && myEstablishment) {
+      selectSocialCompany(`company_${myEstablishment.id}`);
+    }
+  }, [myEstablishment, selectSocialCompany, socialActiveTab, socialSelectedCompanyId]);
 
   const addSocialComment = React.useCallback(
     async (postId: string, text: string) => {
@@ -3198,12 +3254,13 @@ export default function App() {
     }
 
     if (tab === "profile") {
-      setSocialSelectedCompanyId(activeSocialCompany.id);
+      selectSocialCompany(activeSocialCompany.id);
+      return;
     }
 
     setSocialActiveTab(tab);
 
-    if (tab === "profile" || tab === "search") {
+    if (tab === "search") {
       scrollWindowToTop();
     }
 
@@ -3220,6 +3277,7 @@ export default function App() {
     activeSocialCompany.id,
     loadPublicationFeedPage,
     openMapDefault,
+    selectSocialCompany,
     socialActiveTab,
   ],
 );
@@ -3580,8 +3638,16 @@ export default function App() {
               void deleteSocialPost(postId);
             }}
             onEditPost={openSocialPublicationEditor}
-            hasMorePosts={hasMoreSelectedEstablishmentPublications}
+            hasMorePosts={profilePublicationsEstablishmentId === establishmentIdFromSocialCompanyId(selectedSocialCompany.id) && hasMoreSelectedEstablishmentPublications}
             isLoadingMorePosts={isLoadingMoreSelectedEstablishmentPublications}
+            postsError={profilePublicationsError}
+            onRetryPosts={() => {
+              if (nextSelectedEstablishmentPublicationsOffset === 0) {
+                selectSocialCompany(selectedSocialCompany.id);
+              } else {
+                void loadMoreSelectedEstablishmentPublications();
+              }
+            }}
             onLoadMorePosts={loadMoreSelectedEstablishmentPublications}
           />
         )}
@@ -3642,9 +3708,7 @@ export default function App() {
           void handleLogout();
         }}
         onViewPublicProfile={(companyId) => {
-          setSocialSelectedCompanyId(companyId);
-          setSocialActiveTab("profile");
-          scrollWindowToTop();
+          selectSocialCompany(companyId);
           setIsUserOpen(false);
         }}
         currentLanguage={locale as SocialSupportedLanguage}

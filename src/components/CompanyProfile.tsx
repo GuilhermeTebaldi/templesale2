@@ -40,6 +40,8 @@ interface CompanyProfileProps {
   onEditPost?: (postId: string) => void;
   hasMorePosts?: boolean;
   isLoadingMorePosts?: boolean;
+  postsError?: string;
+  onRetryPosts?: () => void;
   onLoadMorePosts?: () => Promise<void> | void;
 }
 
@@ -59,6 +61,8 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
   onEditPost,
   hasMorePosts = false,
   isLoadingMorePosts = false,
+  postsError = '',
+  onRetryPosts,
   onLoadMorePosts,
 }) => {
   const [activeHighlight, setActiveHighlight] = useState<string | null>(null);
@@ -82,7 +86,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
 
   useEffect(() => {
     const sentinel = loadMoreRef.current;
-    if (!sentinel || !onLoadMorePosts) {
+    if (!sentinel || !onLoadMorePosts || postsError) {
       return;
     }
 
@@ -98,7 +102,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasMorePosts, isLoadingMorePosts, onLoadMorePosts]);
+  }, [hasMorePosts, isLoadingMorePosts, onLoadMorePosts, posts.length, postsError]);
 
   return (
     <div id="company-profile-view" className="mx-auto max-w-xl px-0 py-0 sm:max-w-3xl sm:px-4 sm:py-4 space-y-4">
@@ -412,6 +416,9 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
 
         {/* 7. GRADE DE FOTOS 3 COLUNAS (Edge-to-edge sem barras pretas) */}
         {posts.length === 0 ? (
+          isLoadingMorePosts ? (
+            <p role="status" className="py-16 text-center text-sm text-neutral-400">Carregando fotos...</p>
+          ) : postsError ? null : (
           <div className="text-center py-16 px-4 space-y-2">
             <div className="w-12 h-12 rounded-full border border-neutral-800 mx-auto flex items-center justify-center text-neutral-500 mb-2">
               <Grid3X3 className="w-6 h-6" />
@@ -434,6 +441,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
               </button>
             )}
           </div>
+          )
         ) : (
           <div
             id="company-posts-grid"
@@ -510,6 +518,14 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 </div>
               )}
             </div>
+          </div>
+        )}
+        {postsError && (
+          <div role="alert" className="px-4 py-6 text-center text-sm text-neutral-400">
+            <p>{postsError}</p>
+            <button type="button" onClick={onRetryPosts} className="mt-2 font-semibold text-neutral-100">
+              Tentar novamente
+            </button>
           </div>
         )}
       </div>
