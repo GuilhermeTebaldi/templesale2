@@ -518,6 +518,7 @@ type LeafletGlobal = {
     options?: unknown,
   ) => LeafletCircleMarkerInstance;
   polygon: (coords: [number, number][], options?: unknown) => LeafletPolygonInstance;
+  polyline: (coords: [number, number][], options?: unknown) => LeafletPolygonInstance;
   control: {
     zoom: (options?: {
       position?: "topleft" | "topright" | "bottomleft" | "bottomright";
@@ -750,6 +751,8 @@ export default function ProductMap({
   const [showResults, setShowResults] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [focusedMapItemKey, setFocusedMapItemKey] = React.useState<string | null>(null);
+  const [routeTarget, setRouteTarget] = React.useState<LocatedProduct | null>(null);
+  const [routeStatus, setRouteStatus] = React.useState<"loading" | "ready" | "error" | null>(null);
   const [expandedClusterKeys, setExpandedClusterKeys] = React.useState<string[]>([]);
   const [isTopSearchResultsOpen, setIsTopSearchResultsOpen] = React.useState(false);
   const [panelSearchQuery, setPanelSearchQuery] = React.useState("");
@@ -779,6 +782,54 @@ export default function ProductMap({
   const attemptedSellerCityOwnerIdsRef = React.useRef<Set<number>>(new Set());
   const topSearchContainerRef = React.useRef<HTMLDivElement | null>(null);
   const topSearchInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const routeDestination = routeTarget ?? productsWithLocation.find(item => item.id === initialFocusProductId);
+  const routeLat = routeDestination?.latitude;
+  const routeLng = routeDestination?.longitude;
+  const googleMapsParams = new URLSearchParams({
+    api: "1",
+    destination: `${routeLat},${routeLng}`,
+    travelmode: "driving",
+    dir_action: "navigate",
+    ...(savedUserLocation ? { origin: `${savedUserLocation.lat},${savedUserLocation.lng}` } : {}),
+  });
+
+  React.useEffect(() => {
+    const map = mapRef.current;
+    const L = leafletRef.current;
+    setRouteStatus(null);
+    if (!map || !L || !savedUserLocation || routeLat === undefined || routeLng === undefined) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    let line: LeafletPolygonInstance | null = null;
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
+    setRouteStatus("loading");
+    const params = new URLSearchParams({
+      originLat: String(savedUserLocation.lat), originLng: String(savedUserLocation.lng),
+      destinationLat: String(routeLat), destinationLng: String(routeLng),
+    });
+    void fetch(`/api/map-route?${params}`, { signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) throw new Error("Route unavailable");
+        const data = await response.json();
+        if (!Array.isArray(data.coordinates) || data.coordinates.length < 2 ||
+          !data.coordinates.every((point: unknown) => Array.isArray(point) && point.length === 2 &&
+            point.every(value => typeof value === "number" && Number.isFinite(value)) &&
+            Math.abs(point[0]) <= 180 && Math.abs(point[1]) <= 90)) throw new Error("Invalid route");
+        if (controller.signal.aborted) return;
+        const points: GeoPoint[] = data.coordinates.map(([lng, lat]: [number, number]) => [lat, lng]);
+        line = L.polyline(points, { color: "#3b82f6", weight: 5, opacity: 0.9, interactive: false }).addTo(map);
+        setRouteStatus("ready");
+      })
+      .catch(() => { if (!cancelled) setRouteStatus("error"); })
+      .finally(() => window.clearTimeout(timeout));
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearTimeout(timeout);
+      line?.remove();
+    };
+  }, [savedUserLocation?.lat, savedUserLocation?.lng, routeLat, routeLng, mapReadyVersion]);
 
 
   React.useEffect(() => {
@@ -1045,6 +1096,7 @@ export default function ProductMap({
     (product: LocatedProduct) => {
       if (product.establishmentId) void api.trackDiscovery('map', product.establishmentId);
       setFocusedMapItemKey(getMapItemKey(product));
+      setRouteTarget(product);
       mapRef.current?.setView(
         [product.latitude, product.longitude],
         Math.max(16, mapRef.current.getZoom()),
@@ -1935,6 +1987,22 @@ export default function ProductMap({
               touchAction: "none",
             }}
           />
+        )}
+
+        {!leafletError && routeDestination && (
+          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-[2700] w-[calc(100%-32px)] max-w-sm rounded-xl border border-neutral-800 bg-neutral-950/95 p-3 text-xs shadow-xl">
+            <p className="truncate font-semibold">{routeDestination.name}</p>
+            <p role="status" className="mt-1 text-neutral-400">
+              {!savedUserLocation ? t("Distância disponível após permitir localização") :
+                routeStatus === "loading" ? t("Calculando trajeto…") :
+                routeStatus === "error" ? t("Trajeto indisponível. Abra no Google Maps.") :
+                routeStatus === "ready" ? t("Trajeto de carro") : ""}
+            </p>
+            <a href={`https://www.google.com/maps/dir/?${googleMapsParams}`} target="_blank" rel="noopener noreferrer"
+              className="mt-2 block rounded-lg bg-blue-500 px-3 py-2 text-center font-semibold text-white">
+              Google Maps
+            </a>
+          </div>
         )}
 
         {!leafletError && !hasProductsWithLocation && (
