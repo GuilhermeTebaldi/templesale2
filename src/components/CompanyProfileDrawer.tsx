@@ -139,6 +139,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
               {currentView === 'main' && 'Menu da Empresa'}
               {currentView === 'saved' && `Publicações Salvas (${savedPosts.length})`}
               {currentView === 'language' && 'Idioma / Lingua'}
+              {currentView === 'account' && accountText('Encerrar conta', 'Chiudi account')}
             </h2>
           </div>
 
