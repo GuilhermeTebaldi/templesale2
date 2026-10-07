@@ -23,11 +23,13 @@ export interface AuthSubmitPayload {
 interface AuthProps {
   onSubmit: (payload: AuthSubmitPayload) => Promise<void>;
   onClose: () => void;
+  onOpenTerms?: () => void;
   defaultMode?: AuthMode;
 }
 
 export default function Auth({
   onClose,
+  onOpenTerms,
   defaultMode = "register",
 }: AuthProps) {
   const { t } = useI18n();
@@ -128,6 +130,9 @@ export default function Auth({
         </div>
 
         <div className="space-y-6">
+          {onOpenTerms && <button type="button" onClick={onOpenTerms} className="w-full text-center text-xs text-emerald-300 underline">
+            {t("Termos e privacidade")}
+          </button>}
           <p className="text-center text-sm leading-relaxed text-neutral-300">
             Entre com Google para cadastrar ou gerenciar sua empresa no TempleSale. O perfil criado sera o perfil publico da sua loja.
           </p>

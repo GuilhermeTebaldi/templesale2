@@ -33,6 +33,7 @@ interface CompanyProfileDrawerProps {
   onOpenEditCompany: () => void;
   onOpenFavorites?: () => void;
   onLogout?: () => void;
+  onOpenTerms?: () => void;
   onViewPublicProfile: (companyId: string) => void;
   currentLanguage: SupportedLanguage;
   onChangeLanguage: (lang: SupportedLanguage) => void;
@@ -55,6 +56,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
   onOpenEditCompany,
   onOpenFavorites,
   onLogout,
+  onOpenTerms,
   onViewPublicProfile,
   currentLanguage,
   onChangeLanguage,
@@ -256,6 +258,12 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                     <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-neutral-300 shrink-0" />
                   </button>
 
+                  {onOpenTerms && <button type="button" onClick={onOpenTerms}
+                    className="flex w-full items-center justify-between p-3.5 text-left hover:bg-neutral-800/50">
+                    <div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-emerald-300" />
+                      <span className="text-sm font-semibold">{currentLanguage === "it-IT" ? "Condizioni e ricevuta" : "Termos e comprovante"}</span>
+                    </div><ChevronRight className="h-4 w-4 text-neutral-500" />
+                  </button>}
                   {/* Item: Idioma */}
                   <button
                     type="button"

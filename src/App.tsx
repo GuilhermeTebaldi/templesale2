@@ -19,6 +19,7 @@ import { CompanyProfileDrawer as SocialCompanyProfileDrawer, type SupportedLangu
 import { NotificationsPopover as SocialNotificationsPopover } from "./components/NotificationsPopover";
 import { TempleSaleLogo as SocialTempleSaleLogo } from "./components/TempleSaleLogo";
 import PostAuthIntroOverlay from "./components/PostAuthIntroOverlay";
+import TermsDialog from "./components/TermsDialog";
 import Auth, { type AuthMode, type AuthSubmitPayload } from "./components/Auth";
 import MeusAnuncios from "./components/MeusAnuncios";
 import EditePerfil from "./components/EditePerfil";
@@ -350,6 +351,8 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = React.useState(false);
   const [authModalMode, setAuthModalMode] = React.useState<AuthMode>("register");
   const [currentUser, setCurrentUser] = React.useState<SessionUser | null>(null);
+  const [termsAccess, setTermsAccess] = React.useState(false);
+  const [isTermsOpen, setIsTermsOpen] = React.useState(false);
   const [isPostAuthIntroOpen, setIsPostAuthIntroOpen] = React.useState(false);
   const [profileCompletionMessage, setProfileCompletionMessage] = React.useState("");
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
@@ -435,7 +438,7 @@ export default function App() {
   const cartToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const productsRequestSequenceRef = React.useRef(0);
   const auth0SyncAttemptedRef = React.useRef(false);
-  const hasMemberAccess = Boolean(currentUser);
+  const hasMemberAccess = Boolean(currentUser && termsAccess);
   const cartStorageKey = React.useMemo(
     () => getScopedStorageKey(CART_STORAGE_KEY, currentUser?.id),
     [currentUser?.id],
@@ -1359,6 +1362,8 @@ export default function App() {
   };
 
   const clearUserSessionState = () => {
+    setTermsAccess(false);
+    setIsTermsOpen(false);
     setCurrentUser(null);
     setMyProducts([]);
     setLikedProducts([]);
@@ -3464,7 +3469,11 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
+    <div inert={Boolean(currentUser && !termsAccess) || isTermsOpen} className="min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
+      <TermsDialog key={currentUser?.id ?? "visitor"} user={currentUser} locale={locale === "it-IT" ? "it-IT" : "pt-BR"}
+        open={isTermsOpen} companyName={myEstablishment?.name} onClose={() => setIsTermsOpen(false)}
+        onAccess={setTermsAccess} onReject={handleLogout}
+        getIdentityToken={async () => String((await getIdTokenClaims())?.__raw ?? "")} />
       <input
         ref={avatarInputRef}
         type="file"
@@ -3475,6 +3484,7 @@ export default function App() {
       <AnimatePresence>
         {isAuthModalOpen && (
           <Auth
+            onOpenTerms={() => { setIsAuthModalOpen(false); setIsTermsOpen(true); }}
             onSubmit={handleAuthSubmit}
             defaultMode={authModalMode}
             onClose={() => setIsAuthModalOpen(false)}
@@ -3682,10 +3692,12 @@ export default function App() {
             <span>Rede de Descoberta de Empresas</span>
           </div>
           <span className="text-[11px] text-neutral-500">Empresa -&gt; Foto -&gt; Legenda</span>
+          <button onClick={() => setIsTermsOpen(true)} className="text-[11px] text-neutral-400 underline">{t("Termos e privacidade")}</button>
         </div>
       </footer>
 
       <SocialCompanyProfileDrawer
+        onOpenTerms={() => { setIsUserOpen(false); setIsTermsOpen(true); }}
         isOpen={isUserOpen}
         onClose={() => setIsUserOpen(false)}
         company={activeSocialCompany}
