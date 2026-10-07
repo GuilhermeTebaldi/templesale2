@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
 import type { LegalDocument, LegalLocale } from "../src/lib/legal-types";
 
-export const LEGAL_VERSION = "2026-10-07.1";
+export const LEGAL_VERSION = "2026-10-07.2";
 export function buildLegalDocument(locale: LegalLocale, env: Record<string, string | undefined>): LegalDocument {
   const it = locale === "it-IT";
   const pick = (pt: string, italian: string) => it ? italian : pt;
   return {
     version: LEGAL_VERSION, locale, title: pick("Termos de uso e aviso de privacidade", "Condizioni d'uso e informativa privacy"),
     operator: {
-      name: env.LEGAL_OPERATOR_NAME?.trim() || "",
+      name: env.LEGAL_OPERATOR_NAME?.trim() || "Guilherme Tebaldi e Cristiane Elisabeth Eistalt Tebaldi",
       address: env.LEGAL_OPERATOR_ADDRESS?.trim() || "",
       country: env.LEGAL_OPERATOR_COUNTRY?.trim() || "",
       taxId: env.LEGAL_OPERATOR_TAX_ID?.trim() || "",
@@ -60,5 +60,5 @@ export function hashLegalDocument(document: LegalDocument): string {
   return createHash("sha256").update(JSON.stringify(document)).digest("hex");
 }
 export function legalPublicationReady(env: Record<string, string | undefined>): boolean {
-  return ["LEGAL_OPERATOR_NAME", "LEGAL_OPERATOR_ADDRESS", "LEGAL_OPERATOR_COUNTRY", "LEGAL_PRIVACY_TRANSFER_DETAILS", "LEGAL_PRIVACY_RETENTION"].every(key => Boolean(env[key]?.trim()));
+  return ["LEGAL_OPERATOR_COUNTRY", "LEGAL_PRIVACY_TRANSFER_DETAILS", "LEGAL_PRIVACY_RETENTION"].every(key => Boolean(env[key]?.trim()));
 }

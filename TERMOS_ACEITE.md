@@ -6,12 +6,14 @@ O recurso acrescenta uma etapa após o login Auth0. A área da conta permanece b
 
 O recurso vem desativado. Antes de ativá-lo, completar e revisar:
 
-- LEGAL_OPERATOR_NAME: nome completo da pessoa responsável pela operação.
-- LEGAL_OPERATOR_ADDRESS: endereço profissional de contato.
+- LEGAL_OPERATOR_NAME: responsáveis pela operação; padrão confirmado: Guilherme Tebaldi e Cristiane Elisabeth Eistalt Tebaldi.
+- LEGAL_OPERATOR_ADDRESS: campo opcional, mantido vazio por solicitação dos responsáveis; não é exibido quando ausente.
 - LEGAL_OPERATOR_COUNTRY: país de estabelecimento.
 - LEGAL_OPERATOR_TAX_ID: identificação fiscal, quando aplicável.
 - LEGAL_PRIVACY_RETENTION: prazos ou critérios reais de conservação, incluindo contas, logs, backups e comprovantes.
 - LEGAL_PRIVACY_TRANSFER_DETAILS: fornecedores, países reais de tratamento e instrumentos aplicáveis às transferências internacionais.
+
+O contato público é thetemplesale@gmail.com. A omissão do endereço atende à preferência dos responsáveis e não comprova cumprimento de todas as obrigações de identificação aplicáveis.
 
 Os textos livres de conservação e transferência devem conter as informações em português e italiano. Os dados precisam corresponder às configurações e aos contratos reais dos fornecedores. O texto é uma minuta e requer revisão jurídica adequada à operação; não garante conformidade integral do site.
 

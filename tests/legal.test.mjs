@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import express from 'express';
 import { createLegalService, registerLegalRoutes, legalAccountGate } from '../server/legal.ts';
+import { buildLegalDocument, legalPublicationReady } from '../server/legal-document.ts';
 import { sqliteBindings } from '../server/discovery.ts';
 
 const config = {
@@ -110,4 +111,16 @@ test('account writes are blocked server-side before acceptance; rejection can st
     await service.accept(user, identity, identity.sub, input);
     assert.equal((await fetch(url + '/api/products', options)).status, 200);
   } finally { await new Promise(resolve => server.close(resolve)); db.close(); }
+});
+
+test('confirmed operators and contact are present without publishing an address', () => {
+  const withoutAddress = { ...config, LEGAL_OPERATOR_NAME: '', LEGAL_OPERATOR_ADDRESS: '' };
+  assert.equal(legalPublicationReady(withoutAddress), true);
+  for (const locale of ['pt-BR', 'it-IT']) {
+    const doc = buildLegalDocument(locale, withoutAddress);
+    assert.equal(doc.operator.name, 'Guilherme Tebaldi e Cristiane Elisabeth Eistalt Tebaldi');
+    assert.equal(doc.operator.email, 'thetemplesale@gmail.com');
+    assert.equal(doc.operator.address, '');
+  }
+  assert.equal(legalPublicationReady({ ...withoutAddress, LEGAL_PRIVACY_RETENTION: '' }), false);
 });

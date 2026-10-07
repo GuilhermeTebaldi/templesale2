@@ -129,7 +129,7 @@ export default function TermsDialog({ user, locale, open, companyName, onClose, 
           {document && <>
             <section className="mb-6 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5">
               <h2 className="font-semibold">{document.title}</h2>
-              <p className="mt-2 whitespace-pre-line text-sm leading-6 text-neutral-400">{document.operator.name || text("Responsável ainda não informado", "Titolare non ancora indicato")}{"\n"}{document.operator.address} · {document.operator.country}</p>
+              <p className="mt-2 whitespace-pre-line text-sm leading-6 text-neutral-400">{document.operator.name || text("Responsável ainda não informado", "Titolare non ancora indicato")}{"\n"}{[document.operator.address, document.operator.country].filter(Boolean).join(" · ")}</p>
               {document.operator.taxId && <p className="text-sm text-neutral-400">{document.operator.taxId}</p>}
               <a href={`mailto:${document.operator.email}`} className="mt-2 inline-block break-all text-sm text-emerald-300">{document.operator.email}</a>
             </section>
