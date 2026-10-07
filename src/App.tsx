@@ -3471,7 +3471,7 @@ export default function App() {
   return (
     <div inert={Boolean(currentUser && !termsAccess) || isTermsOpen} className="min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
       <TermsDialog key={currentUser?.id ?? "visitor"} user={currentUser} locale={locale === "it-IT" ? "it-IT" : "pt-BR"}
-        open={isTermsOpen} companyName={myEstablishment?.name} onClose={() => setIsTermsOpen(false)}
+        open={isTermsOpen} introComplete={!isPostAuthIntroOpen} companyName={myEstablishment?.name} onClose={() => setIsTermsOpen(false)}
         onAccess={setTermsAccess} onReject={handleLogout}
         getIdentityToken={async () => String((await getIdTokenClaims())?.__raw ?? "")} />
       <input
@@ -3698,6 +3698,11 @@ export default function App() {
 
       <SocialCompanyProfileDrawer
         onOpenTerms={() => { setIsUserOpen(false); setIsTermsOpen(true); }}
+        onCloseAccount={async (mode, confirmation) => {
+          const token = String((await getIdTokenClaims())?.__raw ?? "");
+          await api.closeAccount(mode, confirmation, token);
+          await handleLogout();
+        }}
         isOpen={isUserOpen}
         onClose={() => setIsUserOpen(false)}
         company={activeSocialCompany}

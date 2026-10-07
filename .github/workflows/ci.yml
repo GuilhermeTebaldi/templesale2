@@ -52,7 +52,7 @@ jobs:
         run: node --import tsx --test tests/map-marker-layout.test.mjs
 
       - name: Terms acceptance and identity tests
-        run: node --experimental-sqlite --import tsx --test tests/legal.test.mjs
+        run: node --experimental-sqlite --import tsx --test tests/legal.test.mjs tests/account-archive.test.mjs
 
       - name: Build
         run: npm run build

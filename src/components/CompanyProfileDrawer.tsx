@@ -34,6 +34,7 @@ interface CompanyProfileDrawerProps {
   onOpenFavorites?: () => void;
   onLogout?: () => void;
   onOpenTerms?: () => void;
+  onCloseAccount?: (mode: "deactivate" | "delete", confirmation: string) => Promise<void>;
   onViewPublicProfile: (companyId: string) => void;
   currentLanguage: SupportedLanguage;
   onChangeLanguage: (lang: SupportedLanguage) => void;
@@ -57,16 +58,34 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
   onOpenFavorites,
   onLogout,
   onOpenTerms,
+  onCloseAccount,
   onViewPublicProfile,
   currentLanguage,
   onChangeLanguage,
 }) => {
-  const [currentView, setCurrentView] = useState<'main' | 'saved' | 'language'>('main');
+  const [currentView, setCurrentView] = useState<'main' | 'saved' | 'language' | 'account'>('main');
+
+  const [accountMode, setAccountMode] = useState<'deactivate' | 'delete'>('deactivate');
+  const [accountEmail, setAccountEmail] = useState('');
+  const [accountBusy, setAccountBusy] = useState(false);
+  const [accountError, setAccountError] = useState('');
+  const accountText = (pt: string, it: string) => currentLanguage === 'it-IT' ? it : pt;
+  const closeAccount = async () => {
+    if (!onCloseAccount || accountBusy || accountEmail !== user.email) return;
+    const message = accountMode === 'delete'
+      ? accountText('Excluir definitivamente os dados da conta no TempleSale? Um novo cadastro começará vazio. Esta ação não pode ser desfeita.', 'Eliminare definitivamente i dati dell’account su TempleSale? Una nuova registrazione partirà vuota. L’operazione non è reversibile.')
+      : accountText('Desativar e ocultar sua empresa, preservando os dados para recuperação?', 'Disattivare e nascondere l’attività conservando i dati per il recupero?');
+    if (!window.confirm(message)) return;
+    setAccountBusy(true); setAccountError('');
+    try { await onCloseAccount(accountMode, accountEmail); }
+    catch (error) { setAccountError(error instanceof Error ? error.message : accountText('Não foi possível encerrar a conta.', 'Impossibile chiudere l’account.')); }
+    finally { setAccountBusy(false); }
+  };
 
   // Reset to main view whenever drawer is closed/opened
   useEffect(() => {
     if (isOpen) {
-      setCurrentView('main');
+      setCurrentView('main'); setAccountEmail(''); setAccountError(''); setAccountMode('deactivate');
     }
   }, [isOpen]);
 
@@ -312,6 +331,10 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                 </div>
               </div>
 
+              {onCloseAccount && <button type="button" onClick={() => setCurrentView('account')}
+                className="w-full rounded-2xl border border-neutral-700 px-4 py-3 text-sm text-neutral-300">
+                {accountText('Desativar ou excluir conta', 'Disattiva o elimina account')}
+              </button>}
               {/* RODAPÉ DO DRAWER */}
               <div className="pt-2 text-center text-[11px] text-neutral-400 space-y-1">
                 {onLogout && (
@@ -339,6 +362,27 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
               </div>
             </div>
           )}
+
+          {currentView === 'account' && <div className="space-y-4 p-5">
+            <h3 className="text-lg font-semibold">{accountText('O que deseja fazer?', 'Cosa vuoi fare?')}</h3>
+            {(['deactivate', 'delete'] as const).map(mode => <button key={mode} type="button" disabled={accountBusy}
+              onClick={() => { setAccountMode(mode); setAccountError(''); }} aria-pressed={accountMode === mode}
+              className={`w-full rounded-2xl border p-4 text-left ${accountMode === mode ? 'border-emerald-400 bg-emerald-400/5' : 'border-neutral-700'}`}>
+              <strong className="block text-sm">{mode === 'deactivate' ? accountText('Desativar e preservar', 'Disattiva e conserva') : accountText('Excluir definitivamente do TempleSale', 'Elimina definitivamente da TempleSale')}</strong>
+              <span className="mt-2 block text-xs leading-6 text-neutral-400">{mode === 'deactivate'
+                ? accountText('Sua empresa fica oculta. Cadastro, fotos, publicações e comprovantes permanecem. Entre novamente com a mesma conta de acesso e e-mail confirmado para recuperar tudo.', 'La tua attività viene nascosta. Dati, foto, pubblicazioni e ricevute rimangono. Accedi nuovamente con lo stesso account ed email verificata per recuperare tutto.')
+                : accountText('Remove cadastro, publicações, fotos cadastradas e comprovantes do banco do TempleSale. Voltar com o mesmo e-mail cria um cadastro vazio. A identidade de acesso, arquivos externos e backups têm procedimentos de limpeza separados; solicitações pelo contato dos termos.', 'Rimuove dati dell’account, pubblicazioni, foto registrate e ricevute dal database TempleSale. Tornando con la stessa email si crea un account vuoto. Identità di accesso, file esterni e backup seguono procedure di pulizia separate; richieste al contatto delle condizioni.')}</span>
+            </button>)}
+            <label className="block text-sm">{accountText('Digite o e-mail da sua conta para confirmar', 'Digita l’email del tuo account per confermare')}
+              <input type="email" autoComplete="off" disabled={accountBusy} value={accountEmail} onChange={event => setAccountEmail(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 p-3" />
+            </label>
+            {accountError && <p role="alert" className="text-sm text-red-300">{accountError}</p>}
+            <button type="button" disabled={accountBusy || accountEmail !== user.email} onClick={() => void closeAccount()}
+              className="w-full rounded-xl bg-red-500/15 p-3 font-semibold text-red-300 disabled:opacity-40">
+              {accountBusy ? accountText('Processando…', 'Elaborazione…') : accountMode === 'delete' ? accountText('Excluir definitivamente', 'Elimina definitivamente') : accountText('Desativar empresa', 'Disattiva attività')}
+            </button>
+          </div>}
 
           {/* VIEW: SALVOS / PREFERIDOS */}
           {currentView === 'saved' && (

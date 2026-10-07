@@ -9,13 +9,14 @@ type Props = {
   user: SessionUser | null;
   locale: LegalLocale;
   open: boolean;
+  introComplete?: boolean;
   companyName?: string;
   onClose: () => void;
   onReject: () => Promise<void>;
   getIdentityToken: () => Promise<string>;
   onAccess: (allowed: boolean) => void;
 };
-export default function TermsDialog({ user, locale, open, companyName, onClose, onReject, getIdentityToken, onAccess }: Props) {
+export default function TermsDialog({ user, locale, open, introComplete = true, companyName, onClose, onReject, getIdentityToken, onAccess }: Props) {
   const it = locale === "it-IT";
   const text = (pt: string, italian: string) => it ? italian : pt;
   const [status, setStatus] = React.useState<LegalStatus | null>(null);
@@ -31,15 +32,15 @@ export default function TermsDialog({ user, locale, open, companyName, onClose, 
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const dialogRef = React.useRef<HTMLDivElement>(null);
   const [host] = React.useState(() => window.document.createElement("div"));
-  const mandatory = Boolean(user && (!status || (status.enabled && !status.accepted)));
-  const visible = open || mandatory || Boolean(confirmed);
+  const mandatory = Boolean(user && ((status?.enabled && !status.accepted) || (!status && error)));
+  const visible = introComplete && (open || mandatory || Boolean(confirmed));
   const document = selectedReceipt?.document ?? status?.document;
   const receipt = selectedReceipt ?? confirmed ?? (!mandatory ? status?.receipts[0] : null);
 
   React.useEffect(() => {
     let cancelled = false;
-    setStatus(null); setError(""); setRead(false); setAgreed(false); setSelectedReceipt(null);
-    if (user) onAccess(false);
+    setError(""); setRead(false); setAgreed(false); setSelectedReceipt(null);
+    if (user && !status) onAccess(false);
     if (!user && !open) return;
     void api.getLegalStatus(locale).then(result => {
       if (cancelled) return;
@@ -166,7 +167,7 @@ export default function TermsDialog({ user, locale, open, companyName, onClose, 
           </div>}
         </div>
         <footer className="shrink-0 border-t border-neutral-800 bg-neutral-950 px-5 pb-[max(20px,env(safe-area-inset-bottom))] pt-4 sm:px-8">
-          {confirmed ? <button onClick={() => window.location.reload()} className="w-full rounded-xl bg-emerald-400 p-3 font-semibold text-neutral-950">{text("Continuar para minha conta", "Continua al mio account")}</button> :
+          {confirmed ? <button onClick={() => { setConfirmed(null); onAccess(true); onClose(); }} className="w-full rounded-xl bg-emerald-400 p-3 font-semibold text-neutral-950">{text("Continuar para minha conta", "Continua al mio account")}</button> :
             mandatory ? <>
               {!read && status && <p className="mb-3 flex items-center gap-2 text-xs text-neutral-400"><ChevronDown size={15} />{text("Percorra o documento até o final para confirmar.", "Scorri il documento fino alla fine per confermare.")}</p>}
               <div className="flex gap-3">
