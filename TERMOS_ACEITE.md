@@ -8,7 +8,7 @@ O recurso vem desativado. Antes de ativá-lo, completar e revisar:
 
 - LEGAL_OPERATOR_NAME: responsáveis pela operação; padrão confirmado: Guilherme Tebaldi e Cristiane Elisabeth Eistalt Tebaldi.
 - LEGAL_OPERATOR_ADDRESS: campo opcional, mantido vazio por solicitação dos responsáveis; não é exibido quando ausente.
-- LEGAL_OPERATOR_COUNTRY: país de estabelecimento.
+- LEGAL_OPERATOR_COUNTRY: Itália, conforme informado pelos responsáveis.
 - LEGAL_OPERATOR_TAX_ID: identificação fiscal, quando aplicável.
 - LEGAL_PRIVACY_RETENTION: prazos ou critérios reais de conservação, incluindo contas, logs, backups e comprovantes.
 - LEGAL_PRIVACY_TRANSFER_DETAILS: fornecedores, países reais de tratamento e instrumentos aplicáveis às transferências internacionais.
@@ -18,6 +18,8 @@ O contato público é thetemplesale@gmail.com. A omissão do endereço atende à
 Os textos livres de conservação e transferência devem conter as informações em português e italiano. Os dados precisam corresponder às configurações e aos contratos reais dos fornecedores. O texto é uma minuta e requer revisão jurídica adequada à operação; não garante conformidade integral do site.
 
 Depois da revisão, configurar LEGAL_TERMS_ENABLED=true no backend e publicar. A ativação exige os campos obrigatórios e cria apenas a tabela legal_acceptances e seu índice no banco já utilizado. As contas existentes também precisam aceitar; não há aceite retroativo presumido.
+
+O inventário técnico, os riscos encontrados e a proposta operacional estão em PRIVACIDADE_OPERACIONAL.md. A exclusão da conta remove seus comprovantes vinculados na nova tabela; eventual preservação excepcional por obrigação legal ou litígio exige procedimento específico, ainda não implementado.
 
 ## Identificação e evidência
 

@@ -124,3 +124,11 @@ test('confirmed operators and contact are present without publishing an address'
   }
   assert.equal(legalPublicationReady({ ...withoutAddress, LEGAL_PRIVACY_RETENTION: '' }), false);
 });
+
+test('the additive acceptance table does not prevent existing account deletion', async () => {
+  const { service, input, db } = await fixture();
+  await service.accept(user, identity, identity.sub, input);
+  db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM legal_acceptances').get().n, 0);
+  db.close();
+});

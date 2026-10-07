@@ -46,7 +46,7 @@ export function createLegalService(query: Query, env: Record<string, string | un
     async initialize() {
       if (!enabled) return;
       await query(`CREATE TABLE IF NOT EXISTS legal_acceptances (
-        id TEXT PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id),
+        id TEXT PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         document_version TEXT NOT NULL, document_hash TEXT NOT NULL,
         accepted_at TEXT NOT NULL, receipt_json TEXT NOT NULL,
         UNIQUE(user_id, document_hash)
