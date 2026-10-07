@@ -2487,6 +2487,12 @@ export const api = {
     }
     return user;
   },
+  closeAccount(mode: "deactivate" | "delete", confirmation: string, idToken: string) {
+    return request<{ success: boolean }>("/api/account/close", {
+      method: "POST", body: JSON.stringify({ mode, confirmation }),
+      headers: { "X-Auth0-ID-Token": idToken }, skipGlobalLoadingOverlay: true,
+    });
+  },
   getLegalStatus(locale: LegalLocale) {
     return request<LegalStatus>(`/api/legal/status?locale=${locale}`, { skipGlobalLoadingOverlay: true });
   },

@@ -13,13 +13,13 @@ Revisão do código em 07/10/2026. Responsáveis: Guilherme Tebaldi e Cristiane 
 | Links externos | WhatsApp e Google Maps recebem o conteúdo do link quando abertos | Serviços externos e suas políticas; não enviar dados além do necessário. |
 | Tradução | Backend pode enviar textos para LibreTranslate, com fallback MyMemory | Confirmar provedores efetivamente utilizados e contratos; não incluir dados sensíveis nos textos. |
 | Sessão | Auth0 e sessão local; tokens persistem no navegador; sessão local com validade de 365 dias | Expiradas são removidas em operações de sessão, não por uma rotina contínua comprovada. Proteger contra XSS e restringir acesso administrativo. |
-| Aceite | Nome declarado, empresa, e-mail verificado, subject, data UTC, versão/hash e documento exato | Comprovante privado no banco. Nova tabela vinculada à conta com exclusão em cascata; não há arquivo jurídico independente. |
+| Aceite | Nome declarado, empresa, e-mail verificado, subject, data UTC, versão/hash e documento exato | Comprovante privado no banco. Comprovantes permanecem vinculados à conta desativada; não há arquivo jurídico independente. |
 
 ## Conservação: proposta para implementar, não promessa atual
 
-- Conta e perfil: enquanto o serviço for solicitado; encerramento por solicitação verificada, com remoção do conteúdo público e revisão de dependências no banco.
+- Conta e perfil: desativação administrativa mantém os dados privados e oculta o conteúdo nos acessos públicos; retorno somente pela mesma identidade Auth0 verificada. Definir ainda prazo ou critérios para contas desativadas. A opção de exclusão definitiva remove registros vinculados no banco do TempleSale após confirmar a identidade; fornecedores, arquivos físicos externos e backups ainda precisam de procedimento separado.
 - Estatísticas identificáveis e registros de segurança: propor 30 dias como ponto inicial, justificando necessidade; depois apagar ou agregar de forma realmente anônima. Implementar rotina antes de anunciar esse prazo ao usuário.
-- Comprovantes: enquanto existir a conta. Retenção excepcional para obrigação concreta ou litígio exige finalidade, prazo e acesso restrito próprios; não guardar indefinidamente por precaução.
+- Comprovantes: enquanto existir a conta, incluindo a desativação com possibilidade de recuperação. Retenção excepcional para obrigação concreta ou litígio exige finalidade, prazo e acesso restrito próprios; não guardar indefinidamente por precaução.
 - Backups: identificar primeiro fornecedores, frequência, acesso e ciclo real de expiração. Não prometer apagamento imediato de cópias sem conhecer esse ciclo.
 - Auth0 e Cloudinary: excluir a conta no banco não demonstra exclusão nesses serviços. A exclusão deve abranger também identidade, imagens, logs aplicáveis e cópias segundo os contratos.
 - Navegador: oferecer futuramente limpeza da última localização e revisar necessidade de cada identificador; por enquanto explicar a limpeza dos dados do site no navegador.

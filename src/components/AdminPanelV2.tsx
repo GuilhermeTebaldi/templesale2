@@ -1492,10 +1492,11 @@ async function adminResetUserPassword(
   });
 }
 
-async function adminDeleteUser(token: string, userId: number): Promise<void> {
+async function adminDeleteUser(token: string, userId: number, confirmation?: string): Promise<void> {
   await adminRequest<unknown>(`/api/admin/users/${userId}`, {
     method: "DELETE",
     token,
+    body: confirmation ? { mode: "delete", confirmation } : undefined,
   });
 }
 
@@ -2310,9 +2311,10 @@ export default function AdminPanelV2() {
     }
   };
 
-  const handleDeleteUser = async (user: AdminUserV2) => {
+  const handleDeleteUser = async (user: AdminUserV2, permanent = false) => {
+    if (permanent && window.prompt("Exclusão definitiva: cadastro, fotos, publicações e comprovantes sairão do banco do TempleSale. A limpeza dos fornecedores e backups é separada. Digite o e-mail da conta para confirmar:") !== user.email) return;
     const confirmation = window.confirm(
-      `Excluir o usuário ${user.email || `#${user.id}`} e dados relacionados?`,
+      permanent ? `Excluir definitivamente ${user.email}? Um novo cadastro começará vazio.` : `Desativar a empresa de ${user.email || `#${user.id}`}? Ela ficará oculta; cadastro, fotos, publicações e comprovantes serão preservados para recuperação com a mesma conta Auth0.`,
     );
     if (!confirmation) {
       return;
@@ -2321,7 +2323,7 @@ export default function AdminPanelV2() {
     setDeletingUserId(user.id);
     setUsersError("");
     try {
-      await adminDeleteUser(authToken, user.id);
+      await adminDeleteUser(authToken, user.id, permanent ? user.email : undefined);
       setUsers((current) => current.filter((item) => item.id !== user.id));
       if (selectedUser?.id === user.id) {
         handleCloseUserDetail();
@@ -4107,8 +4109,11 @@ export default function AdminPanelV2() {
                           className="inline-flex w-full items-center justify-center gap-2 border border-red-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-red-700 hover:bg-red-50 disabled:opacity-60"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
-                          {deletingUserId === selectedUser.id ? "Excluindo..." : "Excluir usuário"}
+                          {deletingUserId === selectedUser.id ? "Desativando..." : "Desativar empresa"}
                         </button>
+                        <button type="button" disabled={deletingUserId === selectedUser.id}
+                          onClick={() => void handleDeleteUser(selectedUser, true)}
+                          className="rounded-xl border border-red-600/40 px-4 py-2 text-xs font-semibold text-red-300 disabled:opacity-50">Excluir definitivamente</button>
                       </div>
                     </article>
                   </aside>

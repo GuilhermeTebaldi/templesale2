@@ -11,6 +11,7 @@ import { Pool } from "pg";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { initializeDiscovery, registerDiscovery, sqliteBindings } from "./server/discovery";
+import { createAccountArchiveService, publicAccountRows, filterArchivedPublicSql, validateAccountClosure } from "./server/account-archive";
 import { createLegalService, registerLegalRoutes, legalAccountGate, type LegalService } from "./server/legal";
 import {
   NEGOTIABLE_PRICE_STORAGE_VALUE,
@@ -3833,10 +3834,10 @@ async function selectEstablishmentByIdOrSlugRow(idOrSlug: string): Promise<Estab
         SELECT
           e.*,
           NULLIF(BTRIM(u.avatar_url), '') AS owner_avatar_url,
-          (SELECT COUNT(*)::INT FROM products pc WHERE pc.establishment_id = e.id) AS product_count,
-          (SELECT COUNT(*)::INT FROM establishment_publications epc WHERE epc.establishment_id = e.id) AS publication_count
-        FROM establishments e
-        LEFT JOIN users u ON u.id = e.owner_user_id
+          (SELECT COUNT(*)::INT FROM ${publicAccountRows("products", accountArchives?.ready)} pc WHERE pc.establishment_id = e.id) AS product_count,
+          (SELECT COUNT(*)::INT FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} epc WHERE epc.establishment_id = e.id) AS publication_count
+        FROM ${publicAccountRows("establishments", accountArchives?.ready)} e
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = e.owner_user_id
         WHERE ${where}
         LIMIT 1
       `,
@@ -3852,10 +3853,10 @@ async function selectEstablishmentByIdOrSlugRow(idOrSlug: string): Promise<Estab
         SELECT
           e.*,
           NULLIF(TRIM(u.avatar_url), '') AS owner_avatar_url,
-          (SELECT COUNT(*) FROM products pc WHERE pc.establishment_id = e.id) AS product_count,
-          (SELECT COUNT(*) FROM establishment_publications epc WHERE epc.establishment_id = e.id) AS publication_count
-        FROM establishments e
-        LEFT JOIN users u ON u.id = e.owner_user_id
+          (SELECT COUNT(*) FROM ${publicAccountRows("products", accountArchives?.ready)} pc WHERE pc.establishment_id = e.id) AS product_count,
+          (SELECT COUNT(*) FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} epc WHERE epc.establishment_id = e.id) AS publication_count
+        FROM ${publicAccountRows("establishments", accountArchives?.ready)} e
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = e.owner_user_id
         WHERE ${sqliteWhere}
         LIMIT 1
       `,
@@ -3883,6 +3884,7 @@ async function selectEstablishmentsRows(input: {
   if (pgPool) {
     const values: unknown[] = [];
     const whereParts = ["COALESCE(e.is_active, TRUE) = TRUE"];
+    if (accountArchives?.ready) whereParts.push("NOT EXISTS (SELECT 1 FROM account_archives aa WHERE aa.user_id = e.owner_user_id)");
     const addValue = (value: unknown) => {
       values.push(value);
       return `$${values.length}`;
@@ -3947,18 +3949,18 @@ async function selectEstablishmentsRows(input: {
           MAX(NULLIF(BTRIM(u.avatar_url), '')) AS owner_avatar_url,
           (
             SELECT COUNT(*)::INT
-            FROM establishment_publications epc
+            FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} epc
             WHERE epc.establishment_id = e.id
           ) AS publication_count,
           (
             SELECT COUNT(*)::INT
-            FROM products pc
+            FROM ${publicAccountRows("products", accountArchives?.ready)} pc
             WHERE pc.establishment_id = e.id
           ) AS product_count
         FROM establishments e
-        LEFT JOIN users u ON u.id = e.owner_user_id
-        LEFT JOIN products p ON p.establishment_id = e.id
-        LEFT JOIN establishment_publications ep ON ep.establishment_id = e.id
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = e.owner_user_id
+        LEFT JOIN ${publicAccountRows("products", accountArchives?.ready)} p ON p.establishment_id = e.id
+        LEFT JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.establishment_id = e.id
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
         WHERE ${whereParts.join(" AND ")}
         GROUP BY e.id
@@ -3972,6 +3974,7 @@ async function selectEstablishmentsRows(input: {
 
   const values: unknown[] = [];
   const whereParts = ["COALESCE(e.is_active, 1) = 1"];
+  if (accountArchives?.ready) whereParts.push("NOT EXISTS (SELECT 1 FROM account_archives aa WHERE aa.user_id = e.owner_user_id)");
   if (input.ownerId) {
     whereParts.push("e.owner_user_id = ?");
     values.push(input.ownerId);
@@ -4038,18 +4041,18 @@ async function selectEstablishmentsRows(input: {
           MAX(NULLIF(TRIM(u.avatar_url), '')) AS owner_avatar_url,
           (
             SELECT COUNT(*)
-            FROM establishment_publications epc
+            FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} epc
             WHERE epc.establishment_id = e.id
           ) AS publication_count,
           (
             SELECT COUNT(*)
-            FROM products pc
+            FROM ${publicAccountRows("products", accountArchives?.ready)} pc
             WHERE pc.establishment_id = e.id
           ) AS product_count
         FROM establishments e
-        LEFT JOIN users u ON u.id = e.owner_user_id
-        LEFT JOIN products p ON p.establishment_id = e.id
-        LEFT JOIN establishment_publications ep ON ep.establishment_id = e.id
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = e.owner_user_id
+        LEFT JOIN ${publicAccountRows("products", accountArchives?.ready)} p ON p.establishment_id = e.id
+        LEFT JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.establishment_id = e.id
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
         WHERE ${whereParts.join(" AND ")}
         GROUP BY e.id
@@ -4159,8 +4162,8 @@ async function selectProductCategorySuggestions(
               p.category AS label,
               e.category AS business_category,
               COUNT(*)::INT AS usage_count
-            FROM products p
-            LEFT JOIN establishments e ON e.id = p.establishment_id
+            FROM ${publicAccountRows("products", accountArchives?.ready)} p
+            LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
             WHERE COALESCE(NULLIF(BTRIM(p.category), ''), '') <> ''
             GROUP BY p.category, e.category
           `,
@@ -4173,8 +4176,8 @@ async function selectProductCategorySuggestions(
               p.category AS label,
               e.category AS business_category,
               COUNT(*) AS usage_count
-            FROM products p
-            LEFT JOIN establishments e ON e.id = p.establishment_id
+            FROM ${publicAccountRows("products", accountArchives?.ready)} p
+            LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
             WHERE COALESCE(NULLIF(TRIM(p.category), ''), '') <> ''
             GROUP BY p.category, e.category
           `,
@@ -4405,7 +4408,7 @@ async function selectPublicationsByEstablishmentRows(
         SELECT
           ep.*,
           COALESCE(pl.likes_count, 0) AS likes_count
-        FROM establishment_publications ep
+        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
         LEFT JOIN (
           SELECT publication_id, COUNT(*) AS likes_count
           FROM publication_likes
@@ -4425,7 +4428,7 @@ async function selectPublicationsByEstablishmentRows(
         SELECT
           ep.*,
           COALESCE(pl.likes_count, 0) AS likes_count
-        FROM establishment_publications ep
+        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
         LEFT JOIN (
           SELECT publication_id, COUNT(*) AS likes_count
           FROM publication_likes
@@ -4455,7 +4458,7 @@ async function selectPublicationsByEstablishmentPageRows(input: {
         SELECT
           ep.*,
           COALESCE(pl.likes_count, 0) AS likes_count
-        FROM establishment_publications ep
+        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
         LEFT JOIN (
           SELECT publication_id, COUNT(*) AS likes_count
           FROM publication_likes
@@ -4477,7 +4480,7 @@ async function selectPublicationsByEstablishmentPageRows(input: {
         SELECT
           ep.*,
           COALESCE(pl.likes_count, 0) AS likes_count
-        FROM establishment_publications ep
+        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
         LEFT JOIN (
           SELECT publication_id, COUNT(*) AS likes_count
           FROM publication_likes
@@ -4511,6 +4514,7 @@ async function selectPublicationsFeedRows(input: {
     snapshotId = Number(row.max_id);
   }
   const built = buildLocalFeedQuery({ ...input, limit, offset: input.cursorMode ? 0 : offset, snapshotId }, Boolean(pgPool));
+  built.sql = filterArchivedPublicSql(built.sql, accountArchives?.ready);
   let rawRows: Record<string, unknown>[];
   if (pgPool) {
     rawRows = (await pgPool.query(built.sql, built.values)).rows;
@@ -4621,9 +4625,9 @@ async function selectSavedPublicationsByUserRows(userId: number): Promise<Establ
           u.avatar_url AS owner_avatar_url,
           COALESCE(pl.likes_count, 0) AS likes_count
         FROM publication_saves ps
-        INNER JOIN establishment_publications ep ON ep.id = ps.publication_id
-        INNER JOIN establishments e ON e.id = ep.establishment_id
-        LEFT JOIN users u ON u.id = ep.owner_user_id
+        INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.id = ps.publication_id
+        INNER JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = ep.establishment_id
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = ep.owner_user_id
         LEFT JOIN (
           SELECT publication_id, COUNT(*) AS likes_count
           FROM publication_likes
@@ -4651,9 +4655,9 @@ async function selectSavedPublicationsByUserRows(userId: number): Promise<Establ
           u.avatar_url AS owner_avatar_url,
           COALESCE(pl.likes_count, 0) AS likes_count
         FROM publication_saves ps
-        INNER JOIN establishment_publications ep ON ep.id = ps.publication_id
-        INNER JOIN establishments e ON e.id = ep.establishment_id
-        LEFT JOIN users u ON u.id = ep.owner_user_id
+        INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.id = ps.publication_id
+        INNER JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = ep.establishment_id
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = ep.owner_user_id
         LEFT JOIN (
           SELECT publication_id, COUNT(*) AS likes_count
           FROM publication_likes
@@ -4717,9 +4721,9 @@ async function selectLikedPublicationsByUserRows(userId: number): Promise<Establ
           u.avatar_url AS owner_avatar_url,
           COALESCE(pl.likes_count, 0) AS likes_count
         FROM publication_likes current_like
-        INNER JOIN establishment_publications ep ON ep.id = current_like.publication_id
-        INNER JOIN establishments e ON e.id = ep.establishment_id
-        LEFT JOIN users u ON u.id = ep.owner_user_id
+        INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.id = current_like.publication_id
+        INNER JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = ep.establishment_id
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = ep.owner_user_id
         LEFT JOIN (
           SELECT publication_id, COUNT(*) AS likes_count
           FROM publication_likes
@@ -4747,9 +4751,9 @@ async function selectLikedPublicationsByUserRows(userId: number): Promise<Establ
           u.avatar_url AS owner_avatar_url,
           COALESCE(pl.likes_count, 0) AS likes_count
         FROM publication_likes current_like
-        INNER JOIN establishment_publications ep ON ep.id = current_like.publication_id
-        INNER JOIN establishments e ON e.id = ep.establishment_id
-        LEFT JOIN users u ON u.id = ep.owner_user_id
+        INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.id = current_like.publication_id
+        INNER JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = ep.establishment_id
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = ep.owner_user_id
         LEFT JOIN (
           SELECT publication_id, COUNT(*) AS likes_count
           FROM publication_likes
@@ -4859,7 +4863,7 @@ async function selectPublicationByIdRecord(publicationId: number): Promise<Estab
         SELECT
           ep.*,
           COALESCE(pl.likes_count, 0) AS likes_count
-        FROM establishment_publications ep
+        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
         LEFT JOIN (
           SELECT publication_id, COUNT(*) AS likes_count
           FROM publication_likes
@@ -4878,7 +4882,7 @@ async function selectPublicationByIdRecord(publicationId: number): Promise<Estab
         SELECT
           ep.*,
           COALESCE(pl.likes_count, 0) AS likes_count
-        FROM establishment_publications ep
+        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
         LEFT JOIN (
           SELECT publication_id, COUNT(*) AS likes_count
           FROM publication_likes
@@ -5049,9 +5053,9 @@ async function selectProductsByEstablishmentRows(establishmentId: number): Promi
     const result = await pgPool.query<Record<string, unknown>>(
       `
         SELECT ${PRODUCT_SELECT_FIELDS}
-        FROM products p
-        LEFT JOIN users u ON u.id = p.user_id
-        LEFT JOIN establishments e ON e.id = p.establishment_id
+        FROM ${publicAccountRows("products", accountArchives?.ready)} p
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = p.user_id
+        LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
         LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE p.establishment_id = $1
         ORDER BY p.id DESC
@@ -5064,9 +5068,9 @@ async function selectProductsByEstablishmentRows(establishmentId: number): Promi
     .prepare(
       `
         SELECT ${PRODUCT_SELECT_FIELDS}
-        FROM products p
-        LEFT JOIN users u ON u.id = p.user_id
-        LEFT JOIN establishments e ON e.id = p.establishment_id
+        FROM ${publicAccountRows("products", accountArchives?.ready)} p
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = p.user_id
+        LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
         LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE p.establishment_id = ?
         ORDER BY p.id DESC
@@ -5081,9 +5085,9 @@ async function selectAllProductsRows(): Promise<ProductRow[]> {
     const result = await pgPool.query<Record<string, unknown>>(
       `
         SELECT ${PRODUCT_SELECT_FIELDS}
-        FROM products p
-        LEFT JOIN users u ON u.id = p.user_id
-        LEFT JOIN establishments e ON e.id = p.establishment_id
+        FROM ${publicAccountRows("products", accountArchives?.ready)} p
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = p.user_id
+        LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
         LEFT JOIN storefront_sections s ON s.id = p.section_id
         ORDER BY p.id DESC
       `,
@@ -5095,9 +5099,9 @@ async function selectAllProductsRows(): Promise<ProductRow[]> {
     .prepare(
       `
         SELECT ${PRODUCT_SELECT_FIELDS}
-        FROM products p
-        LEFT JOIN users u ON u.id = p.user_id
-        LEFT JOIN establishments e ON e.id = p.establishment_id
+        FROM ${publicAccountRows("products", accountArchives?.ready)} p
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = p.user_id
+        LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
         LEFT JOIN storefront_sections s ON s.id = p.section_id
         ORDER BY p.id DESC
       `,
@@ -5191,9 +5195,9 @@ async function selectProductsPageRows(query: ProductPageQuery): Promise<{
     const result = await pgPool.query<Record<string, unknown>>(
       `
         SELECT ${PRODUCT_SELECT_FIELDS}
-        FROM products p
-        LEFT JOIN users u ON u.id = p.user_id
-        LEFT JOIN establishments e ON e.id = p.establishment_id
+        FROM ${publicAccountRows("products", accountArchives?.ready)} p
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = p.user_id
+        LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
         LEFT JOIN storefront_sections s ON s.id = p.section_id
         ${whereClause}
         ORDER BY COALESCE(p.click_count, 0) DESC, p.id DESC
@@ -5264,9 +5268,9 @@ async function selectProductsPageRows(query: ProductPageQuery): Promise<{
     .prepare(
       `
         SELECT ${PRODUCT_SELECT_FIELDS}
-        FROM products p
-        LEFT JOIN users u ON u.id = p.user_id
-        LEFT JOIN establishments e ON e.id = p.establishment_id
+        FROM ${publicAccountRows("products", accountArchives?.ready)} p
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = p.user_id
+        LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
         LEFT JOIN storefront_sections s ON s.id = p.section_id
         ${whereClause}
         ORDER BY COALESCE(p.click_count, 0) DESC, p.id DESC
@@ -5287,9 +5291,9 @@ async function selectProductsByOwnerRows(ownerId: number): Promise<ProductRow[]>
     const result = await pgPool.query<Record<string, unknown>>(
       `
         SELECT ${PRODUCT_SELECT_FIELDS}
-        FROM products p
-        LEFT JOIN users u ON u.id = p.user_id
-        LEFT JOIN establishments e ON e.id = p.establishment_id
+        FROM ${publicAccountRows("products", accountArchives?.ready)} p
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = p.user_id
+        LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
         LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE p.user_id = $1
         ORDER BY p.id DESC
@@ -5303,9 +5307,9 @@ async function selectProductsByOwnerRows(ownerId: number): Promise<ProductRow[]>
     .prepare(
       `
         SELECT ${PRODUCT_SELECT_FIELDS}
-        FROM products p
-        LEFT JOIN users u ON u.id = p.user_id
-        LEFT JOIN establishments e ON e.id = p.establishment_id
+        FROM ${publicAccountRows("products", accountArchives?.ready)} p
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = p.user_id
+        LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
         LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE p.user_id = ?
         ORDER BY p.id DESC
@@ -5356,7 +5360,7 @@ async function selectAdminUsersRows(searchValue = ""): Promise<AdminUserRecord[]
             (SELECT COUNT(*)::INT FROM products p WHERE p.user_id = u.id) +
             (SELECT COUNT(*)::INT FROM establishment_publications ep WHERE ep.owner_user_id = u.id)
           ) AS product_count
-        FROM users u
+        FROM ${publicAccountRows("users", accountArchives?.ready)} u
         WHERE ${whereParts.join(" AND ")}
         ORDER BY u.id DESC
       `,
@@ -5403,7 +5407,7 @@ async function selectAdminUsersRows(searchValue = ""): Promise<AdminUserRecord[]
             (SELECT COUNT(*) FROM products p WHERE p.user_id = u.id) +
             (SELECT COUNT(*) FROM establishment_publications ep WHERE ep.owner_user_id = u.id)
           ) AS product_count
-        FROM users u
+        FROM ${publicAccountRows("users", accountArchives?.ready)} u
         WHERE ${whereParts.join(" AND ")}
         ORDER BY u.id DESC
       `,
@@ -5805,9 +5809,9 @@ async function selectProductByIdRow(productId: number): Promise<ProductRow | und
     const result = await pgPool.query<Record<string, unknown>>(
       `
         SELECT ${PRODUCT_SELECT_FIELDS}
-        FROM products p
-        LEFT JOIN users u ON u.id = p.user_id
-        LEFT JOIN establishments e ON e.id = p.establishment_id
+        FROM ${publicAccountRows("products", accountArchives?.ready)} p
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = p.user_id
+        LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
         LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE p.id = $1
       `,
@@ -5821,9 +5825,9 @@ async function selectProductByIdRow(productId: number): Promise<ProductRow | und
     .prepare(
       `
         SELECT ${PRODUCT_SELECT_FIELDS}
-        FROM products p
-        LEFT JOIN users u ON u.id = p.user_id
-        LEFT JOIN establishments e ON e.id = p.establishment_id
+        FROM ${publicAccountRows("products", accountArchives?.ready)} p
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = p.user_id
+        LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
         LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE p.id = ?
       `,
@@ -5953,7 +5957,7 @@ async function selectProductCommentsRows(productId: number): Promise<ProductComm
           ) AS author_name,
           NULLIF(BTRIM(u.avatar_url), '') AS author_avatar_url
         FROM product_comments c
-        INNER JOIN users u ON u.id = c.user_id
+        INNER JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = c.user_id
         WHERE c.product_id = $1
         ORDER BY c.created_at DESC, c.id DESC
       `,
@@ -5978,7 +5982,7 @@ async function selectProductCommentsRows(productId: number): Promise<ProductComm
           COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), 'Usuário') AS author_name,
           NULLIF(TRIM(u.avatar_url), '') AS author_avatar_url
         FROM product_comments c
-        INNER JOIN users u ON u.id = c.user_id
+        INNER JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = c.user_id
         WHERE c.product_id = ?
         ORDER BY c.created_at DESC, c.id DESC
       `,
@@ -6009,7 +6013,7 @@ async function selectPublicationCommentsRows(publicationId: number): Promise<Pro
           ) AS author_name,
           NULLIF(BTRIM(u.avatar_url), '') AS author_avatar_url
         FROM product_comments c
-        INNER JOIN users u ON u.id = c.user_id
+        INNER JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = c.user_id
         WHERE c.publication_id = $1
         ORDER BY c.created_at DESC, c.id DESC
       `,
@@ -6034,7 +6038,7 @@ async function selectPublicationCommentsRows(publicationId: number): Promise<Pro
           COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), 'Usuário') AS author_name,
           NULLIF(TRIM(u.avatar_url), '') AS author_avatar_url
         FROM product_comments c
-        INNER JOIN users u ON u.id = c.user_id
+        INNER JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = c.user_id
         WHERE c.publication_id = ?
         ORDER BY c.created_at DESC, c.id DESC
       `,
@@ -6168,9 +6172,9 @@ async function selectLikedProductsByUserRows(userId: number): Promise<ProductRow
       `
         SELECT ${PRODUCT_SELECT_FIELDS}
         FROM product_likes l
-        INNER JOIN products p ON p.id = l.product_id
-        LEFT JOIN users u ON u.id = p.user_id
-        LEFT JOIN establishments e ON e.id = p.establishment_id
+        INNER JOIN ${publicAccountRows("products", accountArchives?.ready)} p ON p.id = l.product_id
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = p.user_id
+        LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
         LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE l.user_id = $1
         ORDER BY l.created_at DESC, p.id DESC
@@ -6185,9 +6189,9 @@ async function selectLikedProductsByUserRows(userId: number): Promise<ProductRow
       `
         SELECT ${PRODUCT_SELECT_FIELDS}
         FROM product_likes l
-        INNER JOIN products p ON p.id = l.product_id
-        LEFT JOIN users u ON u.id = p.user_id
-        LEFT JOIN establishments e ON e.id = p.establishment_id
+        INNER JOIN ${publicAccountRows("products", accountArchives?.ready)} p ON p.id = l.product_id
+        LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = p.user_id
+        LEFT JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = p.establishment_id
         LEFT JOIN storefront_sections s ON s.id = p.section_id
         WHERE l.user_id = ?
         ORDER BY l.created_at DESC, p.id DESC
@@ -6209,7 +6213,7 @@ async function selectProductLikerRows(productId: number): Promise<Array<Record<s
           NULLIF(BTRIM(u.city), '') AS city,
           l.created_at::TEXT AS liked_at
         FROM product_likes l
-        INNER JOIN users u ON u.id = l.user_id
+        INNER JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = l.user_id
         WHERE l.product_id = $1
         ORDER BY l.created_at DESC, u.id DESC
         LIMIT 80
@@ -6230,7 +6234,7 @@ async function selectProductLikerRows(productId: number): Promise<Array<Record<s
           NULLIF(TRIM(u.city), '') AS city,
           l.created_at AS liked_at
         FROM product_likes l
-        INNER JOIN users u ON u.id = l.user_id
+        INNER JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = l.user_id
         WHERE l.product_id = ?
         ORDER BY l.created_at DESC, u.id DESC
         LIMIT 80
@@ -7502,53 +7506,7 @@ async function deleteProductRecordAsAdmin(productId: number): Promise<boolean> {
 }
 
 async function deleteUserRecordAsAdmin(userId: number): Promise<boolean> {
-  if (pgPool) {
-    const client = await pgPool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query(
-        `
-          DELETE FROM product_likes
-          WHERE product_id IN (SELECT id FROM products WHERE user_id = $1)
-        `,
-        [userId],
-      );
-      await client.query("DELETE FROM product_likes WHERE user_id = $1", [userId]);
-      await client.query("DELETE FROM sessions WHERE user_id = $1", [userId]);
-      await client.query("DELETE FROM products WHERE user_id = $1", [userId]);
-      const deleted = await client.query("DELETE FROM users WHERE id = $1", [userId]);
-      await client.query("COMMIT");
-      return (deleted.rowCount ?? 0) > 0;
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  const db = requireSqliteDb();
-  const deleteLikesByProducts = db.prepare(
-    `
-      DELETE FROM product_likes
-      WHERE product_id IN (SELECT id FROM products WHERE user_id = ?)
-    `,
-  );
-  const deleteLikesByUser = db.prepare("DELETE FROM product_likes WHERE user_id = ?");
-  const deleteSessions = db.prepare("DELETE FROM sessions WHERE user_id = ?");
-  const deleteProducts = db.prepare("DELETE FROM products WHERE user_id = ?");
-  const deleteUser = db.prepare("DELETE FROM users WHERE id = ?");
-
-  const runDelete = db.transaction((id: number) => {
-    deleteLikesByProducts.run(id);
-    deleteLikesByUser.run(id);
-    deleteSessions.run(id);
-    deleteProducts.run(id);
-    const result = deleteUser.run(id);
-    return Number(result.changes ?? 0) > 0;
-  });
-
-  return runDelete(userId);
+  return accountArchives.archive(userId);
 }
 
 async function createProductLikeRecord(userId: number, productId: number): Promise<void> {
@@ -8335,8 +8293,8 @@ async function selectVendorsRows(searchTerm: string, limit: number): Promise<Ven
           ) AS name,
           NULLIF(BTRIM(u.avatar_url), '') AS avatar_url,
           COUNT(p.id)::INT AS product_count
-        FROM users u
-        INNER JOIN products p ON p.user_id = u.id
+        FROM ${publicAccountRows("users", accountArchives?.ready)} u
+        INNER JOIN ${publicAccountRows("products", accountArchives?.ready)} p ON p.user_id = u.id
         WHERE
           $1 = ''
           OR LOWER(COALESCE(NULLIF(BTRIM(u.name), ''), '')) LIKE $2
@@ -8362,8 +8320,8 @@ async function selectVendorsRows(searchTerm: string, limit: number): Promise<Ven
           COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), 'Vendedor') AS name,
           NULLIF(TRIM(u.avatar_url), '') AS avatar_url,
           COUNT(p.id) AS product_count
-        FROM users u
-        INNER JOIN products p ON p.user_id = u.id
+        FROM ${publicAccountRows("users", accountArchives?.ready)} u
+        INNER JOIN ${publicAccountRows("products", accountArchives?.ready)} p ON p.user_id = u.id
         WHERE
           ? = ''
           OR LOWER(COALESCE(NULLIF(TRIM(u.name), ''), '')) LIKE ?
@@ -10054,6 +10012,7 @@ async function getInteractionUser(req: Request): Promise<SessionUser | null> {
   }
   const userId = await createDeviceUserRecord(deviceId);
   const row = await selectUserByIdRow(userId);
+  if (row && await accountArchives.archived(row.id)) return null;
   return row ? { ...sanitizeUser(row), isDeviceUser: true } : null;
 }
 
@@ -10079,6 +10038,7 @@ async function getSessionUserFromToken(token: string | null): Promise<SessionUse
   if (!user) {
     return null;
   }
+  if (await accountArchives.archived(user.id)) return null;
   return sanitizeUser(user);
 }
 
@@ -10092,6 +10052,7 @@ async function getNotificationStreamUser(req: Request): Promise<SessionUser | nu
 }
 
 let legalService: LegalService | null = null;
+let accountArchives: ReturnType<typeof createAccountArchiveService>;
 async function requireAuth(req: Request, res: Response): Promise<SessionUser | null> {
   const user = await getSessionUser(req);
   if (!user) {
@@ -10260,6 +10221,27 @@ async function bootstrap() {
     statement.run(...bound.values);
     return [];
   };
+  accountArchives = createAccountArchiveService(discoveryQuery, async statements => {
+    if (IS_DEV_REMOTE_READ_ONLY) throw new Error("Banco remoto somente leitura.");
+    if (pgPool) {
+      const client = await pgPool.connect();
+      try {
+        await client.query("BEGIN");
+        for (const statement of statements) await client.query(statement.sql, statement.values);
+        await client.query("COMMIT");
+      } catch (error) { await client.query("ROLLBACK"); throw error; }
+      finally { client.release(); }
+    } else {
+      const db = requireSqliteDb();
+      db.transaction(() => {
+        for (const statement of statements) {
+          const bound = sqliteBindings(statement.sql, statement.values);
+          db.prepare(bound.sql).run(...bound.values);
+        }
+      })();
+    }
+  }, Boolean(pgPool));
+  await accountArchives.initialize(IS_DEV_REMOTE_READ_ONLY);
   if (!IS_DEV_REMOTE_DATABASE) await initializeDiscovery(discoveryQuery);
   legalService = createLegalService(discoveryQuery);
   if (legalService.enabled && IS_DEV_REMOTE_READ_ONLY) throw new Error("Aceite de termos indisponível em banco remoto somente leitura.");
@@ -10398,10 +10380,28 @@ async function bootstrap() {
     verifyIdentity: token => verifyAuth0Jwt(token, AUTH0_CLIENT_ID),
     subjectForUser: async id => (await selectUserByIdRow(id))?.auth0_sub ?? null,
   });
+  app.post("/api/account/close", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const user = await getSessionUser(req);
+      if (!user) { res.status(401).json({ error: "Entre na sua conta." }); return; }
+      const token = req.headers["x-auth0-id-token"];
+      if (typeof token !== "string") { res.status(403).json({ error: "Entre novamente para confirmar sua identidade." }); return; }
+      const identity = await verifyAuth0Jwt(token, AUTH0_CLIENT_ID);
+      const stored = await selectUserByIdRow(user.id);
+      const mode = validateAccountClosure(user, identity, stored?.auth0_sub ?? null, req.body ?? {});
+      if (mode === "delete") await accountArchives.purge(user.id);
+      else await accountArchives.archive(user.id);
+      clearSessionCookie(res, isProduction);
+      res.json({ success: true, mode });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : "Não foi possível encerrar a conta." });
+    }
+  });
   app.use("/api", legalAccountGate(legalService, getSessionUser));
 
   registerDiscovery(app, {
-    query: discoveryQuery,
+    query: accountArchives.publicQuery,
     postgres: Boolean(pgPool),
     readOnly: IS_DEV_REMOTE_DATABASE,
     normalizeEstablishment: normalizeEstablishmentRow,
@@ -11376,7 +11376,11 @@ async function bootstrap() {
         return;
       }
 
-      const deleted = await deleteUserRecordAsAdmin(userId);
+      const permanent = req.body?.mode === "delete";
+      if (permanent && req.body?.confirmation !== existingUser.email) {
+        res.status(400).json({ error: "Confirme o e-mail da conta para excluir definitivamente." }); return;
+      }
+      const deleted = permanent ? await accountArchives.purge(userId) : await deleteUserRecordAsAdmin(userId);
       if (!deleted) {
         res.status(404).json({ error: "Usuário não encontrado." });
         return;
@@ -11582,6 +11586,8 @@ async function bootstrap() {
         });
         return;
       }
+
+      await accountArchives.restore(user.id, profileClaims);
 
       const token = await createSession(user.id);
       setSessionCookie(res, token, isProduction);
@@ -11938,7 +11944,7 @@ async function bootstrap() {
       });
       if (req.query.previews === '3' && rows.length) {
         const built = buildPublicationPreviewsQuery(rows.map(row => row.id));
-        const previews = (await discoveryQuery(built.sql, built.values)).map(normalizePublicationRow);
+        const previews = (await accountArchives.publicQuery(built.sql, built.values)).map(normalizePublicationRow);
         const byCompany = new Map<number, EstablishmentPublicationRecord[]>();
         for (const publication of previews) {
           const list = byCompany.get(publication.establishmentId) ?? [];
@@ -12790,7 +12796,7 @@ async function bootstrap() {
 
     try {
       const user = await selectUserByIdRow(userId);
-      if (!user) {
+      if (!user || await accountArchives.archived(user.id)) {
         res.status(404).json({ error: "Usuário não encontrado." });
         return;
       }
@@ -12826,7 +12832,7 @@ async function bootstrap() {
 
     try {
       const vendor = await selectUserByIdRow(vendorId);
-      if (!vendor) {
+      if (!vendor || await accountArchives.archived(vendor.id)) {
         res.status(404).json({ error: "Vendedor não encontrado." });
         return;
       }
