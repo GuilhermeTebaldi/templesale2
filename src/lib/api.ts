@@ -1,5 +1,6 @@
 import { trackedFetch } from "./networkActivity";
 import { AUTH0_DEBUG_LOGS } from "./auth0-config";
+import type { LegalLocale, LegalStatus, LegalReceipt } from "./legal-types";
 import {
   normalizeProductDetailKey,
   normalizeProductDetailsRecord,
@@ -2485,6 +2486,15 @@ export const api = {
       throw new Error("Resposta inválida ao recuperar sessão.");
     }
     return user;
+  },
+  getLegalStatus(locale: LegalLocale) {
+    return request<LegalStatus>(`/api/legal/status?locale=${locale}`, { skipGlobalLoadingOverlay: true });
+  },
+  acceptLegalTerms(input: { locale: LegalLocale; version: string; documentHash: string; representative: string; company: string; agreed: boolean; authorized: boolean }, idToken: string) {
+    return request<{ receipt: LegalReceipt }>("/api/legal/accept", {
+      method: "POST", headers: { "X-Auth0-ID-Token": idToken }, body: JSON.stringify(input),
+      skipGlobalLoadingOverlay: true,
+    });
   },
   async logout() {
     try {

@@ -11,6 +11,7 @@ import { Pool } from "pg";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { initializeDiscovery, registerDiscovery, sqliteBindings } from "./server/discovery";
+import { createLegalService, registerLegalRoutes, legalAccountGate, type LegalService } from "./server/legal";
 import {
   NEGOTIABLE_PRICE_STORAGE_VALUE,
   isNegotiablePriceValue,
@@ -10090,10 +10091,20 @@ async function getNotificationStreamUser(req: Request): Promise<SessionUser | nu
   return getSessionUser(req);
 }
 
+let legalService: LegalService | null = null;
 async function requireAuth(req: Request, res: Response): Promise<SessionUser | null> {
   const user = await getSessionUser(req);
   if (!user) {
     res.status(401).json({ error: "Faça login para continuar." });
+    return null;
+  }
+  try {
+    if (legalService?.enabled && !(await legalService.accepted(user.id))) {
+      res.status(403).json({ error: "Aceite os termos para utilizar sua conta.", code: "TERMS_REQUIRED" });
+      return null;
+    }
+  } catch {
+    res.status(503).json({ error: "Não foi possível verificar o aceite." });
     return null;
   }
   return user;
@@ -10250,6 +10261,9 @@ async function bootstrap() {
     return [];
   };
   if (!IS_DEV_REMOTE_DATABASE) await initializeDiscovery(discoveryQuery);
+  legalService = createLegalService(discoveryQuery);
+  if (legalService.enabled && IS_DEV_REMOTE_READ_ONLY) throw new Error("Aceite de termos indisponível em banco remoto somente leitura.");
+  await legalService.initialize();
 
   const app = express();
   const isProduction = process.env.NODE_ENV === "production";
@@ -10378,6 +10392,13 @@ async function bootstrap() {
 
     return { email: ADMIN_EMAIL };
   };
+
+  registerLegalRoutes(app, legalService, {
+    session: getSessionUser,
+    verifyIdentity: token => verifyAuth0Jwt(token, AUTH0_CLIENT_ID),
+    subjectForUser: async id => (await selectUserByIdRow(id))?.auth0_sub ?? null,
+  });
+  app.use("/api", legalAccountGate(legalService, getSessionUser));
 
   registerDiscovery(app, {
     query: discoveryQuery,
