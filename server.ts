@@ -10589,6 +10589,36 @@ async function bootstrap() {
     });
   }
 
+  app.get("/api/map-route", async (req, res) => {
+    const values = ["originLat", "originLng", "destinationLat", "destinationLng"].map(key => {
+      const value = req.query[key];
+      return typeof value === "string" && value.trim() ? Number(value) : NaN;
+    });
+    if (values.some((value, index) => !Number.isFinite(value) || Math.abs(value) > (index % 2 ? 180 : 90))) {
+      res.status(400).json({ error: "Coordenadas inválidas." });
+      return;
+    }
+    const [originLat, originLng, destinationLat, destinationLng] = values;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${originLng},${originLat};${destinationLng},${destinationLat}?overview=full&geometries=geojson&steps=false`,
+        { signal: controller.signal },
+      );
+      if (!response.ok) throw new Error("Route unavailable");
+      const data = await response.json() as { code?: string; routes?: Array<{ geometry?: { coordinates?: number[][] } }> };
+      const coordinates = data.routes?.[0]?.geometry?.coordinates;
+      if (data.code !== "Ok" || !coordinates || coordinates.length < 2) throw new Error("No route");
+      res.setHeader("Cache-Control", "private, max-age=60");
+      res.json({ coordinates });
+    } catch {
+      res.status(502).json({ error: "Trajeto indisponível." });
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+
   app.get("/api/map-tiles/:z/:x/:y.png", async (req, res) => {
     const z = parseTileCoordinate(req.params.z);
     const x = parseTileCoordinate(req.params.x);
