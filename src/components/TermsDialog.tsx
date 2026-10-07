@@ -34,7 +34,7 @@ export default function TermsDialog({ user, locale, open, companyName, onClose, 
   const mandatory = Boolean(user && (!status || (status.enabled && !status.accepted)));
   const visible = open || mandatory || Boolean(confirmed);
   const document = selectedReceipt?.document ?? status?.document;
-  const receipt = selectedReceipt ?? confirmed ?? status?.receipts[0];
+  const receipt = selectedReceipt ?? confirmed ?? (!mandatory ? status?.receipts[0] : null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -117,7 +117,7 @@ export default function TermsDialog({ user, locale, open, companyName, onClose, 
           onScroll={event => { const el = event.currentTarget; if (el.scrollHeight - el.scrollTop - el.clientHeight < 20) setRead(true); }}>
           {!status && !error && <p role="status">{text("Carregando documento…", "Caricamento del documento…")}</p>}
           {status && !status.ready && <p className="mb-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">{text("Minuta em preparação. Os dados do responsável e a política de privacidade precisam ser concluídos antes do aceite.", "Bozza in preparazione. I dati del titolare e l'informativa privacy devono essere completati prima dell'accettazione.")}</p>}
-          {status && status.receipts.length > 0 && open && (
+          {status?.accepted && status.receipts.length > 0 && open && (
             <label className="mb-5 block text-sm">{text("Documento para leitura", "Documento da leggere")}
               <select className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-900 p-3"
                 value={selectedReceipt?.id ?? ""} onChange={event => setSelectedReceipt(status.receipts.find(item => item.id === event.target.value) ?? null)}>
