@@ -355,7 +355,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className="mx-auto w-full max-w-xl px-0 py-2 sm:max-w-3xl sm:px-4 sm:py-4 space-y-4 sm:space-y-6"
+      className="mx-auto w-full max-w-xl px-0 py-2 sm:max-w-3xl sm:px-4 sm:py-4 ts-feed-list"
     >
       {/* PULL-TO-REFRESH VISUAL BAR / INDICATOR */}
       <div
@@ -413,7 +413,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
       </div>
 
       {/* Feed Posts */}
-      <div className="space-y-6 sm:space-y-8">
+      <div className="ts-feed-posts">
         {posts.map((post) => {
           const company = companyMap.get(post.companyId);
           if (!company) return null;
@@ -440,7 +440,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
             <article
               key={post.id}
               id={`feed-post-${post.id}`}
-              className="relative overflow-hidden border-y border-neutral-800/90 bg-neutral-900 shadow-xl sm:rounded-2xl sm:border"
+              className="ts-feed-post relative overflow-hidden border-b border-neutral-800/90 bg-neutral-900"
             >
               {/* Efeito Visual Mágico: Logomarca TempleSale surge no local exato do clique na foto e voa até o botão de curtir */}
               {flyingLikes[post.id] && (
@@ -464,12 +464,12 @@ export const FeedView: React.FC<FeedViewProps> = ({
               )}
 
               {/* 1. Post Header: Perfil da Empresa */}
-              <div className="px-3.5 py-3 flex items-center justify-between">
+              <div className="ts-feed-header flex items-start justify-between gap-2">
                 <div
                   className="flex items-center space-x-2.5 cursor-pointer group min-w-0"
                   onClick={() => onSelectCompany(company.id)}
                 >
-                  <div className="relative w-9 h-9 overflow-hidden rounded-full border border-neutral-700/80 transition-colors group-hover:border-neutral-400 shrink-0">
+                  <div className="ts-feed-avatar relative w-10 h-10 overflow-hidden rounded-full border border-neutral-700/80 transition-colors group-hover:border-neutral-400 shrink-0">
                     <ProgressiveProductImage
                       src={authorAvatarUrl}
                       alt={company.name}
@@ -479,7 +479,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-xs sm:text-sm font-bold text-neutral-100 group-hover:text-white truncate">
+                    <h3 className="text-[15px] font-bold text-neutral-100 group-hover:text-white truncate">
                       {company.name}
                     </h3>
                     <div className="flex items-center text-[11px] text-neutral-400 space-x-1 truncate">
@@ -505,10 +505,21 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 </a>
               </div>
 
+                {/* Legenda */}
+                <div className="ts-feed-caption text-[15px] text-neutral-200 leading-relaxed">
+                  <button
+                    onClick={() => onSelectCompany(company.id)}
+                    className="font-bold text-neutral-100 hover:underline mr-1.5 cursor-pointer"
+                  >
+                    {company.name}
+                  </button>
+                  <span className="whitespace-pre-wrap">{post.caption}</span>
+                </div>
+
               {/* 2. Foto da Publicação (1:1 Quadrado Perfeito) - O clique simples na foto NÃO abre detalhes ou comentários */}
               <div
                 id={`feed-photo-${post.id}`}
-                className="relative aspect-square w-full bg-stone-100 overflow-hidden select-none cursor-pointer"
+                className="ts-feed-media relative aspect-square bg-stone-100 overflow-hidden select-none cursor-pointer"
                 onClick={(e) => handlePhotoInteraction(post.id, e)}
                 onDoubleClick={(e) => handlePhotoDoubleClick(post.id, e)}
               >
@@ -522,7 +533,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
               </div>
 
               {/* 3. Barra de Ações Rápidas */}
-              <div className="px-4 pt-3 pb-4 space-y-2.5">
+              <div className="ts-feed-actions pt-3 pb-4 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
                     {/* Botão de Curtir com a Logomarca TempleSale */}
@@ -588,17 +599,6 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 {/* Curtidas */}
                 <div className="text-xs font-bold text-neutral-100">
                   {likesCount === 1 ? '1 curtida' : `${likesCount} curtidas`}
-                </div>
-
-                {/* Legenda */}
-                <div className="text-xs sm:text-sm text-neutral-200 leading-snug">
-                  <button
-                    onClick={() => onSelectCompany(company.id)}
-                    className="font-bold text-neutral-100 hover:underline mr-1.5 cursor-pointer"
-                  >
-                    {company.name}
-                  </button>
-                  <span className="whitespace-pre-wrap">{post.caption}</span>
                 </div>
 
                 {/* Comentários Recentes */}
