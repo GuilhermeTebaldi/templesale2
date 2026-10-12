@@ -6,6 +6,7 @@ export interface Comment {
   authorCompany?: string;
   text: string;
   createdAt: string;
+  deliveryStatus?: "sending" | "failed";
 }
 
 export interface Post {
