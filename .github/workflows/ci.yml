@@ -54,5 +54,8 @@ jobs:
       - name: Terms acceptance and identity tests
         run: node --experimental-sqlite --import tsx --test tests/legal.test.mjs tests/account-archive.test.mjs
 
+      - name: Comment delivery and write admission tests
+        run: node --import tsx --test tests/comment-delivery.test.ts tests/write-admission.test.ts
+
       - name: Build
         run: npm run build
