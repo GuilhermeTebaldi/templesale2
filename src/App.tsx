@@ -1,4 +1,5 @@
 import React from "react";
+import { pendingComment, withPendingComment, type PendingComment } from "./lib/comment-delivery";
 import { usePublicationFeed } from "./lib/use-publication-feed";
 import { FeedRequestGate } from "./lib/publication-feed";
 import { useAuth0 } from "@auth0/auth0-react";
@@ -380,6 +381,10 @@ export default function App() {
   const [focusedPublicationCommentId, setFocusedPublicationCommentId] = React.useState<number | null>(null);
   const [isEstablishmentPageOpen, setIsEstablishmentPageOpen] = React.useState(false);
   const [publicationFeed, setPublicationFeed] = React.useState<PublicationDto[]>([]);
+  const [commentDeliveries, setCommentDeliveries] = React.useState<Record<number, PendingComment>>({});
+  const commentWritesRef = React.useRef(new Set<number>());
+  const commentLoadsRef = React.useRef(new Set<number>());
+  const [publicationSubmitError, setPublicationSubmitError] = React.useState("");
   const [publicationCommentsById, setPublicationCommentsById] = React.useState<Record<number, ProductCommentDto[]>>({});
   const [isLoadingEstablishments, setIsLoadingEstablishments] = React.useState(false);
   const activityOnboardingShownRef = React.useRef<number | null>(null);
@@ -692,41 +697,25 @@ export default function App() {
 
   React.useEffect(() => {
     const missingPublicationIds = publicationFeed
-      .map((publication) => publication.id)
-      .filter((publicationId) => !(publicationId in publicationCommentsById))
-      .slice(0, 20);
-
-    if (missingPublicationIds.length === 0) {
-      return;
-    }
-
-    let isActive = true;
-    void Promise.all(
-      missingPublicationIds.map(async (publicationId) => {
-        try {
-          const comments = await api.getPublicationComments(publicationId, true);
-          return [publicationId, comments] as const;
-        } catch (error) {
-          console.error("Error loading publication comments for feed:", error);
-          return [publicationId, []] as const;
-        }
-      }),
-    ).then((entries) => {
-      if (!isActive) {
-        return;
+      .map(publication => publication.id)
+      .filter(id => !(id in publicationCommentsById) && !commentLoadsRef.current.has(id))
+      .slice(0, Math.max(0, 4 - commentLoadsRef.current.size));
+    if (!missingPublicationIds.length) return;
+    missingPublicationIds.forEach(id => commentLoadsRef.current.add(id));
+    void Promise.all(missingPublicationIds.map(async id => {
+      try {
+        return [id, await api.getPublicationComments(id, true)] as const;
+      } catch (error) {
+        console.error("Error loading publication comments for feed:", error);
+        return [id, []] as const;
+      } finally {
+        commentLoadsRef.current.delete(id);
       }
-      setPublicationCommentsById((current) => {
-        const next = { ...current };
-        entries.forEach(([publicationId, comments]) => {
-          next[publicationId] = comments;
-        });
-        return next;
-      });
-    });
-
-    return () => {
-      isActive = false;
-    };
+    })).then(entries => setPublicationCommentsById(current => {
+      const next = { ...current };
+      entries.forEach(([id, comments]) => { if (!(id in next)) next[id] = comments; });
+      return next;
+    }));
   }, [publicationCommentsById, publicationFeed]);
 
   React.useEffect(() => {
@@ -2495,6 +2484,7 @@ export default function App() {
   }, []);
 
   const handleOpenNewProduct = () => {
+    if (pendingPublicationCount > 0) { setSocialActiveTab("feed"); return; }
     setIsUserOpen(false);
 
     if (!currentUser) {
@@ -2932,13 +2922,14 @@ export default function App() {
       comment.replies.forEach(visit);
     };
     items.forEach(visit);
-    return flattened.map((comment) => ({
+    return flattened.sort((a, b) => a.createdAt - b.createdAt || (a.id < 0 ? 1 : b.id < 0 ? -1 : a.id - b.id)).map((comment) => ({
       id: `comment_${comment.id}`,
       postId: socialPostIdFromPublicationId(comment.publicationId ?? 0),
       authorName: comment.authorName,
       authorAvatar: comment.authorAvatarUrl,
       text: comment.body,
       createdAt: toIsoFromUnixOrMillis(comment.createdAt),
+      deliveryStatus: (comment as PendingComment).deliveryStatus,
     }));
   }, [socialPostIdFromPublicationId]);
 
@@ -2983,13 +2974,14 @@ export default function App() {
           imageUrl: publication.imageUrl,
           caption: publication.caption || "",
           createdAt: toIsoFromUnixOrMillis(publication.createdAt),
-          comments: toSocialComments(publicationCommentsById[publication.id] ?? []),
+          comments: toSocialComments(withPendingComment(publicationCommentsById[publication.id] ?? [], commentDeliveries[publication.id])),
           likesCount: publication.likesCount ?? 0,
         }));
     },
     [
       deletedPublicationIds,
       publicationCommentsById,
+      commentDeliveries,
       publicationFeed,
       searchPreviewPublications,
       likedPublications,
@@ -3025,7 +3017,7 @@ export default function App() {
           imageUrl: publication.imageUrl,
           caption: publication.caption || "",
           createdAt: toIsoFromUnixOrMillis(publication.createdAt),
-          comments: toSocialComments(publicationCommentsById[publication.id] ?? []),
+          comments: toSocialComments(withPendingComment(publicationCommentsById[publication.id] ?? [], commentDeliveries[publication.id])),
           likesCount: publication.likesCount ?? 0,
         }));
     }
@@ -3037,6 +3029,7 @@ export default function App() {
     establishmentIdFromSocialCompanyId,
     memberProfilePhoto,
     publicationCommentsById,
+    commentDeliveries,
     profilePublicationsEstablishmentId,
     selectedEstablishmentPublications,
     selectedSocialCompany.id,
@@ -3203,29 +3196,32 @@ export default function App() {
     }
   }, [myEstablishment, selectSocialCompany, socialActiveTab, socialSelectedCompanyId]);
 
-  const addSocialComment = React.useCallback(
-    async (postId: string, text: string) => {
-      const publicationId = publicationIdFromSocialPostId(postId);
-      if (!publicationId) {
-        return;
-      }
+  const submitPublicationComment = React.useCallback(
+    async (publicationId: number, text: string, parentCommentId?: number) => {
+      if (commentWritesRef.current.has(publicationId)) throw new Error("Aguarde a confirmação do comentário anterior.");
+      commentWritesRef.current.add(publicationId);
+      const draft = pendingComment(publicationId, text.trim(), currentUser, parentCommentId);
+      setCommentDeliveries(current => ({ ...current, [publicationId]: draft }));
       try {
-        const nextComments = await api.createPublicationComment(publicationId, { body: text });
-        setPublicationCommentsById((current) => ({
-          ...current,
-          [publicationId]: nextComments,
-        }));
-        const payload = await api.getPublication(publicationId);
-        setPublicationFeed((current) =>
-          current.map((publication) => (publication.id === publicationId ? payload.publication : publication)),
-        );
-        setSelectedPublication((current) => (current?.id === publicationId ? payload.publication : current));
+        const comments = await api.createPublicationComment(publicationId, { body: text, parentCommentId });
+        setPublicationCommentsById(current => ({ ...current, [publicationId]: comments }));
+        setCommentDeliveries(current => {
+          const next = { ...current }; delete next[publicationId]; return next;
+        });
+        return comments;
       } catch (error) {
-        console.error("Error creating social comment:", error);
+        setCommentDeliveries(current => ({ ...current, [publicationId]: { ...draft, deliveryStatus: "failed" } }));
+        throw error;
+      } finally {
+        commentWritesRef.current.delete(publicationId);
       }
-    },
-    [publicationIdFromSocialPostId],
+    }, [currentUser],
   );
+
+  const addSocialComment = React.useCallback(async (postId: string, text: string) => {
+    const publicationId = publicationIdFromSocialPostId(postId);
+    if (publicationId) await submitPublicationComment(publicationId, text);
+  }, [publicationIdFromSocialPostId, submitPublicationComment]);
 
  const changeSocialTab = React.useCallback(
   (tab: SocialActiveTab) => {
@@ -3561,6 +3557,7 @@ export default function App() {
 
       <main className="flex-1 pb-24 sm:pb-16 sm:pl-[72px]">
         <div style={{ display: socialActiveTab === "feed" ? "block" : "none" }}>
+          {publicationSubmitError && <p role="alert" className="mx-auto max-w-xl px-4 py-3 text-sm text-red-600">{publicationSubmitError}</p>}
           {pendingPublicationCount > 0 && (
             <div className="sticky top-14 z-30 mx-auto max-w-xl px-3 pt-2 sm:top-16 sm:max-w-3xl">
               <div className="overflow-hidden rounded-full border border-neutral-200 bg-white/95 shadow-sm">
@@ -3582,9 +3579,7 @@ export default function App() {
             companies={socialCompanies}
             onOpenPost={openSocialPost}
             onSelectCompany={selectSocialCompany}
-            onAddComment={(postId, text) => {
-              void addSocialComment(postId, text);
-            }}
+            onAddComment={addSocialComment}
             onOpenCreatePost={handleOpenNewProduct}
             savedPostIds={savedPublicationIds}
             likedPostIds={likedPublicationIds}
@@ -3754,6 +3749,8 @@ export default function App() {
             publication={selectedPublication}
             establishment={selectedEstablishment}
             currentUser={currentUser}
+            pendingComment={commentDeliveries[selectedPublication.id]}
+            onSubmitComment={submitPublicationComment}
             focusCommentId={focusedPublicationCommentId}
             onClose={() => {
               setSelectedPublication(null);
@@ -3801,6 +3798,7 @@ export default function App() {
             establishment={myEstablishment}
             onClose={() => setIsNewProductOpen(false)}
             onPublishStarted={() => {
+              setPublicationSubmitError("");
               setPendingPublicationCount((current) => current + 1);
               setSocialActiveTab("feed");
             }}
@@ -3808,6 +3806,7 @@ export default function App() {
               setPendingPublicationCount((current) => Math.max(0, current - 1));
             }}
             onPublishFailed={(error) => {
+              setPublicationSubmitError(error.message);
               console.error("Error publishing queued publication:", error);
             }}
             onPublished={(publication) => {
