@@ -384,7 +384,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* DESKTOP LEFT RAIL */}
       <aside
         id="desktop-left-nav"
-        className="fixed bottom-0 left-0 top-16 z-40 hidden w-[72px] flex-col items-center justify-between border-r border-neutral-900 bg-black/95 px-2 py-4 backdrop-blur-md sm:flex"
+        className="fixed bottom-0 left-0 top-16 z-40 hidden w-[72px] flex-col items-center justify-between border-r border-neutral-900 bg-white/95 px-2 py-4 backdrop-blur-md sm:flex"
       >
         <div className="flex flex-col items-center gap-2">
           <button
