@@ -1,4 +1,5 @@
 import React from "react";
+import { withPendingComment, type PendingComment } from "../lib/comment-delivery";
 import { motion } from "motion/react";
 import { Loader2, MessageCircle, Pencil, Send, Trash2, X } from "lucide-react";
 import { api, type EstablishmentDto, type ProductCommentDto, type PublicationDto, type SessionUser } from "../lib/api";
@@ -10,6 +11,8 @@ interface PublicationViewerProps {
   publication: PublicationDto;
   establishment: EstablishmentDto;
   currentUser: SessionUser | null;
+  pendingComment?: PendingComment;
+  onSubmitComment: (publicationId: number, body: string, parentCommentId?: number) => Promise<ProductCommentDto[] | undefined>;
   focusCommentId?: number | null;
   onClose: () => void;
   onOpenEstablishment?: (establishmentId: number) => void;
@@ -32,6 +35,8 @@ export default function PublicationViewer({
   publication,
   establishment,
   currentUser,
+  pendingComment,
+  onSubmitComment,
   focusCommentId,
   onClose,
   onOpenEstablishment,
@@ -51,6 +56,9 @@ export default function PublicationViewer({
   const [publicationError, setPublicationError] = React.useState("");
   const highlightedCommentRef = React.useRef<HTMLDivElement | null>(null);
   const isOwner = currentUser?.id === publication.ownerId;
+  const visibleComments = withPendingComment(comments, pendingComment);
+  const submittingRef = React.useRef(false);
+  const commentsVersionRef = React.useRef(0);
 
   const openEstablishmentProfile = () => {
     onClose();
@@ -63,12 +71,13 @@ export default function PublicationViewer({
 
   React.useEffect(() => {
     let isActive = true;
+    const readVersion = commentsVersionRef.current;
     setIsLoadingComments(true);
     setCommentsError("");
     api
-      .getPublicationComments(publication.id)
+      .getPublicationComments(publication.id, true)
       .then((items) => {
-        if (isActive) {
+        if (isActive && readVersion === commentsVersionRef.current) {
           setComments(items);
         }
       })
@@ -102,23 +111,27 @@ export default function PublicationViewer({
   const submitComment = async (event: React.FormEvent) => {
     event.preventDefault();
     const body = commentBody.trim();
-    if (!body || isSubmittingComment) {
+    if (!body || submittingRef.current || pendingComment?.deliveryStatus === "sending") {
       return;
     }
+    submittingRef.current = true;
+    const parentCommentId = replyToCommentId ?? undefined;
     setIsSubmittingComment(true);
+    setCommentBody("");
+    setReplyToCommentId(null);
     setCommentsError("");
     try {
-      const nextComments = await api.createPublicationComment(publication.id, {
-        body,
-        parentCommentId: replyToCommentId ?? undefined,
-      });
+      const nextComments = await onSubmitComment(publication.id, body, parentCommentId);
+      if (!nextComments) return;
+      commentsVersionRef.current += 1;
       setComments(nextComments);
       onCommentsChanged?.(publication.id, nextComments);
-      setCommentBody("");
-      setReplyToCommentId(null);
     } catch (error) {
+      setCommentBody(current => current || body);
+      setReplyToCommentId(current => current ?? parentCommentId ?? null);
       setCommentsError(error instanceof Error ? error.message : t("Não foi possível enviar o comentário."));
     } finally {
+      submittingRef.current = false;
       setIsSubmittingComment(false);
     }
   };
@@ -131,6 +144,7 @@ export default function PublicationViewer({
     setCommentsError("");
     try {
       const nextComments = await api.updatePublicationComment(publication.id, commentId, { body });
+      commentsVersionRef.current += 1;
       setComments(nextComments);
       onCommentsChanged?.(publication.id, nextComments);
       setEditingCommentId(null);
@@ -144,6 +158,7 @@ export default function PublicationViewer({
     setCommentsError("");
     try {
       const nextComments = await api.deletePublicationComment(publication.id, commentId);
+      commentsVersionRef.current += 1;
       setComments(nextComments);
       onCommentsChanged?.(publication.id, nextComments);
     } catch (error) {
@@ -169,7 +184,8 @@ export default function PublicationViewer({
   };
 
   const renderComment = (comment: ProductCommentDto, isReply = false) => {
-    const canManage = currentUser?.id === comment.userId;
+    const deliveryStatus = (comment as PendingComment).deliveryStatus;
+    const canManage = comment.id > 0 && pendingComment?.deliveryStatus !== "sending" && currentUser?.id === comment.userId;
     const isHighlighted = focusCommentId === comment.id;
     return (
       <div
@@ -234,7 +250,7 @@ export default function PublicationViewer({
               <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-neutral-300">{comment.body}</p>
             )}
             <div className="mt-2 flex items-center gap-3">
-              {!isReply && (
+              {!isReply && comment.id > 0 && (
                 <button
                   type="button"
                   onClick={() => setReplyToCommentId(comment.id)}
@@ -267,6 +283,8 @@ export default function PublicationViewer({
                 </>
               )}
             </div>
+            {deliveryStatus === "sending" && <div role="status" aria-label={t("Enviando comentário")} className="ts-comment-progress mt-2" />}
+            {deliveryStatus === "failed" && <p role="alert" className="mt-2 text-xs text-red-600">{t("Não foi possível confirmar o comentário. O texto foi preservado; confira os comentários antes de reenviar.")}</p>}
             {comment.replies.map((reply) => renderComment(reply, true))}
           </div>
         </div>
@@ -373,15 +391,15 @@ export default function PublicationViewer({
                 {t("Commenti")}
               </p>
             </div>
-            {isLoadingComments ? (
+            {isLoadingComments && !pendingComment ? (
               <div className="flex items-center gap-2 py-8 text-sm text-neutral-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {t("Caricamento commenti...")}
               </div>
-            ) : comments.length === 0 ? (
+            ) : visibleComments.length === 0 ? (
               <p className="py-8 text-sm text-neutral-500">{t("Ancora nessun commento.")}</p>
             ) : (
-              <div>{comments.map((comment) => renderComment(comment))}</div>
+              <div>{visibleComments.map((comment) => renderComment(comment))}</div>
             )}
             {commentsError && (
               <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
@@ -408,11 +426,11 @@ export default function PublicationViewer({
               />
               <button
                 type="submit"
-                disabled={isSubmittingComment || !commentBody.trim()}
+                disabled={isSubmittingComment || pendingComment?.deliveryStatus === "sending" || !commentBody.trim()}
                 className="flex h-11 w-11 items-center justify-center rounded-xl bg-neutral-100 text-neutral-950 transition-colors hover:bg-white disabled:bg-neutral-800 disabled:text-neutral-500"
                 aria-label={t("Invia")}
               >
-                {isSubmittingComment ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                <Send className="h-4 w-4" />
               </button>
             </div>
           </form>
