@@ -392,3 +392,9 @@ body { margin: 0; background: #fff; color: #0f1419; }
   .bg-amber-800 { background-color: #fffbeb; }
   .bg-red-800, .bg-red-900\/60, .bg-red-950\/70, .bg-red-950\/95, .hover\:bg-red-800:hover { background-color: #fef2f2; }
 }
+
+/* Indicador local, sem bloquear a publicação ou o restante da página. */
+.ts-comment-progress { height: 2px; overflow: hidden; background: #e6ecf0; border-radius: 2px; }
+.ts-comment-progress::after { content: ""; display: block; width: 35%; height: 100%; background: #1d9bf0; animation: ts-comment-send 1.2s ease-in-out infinite; }
+@keyframes ts-comment-send { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) { .ts-comment-progress::after { animation: none; width: 100%; opacity: .5; } }
