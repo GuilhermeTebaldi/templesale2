@@ -107,7 +107,7 @@ export default function TermsDialog({ user, locale, open, introComplete = true, 
         }}>
         <header className="shrink-0 border-b border-neutral-800 px-5 pb-4 pt-[max(20px,env(safe-area-inset-top))] sm:px-8">
           <div className="flex items-center justify-between gap-3">
-            <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-300"><ShieldCheck size={17} /> TempleSale</span>
+            <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-300"><ShieldCheck size={17} /> <span translate="no" className="notranslate">TempleSale</span></span>
             {!mandatory && !confirmed && <button onClick={onClose} aria-label={text("Fechar termos", "Chiudi condizioni")} className="rounded-full p-2 hover:bg-neutral-800"><X size={20} /></button>}
           </div>
           <h1 id="terms-title" className="mt-3 text-2xl font-semibold">{confirmed ? text("Aceite confirmado", "Accettazione confermata") : text("Uma comunidade com regras claras", "Una comunità con regole chiare")}</h1>
@@ -163,7 +163,7 @@ export default function TermsDialog({ user, locale, open, introComplete = true, 
             <button onClick={download} className="mt-4 text-sm font-semibold text-emerald-300 underline">{text("Baixar comprovante e documento", "Scarica ricevuta e documento")}</button>
           </section>}
           {error && <div role="alert" className="mt-5 rounded-xl border border-red-500/30 p-4 text-sm text-red-300">{error}
-            {!status && <button onClick={() => setRetry(value => value + 1)} className="ml-3 underline">{text("Tentar novamente", "Riprova")}</button>}
+            {!status && <button onClick={() => setRetry(value => value + 1)} className="ml-3 underline">{text("Riprova", "Riprova")}</button>}
           </div>}
         </div>
         <footer className="shrink-0 border-t border-neutral-800 bg-neutral-950 px-5 pb-[max(20px,env(safe-area-inset-bottom))] pt-4 sm:px-8">
@@ -177,7 +177,7 @@ export default function TermsDialog({ user, locale, open, introComplete = true, 
                   {busy ? text("Confirmando…", "Conferma in corso…") : text("Aceitar e confirmar", "Accetta e conferma")}
                 </button>
               </div>
-            </> : <button onClick={onClose} className="w-full rounded-xl border border-neutral-700 p-3 text-sm">{text("Fechar", "Chiudi")}</button>}
+            </> : <button onClick={onClose} className="w-full rounded-xl border border-neutral-700 p-3 text-sm">{text("Chiudi", "Chiudi")}</button>}
         </footer>
       </div>
     </div>, host,

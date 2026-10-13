@@ -30,7 +30,7 @@ export default function GlobalLoadingOverlay() {
         >
           <motion.img
             src={GLOBAL_LOADING_LOGO_SRC}
-            alt="Carregando..."
+            alt="Caricamento..."
             className="h-16 w-16 sm:h-20 sm:w-20 select-none object-contain"
             initial={{ opacity: 0.65, scale: 0.96 }}
             animate={{ opacity: [0.65, 1, 0.65], scale: [0.96, 1.04, 0.96] }}

@@ -1,4 +1,5 @@
 import React from "react";
+import { translate as translateInterface } from "../i18n";
 import AdminPublicationHealth from './AdminPublicationHealth';
 import {
   LoaderCircle,
@@ -976,7 +977,7 @@ function formatDate(value?: string): string {
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat("it-IT", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -986,7 +987,7 @@ function formatDate(value?: string): string {
 }
 
 function formatDateTime(value: number): string {
-  return new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat("it-IT", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -1004,7 +1005,7 @@ function formatDayDate(value: string): string {
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat("it-IT", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -1026,17 +1027,17 @@ function getAdminUserDetailRows(user: AdminUserV2): Array<{ label: string; value
     { label: "ID", value: String(user.id) },
     { label: "Nome", value: user.username || "-" },
     { label: "Email", value: user.email || "-" },
-    { label: "Telefone", value: user.phone || "-" },
-    { label: "País", value: user.country || "-" },
-    { label: "Estado", value: user.state || "-" },
-    { label: "Cidade", value: user.city || "-" },
-    { label: "Bairro", value: user.neighborhood || "-" },
-    { label: "Rua", value: user.street || "-" },
+    { label: "Telefono", value: user.phone || "-" },
+    { label: "Paese", value: user.country || "-" },
+    { label: "Regione", value: user.state || "-" },
+    { label: "Città", value: user.city || "-" },
+    { label: "Quartiere", value: user.neighborhood || "-" },
+    { label: "Via", value: user.street || "-" },
     { label: "WhatsApp ISO", value: user.whatsappCountryIso || "-" },
-    { label: "Coordenadas", value: coordinates || "-" },
-    { label: "Criado em", value: formatDate(user.createdAt) },
-    { label: "Status", value: user.isBanned ? "Banido" : "Ativo" },
-    { label: "Motivo do bloqueio", value: user.banReason || "-" },
+    { label: "Coordinate", value: coordinates || "-" },
+    { label: "Creato il", value: formatDate(user.createdAt) },
+    { label: "Status", value: user.isBanned ? "Bloccato" : "Attivo" },
+    { label: "Motivo del blocco", value: user.banReason || "-" },
   ];
 }
 
@@ -1054,7 +1055,7 @@ function buildWhatsappResetUrl(user: AdminUserV2, code: string): string {
   };
   const prefix = user.whatsappCountryIso ? dialPrefixByIso[user.whatsappCountryIso] : "";
   const phone = prefix && !digits.startsWith(prefix) ? `${prefix}${digits}` : digits;
-  const message = `Olá, seu código temporário TempleSale é ${code}. Use ele como senha e depois altere no perfil.`;
+  const message = `Ciao, il tuo codice temporaneo TempleSale è ${code}. Usalo come password, poi modificala nel profilo.`;
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
 
@@ -1088,13 +1089,10 @@ const COUNTRY_NAME_BY_CODE: Record<string, string> = {
 };
 
 function formatCountryName(value: string): string {
-  const normalized = value.trim();
-  if (!normalized) {
-    return "";
-  }
-
-  const upper = normalized.toUpperCase();
-  return COUNTRY_NAME_BY_CODE[upper] ?? normalized;
+  const normalized=value.trim();
+  if(!normalized)return '';
+  try{return new Intl.DisplayNames(['it-IT'],{type:'region'}).of(normalized.toUpperCase())??normalized;}
+  catch{return normalized;}
 }
 
 function formatVisitorLocation(visitor: AdminVisitorV2): string {
@@ -1103,7 +1101,7 @@ function formatVisitorLocation(visitor: AdminVisitorV2): string {
     .map((part) => part.trim())
     .filter(Boolean);
   if (parts.length === 0) {
-    return "Local não identificado";
+    return "Posizione non identificata";
   }
   return parts.join(", ");
 }
@@ -1136,18 +1134,18 @@ function formatVisitorDeviceSummary(visitor: AdminVisitorV2): string {
   const osLabel = [osName, osVersion].filter(Boolean).join(" ");
 
   if (visitor.deviceType === "bot") {
-    return "Robô ou verificador automático";
+    return "Bot o controllo automatico";
   }
   if (visitor.deviceType === "mobile") {
-    return osLabel ? `Celular ${osLabel}` : "Celular";
+    return osLabel ? `Smartphone ${osLabel}` : "Smartphone";
   }
   if (visitor.deviceType === "tablet") {
     return osLabel ? `Tablet ${osLabel}` : "Tablet";
   }
   if (visitor.deviceType === "desktop") {
-    return osLabel ? `Computador ${osLabel}` : "Computador";
+    return osLabel ? `Computer ${osLabel}` : "Computer";
   }
-  return osLabel || "Dispositivo não identificado";
+  return osLabel || "Dispositivo non identificato";
 }
 
 function formatVisitorSource(visitor: AdminVisitorV2): string {
@@ -1157,7 +1155,7 @@ function formatVisitorSource(visitor: AdminVisitorV2): string {
   if (visitor.referrer) {
     return visitor.referrer;
   }
-  return "Acesso direto";
+  return "Accesso diretto";
 }
 
 function getSecurityStatusStyles(status: SecurityCheckStatus): string {
@@ -1172,12 +1170,12 @@ function getSecurityStatusStyles(status: SecurityCheckStatus): string {
 
 function getSecurityStatusLabel(status: SecurityCheckStatus): string {
   if (status === "pass") {
-    return "Normal";
+    return "Normale";
   }
   if (status === "warn") {
-    return "Atenção";
+    return "Attenzione";
   }
-  return "Alerta";
+  return "Avviso";
 }
 
 function getSecurityCategoryStyles(category: SecurityCheckCategory): string {
@@ -1216,38 +1214,38 @@ function getSecurityFilterLabel(filter: SecurityEventFilter): string {
 
 function explainHttpStatus(status: number): string {
   if (status >= 500) {
-    return "erro interno no servidor";
+    return "errore interno del server";
   }
   if (status >= 400) {
-    return "acesso negado ou requisição inválida";
+    return "accesso negato o richiesta non valida";
   }
   if (status >= 300) {
-    return "redirecionamento";
+    return "reindirizzamento";
   }
   if (status >= 200) {
-    return "requisição concluída com sucesso";
+    return "richiesta completata correttamente";
   }
   if (status > 0) {
-    return "resposta fora do padrão";
+    return "risposta non standard";
   }
-  return "sem retorno HTTP";
+  return "nessuna risposta HTTP";
 }
 
 function buildSecurityEventFriendlySummary(event: AdminSecurityEventV2): string {
-  const routeType = event.isAdminRoute ? "na área administrativa" : "na API pública";
+  const routeType = event.isAdminRoute ? "nell’area amministrativa" : "nell’API pubblica";
   const authContext = event.hasAdminToken
-    ? "com credencial de administrador"
+    ? "con credenziali amministratore"
     : event.hasAuthToken
-      ? "com credencial de usuário"
-      : "sem credencial de login";
+      ? "con credenziali utente"
+      : "senza credenziali di accesso";
 
   if (event.level === "pass") {
-    return `Movimento normal: a requisição foi feita ${routeType}, ${authContext}, e a API respondeu sem sinal de risco.`;
+    return `Attività normale: richiesta ${routeType}, ${authContext}, con risposta API senza segnali di rischio.`;
   }
   if (event.level === "warn") {
-    return `Atenção: houve um comportamento fora do padrão ${routeType}, ${authContext}. Recomendado acompanhar este padrão de acesso.`;
+    return `Attenzione: comportamento non standard ${routeType}, ${authContext}. Si consiglia di monitorare questo accesso.`;
   }
-  return `Alerta: foi detectado um comportamento suspeito ${routeType}, ${authContext}. Recomendado revisar imediatamente este acesso.`;
+  return `Avviso: attività sospetta ${routeType}, ${authContext}. Si consiglia di verificare subito questo accesso.`;
 }
 
 function formatSecurityEventNote(note: string): string {
@@ -1255,7 +1253,7 @@ function formatSecurityEventNote(note: string): string {
   if (!cleaned) {
     return "";
   }
-  return `Detalhe detectado automaticamente: ${cleaned}`;
+  return `Dettaglio rilevato automaticamente: ${cleaned}`;
 }
 
 function isMissingApiRouteError(error: unknown): boolean {
@@ -1318,9 +1316,9 @@ async function adminRequest<T>(
   }
 
   if (!response.ok) {
-    const fallback = `Falha na API (${response.status})`;
+    const fallback = `Errore API (${response.status})`;
     const message = extractApiMessage(payload) || fallback;
-    throw new HttpError(response.status, message, payload);
+    throw new HttpError(response.status, translateInterface('it-IT',message), payload);
   }
 
   return payload as T;
@@ -1379,7 +1377,7 @@ async function adminLogin(email: string, password: string): Promise<AdminSession
   if (lastError instanceof Error) {
     throw lastError;
   }
-  throw new Error("Falha ao autenticar administrador.");
+  throw new Error("Autenticazione dell’amministratore non riuscita.");
 }
 
 async function adminGetCurrent(token: string): Promise<string> {
@@ -1405,7 +1403,7 @@ async function adminGetCurrent(token: string): Promise<string> {
   if (lastError instanceof Error) {
     throw lastError;
   }
-  throw new Error("Sessão de administrador inválida.");
+  throw new Error("Sessione amministratore non valida.");
 }
 
 async function adminGetUsers(token: string, query = ""): Promise<AdminUserV2[]> {
@@ -1579,7 +1577,7 @@ async function adminLogout(token: string): Promise<void> {
 async function adminUnlockSecurityTestArea(token: string, password: string): Promise<void> {
   const normalizedPassword = password.trim();
   if (!normalizedPassword) {
-    throw new Error("Senha da área de testes é obrigatória.");
+    throw new Error("La password dell’area di test è obbligatoria.");
   }
 
   const routes = ["/api/admin/security-test/unlock", "/api/admin/security-tests/unlock"];
@@ -1605,7 +1603,7 @@ async function adminUnlockSecurityTestArea(token: string, password: string): Pro
   if (lastError instanceof Error) {
     throw lastError;
   }
-  throw new Error("Falha ao acessar área de testes.");
+  throw new Error("Impossibile accedere all’area di test.");
 }
 
 async function adminGetSecurityEvents(
@@ -1638,7 +1636,7 @@ async function adminGetSecurityEvents(
   if (lastError instanceof Error) {
     throw lastError;
   }
-  throw new Error("Falha ao carregar monitor de segurança.");
+  throw new Error("Impossibile caricare il monitor di sicurezza.");
 }
 
 async function adminClearSecurityEvents(token: string): Promise<void> {
@@ -1664,7 +1662,7 @@ async function adminClearSecurityEvents(token: string): Promise<void> {
   if (lastError instanceof Error) {
     throw lastError;
   }
-  throw new Error("Falha ao limpar monitor de segurança.");
+  throw new Error("Impossibile cancellare lo storico del monitor.");
 }
 
 export default function AdminPanelV2() {
@@ -1755,7 +1753,7 @@ export default function AdminPanelV2() {
         const payload = await adminGetUsers(token, searchQuery);
         setUsers(payload);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Falha ao carregar usuários.";
+        const message = error instanceof Error ? error.message : "Impossibile caricare gli utenti.";
         setUsers([]);
         setUsersError(message);
       } finally {
@@ -1786,7 +1784,7 @@ export default function AdminPanelV2() {
         setProductsHasMore(payload.hasMore);
         setProductsNextOffset(payload.nextOffset);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Falha ao carregar produtos.";
+        const message = error instanceof Error ? error.message : "Impossibile caricare i prodotti.";
         if (!append) {
           setProducts([]);
           setProductsNextOffset(0);
@@ -1811,7 +1809,7 @@ export default function AdminPanelV2() {
       setPublications(await adminGetPublications(token, searchQuery));
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Falha ao carregar publicações.";
+        error instanceof Error ? error.message : "Impossibile caricare le pubblicazioni.";
       setPublications([]);
       setPublicationsError(message);
     } finally {
@@ -1832,7 +1830,7 @@ export default function AdminPanelV2() {
         setBroadcastNotifications(payload);
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Falha ao carregar notificações enviadas.";
+          error instanceof Error ? error.message : "Impossibile caricare le notifiche inviate.";
         setBroadcastError(message);
       } finally {
         if (!silent) {
@@ -1858,7 +1856,7 @@ export default function AdminPanelV2() {
         setVisitorsUpdatedAt(payload.generatedAt);
         setVisitorDay(payload.day);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Falha ao carregar visitantes.";
+        const message = error instanceof Error ? error.message : "Impossibile caricare i visitatori.";
         setVisitors([]);
         setVisitorsSummary(createEmptyVisitorsSummary());
         setVisitorsError(message);
@@ -1886,7 +1884,7 @@ export default function AdminPanelV2() {
         setSecurityEventsUpdatedAt(Date.now());
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Falha ao carregar monitor de segurança.";
+          error instanceof Error ? error.message : "Impossibile caricare il monitor di sicurezza.";
         setSecurityEventsError(message);
       } finally {
         if (!silent) {
@@ -1933,7 +1931,7 @@ export default function AdminPanelV2() {
           setVisitorsError("");
           if (!isUnauthorizedApiError(error)) {
             const message =
-              error instanceof Error ? error.message : "Falha ao restaurar sessão de admin.";
+              error instanceof Error ? error.message : "Impossibile ripristinare la sessione amministratore.";
             setAuthError(message);
           }
         }
@@ -1968,7 +1966,7 @@ export default function AdminPanelV2() {
     const normalizedPassword = password.trim();
 
     if (!normalizedEmail || !normalizedPassword) {
-      setAuthError("Preencha email e senha do administrador.");
+      setAuthError("Inserisci email e password dell’amministratore.");
       return;
     }
 
@@ -1988,7 +1986,7 @@ export default function AdminPanelV2() {
       await loadSecurityEvents(session.token, { silent: true });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Falha ao autenticar administrador.";
+        error instanceof Error ? error.message : "Autenticazione amministratore non riuscita.";
       setAuthError(message);
       setSessionEmail(null);
       setUsers([]);
@@ -2072,7 +2070,7 @@ export default function AdminPanelV2() {
     event.preventDefault();
     const normalizedPassword = testAreaPassword.trim();
     if (!normalizedPassword) {
-      setTestAreaError("Informe a senha da área de testes.");
+      setTestAreaError("Inserisci la password dell’area di test.");
       return;
     }
 
@@ -2085,7 +2083,7 @@ export default function AdminPanelV2() {
       await loadSecurityEvents(authToken);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Falha ao desbloquear área de testes.";
+        error instanceof Error ? error.message : "Impossibile sbloccare l’area di test.";
       setTestAreaError(message);
     } finally {
       setIsUnlockingTestArea(false);
@@ -2094,7 +2092,7 @@ export default function AdminPanelV2() {
 
   const handleClearSecurityEvents = async () => {
     if (!isTestAreaUnlocked) {
-      setTestAreaError("Desbloqueie a área de testes antes de limpar os eventos.");
+      setTestAreaError("Sblocca l’area di test prima di cancellare gli eventi.");
       return;
     }
 
@@ -2114,7 +2112,7 @@ export default function AdminPanelV2() {
       setSecurityEventsTotalTracked(0);
       setSecurityEventsUpdatedAt(Date.now());
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao limpar eventos.";
+      const message = error instanceof Error ? error.message : "Impossibile cancellare gli eventi.";
       setSecurityEventsError(message);
     } finally {
       setIsClearingSecurityEvents(false);
@@ -2123,7 +2121,7 @@ export default function AdminPanelV2() {
 
   const handleRunSecurityChecks = async () => {
     if (!isTestAreaUnlocked) {
-      setTestAreaError("Desbloqueie a área de testes antes de executar os diagnósticos.");
+      setTestAreaError("Sblocca l’area di test prima di eseguire la diagnostica.");
       return;
     }
 
@@ -2164,7 +2162,7 @@ export default function AdminPanelV2() {
 	    }
 	    if (activeView === "security") {
       if (!isTestAreaUnlocked) {
-        setTestAreaError("Desbloqueie a área de testes para atualizar o monitor.");
+        setTestAreaError("Sblocca l’area di test per aggiornare il monitor.");
         return;
       }
       await loadSecurityEvents(authToken);
@@ -2205,7 +2203,7 @@ export default function AdminPanelV2() {
       setProducts((current) => current.filter((item) => item.id !== product.id));
       setSelectedUserProducts((current) => current.filter((item) => item.id !== product.id));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao excluir produto.";
+      const message = error instanceof Error ? error.message : "Impossibile eliminare il prodotto.";
       setProductsError(message);
     } finally {
       setDeletingProductId(null);
@@ -2224,7 +2222,7 @@ export default function AdminPanelV2() {
       setSelectedUserProducts(products);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Falha ao carregar ficha do usuário.";
+        error instanceof Error ? error.message : "Impossibile caricare la scheda utente.";
       setSelectedUserError(message);
     } finally {
       setIsLoadingSelectedUserProducts(false);
@@ -2243,7 +2241,7 @@ export default function AdminPanelV2() {
     const code = generateResetCode();
     setPendingResetCodesByUserId((current) => ({ ...current, [user.id]: code }));
     setResetPasswordValue(code);
-    setSelectedUserError("Código temporário gerado. Aplique como senha e envie ao usuário.");
+    setSelectedUserError("Codice temporaneo generato. Impostalo come password e invialo all’utente.");
   };
 
   const handleCopyResetCode = async (code: string) => {
@@ -2253,16 +2251,16 @@ export default function AdminPanelV2() {
 
     try {
       await navigator.clipboard.writeText(code);
-      setSelectedUserError("Código copiado.");
+      setSelectedUserError("Codice copiato.");
     } catch {
-      setSelectedUserError("Não foi possível copiar automaticamente. Selecione o código manualmente.");
+      setSelectedUserError("Impossibile copiare automaticamente. Seleziona il codice manualmente.");
     }
   };
 
   const handleResetUserPassword = async (user: AdminUserV2) => {
     const nextPassword = resetPasswordValue.trim();
     if (nextPassword.length < 6) {
-      setSelectedUserError("A senha temporária precisa ter pelo menos 6 caracteres.");
+      setSelectedUserError("La password temporanea deve contenere almeno 6 caratteri.");
       return;
     }
 
@@ -2276,9 +2274,9 @@ export default function AdminPanelV2() {
         return next;
       });
       setResetPasswordValue("");
-      setSelectedUserError("Senha atualizada. As sessões antigas desse usuário foram encerradas.");
+      setSelectedUserError("Password aggiornata. Le sessioni precedenti dell’utente sono state chiuse.");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao atualizar senha.";
+      const message = error instanceof Error ? error.message : "Impossibile aggiornare la password.";
       setSelectedUserError(message);
     } finally {
       setIsResettingUserPassword(false);
@@ -2307,7 +2305,7 @@ export default function AdminPanelV2() {
       }
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Falha ao atualizar status do usuário.";
+        error instanceof Error ? error.message : "Impossibile aggiornare lo stato utente.";
       setUsersError(message);
     } finally {
       setPendingBanUserId(null);
@@ -2332,7 +2330,7 @@ export default function AdminPanelV2() {
         handleCloseUserDetail();
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao excluir usuário.";
+      const message = error instanceof Error ? error.message : "Impossibile eliminare l’utente.";
       setUsersError(message);
     } finally {
       setDeletingUserId(null);
@@ -2354,7 +2352,7 @@ export default function AdminPanelV2() {
       Number.isInteger(recipientUserId) && recipientUserId > 0 ? recipientUserId : null;
 
     if (!title || !message) {
-      setBroadcastError("Preencha título e mensagem da notificação.");
+      setBroadcastError("Inserisci titolo e messaggio della notifica.");
       return;
     }
 
@@ -2376,12 +2374,12 @@ export default function AdminPanelV2() {
       setBroadcastRecipientUserId("");
       setBroadcastStatus(
         normalizedRecipientUserId
-          ? "Notificação enviada para o usuário selecionado."
-          : `Notificação enviada para ${result.deliveredTo} usuário(s) ativo(s).`,
+          ? "Notifica inviata all’utente selezionato."
+          : `Notifica inviata a ${result.deliveredTo} utenti attivi.`,
       );
       await loadBroadcastNotifications(authToken, { silent: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao enviar notificação.";
+      const message = error instanceof Error ? error.message : "Impossibile inviare la notifica.";
       setBroadcastError(message);
     } finally {
       setIsSendingBroadcast(false);
@@ -2401,9 +2399,9 @@ export default function AdminPanelV2() {
       setBroadcastNotifications((current) =>
         current.filter((item) => item.id !== notification.id),
       );
-      setBroadcastStatus("Notificação excluída do sino dos usuários.");
+      setBroadcastStatus("Notifica rimossa dalle notifiche degli utenti.");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao excluir notificação.";
+      const message = error instanceof Error ? error.message : "Impossibile eliminare la notifica.";
       setBroadcastError(message);
     } finally {
       setDeletingBroadcastNotificationId(null);
@@ -2556,7 +2554,7 @@ export default function AdminPanelV2() {
       <div className="min-h-screen bg-[#fdfcfb] flex items-center justify-center">
         <div className="flex items-center gap-3 text-stone-600 text-sm uppercase tracking-[0.2em]">
           <LoaderCircle className="w-4 h-4 animate-spin" />
-          Verificando sessão admin
+          Verifica della sessione amministratore
         </div>
       </div>
     );
@@ -2568,10 +2566,10 @@ export default function AdminPanelV2() {
         <div className="w-full max-w-md border border-stone-200 bg-white p-8 sm:p-10 shadow-sm">
           <div className="flex items-center gap-3 mb-6">
             <Shield className="w-5 h-5 text-stone-700" />
-            <h1 className="text-lg font-semibold text-stone-900">Admin TempleSale V2</h1>
+            <h1 className="text-lg font-semibold text-stone-900">Admin <span translate="no" className="notranslate">TempleSale</span> V2</h1>
           </div>
           <p className="text-xs text-stone-500 mb-6">
-            Novo acesso administrativo em <code>/admin</code>.
+            Nuovo accesso amministrativo su <code>/admin</code>.
           </p>
           <form
             onSubmit={handleLogin}
@@ -2603,7 +2601,7 @@ export default function AdminPanelV2() {
                 htmlFor="admin-login-password"
                 className="text-xs uppercase tracking-[0.15em] text-stone-500"
               >
-                Senha
+                Password
               </label>
               <div className="relative">
                 <input
@@ -2620,8 +2618,8 @@ export default function AdminPanelV2() {
                   type="button"
                   onClick={() => setShowPassword((current) => !current)}
                   className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-stone-500 hover:text-stone-900"
-                  aria-label={showPassword ? "Ocultar senha" : "Ver senha"}
-                  title={showPassword ? "Ocultar senha" : "Ver senha"}
+                  aria-label={showPassword ? "Nascondi password" : "Mostra password"}
+                  title={showPassword ? "Nascondi password" : "Mostra password"}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -2640,10 +2638,10 @@ export default function AdminPanelV2() {
                 }}
                 className="h-4 w-4 accent-stone-900"
               />
-              Salvar senha neste navegador
+              Salva la password in questo browser
             </label>
             <p className="text-[11px] leading-relaxed text-stone-400">
-              Use apenas no seu computador pessoal.
+              Usalo soltanto sul tuo computer personale.
             </p>
             {authError && <p className="text-sm text-red-600">{authError}</p>}
             <button
@@ -2651,7 +2649,7 @@ export default function AdminPanelV2() {
               disabled={isAuthSubmitting}
               className="w-full bg-stone-900 text-white py-3 text-xs uppercase tracking-[0.2em] font-semibold hover:bg-black transition-colors disabled:opacity-60"
             >
-              {isAuthSubmitting ? "Entrando..." : "Entrar no admin"}
+              {isAuthSubmitting ? "Accesso in corso..." : "Accedi all’amministrazione"}
             </button>
           </form>
         </div>
@@ -2667,7 +2665,7 @@ export default function AdminPanelV2() {
             <Shield className="w-5 h-5 text-stone-700" />
             <div>
               <h1 className="text-sm sm:text-base font-semibold text-stone-900">
-                Painel Administrativo TempleSale V2
+                Pannello amministrativo <span translate="no" className="notranslate">TempleSale</span> V2
               </h1>
               <p className="text-[11px] text-stone-500">{sessionEmail}</p>
             </div>
@@ -2679,7 +2677,7 @@ export default function AdminPanelV2() {
               className="inline-flex flex-1 sm:flex-none items-center justify-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.15em] text-stone-700 hover:border-stone-800"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Atualizar
+              Aggiorna
             </button>
             <button
               type="button"
@@ -2687,7 +2685,7 @@ export default function AdminPanelV2() {
               className="inline-flex flex-1 sm:flex-none items-center justify-center gap-2 bg-stone-900 text-white px-3 py-2 text-xs uppercase tracking-[0.15em] hover:bg-black"
             >
               <LogOut className="w-3.5 h-3.5" />
-              Sair
+              Esci
             </button>
           </div>
         </div>
@@ -2706,7 +2704,7 @@ export default function AdminPanelV2() {
 	              }`}
 	            >
 	              <LayoutDashboard className="w-3.5 h-3.5" />
-	              Resumo
+	              Panoramica
 	            </button>
 	            <button
 	              type="button"
@@ -2718,7 +2716,7 @@ export default function AdminPanelV2() {
 	              }`}
 	            >
 	              <Package className="w-3.5 h-3.5" />
-	              Produtos
+	              Prodotti
 	            </button>
 	            <button
 	              type="button"
@@ -2730,7 +2728,7 @@ export default function AdminPanelV2() {
               }`}
             >
               <Search className="w-3.5 h-3.5" />
-              Usuários
+              Utenti
             </button>
             <button
               type="button"
@@ -2742,7 +2740,7 @@ export default function AdminPanelV2() {
               }`}
             >
               <Users className="w-3.5 h-3.5" />
-              Visitantes
+              Visitatori
             </button>
             <button
               type="button"
@@ -2754,7 +2752,7 @@ export default function AdminPanelV2() {
               }`}
             >
               <Bell className="w-3.5 h-3.5" />
-              Notificações
+              Notifiche
             </button>
             <button
               type="button"
@@ -2766,7 +2764,7 @@ export default function AdminPanelV2() {
               }`}
             >
               <ShieldAlert className="w-3.5 h-3.5" />
-              Área de testes
+              Area di test
             </button>
           </div>
         </div>
@@ -2777,42 +2775,42 @@ export default function AdminPanelV2() {
 	            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
 	              <article className="border border-stone-200 bg-white p-4 sm:p-5">
 	                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
-	                  Usuários
+	                  Utenti
 	                </p>
 	                <p className="mt-2 text-2xl font-semibold text-stone-900">{users.length}</p>
 	                <p className="mt-1 text-xs text-stone-500">
-	                  Pessoas cadastradas para publicar e interagir.
+	                  Persone registrate per pubblicare e interagire.
 	                </p>
 	              </article>
 	              <article className="border border-stone-200 bg-white p-4 sm:p-5">
 	                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
-	                  Produtos
+	                  Prodotti
 	                </p>
 	                <p className="mt-2 text-2xl font-semibold text-stone-900">{products.length}</p>
 	                <p className="mt-1 text-xs text-stone-500">
-	                  Itens carregados para moderação no painel.
+	                  Elementi caricati per la moderazione nel pannello.
 	                </p>
 	              </article>
 	              <article className="border border-stone-200 bg-white p-4 sm:p-5">
 	                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
-	                  Visitantes hoje
+	                  Visitatori di oggi
 	                </p>
 	                <p className="mt-2 text-2xl font-semibold text-stone-900">
 	                  {visitorsSummary.externalVisits}
 	                </p>
 	                <p className="mt-1 text-xs text-stone-500">
-	                  Acessos externos, sem contar seu próprio acesso.
+	                  Accessi esterni, escluso il tuo.
 	                </p>
 	              </article>
 	              <article className="border border-stone-200 bg-white p-4 sm:p-5">
 	                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
-	                  Segurança
+	                  Sicurezza
 	                </p>
 	                <p className="mt-2 text-2xl font-semibold text-stone-900">
 	                  {securityEventsTotalTracked}
 	                </p>
 	                <p className="mt-1 text-xs text-stone-500">
-	                  Eventos monitorados pela área administrativa.
+	                  Eventi monitorati dall’amministrazione.
 	                </p>
 	              </article>
 	            </div>
@@ -2822,20 +2820,19 @@ export default function AdminPanelV2() {
 	                <LayoutDashboard className="mt-0.5 h-4 w-4 text-stone-700" />
 	                <div>
 	                  <h2 className="text-sm font-semibold text-stone-900">
-	                    Áreas úteis para operar uma pequena empresa
+	                    Sezioni utili per gestire una piccola attività
 	                  </h2>
 	                  <p className="mt-1 text-xs text-stone-500">
-	                    O painel já cobre usuários, visitantes e segurança. As próximas áreas mais úteis
-	                    costumam ser estas:
+	                    Il pannello comprende utenti, visitatori e sicurezza. Altre sezioni utili per la gestione:
 	                  </p>
 	                </div>
 	              </div>
 	              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
 	                {[
-	                  ["Produtos", "Moderar anúncios, ver produtos por vendedor e remover itens problemáticos."],
-	                  ["Pedidos/interesses", "Acompanhar carrinhos, contatos e intenção real de compra."],
-	                  ["Relatórios", "Ver produtos mais vistos, cidades com mais acesso e horários fortes."],
-	                  ["Configurações", "Editar banners, categorias, contatos e textos sem mexer no código."],
+	                  ["Prodotti", "Modera gli annunci, consulta i prodotti per venditore e rimuovi gli elementi problematici."],
+	                  ["Richieste e interessi", "Segui carrelli, contatti e interesse all’acquisto."],
+	                  ["Report", "Consulta i prodotti più visti, le città più attive e gli orari di maggiore accesso."],
+	                  ["Impostazioni", "Modifica banner, categorie, contatti e testi senza intervenire sul codice."],
 	                ].map(([title, description]) => (
 	                  <div key={title} className="border border-stone-200 bg-stone-50 px-3 py-3">
 	                    <p className="text-xs font-semibold text-stone-900">{title}</p>
@@ -2852,10 +2849,10 @@ export default function AdminPanelV2() {
 	                <Package className="w-4 h-4 text-stone-600" />
 	                <div>
 	                  <h2 className="text-sm font-semibold text-stone-900">
-	                    Produtos cadastrados ({products.length})
+	                    Prodotti registrati ({products.length})
 	                  </h2>
 	                  <p className="mt-1 text-xs text-stone-500">
-	                    Pesquise por produto, categoria, cidade, nome, email ou WhatsApp do dono.
+	                    Cerca per prodotto, categoria, città, nome, email o WhatsApp del proprietario.
 	                  </p>
 	                </div>
 	              </div>
@@ -2867,7 +2864,7 @@ export default function AdminPanelV2() {
 	                  type="text"
 	                  value={productQuery}
 	                  onChange={(event) => setProductQuery(event.target.value)}
-	                  placeholder="Pesquisar produto ou dono"
+	                  placeholder="Cerca prodotto o proprietario"
 	                  className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
 	                />
 	                <button
@@ -2876,7 +2873,7 @@ export default function AdminPanelV2() {
 	                  className="inline-flex items-center justify-center gap-2 border border-stone-900 bg-stone-900 px-4 py-2.5 text-xs uppercase tracking-[0.14em] text-white hover:bg-black disabled:opacity-60"
 	                >
 	                  <Search className="w-3.5 h-3.5" />
-	                  Pesquisar
+	                  Cerca
 	                </button>
 	              </form>
 	            </article>
@@ -2889,11 +2886,11 @@ export default function AdminPanelV2() {
 
 	            {isLoadingProducts ? (
 	              <div className="py-16 text-center text-sm text-stone-500">
-	                Carregando produtos...
+	                Caricamento prodotti...
 	              </div>
 	            ) : products.length === 0 ? (
 	              <div className="border border-stone-200 bg-white py-16 text-center text-sm text-stone-500">
-	                Nenhum produto encontrado.
+	                Nessun prodotto trovato.
 	              </div>
 	            ) : (
 	              <div className="space-y-3">
@@ -2916,31 +2913,31 @@ export default function AdminPanelV2() {
 	                              ID {product.id}
 	                            </span>
 	                            <span className="text-[11px] uppercase tracking-[0.12em] text-stone-500">
-	                              {product.category || "Sem categoria"}
+	                              {product.category || "Senza categoria"}
 	                            </span>
 	                          </div>
 	                          <h3 className="mt-2 text-sm font-semibold text-stone-900">
 	                            {product.name}
 	                          </h3>
 	                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-600">
-	                            <span>Preço: {product.price || "Tratt."}</span>
-	                            <span>Cliques: {product.clickCount ?? 0}</span>
-	                            <span>Qtd.: {product.quantity ?? "-"}</span>
+	                            <span>Prezzo: {product.price || "Tratt."}</span>
+	                            <span>Clic: {product.clickCount ?? 0}</span>
+	                            <span>Qtà.: {product.quantity ?? "-"}</span>
 	                          </div>
 	                        </div>
 
 	                        <div className="border border-stone-100 bg-stone-50 px-3 py-3">
 	                          <p className="text-[10px] uppercase tracking-[0.12em] text-stone-500">
-	                            Dono do produto
+	                            Proprietario del prodotto
 	                          </p>
 	                          <p className="mt-1 text-sm font-semibold text-stone-900">
 	                            {ownerName}
 	                          </p>
 	                          <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-stone-600 sm:grid-cols-2 lg:grid-cols-1">
 	                            <span>Email: {ownerEmail}</span>
-	                            <span>Cidade: {ownerCity}</span>
+	                            <span>Città: {ownerCity}</span>
 	                            <span>WhatsApp: {ownerWhatsapp}</span>
-	                            <span>ID usuário: {product.owner?.id ?? product.ownerId ?? "-"}</span>
+	                            <span>ID utente: {product.owner?.id ?? product.ownerId ?? "-"}</span>
 	                          </div>
 	                        </div>
 
@@ -2951,7 +2948,7 @@ export default function AdminPanelV2() {
 	                          className="inline-flex items-center justify-center gap-2 border border-red-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-red-700 hover:bg-red-50 disabled:opacity-60 lg:w-40"
 	                        >
 	                          <Trash2 className="w-3.5 h-3.5" />
-	                          {deletingProductId === product.id ? "Excluindo..." : "Excluir"}
+	                          {deletingProductId === product.id ? "Eliminazione..." : "Elimina"}
 	                        </button>
 	                      </div>
 	                    </article>
@@ -2969,7 +2966,7 @@ export default function AdminPanelV2() {
 	                  className="inline-flex items-center justify-center gap-2 border border-stone-300 bg-white px-4 py-2.5 text-xs uppercase tracking-[0.14em] text-stone-700 hover:border-stone-900 disabled:opacity-60"
 	                >
 	                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingMoreProducts ? "animate-spin" : ""}`} />
-	                  {isLoadingMoreProducts ? "Carregando..." : "Carregar mais"}
+	                  {isLoadingMoreProducts ? "Caricamento..." : "Carica altro"}
 	                </button>
 	              </div>
 	            )}
@@ -2980,14 +2977,14 @@ export default function AdminPanelV2() {
               <div className="flex items-center gap-3 mb-3">
                 <Search className="w-4 h-4 text-stone-600" />
                 <h2 className="text-sm font-semibold text-stone-900">
-                  Usuários cadastrados ({users.length})
+                  Utenti registrati ({users.length})
                 </h2>
               </div>
               <input
                 type="text"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Filtrar por nome, email, cidade, país ou ID"
+                placeholder="Filtra per nome, email, città, paese o ID"
                 className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
               />
             </div>
@@ -2999,10 +2996,10 @@ export default function AdminPanelV2() {
             )}
 
             {isLoadingUsers ? (
-              <div className="py-16 text-center text-sm text-stone-500">Carregando usuários...</div>
+              <div className="py-16 text-center text-sm text-stone-500">Caricamento utenti...</div>
             ) : filteredUsers.length === 0 ? (
               <div className="py-16 text-center text-sm text-stone-500">
-                Nenhum usuário encontrado.
+                Nessun utente trovato.
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -3023,7 +3020,7 @@ export default function AdminPanelV2() {
                               <span className="h-2.5 w-2.5 rounded-full bg-red-600 animate-pulse" />
                             )}
                             <span className="truncate">
-                              {user.username || user.email || `Usuário ${user.id}`}
+                              {user.username || user.email || `Utente ${user.id}`}
                             </span>
                           </span>
                         </h3>
@@ -3035,13 +3032,13 @@ export default function AdminPanelV2() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-stone-600">
-                      <span>Cidade: {user.city || "-"}</span>
-                      <span>País: {user.country || "-"}</span>
-                      <span>Criado em: {formatDate(user.createdAt)}</span>
+                      <span>Città: {user.city || "-"}</span>
+                      <span>Paese: {user.country || "-"}</span>
+                      <span>Creato il: {formatDate(user.createdAt)}</span>
                       <span>
                         Status:{" "}
                         <strong className={user.isBanned ? "text-red-700" : "text-emerald-700"}>
-                          {user.isBanned ? "Banido" : "Ativo"}
+                          {user.isBanned ? "Bloccato" : "Attivo"}
                         </strong>
                       </span>
                     </div>
@@ -3053,7 +3050,7 @@ export default function AdminPanelV2() {
                         className="inline-flex items-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-800"
                       >
                         <Users className="w-3.5 h-3.5" />
-                        Abrir ficha
+                        Apri scheda
                       </button>
                     </div>
                   </article>
@@ -3061,18 +3058,17 @@ export default function AdminPanelV2() {
               </div>
             )}
           </>
-          ) : activeView === "notifications" ? (
+          ) : activeView === "notifiche" ? (
             <section className="space-y-4">
               <article className="border border-stone-200 bg-white p-4 sm:p-5">
                 <div className="mb-4 flex items-start gap-3">
                   <Bell className="mt-0.5 h-4 w-4 text-stone-700" />
                   <div>
                     <h2 className="text-sm font-semibold text-stone-900">
-                      Enviar notificação para todos
+                      Invia una notifica a tutti
                     </h2>
                     <p className="mt-1 text-xs text-stone-500">
-                      Use para avisos do site, problemas operacionais ou anúncio patrocinado.
-                      Se escolher um produto ou publicação, o clique no sino abre o conteúdo vinculado.
+                      Usalo per avvisi del sito, problemi operativi o annunci sponsorizzati. Se scegli un prodotto o una pubblicazione, la notifica aprirà il contenuto collegato.
                     </p>
                   </div>
                 </div>
@@ -3081,36 +3077,36 @@ export default function AdminPanelV2() {
                   <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_18rem]">
                     <div className="space-y-3">
                       <label className="block text-xs uppercase tracking-[0.12em] text-stone-500">
-                        Título
+                        Titolo
                       </label>
                       <input
                         type="text"
                         value={broadcastTitle}
                         onChange={(event) => setBroadcastTitle(event.target.value.slice(0, 120))}
-                        placeholder="Ex.: Terreno à venda em destaque"
+                        placeholder="Es.: Terreno in vendita in evidenza"
                         className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
                       />
                       <label className="block text-xs uppercase tracking-[0.12em] text-stone-500">
-                        Mensagem
+                        Messaggio
                       </label>
                       <textarea
                         rows={5}
                         value={broadcastMessage}
                         onChange={(event) => setBroadcastMessage(event.target.value.slice(0, 600))}
-                        placeholder="Escreva a mensagem que vai aparecer no sino dos usuários."
+                        placeholder="Scrivi il messaggio da mostrare nelle notifiche degli utenti."
                         className="w-full resize-none border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
                       />
                     </div>
                     <div className="space-y-3 border border-stone-100 bg-stone-50 p-3">
                       <label className="block text-xs uppercase tracking-[0.12em] text-stone-500">
-                        Destinatário
+                        Destinatario
                       </label>
                       <select
                         value={broadcastRecipientUserId}
                         onChange={(event) => setBroadcastRecipientUserId(event.target.value)}
                         className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
                       >
-                        <option value="">Todos os usuários reais</option>
+                        <option value="">Tutti gli utenti reali</option>
                         {users.map((user) => (
                           <option key={user.id} value={user.id}>
                             #{user.id} {user.name} - {user.email}
@@ -3118,12 +3114,11 @@ export default function AdminPanelV2() {
                         ))}
                       </select>
                       <p className="text-xs leading-relaxed text-stone-500">
-                        Para enviar a apenas uma pessoa, selecione o usuário. Para broadcast geral,
-                        deixe em todos.
+                        Per inviare a una sola persona, seleziona l’utente. Per un invio generale, lascia tutti.
                       </p>
 
                       <label className="block text-xs uppercase tracking-[0.12em] text-stone-500">
-                        Anúncio patrocinado opcional
+                        Annuncio sponsorizzato facoltativo
                       </label>
                       <select
                         value={broadcastProductId}
@@ -3135,7 +3130,7 @@ export default function AdminPanelV2() {
                         }}
                         className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
                       >
-                        <option value="">Sem anúncio</option>
+                        <option value="">Senza annuncio</option>
                         {products.map((product) => (
                           <option key={product.id} value={product.id}>
                             #{product.id} {product.name}
@@ -3143,8 +3138,7 @@ export default function AdminPanelV2() {
                         ))}
                       </select>
                       <p className="text-xs leading-relaxed text-stone-500">
-                        Para escolher um produto que não aparece aqui, abra a aba Produtos e pesquise.
-                        A lista carregada fica disponível neste seletor.
+                        Per scegliere un prodotto non presente, apri la sezione Prodotti e cercalo. I risultati saranno disponibili in questo elenco.
                       </p>
                       <button
                         type="button"
@@ -3155,11 +3149,11 @@ export default function AdminPanelV2() {
                         className="inline-flex w-full items-center justify-center gap-2 border border-stone-300 bg-white px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-900"
                       >
                         <Package className="h-3.5 w-3.5" />
-                        Procurar produto
+                        Cerca prodotto
                       </button>
                       
                       <label className="block text-xs uppercase tracking-[0.12em] text-stone-500">
-                        Publicação vinculada opcional
+                        Pubblicazione collegata facoltativa
                       </label>
                       <select
                         value={broadcastPublicationId}
@@ -3171,7 +3165,7 @@ export default function AdminPanelV2() {
                         }}
                         className="w-full border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
                       >
-                        <option value="">Sem publicação</option>
+                        <option value="">Senza pubblicazione</option>
                         {publications.map((publication) => (
                           <option key={publication.id} value={publication.id}>
                             #{publication.id} {publication.establishmentName} — {publication.caption.slice(0, 70)}
@@ -3179,13 +3173,13 @@ export default function AdminPanelV2() {
                         ))}
                       </select>
                       {isLoadingPublications ? (
-                        <p className="text-xs text-stone-500">Carregando publicações...</p>
+                        <p className="text-xs text-stone-500">Caricamento pubblicazioni...</p>
                       ) : null}
                       {publicationsError ? (
                         <p className="text-xs text-red-600">{publicationsError}</p>
                       ) : null}
                       <p className="text-xs leading-relaxed text-stone-500">
-                        Escolha um produto ou uma publicação. O conteúdo vinculado será aberto no perfil de quem publicou.
+                        Scegli un prodotto o una pubblicazione. Il contenuto collegato si aprirà nel profilo dell’autore.
                       </p>
                     </div>
                   </div>
@@ -3208,10 +3202,10 @@ export default function AdminPanelV2() {
                   >
                     <Bell className="h-3.5 w-3.5" />
                     {isSendingBroadcast
-                      ? "Enviando..."
+                      ? "Invio..."
                       : broadcastRecipientUserId
-                        ? "Enviar para usuário"
-                        : "Enviar para todos"}
+                        ? "Invia all’utente"
+                        : "Invia a tutti"}
                   </button>
                 </form>
               </article>
@@ -3222,10 +3216,10 @@ export default function AdminPanelV2() {
                     <Bell className="mt-0.5 h-4 w-4 text-stone-700" />
                     <div>
                       <h2 className="text-sm font-semibold text-stone-900">
-                        Notificações enviadas
+                        Notifiche inviate
                       </h2>
                       <p className="mt-1 text-xs text-stone-500">
-                        Consulte o histórico e exclua uma notificação do sino dos usuários.
+                        Consulta lo storico e rimuovi una notifica dagli avvisi degli utenti.
                       </p>
                     </div>
                   </div>
@@ -3241,18 +3235,18 @@ export default function AdminPanelV2() {
                     <RefreshCw
                       className={`h-3.5 w-3.5 ${isLoadingBroadcastNotifications ? "animate-spin" : ""}`}
                     />
-                    Atualizar
+                    Aggiorna
                   </button>
                 </div>
 
                 {isLoadingBroadcastNotifications && broadcastNotifications.length === 0 ? (
                   <div className="flex items-center gap-2 border border-stone-100 bg-stone-50 px-3 py-4 text-sm text-stone-500">
                     <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Carregando notificações enviadas...
+                    Caricamento delle notifiche inviate...
                   </div>
                 ) : broadcastNotifications.length === 0 ? (
                   <div className="border border-dashed border-stone-300 px-3 py-6 text-center text-sm text-stone-500">
-                    Nenhuma notificação enviada pelo admin ainda.
+                    L’amministratore non ha ancora inviato notifiche.
                   </div>
                 ) : (
                   <div className="divide-y divide-stone-100 border border-stone-100">
@@ -3279,49 +3273,29 @@ export default function AdminPanelV2() {
                               <span>{formatDateTime(notification.createdAt)}</span>
                               {notification.publicationId ? (
                                 <span>
-                                  Publicação: #{notification.publicationId}{" "}
-                                  {notification.publicationName || "publicação vinculada"}
+                                  Pubblicazione: #{notification.publicationId}{" "}
+                                  {notification.publicationName || "pubblicazione collegata"}
                                 </span>
                               ) : notification.productId ? (
                                 <span>
-                                  Produto: #{notification.productId}{" "}
-                                  {notification.productName || "anúncio vinculado"}
+                                  Prodotto: #{notification.productId}{" "}
+                                  {notification.productName || "annuncio collegato"}
                                 </span>
                               ) : (
-                                <span>Sem anúncio ou publicação vinculada</span>
+                                <span>Senza annuncio o pubblicazione collegata</span>
                               )}
                               {notification.recipientUserId ? (
                                 <span>
-                                  Para: {notification.recipientName || notification.recipientEmail || `Usuário ${notification.recipientUserId}`}
+                                  A: {notification.recipientName || notification.recipientEmail || `Utente ${notification.recipientUserId}`}
                                 </span>
                               ) : (
-                                <span>Para: todos</span>
+                                <span>A: tutti</span>
                               )}
                               {notification.createdBy ? (
                                 <span>Admin: {notification.createdBy}</span>
                               ) : null}
                             </div>
-                            {notification.translationStatus &&
-                              Object.keys(notification.translationStatus).length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
-                                  {["it-IT", "pt-BR", "ar-SA"].map((locale) => {
-                                    const status = notification.translationStatus?.[locale] ?? "";
-                                    const translated = status === "translated";
-                                    return (
-                                      <span
-                                        key={locale}
-                                        className={`border px-2 py-1 ${
-                                          translated
-                                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                            : "border-amber-200 bg-amber-50 text-amber-700"
-                                        }`}
-                                      >
-                                        {translated ? "✓" : "!"} {locale}
-                                      </span>
-                                    );
-                                  })}
-                                </div>
-                              )}
+
                           </div>
                           <button
                             type="button"
@@ -3334,7 +3308,7 @@ export default function AdminPanelV2() {
                             ) : (
                               <Trash2 className="h-3.5 w-3.5" />
                             )}
-                            Excluir
+                            Elimina
                           </button>
                         </div>
                       );
@@ -3350,17 +3324,16 @@ export default function AdminPanelV2() {
                   <div className="flex items-start gap-3">
                     <Users className="w-4 h-4 text-stone-700 mt-0.5" />
                     <div>
-                      <h2 className="text-sm font-semibold text-stone-900">Visitantes do TempleSale</h2>
+                      <h2 className="text-sm font-semibold text-stone-900">Visitatori di <span translate="no" className="notranslate">TempleSale</span></h2>
 	                      <p className="text-xs text-stone-500 mt-1">
-	                        Registro diário de acessos no site (por IP + navegador), com marcação de
-	                        <strong> Eu</strong> para o seu acesso atual. Ao mudar o dia, os dados são
-	                        atualizados automaticamente.
+	                        Registro giornaliero degli accessi (per IP e browser), con indicazione
+	                        <strong> Io</strong> per il tuo accesso attuale. Cambiando giorno, i dati si aggiornano automaticamente.
 	                      </p>
                     </div>
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-[11px] uppercase tracking-[0.12em] text-stone-500">
-                      Dia (UTC)
+                      Giorno (UTC)
                     </label>
                     <input
                       type="date"
@@ -3372,11 +3345,11 @@ export default function AdminPanelV2() {
                 </div>
 	                <div className="flex flex-wrap gap-3 text-xs text-stone-500">
 	                  <span>
-	                    Dia selecionado: <strong>{formatDayDate(visitorDay)}</strong>
+	                    Giorno selezionato: <strong>{formatDayDate(visitorDay)}</strong>
 	                  </span>
-	                  {isLoadingVisitors && <span>Carregando este dia...</span>}
+	                  {isLoadingVisitors && <span>Caricamento del giorno...</span>}
 	                  {visitorsUpdatedAt !== null && (
-	                    <span>Atualizado em: {formatDateTime(visitorsUpdatedAt)}</span>
+	                    <span>Aggiornato il: {formatDateTime(visitorsUpdatedAt)}</span>
 	                  )}
                 </div>
               </article>
@@ -3390,40 +3363,40 @@ export default function AdminPanelV2() {
               <article className="border border-stone-200 bg-white p-4 sm:p-5">
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
                   <div className="border border-stone-200 bg-stone-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">Visitas no dia</p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">Visite del giorno</p>
                     <p className="text-sm font-semibold text-stone-900">{visitorsSummary.externalVisits}</p>
-                    <p className="text-[10px] text-stone-500">sem você</p>
+                    <p className="text-[10px] text-stone-500">escluso il tuo accesso</p>
                   </div>
                   <div className="border border-stone-200 bg-stone-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">Visitantes únicos</p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-stone-500">Visitatori unici</p>
                     <p className="text-sm font-semibold text-stone-900">
                       {visitorsSummary.externalUniqueVisitors}
                     </p>
-                    <p className="text-[10px] text-stone-500">sem você</p>
+                    <p className="text-[10px] text-stone-500">escluso il tuo accesso</p>
                   </div>
                   <div className="border border-emerald-200 bg-emerald-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">Seu acesso</p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-emerald-700">Il tuo accesso</p>
                     <p className="text-sm font-semibold text-emerald-800">{visitorsSummary.selfVisits}</p>
-                    <p className="text-[10px] text-emerald-700">marcado como Eu</p>
+                    <p className="text-[10px] text-emerald-700">indicato come Io</p>
                   </div>
                   <div className="border border-blue-200 bg-blue-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">Total bruto</p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">Totale complessivo</p>
                     <p className="text-sm font-semibold text-blue-800">{visitorsSummary.totalVisits}</p>
-                    <p className="text-[10px] text-blue-700">inclui Eu</p>
+                    <p className="text-[10px] text-blue-700">include Io</p>
                   </div>
                   <div className="border border-blue-200 bg-blue-50 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">Únicos total</p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-blue-700">Totale visitatori unici</p>
                     <p className="text-sm font-semibold text-blue-800">{visitorsSummary.uniqueVisitors}</p>
-                    <p className="text-[10px] text-blue-700">inclui Eu</p>
+                    <p className="text-[10px] text-blue-700">include Io</p>
                   </div>
                 </div>
               </article>
 
               {isLoadingVisitors ? (
-                <div className="py-16 text-center text-sm text-stone-500">Carregando visitantes...</div>
+                <div className="py-16 text-center text-sm text-stone-500">Caricamento visitatori...</div>
               ) : visitors.length === 0 ? (
                 <div className="py-16 text-center text-sm text-stone-500">
-                  Nenhum visitante registrado neste dia.
+                  Nessun visitatore registrato in questo giorno.
                 </div>
               ) : (
                 <article className="border border-stone-200 bg-white p-4 sm:p-5">
@@ -3457,16 +3430,16 @@ export default function AdminPanelV2() {
 	                                </span>
 	                              </div>
 	                              <p className="text-xs text-stone-600">
-	                                Localização provável:{" "}
+	                                Posizione probabile:{" "}
 	                                <strong>{formatVisitorLocation(visitor)}</strong>
 	                              </p>
 	                              <p className="text-xs text-stone-500">
-	                                Visitou <strong>{visitor.visits}</strong> vez(es). Último acesso:{" "}
+	                                Visite: <strong>{visitor.visits}</strong> volte. Ultimo accesso:{" "}
 	                                {formatDateTime(visitor.lastSeenAt)}
 	                              </p>
 	                            </div>
 	                            <div className="shrink-0 text-xs text-stone-500 sm:text-right">
-	                              <p>Origem</p>
+	                              <p>Origine</p>
 	                              <p className="max-w-56 truncate font-medium text-stone-700">
 	                                {formatVisitorSource(visitor)}
 	                              </p>
@@ -3476,21 +3449,21 @@ export default function AdminPanelV2() {
 	                          <details className="mt-3 border-t border-stone-200 pt-3">
 	                            <summary className="inline-flex cursor-pointer list-none items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-stone-600 hover:text-stone-900">
 	                              <ChevronDown className="h-3.5 w-3.5" />
-	                              Ver detalhes técnicos
+	                              Mostra dettagli tecnici
 	                            </summary>
 	                            <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-stone-600 md:grid-cols-2">
 	                              <p>
 	                                IP: <strong>{visitor.ip || "-"}</strong>
 	                              </p>
 	                              <p>
-	                                Página de entrada:{" "}
+	                                Pagina di ingresso:{" "}
 	                                <span className="font-mono">{visitor.entryPath || "/"}</span>
 	                              </p>
-	                              <p>Primeiro acesso: {formatDateTime(visitor.firstSeenAt)}</p>
-	                              <p>Último acesso: {formatDateTime(visitor.lastSeenAt)}</p>
-	                              <p>Cidade: {visitor.city || "-"}</p>
-	                              <p>Região: {visitor.region || "-"}</p>
-	                              <p>País: {formatVisitorCountryDetail(visitor)}</p>
+	                              <p>Primo accesso: {formatDateTime(visitor.firstSeenAt)}</p>
+	                              <p>Ultimo accesso: {formatDateTime(visitor.lastSeenAt)}</p>
+	                              <p>Città: {visitor.city || "-"}</p>
+	                              <p>Regione: {visitor.region || "-"}</p>
+	                              <p>Paese: {formatVisitorCountryDetail(visitor)}</p>
 	                              <p>Dispositivo: {visitor.deviceModel || "-"}</p>
 	                              <p>
 	                                Sistema:{" "}
@@ -3499,10 +3472,10 @@ export default function AdminPanelV2() {
 	                                  .join(" ") || "-"}
 	                              </p>
 	                              <p className="break-all md:col-span-2">
-	                                Navegador/aplicativo original: {visitor.userAgent}
+	                                Browser/app di origine: {visitor.userAgent}
 	                              </p>
 	                              <p className="break-all md:col-span-2">
-	                                Referência completa: {visitor.referrer || "Acesso direto"}
+	                                Riferimento completo: {visitor.referrer || "Accesso diretto"}
 	                              </p>
 	                            </div>
 	                          </details>
@@ -3519,10 +3492,9 @@ export default function AdminPanelV2() {
               <div className="flex items-start gap-3">
                 <Shield className="w-4 h-4 text-stone-700 mt-0.5" />
                 <div>
-                  <h2 className="text-sm font-semibold text-stone-900">Área de Testes de Segurança</h2>
+                  <h2 className="text-sm font-semibold text-stone-900">Area di test della sicurezza</h2>
                   <p className="text-xs text-stone-500 mt-1">
-                    Esta área executa diagnósticos não destrutivos para você validar sua ferramenta
-                    de segurança. Nenhuma proteção nova é aplicada automaticamente.
+                    Questa sezione esegue controlli non distruttivi per verificare lo strumento di sicurezza. Non applica automaticamente nuove protezioni.
                   </p>
                 </div>
               </div>
@@ -3530,7 +3502,7 @@ export default function AdminPanelV2() {
               {!isTestAreaUnlocked ? (
                 <form onSubmit={handleUnlockTestArea} className="space-y-3">
                   <label className="text-xs uppercase tracking-[0.12em] text-stone-500">
-                    Senha da área de testes
+                    Password dell’area di test
                   </label>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <input
@@ -3538,7 +3510,7 @@ export default function AdminPanelV2() {
                       value={testAreaPassword}
                       onChange={(event) => setTestAreaPassword(event.target.value)}
                       className="w-full sm:max-w-sm border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-900"
-                      placeholder="Digite a senha da área de testes"
+                      placeholder="Inserisci la password dell’area di test"
                       autoComplete="off"
                     />
                     <button
@@ -3547,7 +3519,7 @@ export default function AdminPanelV2() {
                       className="inline-flex items-center justify-center gap-2 border border-stone-900 bg-stone-900 text-white px-4 py-2.5 text-xs uppercase tracking-[0.14em] hover:bg-black disabled:opacity-60"
                     >
                       <Lock className="w-3.5 h-3.5" />
-                      {isUnlockingTestArea ? "Validando..." : "Entrar na área"}
+                      {isUnlockingTestArea ? "Verifica in corso..." : "Accedi alla sezione"}
                     </button>
                   </div>
                 </form>
@@ -3555,7 +3527,7 @@ export default function AdminPanelV2() {
                 <div className="space-y-3">
                   <div className="inline-flex items-center gap-2 border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
                     <ShieldCheck className="w-3.5 h-3.5" />
-                    Área de testes desbloqueada.
+                    Area di test sbloccata.
                   </div>
                   <div>
                     <button
@@ -3569,16 +3541,15 @@ export default function AdminPanelV2() {
                       ) : (
                         <ShieldAlert className="w-3.5 h-3.5" />
                       )}
-                      {isRunningSecurityChecks ? "Executando..." : "Executar diagnósticos"}
+                      {isRunningSecurityChecks ? "Esecuzione in corso..." : "Esegui diagnostica"}
                     </button>
                   </div>
                   <p className="text-xs text-stone-500">
-                    Este scanner executa mais de 300 verificações reais de API, autorização, validação
-                    de entrada e respostas de erro.
+                    Lo scanner esegue oltre 300 verifiche reali di API, autorizzazioni, validazione degli input e risposte di errore.
                   </p>
                   {(isRunningSecurityChecks || securityChecksProgress.total > 0) && (
                     <p className="text-xs text-stone-500">
-                      Progresso da varredura:{" "}
+                      Avanzamento della scansione:{" "}
                       <strong>
                         {securityChecksProgress.done}/{securityChecksProgress.total}
                       </strong>
@@ -3586,7 +3557,7 @@ export default function AdminPanelV2() {
                   )}
                   {securityChecksRanAt !== null && (
                     <p className="text-xs text-stone-500">
-                      Última execução: {formatDateTime(securityChecksRanAt)}
+                      Ultima esecuzione: {formatDateTime(securityChecksRanAt)}
                     </p>
                   )}
                 </div>
@@ -3604,11 +3575,10 @@ export default function AdminPanelV2() {
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div>
                     <h3 className="text-sm font-semibold text-stone-900">
-                      Monitor ao vivo da API
+                      Monitor API in tempo reale
                     </h3>
                     <p className="text-xs text-stone-500 mt-1">
-                      Exibe os movimentos recentes em <code>/api</code>, inclusive tentativas
-                      suspeitas, sem aplicar bloqueios automáticos.
+                      Mostra le attività recenti su <code>/api</code>, compresi i tentativi sospetti, senza applicare blocchi automatici.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -3617,7 +3587,7 @@ export default function AdminPanelV2() {
                       onClick={() => setIsLiveMonitorEnabled((current) => !current)}
                       className="inline-flex items-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-800"
                     >
-                      {isLiveMonitorEnabled ? "Pausar ao vivo" : "Retomar ao vivo"}
+                      {isLiveMonitorEnabled ? "Pausa aggiornamenti" : "Riprendi aggiornamenti"}
                     </button>
                     <button
                       type="button"
@@ -3630,7 +3600,7 @@ export default function AdminPanelV2() {
                       ) : (
                         <RefreshCw className="w-3.5 h-3.5" />
                       )}
-                      Atualizar eventos
+                      Aggiorna eventi
                     </button>
                     <button
                       type="button"
@@ -3639,7 +3609,7 @@ export default function AdminPanelV2() {
                       className="inline-flex items-center gap-2 border border-red-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-red-700 hover:bg-red-50 disabled:opacity-60"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      {isClearingSecurityEvents ? "Limpando..." : "Limpar histórico"}
+                      {isClearingSecurityEvents ? "Pulizia in corso..." : "Cancella storico"}
                     </button>
                   </div>
                 </div>
@@ -3695,7 +3665,7 @@ export default function AdminPanelV2() {
                         securityEventsFilter === "warn" ? "text-white/80" : "text-amber-700"
                       }`}
                     >
-                      Atenção
+                      Attenzione
                     </p>
                     <p className="text-sm font-semibold">{securityEventsSummary.warn}</p>
                   </button>
@@ -3713,7 +3683,7 @@ export default function AdminPanelV2() {
                         securityEventsFilter === "fail" ? "text-white/80" : "text-red-700"
                       }`}
                     >
-                      Alerta
+                      Avviso
                     </p>
                     <p className="text-sm font-semibold">{securityEventsSummary.fail}</p>
                   </button>
@@ -3721,17 +3691,17 @@ export default function AdminPanelV2() {
 
                 <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
                   <span>
-                    Histórico total em memória: <strong>{securityEventsTotalTracked}</strong>
+                    Totale eventi in memoria: <strong>{securityEventsTotalTracked}</strong>
                   </span>
                   {securityEventsUpdatedAt !== null && (
-                    <span>Atualizado em: {formatDateTime(securityEventsUpdatedAt)}</span>
+                    <span>Aggiornato il: {formatDateTime(securityEventsUpdatedAt)}</span>
                   )}
                   <span>
-                    Atualização automática:{" "}
-                    <strong>{isLiveMonitorEnabled ? "ligada" : "pausada"}</strong>
+                    Aggiornamento automatico:{" "}
+                    <strong>{isLiveMonitorEnabled ? "attivo" : "in pausa"}</strong>
                   </span>
                   <span>
-                    Filtro ativo: <strong>{getSecurityFilterLabel(securityEventsFilter)}</strong>
+                    Filtro attivo: <strong>{getSecurityFilterLabel(securityEventsFilter)}</strong>
                   </span>
                 </div>
 
@@ -3743,15 +3713,15 @@ export default function AdminPanelV2() {
 
                 {isLoadingSecurityEvents && securityEvents.length === 0 ? (
                   <div className="py-10 text-center text-sm text-stone-500">
-                    Carregando eventos do monitor...
+                    Caricamento eventi del monitor...
                   </div>
                 ) : securityEvents.length === 0 ? (
                   <div className="py-10 text-center text-sm text-stone-500">
-                    Nenhum movimento recente registrado no monitor.
+                    Nessuna attività recente registrata.
                   </div>
                 ) : filteredSecurityEvents.length === 0 ? (
                   <div className="py-10 text-center text-sm text-stone-500">
-                    Não há eventos no filtro <strong>{getSecurityFilterLabel(securityEventsFilter)}</strong>.
+                    Nessun evento nel filtro <strong>{getSecurityFilterLabel(securityEventsFilter)}</strong>.
                   </div>
                 ) : (
                   <div className="max-h-[460px] overflow-y-auto pr-1 space-y-2">
@@ -3772,18 +3742,18 @@ export default function AdminPanelV2() {
                             {getSecurityStatusLabel(event.level)}
                           </span>
                           <span className="text-xs text-stone-600">
-                            Retorno HTTP: {event.status} ({explainHttpStatus(event.status)})
+                            Risposta HTTP: {event.status} ({explainHttpStatus(event.status)})
                           </span>
                           <span className="text-xs text-stone-500">{formatDateTime(event.createdAt)}</span>
                           <span className="text-xs text-stone-500">
-                            Tempo de resposta: {event.durationMs} ms
+                            Tempo di risposta: {event.durationMs} ms
                           </span>
                         </div>
                         <p className="mt-2 text-sm text-stone-800">
                           {buildSecurityEventFriendlySummary(event)}
                         </p>
                         <p className="mt-2 text-xs text-stone-600 break-all">
-                          Rota acessada: <span className="font-mono text-stone-700">{event.path}</span>
+                          Percorso richiesto: <span className="font-mono text-stone-700">{event.path}</span>
                         </p>
                         {formatSecurityEventNote(event.note) ? (
                           <p className="mt-2 text-xs text-stone-600">
@@ -3791,16 +3761,15 @@ export default function AdminPanelV2() {
                           </p>
                         ) : (
                           <p className="mt-2 text-xs text-stone-400">
-                            Sem detalhe técnico adicional neste evento.
+                            Nessun ulteriore dettaglio tecnico per questo evento.
                           </p>
                         )}
                         <p className="mt-2 text-[11px] text-stone-500 break-all">
-                          Origem (IP): {event.ip} | Área admin: {event.isAdminRoute ? "sim" : "não"} |
-                          Login de usuário: {event.hasAuthToken ? "sim" : "não"} | Login de admin:{" "}
-                          {event.hasAdminToken ? "sim" : "não"}
+                          Origine (IP): {event.ip} | Area amministratore: {event.isAdminRoute ? "sì" : "no"} | Accesso utente: {event.hasAuthToken ? "sì" : "no"} | Accesso amministratore:{" "}
+                          {event.hasAdminToken ? "sì" : "no"}
                         </p>
                         <p className="mt-1 text-[11px] text-stone-500 break-all">
-                          Navegador/aplicativo da origem: {event.userAgent}
+                          Browser/app di origine: {event.userAgent}
                         </p>
                       </article>
                     ))}
@@ -3813,7 +3782,7 @@ export default function AdminPanelV2() {
               <article className="border border-stone-200 bg-white p-4 sm:p-5">
                 <div className="flex flex-col gap-3 mb-4">
                   <h3 className="text-sm font-semibold text-stone-900">
-                    Resultado dos diagnósticos ({securityChecksSummary.total})
+                    Risultati della diagnostica ({securityChecksSummary.total})
                   </h3>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <div className="border border-stone-200 bg-stone-50 px-3 py-2">
@@ -3825,11 +3794,11 @@ export default function AdminPanelV2() {
                       <p className="text-sm font-semibold text-emerald-800">{securityChecksSummary.pass}</p>
                     </div>
                     <div className="border border-amber-200 bg-amber-50 px-3 py-2">
-                      <p className="text-[11px] uppercase tracking-[0.12em] text-amber-700">Atenção</p>
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-amber-700">Attenzione</p>
                       <p className="text-sm font-semibold text-amber-800">{securityChecksSummary.warn}</p>
                     </div>
                     <div className="border border-red-200 bg-red-50 px-3 py-2">
-                      <p className="text-[11px] uppercase tracking-[0.12em] text-red-700">Alerta</p>
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-red-700">Avviso</p>
                       <p className="text-sm font-semibold text-red-800">{securityChecksSummary.fail}</p>
                     </div>
                   </div>
@@ -3874,19 +3843,19 @@ export default function AdminPanelV2() {
                           <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                             <div className="border border-current/20 bg-white/60 px-2.5 py-2">
                               <p className="text-[10px] uppercase tracking-[0.12em] font-bold mb-1">
-                                Falha/diagnóstico
+                                Errore/diagnostica
                               </p>
                               <p>{check.details}</p>
                             </div>
                             <div className="border border-current/20 bg-white/60 px-2.5 py-2">
                               <p className="text-[10px] uppercase tracking-[0.12em] font-bold mb-1">
-                                Como corrigir
+                                Come correggere
                               </p>
                               <p>{check.howToFix}</p>
                             </div>
                           </div>
                           <p className="text-[11px] mt-2 break-all">
-                            Evidência técnica: <span className="font-mono">{check.technicalEvidence}</span>
+                            Evidenza tecnica: <span className="font-mono">{check.technicalEvidence}</span>
                           </p>
                         </div>
                       </div>
@@ -3904,14 +3873,14 @@ export default function AdminPanelV2() {
               <div className="flex items-start justify-between gap-3 border-b border-stone-200 px-4 py-4 sm:px-6">
                 <div className="min-w-0">
                   <p className="text-[11px] uppercase tracking-[0.16em] text-stone-500">
-                    Ficha do usuário
+                    Scheda utente
                   </p>
                   <h2 className="mt-1 flex items-center gap-2 text-base font-semibold text-stone-900 sm:text-lg">
                     {selectedResetCode && (
                       <span className="h-2.5 w-2.5 rounded-full bg-red-600 animate-pulse" />
                     )}
                     <span className="truncate">
-                      {selectedUser.username || selectedUser.email || `Usuário ${selectedUser.id}`}
+                      {selectedUser.username || selectedUser.email || `Utente ${selectedUser.id}`}
                     </span>
                   </h2>
                   <p className="text-xs text-stone-500">{selectedUser.email || "-"}</p>
@@ -3920,7 +3889,7 @@ export default function AdminPanelV2() {
                   type="button"
                   onClick={handleCloseUserDetail}
                   className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-stone-300 text-stone-700 hover:border-stone-900"
-                  aria-label="Fechar ficha do usuário"
+                  aria-label="Chiudi scheda utente"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -3938,7 +3907,7 @@ export default function AdminPanelV2() {
                     <article className="border border-stone-200 p-4">
                       <div className="mb-3 flex items-center gap-2">
                         <Users className="h-4 w-4 text-stone-700" />
-                        <h3 className="text-sm font-semibold text-stone-900">Dados disponíveis</h3>
+                        <h3 className="text-sm font-semibold text-stone-900">Dati disponibili</h3>
                       </div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         {getAdminUserDetailRows(selectedUser).map((row) => (
@@ -3956,19 +3925,19 @@ export default function AdminPanelV2() {
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
                           <Package className="h-4 w-4 text-stone-700" />
-                          <h3 className="text-sm font-semibold text-stone-900">Produtos publicados</h3>
+                          <h3 className="text-sm font-semibold text-stone-900">Prodotti pubblicati</h3>
                         </div>
                         <span className="text-xs text-stone-500">
-                          {selectedUserProducts.length} item(ns)
+                          {selectedUserProducts.length} elementi
                         </span>
                       </div>
                       {isLoadingSelectedUserProducts ? (
                         <div className="py-8 text-center text-sm text-stone-500">
-                          Carregando produtos...
+                          Caricamento prodotti...
                         </div>
                       ) : selectedUserProducts.length === 0 ? (
                         <div className="py-8 text-center text-sm text-stone-500">
-                          Nenhum produto publicado.
+                          Nessun prodotto pubblicato.
                         </div>
                       ) : (
                         <div className="space-y-2">
@@ -3983,7 +3952,7 @@ export default function AdminPanelV2() {
                                     {product.name}
                                   </p>
                                   <p className="text-xs text-stone-500">
-                                    {product.category || "Sem categoria"} · ID {product.id}
+                                    {product.category || "Senza categoria"} · ID {product.id}
                                   </p>
                                 </div>
                                 <span className="shrink-0 text-xs font-semibold text-stone-900">
@@ -3991,10 +3960,10 @@ export default function AdminPanelV2() {
                                 </span>
                               </div>
                               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-stone-500">
-                                <span>Cidade: {product.city || "-"}</span>
-                                <span>Cliques: {product.clickCount ?? 0}</span>
-                                <span>Qtd.: {product.quantity ?? "-"}</span>
-                                <span>Criado: {formatDate(product.createdAt)}</span>
+                                <span>Città: {product.city || "-"}</span>
+                                <span>Clic: {product.clickCount ?? 0}</span>
+                                <span>Qtà.: {product.quantity ?? "-"}</span>
+                                <span>Creato: {formatDate(product.createdAt)}</span>
                               </div>
                               <button
                                 type="button"
@@ -4003,7 +3972,7 @@ export default function AdminPanelV2() {
                                 className="mt-3 inline-flex items-center justify-center gap-2 border border-red-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-red-700 hover:bg-red-50 disabled:opacity-60"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
-                                {deletingProductId === product.id ? "Excluindo..." : "Excluir produto"}
+                                {deletingProductId === product.id ? "Eliminazione..." : "Elimina prodotto"}
                               </button>
                             </div>
                           ))}
@@ -4016,13 +3985,13 @@ export default function AdminPanelV2() {
                     <article className="border border-stone-200 p-4">
                       <div className="mb-3 flex items-center gap-2">
                         <KeyRound className="h-4 w-4 text-stone-700" />
-                        <h3 className="text-sm font-semibold text-stone-900">Ajuda com senha</h3>
+                        <h3 className="text-sm font-semibold text-stone-900">Assistenza password</h3>
                       </div>
                       {selectedResetCode && (
                         <div className="mb-3 border border-red-200 bg-red-50 px-3 py-2">
                           <p className="flex items-center gap-2 text-xs font-semibold text-red-700">
                             <span className="h-2.5 w-2.5 rounded-full bg-red-600 animate-pulse" />
-                            Código pendente para enviar
+                            Codice in attesa di invio
                           </p>
                           <p className="mt-1 font-mono text-lg font-semibold text-red-800">
                             {selectedResetCode}
@@ -4034,7 +4003,7 @@ export default function AdminPanelV2() {
                           htmlFor="admin-user-reset-password"
                           className="text-xs uppercase tracking-[0.14em] text-stone-500"
                         >
-                          Senha temporária ou nova senha
+                          Password temporanea o nuova password
                         </label>
                         <input
                           id="admin-user-reset-password"
@@ -4042,7 +4011,7 @@ export default function AdminPanelV2() {
                           value={resetPasswordValue}
                           onChange={(event) => setResetPasswordValue(event.target.value)}
                           className="w-full border border-stone-300 px-3 py-2.5 text-sm outline-none focus:border-stone-900"
-                          placeholder="Mínimo 6 caracteres"
+                          placeholder="Minimo 6 caratteri"
                         />
                       </div>
                       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
@@ -4052,7 +4021,7 @@ export default function AdminPanelV2() {
                           className="inline-flex items-center justify-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-900"
                         >
                           <KeyRound className="h-3.5 w-3.5" />
-                          Gerar código
+                          Genera codice
                         </button>
                         <button
                           type="button"
@@ -4061,7 +4030,7 @@ export default function AdminPanelV2() {
                           className="inline-flex items-center justify-center gap-2 bg-stone-900 px-3 py-2 text-xs uppercase tracking-[0.12em] text-white hover:bg-black disabled:opacity-60"
                         >
                           <CheckCircle2 className="h-3.5 w-3.5" />
-                          {isResettingUserPassword ? "Aplicando..." : "Aplicar senha"}
+                          {isResettingUserPassword ? "Applicazione in corso..." : "Imposta password"}
                         </button>
                         <button
                           type="button"
@@ -4070,7 +4039,7 @@ export default function AdminPanelV2() {
                           className="inline-flex items-center justify-center gap-2 border border-stone-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-stone-700 hover:border-stone-900 disabled:opacity-50"
                         >
                           <Copy className="h-3.5 w-3.5" />
-                          Copiar
+                          Copia
                         </button>
                         {selectedWhatsappResetUrl && (
                           <a
@@ -4087,7 +4056,7 @@ export default function AdminPanelV2() {
                     </article>
 
                     <article className="border border-stone-200 p-4">
-                      <h3 className="mb-3 text-sm font-semibold text-stone-900">Ações da conta</h3>
+                      <h3 className="mb-3 text-sm font-semibold text-stone-900">Azioni sull’account</h3>
                       <div className="space-y-2">
                         <button
                           type="button"
@@ -4101,10 +4070,10 @@ export default function AdminPanelV2() {
                             <Ban className="h-3.5 w-3.5" />
                           )}
                           {pendingBanUserId === selectedUser.id
-                            ? "Atualizando..."
+                            ? "Aggiornamento..."
                             : selectedUser.isBanned
-                              ? "Desbanir usuário"
-                              : "Banir usuário"}
+                              ? "Sblocca utente"
+                              : "Blocca utente"}
                         </button>
                         <button
                           type="button"
@@ -4113,11 +4082,11 @@ export default function AdminPanelV2() {
                           className="inline-flex w-full items-center justify-center gap-2 border border-red-300 px-3 py-2 text-xs uppercase tracking-[0.12em] text-red-700 hover:bg-red-50 disabled:opacity-60"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
-                          {deletingUserId === selectedUser.id ? "Desativando..." : "Desativar empresa"}
+                          {deletingUserId === selectedUser.id ? "Disattivazione..." : "Disattiva attività"}
                         </button>
                         <button type="button" disabled={deletingUserId === selectedUser.id}
                           onClick={() => void handleDeleteUser(selectedUser, true)}
-                          className="rounded-xl border border-red-600/40 px-4 py-2 text-xs font-semibold text-red-300 disabled:opacity-50">Excluir definitivamente</button>
+                          className="rounded-xl border border-red-600/40 px-4 py-2 text-xs font-semibold text-red-300 disabled:opacity-50">Elimina definitivamente</button>
                       </div>
                     </article>
                   </aside>

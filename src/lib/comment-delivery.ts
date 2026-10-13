@@ -5,7 +5,7 @@ let nextTemporaryId = -1;
 
 export function pendingComment(publicationId: number, body: string, user: SessionUser | null, parentCommentId?: number): PendingComment {
   return { id: nextTemporaryId--, publicationId, body, parentCommentId, userId: user?.id ?? -1,
-    authorName: user?.name || "Você", authorAvatarUrl: user?.avatarUrl,
+    authorName: user?.name || "Tu", authorAvatarUrl: user?.avatarUrl,
     createdAt: Math.floor(Date.now() / 1000), replies: [], deliveryStatus: "sending" };
 }
 

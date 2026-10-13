@@ -1,6 +1,7 @@
 import { beginWriteOperation, completeWriteOperation, WriteBusyError, retryWriteWhenBusy, waitForWriteDelay } from "./write-operation";
 import { previewComments } from "./comment-delivery";
 import { trackedFetch } from "./networkActivity";
+import { translate } from '../i18n';
 import { AUTH0_DEBUG_LOGS } from "./auth0-config";
 import type { LegalLocale, LegalStatus, LegalReceipt } from "./legal-types";
 import {
@@ -13,8 +14,6 @@ import {
   isNegotiablePriceValue,
 } from "./negotiable-price";
 
-const LOCALE_STORAGE_KEY = "templesale_locale";
-const SUPPORTED_API_LOCALES = new Set(["it-IT", "pt-BR", "ar-SA"]);
 
 export interface ProductDto {
   id: number;
@@ -563,10 +562,10 @@ function extractApiError(payload: unknown): string | null {
     return null;
   }
   if (typeof envelope.error === "string" && envelope.error.trim()) {
-    return envelope.error.trim();
+    return translate('it-IT',envelope.error.trim());
   }
   if (typeof envelope.message === "string" && envelope.message.trim()) {
-    return envelope.message.trim();
+    return translate('it-IT',envelope.message.trim());
   }
   return null;
 }
@@ -1824,7 +1823,7 @@ function normalizeProductCommentItem(value: unknown): ProductCommentDto | null {
     toOptionalNumber(firstDefined(parsed, ["createdAt", "created_at"])) ??
     Math.floor(Date.now() / 1000);
   const authorName =
-    toStringValue(firstDefined(parsed, ["authorName", "author_name", "name"])) || "Usuário";
+    toStringValue(firstDefined(parsed, ["authorName", "author_name", "name"])) || "Utente";
   const authorAvatarUrl = toStringValue(
     firstDefined(parsed, ["authorAvatarUrl", "author_avatar_url", "avatarUrl", "avatar_url"]),
   );
@@ -2029,10 +2028,7 @@ async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
     headers.set("Content-Type", "application/json");
   }
   if (!headers.has("X-TempleSale-Locale") && typeof window !== "undefined") {
-    const locale = window.localStorage.getItem(LOCALE_STORAGE_KEY) || "";
-    if (SUPPORTED_API_LOCALES.has(locale)) {
-      headers.set("X-TempleSale-Locale", locale);
-    }
+    headers.set("X-TempleSale-Locale", "it-IT");
   }
   if (!headers.has("X-TempleSale-Device-Id")) {
     const deviceId = getOrCreateDeviceId();
@@ -2117,10 +2113,10 @@ async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
         const text = await response.text();
         if (text.trim().startsWith("<!doctype")) {
           throw new Error(
-            "API desatualizada no dev server. Reinicie com: pkill -f \"tsx server.ts\" && npm run dev",
+            "API non aggiornata nell’ambiente di sviluppo. Riavvia il server di sviluppo.",
           );
         }
-        throw new Error("Resposta inválida da API.");
+        throw new Error("Risposta API non valida.");
       }
 
       const payload = (await response.json()) as unknown;
@@ -2149,7 +2145,7 @@ async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
     }
   }
 
-  throw new Error("Falha temporária na API.");
+  throw new Error("Errore temporaneo dell’API.");
 }
 
 async function uploadImageFileToEndpoint(
@@ -2202,7 +2198,7 @@ async function uploadImageFileToEndpoint(
   }
 
   if (!isJson) {
-    throw new Error("Resposta inválida do upload de imagem.");
+    throw new Error("Risposta dell’invio immagine non valida.");
   }
 
   const payload = (await response.json()) as unknown;
@@ -2244,7 +2240,7 @@ async function uploadImageFile(
   if (lastError instanceof Error) {
     throw lastError;
   }
-  throw new Error("Falha ao enviar imagem.");
+  throw new Error("Invio dell’immagine non riuscito.");
 }
 
 async function uploadProductImageFile(
@@ -2416,7 +2412,7 @@ export const api = {
               await request<unknown>("/api/auth/me").catch(() => null),
             );
           if (!user) {
-            throw new Error("Resposta inválida ao criar conta.");
+            throw new Error("Risposta non valida durante la creazione dell’account.");
           }
 
           return user;
@@ -2440,7 +2436,7 @@ export const api = {
     if (lastError instanceof Error) {
       throw lastError;
     }
-    throw new Error("Falha ao criar conta.");
+    throw new Error("Creazione dell’account non riuscita.");
   },
   async login(payload: AuthInput) {
     const raw = await request<unknown>("/api/auth/login", {
@@ -2450,7 +2446,7 @@ export const api = {
     persistAuthTokenFromPayload(raw);
     const user = normalizeSessionUserItem(raw);
     if (!user) {
-      throw new Error("Resposta inválida ao autenticar.");
+      throw new Error("Risposta di autenticazione non valida.");
     }
     return user;
   },
@@ -2481,12 +2477,12 @@ export const api = {
         });
       }
       if (!response.ok) {
-        throw new Error(extractApiError(raw) || `Falha ao sincronizar Auth0 (${response.status}).`);
+        throw new Error(extractApiError(raw) || `Sincronizzazione Auth0 non riuscita (${response.status}).`);
       }
       persistAuthTokenFromPayload(raw);
       const user = normalizeSessionUserItem(raw);
       if (!user) {
-        throw new Error("Resposta inválida ao autenticar com Auth0.");
+        throw new Error("Risposta di autenticazione Auth0 non valida.");
       }
       if (AUTH0_DEBUG_LOGS) {
         console.info("[auth0] local session applied", { userId: user.id, email: user.email });
@@ -2504,7 +2500,7 @@ export const api = {
     persistAuthTokenFromPayload(raw);
     const user = normalizeSessionUserItem(raw);
     if (!user) {
-      throw new Error("Resposta inválida ao recuperar sessão.");
+      throw new Error("Risposta non valida durante il recupero della sessione.");
     }
     return user;
   },
@@ -2630,12 +2626,12 @@ export const api = {
       return sessionUser;
     }
 
-    throw new Error("Resposta inválida ao atualizar perfil.");
+    throw new Error("Risposta non valida durante l’aggiornamento del profilo.");
   },
   async updateProfileAvatar(avatarUrl: string) {
     const normalizedAvatarUrl = toStringValue(avatarUrl);
     if (!normalizedAvatarUrl) {
-      throw new Error("URL da foto de perfil inválida.");
+      throw new Error("URL della foto profilo non valido.");
     }
 
     try {
@@ -2671,7 +2667,7 @@ export const api = {
       return fallbackUser;
     }
 
-    throw new Error("Resposta inválida ao atualizar foto de perfil.");
+    throw new Error("Risposta non valida durante l’aggiornamento della foto profilo.");
   },
   async updateProfileLocation(latitude: number, longitude: number) {
     const raw = await request<unknown>("/api/profile/location", {
@@ -2812,7 +2808,7 @@ export const api = {
   },
   async getVendorProducts(vendorId: number): Promise<{ vendor: VendorDto; products: ProductDto[] }> {
     if (!Number.isInteger(vendorId) || vendorId <= 0) {
-      throw new Error("ID de vendedor inválido.");
+      throw new Error("ID venditore non valido.");
     }
 
     try {
@@ -2842,14 +2838,14 @@ export const api = {
         const payload = await request<unknown>(`/api/vendors/${vendorId}/products`);
         const parsed = parseJsonIfNeeded(payload);
         if (!isRecord(parsed)) {
-          throw new Error("Resposta inválida ao carregar vendedor.");
+          throw new Error("Risposta non valida durante il caricamento del venditore.");
         }
 
         const vendor =
           normalizeVendorItem(firstDefined(parsed, ["vendor", "seller", "user"])) ||
           normalizeVendorItem(parsed);
         if (!vendor) {
-          throw new Error("Resposta inválida ao carregar vendedor.");
+          throw new Error("Risposta non valida durante il caricamento del venditore.");
         }
 
         const productsPayload = firstDefined(parsed, ["products", "items", "rows", "results"]);
@@ -2910,7 +2906,7 @@ export const api = {
     const payload = await request<unknown>(`/api/products/${id}`);
     const normalized = normalizeProductItem(payload);
     if (!normalized) {
-      throw new Error("Resposta inválida ao carregar produto.");
+      throw new Error("Risposta non valida durante il caricamento del prodotto.");
     }
     return normalized;
   },
@@ -2957,7 +2953,7 @@ export const api = {
     const payload = await request<DiscoveryPage>(`/api/discovery?${query}`, { skipAuthToken: true, signal });
     return { ...payload, items: payload.items.map(item => {
       const establishment = normalizeEstablishmentItem(item.establishment);
-      if (!establishment) throw new Error('Resposta inválida ao carregar empresas próximas.');
+      if (!establishment) throw new Error("Risposta non valida durante il caricamento delle attività vicine.");
       return { ...item, establishment, publications: normalizePublicationList(item.publications) };
     }) };
   },
@@ -2973,7 +2969,7 @@ export const api = {
     const payload = await request<unknown>("/api/establishments/me");
     const establishment = normalizeEstablishmentItem(payload);
     if (!establishment) {
-      throw new Error("Resposta inválida ao carregar attivita.");
+      throw new Error("Risposta non valida durante il caricamento dell’attività.");
     }
     return establishment;
   },
@@ -2993,7 +2989,7 @@ export const api = {
       isRecord(parsed) ? firstDefined(parsed, ["publications", "posts"]) ?? [] : [],
     );
     if (!establishment) {
-      throw new Error("Resposta inválida ao carregar attivita.");
+      throw new Error("Risposta non valida durante il caricamento dell’attività.");
     }
     return { establishment, products, publications };
   },
@@ -3038,7 +3034,7 @@ export const api = {
     });
     const establishment = normalizeEstablishmentItem(payload);
     if (!establishment) {
-      throw new Error("Resposta inválida ao salvar attivita.");
+      throw new Error("Risposta non valida durante il salvataggio dell’attività.");
     }
     return establishment;
   },
@@ -3055,7 +3051,7 @@ export const api = {
     const parsed = parseJsonIfNeeded(payload);
     const publication = normalizePublicationItem(isRecord(parsed) ? parsed.publication : parsed);
     if (!publication) {
-      throw new Error("Resposta inválida ao publicar.");
+      throw new Error("Risposta di pubblicazione non valida.");
     }
     completeWriteOperation(scope, key);
     return publication;
@@ -3066,7 +3062,7 @@ export const api = {
   },
   async getPublication(publicationId: number) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
-      throw new Error("ID de publicação inválido.");
+      throw new Error("ID pubblicazione non valido.");
     }
     const payload = await request<unknown>(`/api/publications/${publicationId}`, {
       skipAuthToken: true,
@@ -3075,7 +3071,7 @@ export const api = {
     const publication = normalizePublicationItem(isRecord(parsed) ? parsed.publication : parsed);
     const establishment = normalizeEstablishmentItem(isRecord(parsed) ? parsed.establishment : parsed);
     if (!publication || !establishment) {
-      throw new Error("Resposta inválida ao carregar publicação.");
+      throw new Error("Risposta non valida durante il caricamento della pubblicazione.");
     }
     return { publication, establishment };
   },
@@ -3087,7 +3083,7 @@ export const api = {
     const parsed = parseJsonIfNeeded(payload);
     const publication = normalizePublicationItem(isRecord(parsed) ? parsed.publication : parsed);
     if (!publication) {
-      throw new Error("Resposta inválida ao atualizar publicação.");
+      throw new Error("Risposta non valida durante l’aggiornamento della pubblicazione.");
     }
     return publication;
   },
@@ -3109,7 +3105,7 @@ export const api = {
   },
   async savePublication(publicationId: number) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
-      throw new Error("ID de publicação inválido.");
+      throw new Error("ID pubblicazione non valido.");
     }
     await request<{ success: boolean }>(`/api/publications/${publicationId}/save`, {
       method: "POST",
@@ -3118,7 +3114,7 @@ export const api = {
   },
   async unsavePublication(publicationId: number) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
-      throw new Error("ID de publicação inválido.");
+      throw new Error("ID pubblicazione non valido.");
     }
     await request<{ success: boolean }>(`/api/publications/${publicationId}/save`, {
       method: "DELETE",
@@ -3127,7 +3123,7 @@ export const api = {
   },
   async likePublication(publicationId: number) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
-      throw new Error("ID de publicação inválido.");
+      throw new Error("ID pubblicazione non valido.");
     }
     await request<{ success: boolean }>(`/api/publications/${publicationId}/like`, {
       method: "POST",
@@ -3136,7 +3132,7 @@ export const api = {
   },
   async unlikePublication(publicationId: number) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
-      throw new Error("ID de publicação inválido.");
+      throw new Error("ID pubblicazione non valido.");
     }
     await request<{ success: boolean }>(`/api/publications/${publicationId}/like`, {
       method: "DELETE",
@@ -3156,7 +3152,7 @@ export const api = {
   },
   async getPublicationComments(publicationId: number, background = false, preview = false, onCount?: (count: number) => void) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
-      throw new Error("ID de publicação inválido.");
+      throw new Error("ID pubblicazione non valido.");
     }
 
     try {
@@ -3176,18 +3172,18 @@ export const api = {
   },
   async createPublicationComment(publicationId: number, input: CreateProductCommentInput): Promise<CommentMutationResult> {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
-      throw new Error("ID de publicação inválido.");
+      throw new Error("ID pubblicazione non valido.");
     }
 
     const normalizedBody = toStringValue(input.body).trim();
     if (!normalizedBody) {
-      throw new Error("Comentário é obrigatório.");
+      throw new Error("Il commento è obbligatorio.");
     }
 
     const scope = `${getOrCreateDeviceId()}:comment:${publicationId}`;
     const key = await beginWriteOperation(scope, [normalizedBody, input.parentCommentId ?? null]);
     const controller = new AbortController();
-    const deadline = setTimeout(() => controller.abort(new Error('Não foi possível confirmar o comentário em 30 segundos. O texto foi preservado; confira os comentários ou retome o mesmo envio.')),30000);
+    const deadline = setTimeout(() => controller.abort(new Error("Impossibile confermare il commento entro 30 secondi. Il testo è conservato; controlla i commenti oppure riprendi lo stesso invio.")),30000);
     try {
     const response = await request<unknown>(`/api/publications/${publicationId}/comments?response=created`, {
       method: "POST",
@@ -3212,12 +3208,12 @@ export const api = {
   },
   async updatePublicationComment(publicationId: number, commentId: number, input: UpdateProductCommentInput) {
     if (!Number.isInteger(publicationId) || publicationId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
-      throw new Error("ID de comentário inválido.");
+      throw new Error("ID commento non valido.");
     }
 
     const normalizedBody = toStringValue(input.body).trim();
     if (!normalizedBody) {
-      throw new Error("Comentário é obrigatório.");
+      throw new Error("Il commento è obbligatorio.");
     }
 
     const response = await request<unknown>(`/api/publications/${publicationId}/comments/${commentId}?response=changed`, {
@@ -3229,7 +3225,7 @@ export const api = {
   },
   async deletePublicationComment(publicationId: number, commentId: number) {
     if (!Number.isInteger(publicationId) || publicationId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
-      throw new Error("ID de comentário inválido.");
+      throw new Error("ID commento non valido.");
     }
 
     const response = await request<unknown>(`/api/publications/${publicationId}/comments/${commentId}?response=changed`, {
@@ -3293,7 +3289,7 @@ export const api = {
     });
     const section = normalizeStorefrontSectionItem(payload);
     if (!section) {
-      throw new Error("Resposta inválida ao salvar sezione.");
+      throw new Error("Risposta non valida durante il salvataggio della sezione.");
     }
     return section;
   },
@@ -3306,7 +3302,7 @@ export const api = {
   },
   async getProductComments(productId: number) {
     if (!Number.isInteger(productId) || productId <= 0) {
-      throw new Error("ID de produto inválido.");
+      throw new Error("ID prodotto non valido.");
     }
 
     try {
@@ -3321,12 +3317,12 @@ export const api = {
   },
   async createProductComment(productId: number, input: CreateProductCommentInput) {
     if (!Number.isInteger(productId) || productId <= 0) {
-      throw new Error("ID de produto inválido.");
+      throw new Error("ID prodotto non valido.");
     }
 
     const normalizedBody = toStringValue(input.body).trim();
     if (!normalizedBody) {
-      throw new Error("Comentário é obrigatório.");
+      throw new Error("Il commento è obbligatorio.");
     }
 
     const payload = {
@@ -3347,12 +3343,12 @@ export const api = {
   },
   async updateProductComment(productId: number, commentId: number, input: UpdateProductCommentInput) {
     if (!Number.isInteger(productId) || productId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
-      throw new Error("ID de comentário inválido.");
+      throw new Error("ID commento non valido.");
     }
 
     const normalizedBody = toStringValue(input.body).trim();
     if (!normalizedBody) {
-      throw new Error("Comentário é obrigatório.");
+      throw new Error("Il commento è obbligatorio.");
     }
 
     const response = await request<unknown>(`/api/products/${productId}/comments/${commentId}`, {
@@ -3363,7 +3359,7 @@ export const api = {
   },
   async deleteProductComment(productId: number, commentId: number) {
     if (!Number.isInteger(productId) || productId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
-      throw new Error("ID de comentário inválido.");
+      throw new Error("ID commento non valido.");
     }
 
     const response = await request<unknown>(`/api/products/${productId}/comments/${commentId}`, {
@@ -3377,7 +3373,7 @@ export const api = {
     });
     const normalized = normalizeSessionUserItem(payload);
     if (!normalized) {
-      throw new Error("Resposta inválida ao carregar vendedor.");
+      throw new Error("Risposta non valida durante il caricamento del venditore.");
     }
     return normalized;
   },
@@ -3459,7 +3455,7 @@ export const api = {
     });
     const normalized = normalizeProductItem(payload);
     if (!normalized) {
-      throw new Error("Resposta inválida ao criar produto.");
+      throw new Error("Risposta non valida durante la creazione del prodotto.");
     }
     return normalized;
   },
@@ -3470,7 +3466,7 @@ export const api = {
     });
     const normalized = normalizeProductItem(payload);
     if (!normalized) {
-      throw new Error("Resposta inválida ao atualizar produto.");
+      throw new Error("Risposta non valida durante l’aggiornamento del prodotto.");
     }
     return normalized;
   },
@@ -3535,7 +3531,7 @@ export const api = {
     if (!prepared.direct) return uploadProductImageFile(file,options);
     if (prepared.ready) return {url:prepared.url,publicId:'',receiptId:id};
     const endpoint=new URL(prepared.endpoint);
-    if (endpoint.protocol!=='https:'||endpoint.hostname!=='api.cloudinary.com'||!endpoint.pathname.endsWith('/image/upload')) throw new Error('Destino de foto inválido.');
+    if (endpoint.protocol!=='https:'||endpoint.hostname!=='api.cloudinary.com'||!endpoint.pathname.endsWith('/image/upload')) throw new Error("Destinazione della foto non valida.");
     const form=new FormData();form.append('file',file);
     for(const [key,value] of Object.entries(prepared.params))form.append(key,String(value));
     let response: Response | undefined;
@@ -3544,23 +3540,23 @@ export const api = {
       response=await trackedFetch(endpoint.href,{method:'POST',body:form,signal:options?.signal,skipGlobalLoadingOverlay:true});
       if (!response.ok) {
         const detail=await response.json().catch(()=>null);
-        uploadError=typeof detail?.error?.message==='string' ? detail.error.message : 'O serviço de imagens não confirmou o envio.';
+        uploadError=typeof detail?.error?.message==='string' ? detail.error.message : 'Il servizio immagini non ha confermato l’invio.';
       }
     } catch (error) {
       options?.signal?.throwIfAborted();
-      uploadError='A conexão com o serviço de imagens foi interrompida.';
+      uploadError='La connessione con il servizio immagini è stata interrotta.';
     }
     const started=Date.now();
     while(Date.now()-started<60000) {
       const status=await request<any>(`/api/establishments/${establishmentId}/publication-upload/${encodeURIComponent(id)}`,{signal:options?.signal,skipGlobalLoadingOverlay:true});
       if(status.state==='ready')return {url:status.url,publicId:prepared.params.public_id,receiptId:id};
-      if(status.state==='rejected')throw new Error('A foto foi recusada na validação.');
+      if(status.state==='rejected')throw new Error("La foto è stata rifiutata durante la validazione.");
       // A retry with overwrite=false can find the asset already uploaded.
       // Allow the verified webhook/resource lookup to reconcile it first.
-      if(uploadError && Date.now()-started>30000)throw new Error(`${uploadError} Seu rascunho foi preservado.`);
+      if(uploadError && Date.now()-started>30000)throw new Error(`${uploadError} La bozza è conservata.`);
       await waitForWriteDelay(2000,options?.signal);
     }
-    throw new Error('A foto aguarda confirmação do serviço de imagens. Retome pelo rascunho preservado.');
+    throw new Error("La foto attende la conferma del servizio immagini. Riprendi dalla bozza conservata.");
   },
   uploadProfileImage(file: File) {
     return uploadProfileImageFile(file);
@@ -3611,7 +3607,7 @@ export const api = {
             }
             const session = normalizeAdminSessionItem(payload, normalizedEmail);
             if (!session) {
-              throw new Error("Resposta inválida ao autenticar administrador.");
+              throw new Error("Risposta di autenticazione amministratore non valida.");
             }
             persistAdminSessionEmail(session.email);
             return session;
@@ -3642,7 +3638,7 @@ export const api = {
       if (lastError instanceof Error) {
         throw lastError;
       }
-      throw new Error("Falha ao autenticar administrador.");
+      throw new Error("Autenticazione dell’amministratore non riuscita.");
     },
     async getCurrent() {
       const adminToken = readAdminToken();
@@ -3675,7 +3671,7 @@ export const api = {
           }
           const session = normalizeAdminSessionItem(payload);
           if (!session) {
-            throw new Error("Sessão de administrador inválida.");
+            throw new Error("Sessione amministratore non valida.");
           }
           persistAdminSessionEmail(session.email);
           return session;
@@ -3695,7 +3691,7 @@ export const api = {
       if (lastError instanceof Error) {
         throw lastError;
       }
-      throw new Error("Sessão de administrador inválida.");
+      throw new Error("Sessione amministratore non valida.");
     },
     async logout() {
       try {

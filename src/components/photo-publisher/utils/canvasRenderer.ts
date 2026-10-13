@@ -177,7 +177,7 @@ export async function renderCompositeImage(
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          reject(new Error('Não foi possível preparar a foto. O original foi preservado.'));
+          reject(new Error("Impossibile preparare la foto. L’originale è conservato."));
           return;
         }
 
@@ -355,12 +355,12 @@ export async function renderCompositeImage(
         const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
         resolve(dataUrl);
       } catch {
-        reject(new Error('Não foi possível preparar a foto. O original foi preservado.'));
+        reject(new Error("Impossibile preparare la foto. L’originale è conservato."));
       }
     };
 
     img.onerror = () => {
-      reject(new Error('Não foi possível abrir a foto. Escolha a imagem novamente.'));
+      reject(new Error("Impossibile aprire la foto. Scegli nuovamente l’immagine."));
     };
 
     img.src = imageSrc;

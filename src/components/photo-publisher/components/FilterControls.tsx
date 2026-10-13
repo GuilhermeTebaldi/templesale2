@@ -52,7 +52,7 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
             }`}
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            Filtros
+            Filtri
           </button>
           <button
             type="button"
@@ -65,7 +65,7 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
             }`}
           >
             <Sliders className="w-3.5 h-3.5 text-sky-400" />
-            Ajustes
+            Regolazioni
           </button>
         </div>
 
@@ -76,7 +76,7 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
             onClick={handleResetAdjustments}
             className="text-[11px] text-neutral-400 hover:text-white transition"
           >
-            Redefinir
+            Ripristina
           </button>
         )}
       </div>
@@ -126,7 +126,7 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
           {/* Brilho */}
           <div className="flex items-center justify-between gap-3 text-xs">
             <span className="flex items-center gap-1.5 text-neutral-300 w-24">
-              <Sun className="w-3.5 h-3.5 text-amber-300" /> Brilho
+              <Sun className="w-3.5 h-3.5 text-amber-300" /> Luminosità
             </span>
             <input
               type="range"
@@ -145,7 +145,7 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
           {/* Contraste */}
           <div className="flex items-center justify-between gap-3 text-xs">
             <span className="flex items-center gap-1.5 text-neutral-300 w-24">
-              <Contrast className="w-3.5 h-3.5 text-indigo-300" /> Contraste
+              <Contrast className="w-3.5 h-3.5 text-indigo-300" /> Contrasto
             </span>
             <input
               type="range"
@@ -164,7 +164,7 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
           {/* Saturação */}
           <div className="flex items-center justify-between gap-3 text-xs">
             <span className="flex items-center gap-1.5 text-neutral-300 w-24">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-300" /> Saturação
+              <Sparkles className="w-3.5 h-3.5 text-emerald-300" /> Saturazione
             </span>
             <input
               type="range"

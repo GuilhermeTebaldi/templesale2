@@ -4,7 +4,7 @@ export class WriteBusyError extends Error {
 }
 export function waitForWriteDelay(delay:number,signal?:AbortSignal):Promise<void> {
   return new Promise<void>((resolve,reject) => {
-    const abort=()=>{clearTimeout(timer);signal?.removeEventListener('abort',abort);reject(signal?.reason??new Error('Envio cancelado.'));};
+    const abort=()=>{clearTimeout(timer);signal?.removeEventListener('abort',abort);reject(signal?.reason??new Error("Invio annullato."));};
     const timer=setTimeout(()=>{signal?.removeEventListener('abort',abort);resolve();},delay);
     signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
   });
@@ -62,7 +62,7 @@ export async function beginWriteOperation(scope: string, payload: unknown): Prom
   const saved = readOperation(storageKey) ?? readOperation(legacyKey);
   if (saved?.fingerprint === fingerprint) return saved.key;
   // Never evict an uncertain identity merely to make room for another send.
-  if (retained.length >= MAX_PENDING) throw new Error('Há 32 envios sem confirmação neste navegador. Retome os envios anteriores antes de iniciar outros.');
+  if (retained.length >= MAX_PENDING) throw new Error("Ci sono 32 invii senza conferma in questo browser. Riprendi gli invii precedenti prima di iniziarne altri.");
   const operation = { fingerprint, key: crypto.randomUUID(), at: Date.now() };
   volatile.set(storageKey, operation);
   try { localStorage.setItem(storageKey, JSON.stringify(operation)); } catch { /* Session fallback. */ }

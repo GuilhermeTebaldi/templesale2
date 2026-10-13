@@ -3,17 +3,17 @@ import { FilterPreset } from '../types';
 export const FILTER_PRESETS: FilterPreset[] = [
   {
     id: 'normal',
-    name: 'Normal',
+    name: "Normale",
     filterString: 'none',
   },
   {
     id: 'vivid',
-    name: 'Vívido',
+    name: "Vivido",
     filterString: 'contrast(1.15) saturate(1.4) brightness(1.05)',
   },
   {
     id: 'bw',
-    name: 'P&B',
+    name: "B&N",
     filterString: 'grayscale(1) contrast(1.2) brightness(0.95)',
   },
   {
@@ -23,12 +23,12 @@ export const FILTER_PRESETS: FilterPreset[] = [
   },
   {
     id: 'warm',
-    name: 'Quente',
+    name: "Caldo",
     filterString: 'sepia(0.25) saturate(1.3) hue-rotate(-10deg) brightness(1.02)',
   },
   {
     id: 'cool',
-    name: 'Frio',
+    name: "Freddo",
     filterString: 'saturate(1.1) hue-rotate(180deg) brightness(1.05) contrast(1.1)',
   },
   {
@@ -38,12 +38,12 @@ export const FILTER_PRESETS: FilterPreset[] = [
   },
   {
     id: 'sunset',
-    name: 'Pôr do Sol',
+    name: "Tramonto",
     filterString: 'sepia(0.35) contrast(1.1) saturate(1.5) hue-rotate(-20deg)',
   },
   {
     id: 'fade',
-    name: 'Suave',
+    name: "Tenue",
     filterString: 'contrast(0.85) brightness(1.1) saturate(0.8)',
   },
 ];
@@ -51,15 +51,15 @@ export const FILTER_PRESETS: FilterPreset[] = [
 export const SAMPLE_PHOTOS = [
   {
     id: 'nature',
-    name: 'Natureza',
+    name: "Natura",
     url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1000&q=80',
-    description: 'Praia e horizonte tropical',
+    description: "Spiaggia e orizzonte tropicale",
   },
   {
     id: 'coffee',
-    name: 'Café & Estilo',
+    name: "Caffè e stile",
     url: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=1000&q=80',
-    description: 'Café da manhã acolhedor',
+    description: "Colazione accogliente",
   },
   {
     id: 'city',

@@ -279,7 +279,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                 onClose();
               }}
               className="p-1 -ml-1 text-neutral-400 hover:text-white"
-              title="Voltar"
+              title="Indietro"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -305,7 +305,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                 id="btn-edit-post-photo-mobile-detail"
                 onClick={() => onEditPostPhoto(post.id)}
                 className="p-1.5 text-neutral-400 hover:text-amber-300 hover:bg-neutral-800 rounded-full transition-colors cursor-pointer"
-                title="Editar foto da publicação"
+                title="Modifica foto della pubblicazione"
               >
                 <ImageIcon className="w-4 h-4" />
               </button>
@@ -316,7 +316,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                 id="btn-delete-post-mobile-detail"
                 onClick={() => setIsConfirmingDelete(true)}
                 className="p-1.5 text-neutral-400 hover:text-red-400 hover:bg-neutral-800 rounded-full transition-colors cursor-pointer"
-                title="Excluir publicação"
+                title="Elimina pubblicazione"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -335,7 +335,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
               type="button"
               onClick={onClose}
               className="p-1.5 text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-full transition-colors cursor-pointer"
-              title="Fechar"
+              title="Chiudi"
             >
               <X className="w-4 h-4" />
             </button>
@@ -367,7 +367,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
             type="button"
             onClick={onClose}
             className="hidden md:flex absolute top-3 left-3 z-30 p-2 bg-black/60 hover:bg-black/90 text-white rounded-full transition-colors cursor-pointer"
-            title="Fechar publicação"
+            title="Chiudi pubblicazione"
           >
             <X className="w-5 h-5" />
           </button>
@@ -411,7 +411,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                   id="btn-edit-post-photo-desktop-detail"
                   onClick={() => onEditPostPhoto(post.id)}
                   className="p-2 text-neutral-400 hover:text-amber-300 hover:bg-neutral-800 rounded-lg transition-colors shrink-0 cursor-pointer"
-                  title="Editar foto da publicação"
+                  title="Modifica foto della pubblicazione"
                 >
                   <ImageIcon className="w-4 h-4" />
                 </button>
@@ -422,7 +422,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                   id="btn-delete-post-desktop-detail"
                   onClick={() => setIsConfirmingDelete(true)}
                   className="p-2 text-neutral-400 hover:text-red-400 hover:bg-neutral-800 rounded-lg transition-colors shrink-0 cursor-pointer"
-                  title="Excluir publicação"
+                  title="Elimina pubblicazione"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -432,7 +432,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-neutral-800 rounded-lg transition-colors shrink-0"
-                title="Conversar no WhatsApp"
+                title="Contatta su WhatsApp"
               >
                 <MessageSquare className="w-4 h-4" />
               </a>
@@ -460,12 +460,12 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
             {/* Comentários dos Clientes / Visitantes */}
             <div className="space-y-3">
               <div className="text-[11px] uppercase tracking-wider font-semibold text-neutral-400">
-                Comentários ({post.comments.length})
+                Commenti ({post.comments.length})
               </div>
 
               {post.comments.length === 0 ? (
                 <div className="py-8 text-center text-xs text-neutral-400 italic">
-                  Nenhum comentário ainda. Seja o primeiro a comentar!
+                  Nessun commento. Scrivi il primo!
                 </div>
               ) : (
                 post.comments.map((comment) => (
@@ -502,7 +502,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                   className={`transition-transform cursor-pointer flex items-center justify-center ${
                     absorbedLike ? 'animate-like-absorb' : 'active:scale-125'
                   }`}
-                  title={liked ? 'Descurtir' : 'Curtir'}
+                  title={liked ? "Rimuovi Mi piace" : "Mi piace"}
                 >
                   <TempleSaleLikeIcon
                     liked={liked}
@@ -518,7 +518,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                   type="button"
                   onClick={() => inputRef.current?.focus()}
                   className="text-neutral-200 hover:text-white transition-transform active:scale-125 cursor-pointer"
-                  title="Comentar"
+                  title="Commenta"
                 >
                   <MessageCircle className="w-5 h-5 stroke-neutral-200" />
                 </button>
@@ -546,7 +546,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                 className={`transition-transform active:scale-125 cursor-pointer ${
                   isCurrentSaved ? 'text-amber-400' : 'text-neutral-200 hover:text-white'
                 }`}
-                title={isCurrentSaved ? 'Salvo nos preferidos' : 'Salvar nos preferidos'}
+                title={isCurrentSaved ? "Salvato nei preferiti" : "Salva nei preferiti"}
               >
                 <Bookmark
                   className={`w-5 h-5 ${isCurrentSaved ? 'fill-amber-400 stroke-amber-400' : 'stroke-neutral-200'}`}
@@ -556,7 +556,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
 
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-neutral-100">
-                {likesCount === 1 ? '1 curtida' : `${likesCount} curtidas`}
+                {likesCount === 1 ? "1 Mi piace" : `${likesCount} Mi piace`}
               </span>
               <span className="text-[10px] text-neutral-400 uppercase font-medium">
                 {formatRelativeTime(post.createdAt)}
@@ -573,7 +573,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                 type="text"
                 value={newCommentText}
                 onChange={(e) => setNewCommentText(e.target.value)}
-                placeholder="Adicione um comentário..."
+                placeholder="Aggiungi un commento..."
                 className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-base sm:text-xs text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-neutral-700"
               />
 
@@ -596,7 +596,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                 disabled={!newCommentText.trim()}
                 className="text-xs font-semibold text-sky-400 hover:text-sky-300 disabled:opacity-25 disabled:hover:text-sky-400 transition-opacity cursor-pointer disabled:cursor-default px-2 py-1 shrink-0"
               >
-                Publicar
+                Pubblica
               </button>
             </form>
           </div>
@@ -620,10 +620,10 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="text-sm sm:text-base font-bold text-neutral-100">
-                    Excluir publicação?
+                    Eliminare la pubblicazione?
                   </h3>
                   <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                    Você tem certeza de que quer excluir esta publicação? Esta foto será removida permanentemente do feed e do perfil da sua empresa.
+                    Vuoi eliminare questa pubblicazione? La foto sarà rimossa definitivamente dal feed e dal profilo dell’attività.
                   </p>
                 </div>
               </div>
@@ -635,7 +635,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                   onClick={() => setIsConfirmingDelete(false)}
                   className="px-4 py-2 text-xs font-semibold text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 active:scale-95 rounded-xl transition-all cursor-pointer"
                 >
-                  Não excluir
+                  Non eliminare
                 </button>
                 <button
                   type="button"
@@ -650,7 +650,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                   className="px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-500 active:scale-95 rounded-xl transition-all shadow-lg shadow-red-950/40 cursor-pointer flex items-center space-x-1.5"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span>Sim, excluir</span>
+                  <span>Sì, elimina</span>
                 </button>
               </div>
             </div>

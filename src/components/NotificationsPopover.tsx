@@ -179,10 +179,10 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
             </div>
             <div>
               <div className="flex items-center space-x-1.5">
-                <h3 className="text-sm font-bold text-neutral-100">Notificações</h3>
+                <h3 className="text-sm font-bold text-neutral-100">Notifiche</h3>
                 {unreadCount > 0 && (
                   <span className="rounded-full bg-amber-400 px-1.5 py-0.2 text-[9px] font-bold text-neutral-950">
-                    {unreadCount} nova{unreadCount > 1 ? 's' : ''}
+                    {unreadCount} nuova{unreadCount > 1 ? 's' : ''}
                   </span>
                 )}
               </div>
@@ -195,17 +195,17 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
                 type="button"
                 onClick={onMarkAllAsRead}
                 className="flex cursor-pointer items-center space-x-1 rounded-lg px-2 py-1 text-[11px] text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-white"
-                title="Marcar todas como lidas"
+                title="Segna tutte come lette"
               >
                 <CheckCheck className="h-3.5 w-3.5" />
-                <span>Marcar lidas</span>
+                <span>Segna come lette</span>
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
               className="cursor-pointer rounded-lg p-1.5 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-white"
-              title="Fechar notificações"
+              title="Chiudi notifiche"
             >
               <X className="h-4 w-4" />
             </button>
@@ -213,7 +213,7 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
         </div>
 
         <div className="shrink-0 border-b border-neutral-800/80 bg-neutral-950/80 px-4 py-2 text-[11px] text-neutral-400">
-          Atividades e mensagens recentes
+          Attività e messaggi recenti
         </div>
 
         <div className="flex-1 divide-y divide-neutral-800/60 overflow-y-auto overscroll-contain p-1">
@@ -223,10 +223,10 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
                 <Bell className="h-5 w-5" />
               </div>
               <p className="font-medium text-neutral-300">
-                Nenhuma notificação por enquanto
+                Nessuna notifica
               </p>
               <p className="text-[11px] text-neutral-500">
-                Quando houver uma nova atividade, o sino avisará você aqui.
+                Le nuove attività saranno segnalate qui.
               </p>
             </div>
           ) : (
@@ -261,7 +261,7 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
                           {isAdministrative ? getNotificationAuthor(notification) : notification.title}
                         </span>
                         {isAdministrative ? (
-                          <span className="text-neutral-300">enviou:</span>
+                          <span className="text-neutral-300">ha inviato:</span>
                         ) : (
                           <span className="text-neutral-400">
                             {getNotificationAuthor(notification)}
@@ -291,7 +291,7 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
                         ) : (
                           <span className="flex items-center space-x-1 text-neutral-400">
                             {getNotificationIcon(notification)}
-                            <span>Mensagem</span>
+                            <span>Messaggio</span>
                           </span>
                         )}
                         <span>•</span>
@@ -331,7 +331,7 @@ export const NotificationsPopover: React.FC<NotificationsPopoverProps> = ({
                       ) : (
                         <ChevronDown className="h-3 w-3" />
                       )}
-                      <span>{isExpanded ? 'Ocultar mensagem' : 'Ver mensagem'}</span>
+                      <span>{isExpanded ? "Nascondi messaggio" : "Mostra messaggio"}</span>
                     </button>
                   )}
 

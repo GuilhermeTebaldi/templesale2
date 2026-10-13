@@ -225,7 +225,7 @@ export const TempleSaleAvatarFrame: React.FC<TempleSaleAvatarFrameProps> = ({
           id="badge-owner-avatar"
           className="absolute -bottom-1.5 -right-1.5 z-10 bg-emerald-500 text-neutral-950 font-black text-[9px] px-1.5 py-0.5 rounded-full shadow-lg border border-neutral-900"
         >
-          SUA
+          TUA
         </span>
       )}
     </div>

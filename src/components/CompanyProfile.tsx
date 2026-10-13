@@ -114,7 +114,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
               type="button"
               onClick={onBack}
               className="p-1 -ml-1 text-neutral-400 hover:text-white transition-colors cursor-pointer"
-              title="Voltar ao Feed"
+              title="Torna al feed"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -144,7 +144,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
             type="button"
             onClick={() => onOpenMap?.(company)}
             className="p-1.5 text-neutral-300 hover:text-white transition-colors"
-            title="Mapa TempleSale"
+            title="Mappa TempleSale"
           >
             <MapPin className="w-5 h-5" />
           </button>
@@ -171,7 +171,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                   className="text-neutral-400 transition-colors hover:text-white"
                   onClick={(event) => event.stopPropagation()}
                 >
-                  Ver foto
+                  Vedi foto
                 </a>
               )}
               {isOwner && onChangeCompanyPhoto && (
@@ -180,7 +180,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                   onClick={onChangeCompanyPhoto}
                   className="text-amber-300 transition-colors hover:text-amber-200"
                 >
-                  Trocar foto
+                  Cambia foto
                 </button>
               )}
             </div>
@@ -193,7 +193,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 {totalPublications}
               </div>
               <div className="text-[11px] sm:text-xs text-neutral-400">
-                publicações
+                pubblicazioni
               </div>
             </div>
 
@@ -202,7 +202,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 {totalLikes}
               </div>
               <div className="text-[11px] sm:text-xs text-neutral-400">
-                curtidas
+                Mi piace
               </div>
             </div>
 
@@ -211,7 +211,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 {company.city}
               </div>
               <div className="text-[11px] sm:text-xs text-neutral-400">
-                cidade
+                città
               </div>
             </div>
           </div>
@@ -259,7 +259,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 className="py-2 px-3 rounded-lg bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs flex items-center justify-center space-x-1.5 shadow-sm active:scale-98 transition-all cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                <span>Publicar Foto</span>
+                <span>Pubblica foto</span>
               </button>
             )}
 
@@ -271,7 +271,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 className="py-2 px-3 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white font-semibold text-xs flex items-center justify-center space-x-1.5 active:scale-98 transition-all cursor-pointer"
               >
                 <Edit3 className="w-3.5 h-3.5" />
-                <span>Editar Perfil</span>
+                <span>Modifica profilo</span>
               </button>
             )}
           </div>
@@ -288,7 +288,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
               <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl p-0.5 border border-neutral-800 group-hover:border-amber-400/60 transition-all flex items-center justify-center bg-neutral-900/90 group-hover:bg-neutral-800/80 shadow-xs">
                 <Clock className="w-5 h-5 text-amber-400 group-hover:scale-110 transition-transform" />
               </div>
-              <span className="text-[11px] text-neutral-300 font-medium">Horários</span>
+              <span className="text-[11px] text-neutral-300 font-medium">Orari</span>
             </div>
 
             {/* Destaque Endereço */}
@@ -300,7 +300,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
               <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl p-0.5 border border-neutral-800 group-hover:border-sky-400/60 transition-all flex items-center justify-center bg-neutral-900/90 group-hover:bg-neutral-800/80 shadow-xs">
                 <MapPin className="w-5 h-5 text-sky-400 group-hover:scale-110 transition-transform" />
               </div>
-              <span className="text-[11px] text-neutral-300 font-medium">Endereço</span>
+              <span className="text-[11px] text-neutral-300 font-medium">Indirizzo</span>
             </button>
 
             {/* Destaque Contato */}
@@ -352,14 +352,14 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                     <div className="w-7 h-7 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-400">
                       <Clock className="w-4 h-4" />
                     </div>
-                    <h4 className="font-bold text-sm text-neutral-100">Horário de Funcionamento</h4>
+                    <h4 className="font-bold text-sm text-neutral-100">Orari di apertura</h4>
                   </>
                 ) : (
                   <>
                     <div className="w-7 h-7 rounded-full bg-purple-500/10 flex items-center justify-center text-purple-400">
                       <Tag className="w-4 h-4" />
                     </div>
-                    <h4 className="font-bold text-sm text-neutral-100">Palavras-chave</h4>
+                    <h4 className="font-bold text-sm text-neutral-100">Parole chiave</h4>
                   </>
                 )}
               </div>
@@ -367,7 +367,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 type="button"
                 onClick={() => setActiveHighlight(null)}
                 className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
-                title="Fechar"
+                title="Chiudi"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -382,7 +382,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
             {activeHighlight === 'tags' && (
               <div className="py-2 space-y-2.5">
                 <p className="text-xs text-neutral-400">
-                  Toque em uma tag para pesquisar empresas deste segmento:
+                  Tocca un tag per cercare attività di questo settore:
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {company.keywords.map((kw, i) => (
@@ -410,26 +410,26 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
         <div className="flex items-center justify-center">
           <div className="flex items-center space-x-2 py-3 px-6 text-xs font-bold uppercase tracking-wider text-neutral-100 border-t-2 border-neutral-100 -mt-[1px]">
             <Grid3X3 className="w-4 h-4" />
-            <span className="hidden sm:inline">Publicações</span>
+            <span className="hidden sm:inline">Pubblicazioni</span>
           </div>
         </div>
 
         {/* 7. GRADE DE FOTOS 3 COLUNAS (Edge-to-edge sem barras pretas) */}
         {posts.length === 0 ? (
           isLoadingMorePosts ? (
-            <p role="status" className="py-16 text-center text-sm text-neutral-400">Carregando fotos...</p>
+            <p role="status" className="py-16 text-center text-sm text-neutral-400">Caricamento foto...</p>
           ) : postsError ? null : (
           <div className="text-center py-16 px-4 space-y-2">
             <div className="w-12 h-12 rounded-full border border-neutral-800 mx-auto flex items-center justify-center text-neutral-500 mb-2">
               <Grid3X3 className="w-6 h-6" />
             </div>
             <p className="text-sm font-semibold text-neutral-300">
-              Nenhuma publicação ainda
+              Nessuna pubblicazione
             </p>
             <p className="text-xs text-neutral-500 max-w-xs mx-auto">
               {isOwner
-                ? 'Comece a divulgar os serviços e ambiente da sua empresa com fotos e legendas!'
-                : 'Esta empresa ainda não publicou nenhuma foto no perfil.'}
+                ? "Presenta i servizi e l’ambiente della tua attività con foto e didascalie!"
+                : "Questa attività non ha ancora pubblicato foto sul profilo."}
             </p>
             {isOwner && onOpenCreatePost && (
               <button
@@ -437,7 +437,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 onClick={onOpenCreatePost}
                 className="mt-3 px-4 py-2 bg-neutral-100 hover:bg-white text-neutral-950 text-xs font-bold rounded-lg transition-colors cursor-pointer"
               >
-                + Publicar Primeira Foto
+                + Pubblica la prima foto
               </button>
             )}
           </div>
@@ -473,7 +473,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                           setPostToDelete(post);
                         }}
                         className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-neutral-950/85 hover:bg-red-600 text-neutral-300 hover:text-white border border-neutral-700/80 hover:border-red-500 flex items-center justify-center transition-all duration-150 shadow-md cursor-pointer active:scale-90"
-                        title="Excluir publicação"
+                        title="Elimina pubblicazione"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -490,7 +490,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                       onEditPost(post.id);
                     }}
                     className="absolute bottom-1.5 right-1.5 z-20 flex h-7 w-7 items-center justify-center rounded-full border border-neutral-700/80 bg-neutral-950/85 text-neutral-300 shadow-md transition-all duration-150 hover:border-amber-300/80 hover:bg-amber-300 hover:text-neutral-950 active:scale-90 sm:h-8 sm:w-8"
-                    title="Editar publicação"
+                    title="Modifica pubblicazione"
                   >
                     <Edit3 className="h-3.5 w-3.5" />
                   </button>
@@ -524,7 +524,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
           <div role="alert" className="px-4 py-6 text-center text-sm text-neutral-400">
             <p>{postsError}</p>
             <button type="button" onClick={onRetryPosts} className="mt-2 font-semibold text-neutral-100">
-              Tentar novamente
+              Riprova
             </button>
           </div>
         )}
@@ -549,10 +549,10 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="text-sm sm:text-base font-bold text-neutral-100">
-                  Excluir publicação?
+                  Eliminare la pubblicazione?
                 </h3>
                 <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                  Você tem certeza de que quer excluir esta publicação? Esta foto será removida permanentemente do feed e do perfil da sua empresa.
+                  Vuoi eliminare questa pubblicazione? La foto sarà rimossa definitivamente dal feed e dal profilo dell’attività.
                 </p>
               </div>
             </div>
@@ -570,10 +570,10 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-xs text-neutral-200 line-clamp-2 italic">
-                  "{postToDelete.caption || 'Sem legenda'}"
+                  "{postToDelete.caption || "Senza didascalia"}"
                 </p>
                 <span className="text-[10px] text-neutral-500 block mt-1 font-medium">
-                  {postToDelete.comments.length} comentários • {postToDelete.likesCount || 0} curtidas
+                  {postToDelete.comments.length} commenti • {postToDelete.likesCount || 0} Mi piace
                 </span>
               </div>
             </div>
@@ -586,7 +586,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 onClick={() => setPostToDelete(null)}
                 className="px-4 py-2 text-xs font-semibold text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 active:scale-95 rounded-xl transition-all cursor-pointer"
               >
-                Não excluir
+                Non eliminare
               </button>
               <button
                 type="button"
@@ -600,7 +600,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 className="px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-500 active:scale-95 rounded-xl transition-all shadow-lg shadow-red-950/40 cursor-pointer flex items-center space-x-1.5"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Sim, excluir</span>
+                <span>Sì, elimina</span>
               </button>
             </div>
           </div>

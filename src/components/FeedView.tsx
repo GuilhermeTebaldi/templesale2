@@ -375,7 +375,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
             <>
               <ArrowDown className="w-3.5 h-3.5 text-neutral-400 animate-bounce" />
               <span className="text-xs font-medium text-neutral-400">
-                Puxe para atualizar...
+                Trascina per aggiornare...
               </span>
             </>
           )}
@@ -384,7 +384,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
             <>
               <ArrowDown className="w-3.5 h-3.5 text-amber-400 rotate-180 transition-transform duration-150" />
               <span className="text-xs font-bold text-amber-400">
-                Solte para atualizar ✨
+                Rilascia per aggiornare ✨
               </span>
             </>
           )}
@@ -393,7 +393,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
             <>
               <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin" />
               <span className="text-xs font-semibold text-neutral-200">
-                Atualizando feed...
+                Aggiornamento del feed...
               </span>
             </>
           )}
@@ -402,7 +402,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
             <>
               <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-xs font-bold text-emerald-400">
-                Feed atualizado!
+                Feed aggiornato!
               </span>
             </>
           )}
@@ -503,7 +503,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-800/60 text-emerald-300 text-xs font-medium transition-colors shrink-0"
-                  title="Falar no WhatsApp"
+                  title="Contatta su WhatsApp"
                 >
                   <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
                   <span className="hidden sm:inline text-[11px]">WhatsApp</span>
@@ -550,7 +550,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                           ? 'animate-like-absorb'
                           : 'active:scale-125'
                       }`}
-                      title={isLiked ? 'Descurtir' : 'Curtir'}
+                      title={isLiked ? "Rimuovi Mi piace" : "Mi piace"}
                     >
                       <TempleSaleLikeIcon
                         liked={isLiked}
@@ -567,8 +567,8 @@ export const FeedView: React.FC<FeedViewProps> = ({
                       id={`btn-comment-${post.id}`}
                       onClick={() => onOpenPost(post)}
                       className="flex items-center gap-1.5 text-neutral-200 hover:text-white transition-transform active:scale-125 cursor-pointer"
-                      title={post.commentsCount === undefined ? 'Comentar' : `${post.commentsCount} comentários`}
-                      aria-label={post.commentsCount === undefined ? 'Comentar' : `${post.commentsCount} comentários`}
+                      title={post.commentsCount === undefined ? "Commenta" : `${post.commentsCount} commenti`}
+                      aria-label={post.commentsCount === undefined ? "Commenta" : `${post.commentsCount} commenti`}
                     >
                       <MessageCircle className="w-6 h-6 stroke-neutral-200 hover:stroke-white" />
                       {post.commentsCount !== undefined && <span className="text-xs tabular-nums">{post.commentsCount}</span>}
@@ -581,7 +581,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-neutral-200 hover:text-white transition-transform active:scale-125"
-                      title="Compartilhar pelo WhatsApp"
+                      title="Condividi su WhatsApp"
                     >
                       <Share2 className="w-5 h-5 stroke-neutral-200 hover:stroke-white" />
                     </a>
@@ -593,7 +593,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     className={`transition-transform active:scale-125 cursor-pointer ${
                       isSaved ? 'text-amber-400' : 'text-neutral-200 hover:text-white'
                     }`}
-                    title={isSaved ? 'Salvo' : 'Salvar foto'}
+                    title={isSaved ? "Salvato" : "Salva foto"}
                   >
                     <Bookmark
                       className={`w-6 h-6 ${
@@ -605,7 +605,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
 
                 {/* Curtidas */}
                 <div className="text-xs font-bold text-neutral-100">
-                  {likesCount === 1 ? '1 curtida' : `${likesCount} curtidas`}
+                  {likesCount === 1 ? "1 Mi piace" : `${likesCount} Mi piace`}
                 </div>
 
                 {/* Comentários Recentes */}
@@ -617,7 +617,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                       onClick={() => onOpenPost(post)}
                       className="text-xs text-neutral-400 hover:text-neutral-200 cursor-pointer block text-left font-medium"
                     >
-                      {post.commentsCount === undefined ? 'Ver comentários' : `Ver ${post.commentsCount} ${post.commentsCount === 1 ? 'comentário' : 'comentários'}`}
+                      {post.commentsCount === undefined ? "Vedi commenti" : `Vedi ${post.commentsCount} ${post.commentsCount === 1 ? "commento" : "commenti"}`}
                     </button>
                     {/* Último comentário */}
                     <div className="text-xs text-neutral-300">
@@ -635,14 +635,14 @@ export const FeedView: React.FC<FeedViewProps> = ({
                       onClick={() => onOpenPost(post)}
                       className="text-xs text-neutral-500 hover:text-neutral-300 cursor-pointer block text-left"
                     >
-                      Adicionar um comentário...
+                      Aggiungi un commento...
                     </button>
                   </div>
                 )}
 
-                {delivery?.deliveryStatus === 'sending' && <div role="status" aria-label="Enviando comentário" className="ts-comment-progress" />}
+                {delivery?.deliveryStatus === 'sending' && <div role="status" aria-label="Invio del commento" className="ts-comment-progress" />}
                 {delivery?.deliveryStatus === 'failed' && (
-                  <p role="alert" className="text-xs text-red-600">Não foi possível confirmar o comentário. O texto foi preservado; confira os comentários antes de reenviar.</p>
+                  <p role="alert" className="text-xs text-red-600">Impossibile confermare il commento. Il testo è stato conservato; controlla i commenti prima di inviarlo di nuovo.</p>
                 )}
 
                 {/* Horário Relativo */}
@@ -664,7 +664,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                         [post.id]: e.target.value,
                       }))
                     }
-                    placeholder="Adicione um comentário..."
+                    placeholder="Aggiungi un commento..."
                     className="flex-1 bg-transparent text-base sm:text-xs text-neutral-100 placeholder-neutral-400 focus:outline-none"
                   />
 
@@ -688,7 +688,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     disabled={delivery?.deliveryStatus === 'sending' || !currentCommentText.trim()}
                     className="text-xs font-semibold text-sky-400 hover:text-sky-300 disabled:opacity-20 disabled:hover:text-sky-400 transition-opacity cursor-pointer disabled:cursor-default shrink-0 px-1 py-0.5"
                   >
-                    Publicar
+                    Pubblica
                   </button>
                 </form>
               </div>

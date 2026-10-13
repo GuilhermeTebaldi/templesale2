@@ -66,7 +66,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
       const error = err as Error;
       console.warn('Camera stream error:', error);
       setCameraError(
-        'Câmera indisponível no navegador. Você pode selecionar uma foto da galeria abaixo.'
+        "Fotocamera non disponibile nel browser. Puoi scegliere una foto dalla galleria."
       );
       setIsStartingCamera(false);
     } finally {startingRef.current=false;}
@@ -174,7 +174,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
           <h1 className="text-sm font-semibold tracking-wide text-neutral-100">
-            Câmera
+            Fotocamera
           </h1>
         </div>
       </header>
@@ -214,7 +214,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
         {isStartingCamera && !cameraError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-neutral-950/70 backdrop-blur-xs text-neutral-300 gap-3 z-10">
             <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            <span className="text-xs text-neutral-400">Iniciando câmera...</span>
+            <span className="text-xs text-neutral-400">Avvio della fotocamera...</span>
           </div>
         )}
 
@@ -223,7 +223,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
             <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center mb-3 border border-amber-500/20">
               <AlertCircle className="w-6 h-6" />
             </div>
-            <h3 className="text-sm font-semibold text-neutral-200 mb-1">Câmera indisponível</h3>
+            <h3 className="text-sm font-semibold text-neutral-200 mb-1">Fotocamera non disponibile</h3>
             <p className="text-xs text-neutral-400 max-w-xs leading-relaxed mb-5">
               {cameraError}
             </p>
@@ -233,7 +233,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
               onClick={startCamera}
               className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-200 transition"
             >
-              Tentar novamente
+              Riprova
             </button>
           </div>
         )}
@@ -243,12 +243,12 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
             <div className="w-14 h-14 rounded-full bg-white text-neutral-950 flex items-center justify-center mb-4 shadow-xl">
               <Camera className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-semibold text-neutral-100 mb-2">Escolha sua foto</h3>
+            <h3 className="text-base font-semibold text-neutral-100 mb-2">Scegli la tua foto</h3>
             <p className="text-xs text-neutral-400 max-w-xs leading-relaxed mb-5">
-              Abra a câmera só quando for fotografar. Para publicar sem pedir câmera, use a galeria.
+              Apri la fotocamera quando vuoi scattare. Puoi anche scegliere una foto dalla galleria.
             </p>
             <p className="text-xs text-neutral-500 max-w-xs leading-relaxed mb-4">
-              No Safari, escolha Fotocamera → Consenti nas configurações deste site para lembrar a permissão.
+              In Safari, scegli Fotocamera → Consenti nelle impostazioni di questo sito per ricordare il permesso.
             </p>
             <button
               type="button"
@@ -256,7 +256,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
               onClick={() => void startCamera()}
               className="px-5 py-2.5 rounded-full bg-white text-xs font-bold uppercase tracking-[0.14em] text-neutral-950 transition hover:bg-neutral-200 active:scale-95"
             >
-              Usar câmera
+              Usa fotocamera
             </button>
           </div>
         )}
@@ -283,7 +283,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
           <div className="w-12 h-12 rounded-2xl bg-neutral-900/80 backdrop-blur-md border border-white/20 flex items-center justify-center group-hover:border-white/50 group-hover:bg-neutral-800 transition shadow-lg">
             <ImageIcon className="w-5 h-5 text-neutral-200" />
           </div>
-          <span className="text-[11px] font-medium tracking-wide">Galeria</span>
+          <span className="text-[11px] font-medium tracking-wide">Galleria</span>
         </button>
 
         {/* Shutter Button */}
@@ -292,7 +292,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
           id="btn-capture-shutter"
           onClick={handleCapture}
           disabled={!stream || isStartingCamera}
-          aria-label="Capturar foto"
+          aria-label="Scatta foto"
           className="relative w-20 h-20 rounded-full border-4 border-white p-1 flex items-center justify-center transition transform active:scale-90 hover:scale-105 shadow-2xl"
         >
           <div className="w-full h-full rounded-full bg-white flex items-center justify-center shadow-inner">
@@ -306,13 +306,13 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
           id="btn-switch-camera"
           onClick={toggleFacingMode}
           disabled={!stream || isStartingCamera}
-          aria-label="Alternar câmera"
+          aria-label="Cambia fotocamera"
           className="flex flex-col items-center gap-1.5 text-neutral-300 hover:text-white transition active:scale-95 group"
         >
           <div className="w-12 h-12 rounded-2xl bg-neutral-900/80 backdrop-blur-md border border-white/20 flex items-center justify-center group-hover:border-white/50 group-hover:bg-neutral-800 transition shadow-lg">
             <RotateCw className="w-5 h-5 text-neutral-200" />
           </div>
-          <span className="text-[11px] font-medium tracking-wide">Virar</span>
+          <span className="text-[11px] font-medium tracking-wide">Inverti</span>
         </button>
       </footer>
     </div>

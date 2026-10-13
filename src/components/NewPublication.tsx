@@ -91,7 +91,7 @@ export default function NewPublication({
       }
       preparedRef.current = { image: objectUrl, settings: editor ? JSON.stringify([editor.filter,editor.adjustments,editor.overlays,editor.crop]) : settings, draft };
       setCurrentImage(objectUrl); setCaption(draft.caption);
-      setDraftNotice('Rascunho recuperado. Você pode retomar a publicação.');
+      setDraftNotice("Bozza recuperata. Puoi riprendere la pubblicazione.");
     }).finally(() => { if (!cancelled) setDraftLoading(false); });
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [establishment.id]);
@@ -145,7 +145,7 @@ export default function NewPublication({
     setDraftNotice('');
     if (old?.uploadKey) {
       try { await api.discardPublicationUpload(establishment.id,old.uploadKey); }
-      catch { setDraftNotice('Rascunho descartado. A reserva do envio anterior pode levar alguns minutos para expirar.'); }
+      catch { setDraftNotice("Bozza eliminata. La prenotazione dell’invio precedente può richiedere alcuni minuti per scadere."); }
     }
     setDiscarding(false);
   };
@@ -225,24 +225,24 @@ export default function NewPublication({
     sendingRef.current = true;
     const controller = new AbortController();
     controllerRef.current = controller;
-    const deadline = setTimeout(() => controller.abort(new Error('O envio excedeu o prazo. Seu rascunho foi preservado; confira a publicação antes de retomar.')), 120000);
+    const deadline = setTimeout(() => controller.abort(new Error("L’invio ha superato il tempo previsto. La bozza è conservata; controlla la pubblicazione prima di riprendere.")), 120000);
 
     setIsPublishing(true);
     setErrorMessage("");
     const resumingOperation = Boolean(preparedRef.current?.draft.operationKey);
-    let stage = 'preparar a foto';
+    let stage = "la preparazione della foto";
     try {
       onPublishStarted?.();
       const cached = preparedRef.current;
       let draft = cached?.image === currentImage && cached.settings === settings ? cached.draft : undefined;
       if (cached?.draft.operationKey) {
-        stage = 'verificar o envio anterior';
+        stage = "la verifica dell’invio precedente";
         const confirmed = await api.getPublicationOperation(establishment.id, cached.draft.operationKey, controller.signal);
         if (confirmed) { await clearPublicationDraft(establishment.id); onPublished(confirmed, true); onClose(); return; }
-        if (!draft || caption.trim() !== cached.draft.caption) throw new Error('O envio anterior ainda precisa ser confirmado. Retome a foto e a legenda preservadas antes de iniciar outro envio.');
+        if (!draft || caption.trim() !== cached.draft.caption) throw new Error("L’invio precedente deve ancora essere confermato. Riprendi la foto e la didascalia conservate prima di iniziare un altro invio.");
       }
       if (!draft) {
-      stage = 'preparar a foto';
+      stage = "la preparazione della foto";
       const finalCompositeUrl = await renderCompositeImage(
         currentImage,
         selectedFilter,
@@ -263,11 +263,11 @@ export default function NewPublication({
       }
       if (!draft.operationKey) draft.caption = caption.trim();
       const persist = async () => {
-        if (!await savePublicationDraft(establishment.id, draft!)) setDraftNotice('O navegador não permitiu salvar o rascunho. Ele está preservado apenas nesta sessão.');
+        if (!await savePublicationDraft(establishment.id, draft!)) setDraftNotice("Il browser non ha consentito di salvare la bozza. È conservata soltanto in questa sessione.");
       };
       await persist();
       if (!draft.uploadedUrl) {
-      stage = 'enviar a foto';
+      stage = "l’invio della foto";
       draft.uploadKey??=crypto.randomUUID();await persist();
       const uploadResponse = await api.uploadPublicationImage(establishment.id,draft.file,draft.uploadKey,{signal:controller.signal});
       const imageUrl = getCompatibleImageUrl(uploadResponse.url);
@@ -276,7 +276,7 @@ export default function NewPublication({
       }
         draft.uploadedUrl = imageUrl; draft.uploadReceiptId=uploadResponse.receiptId;await persist();
       }
-      stage = 'confirmar a publicação';
+      stage = "la conferma della pubblicazione";
       const publication = await api.createPublication(establishment.id, {
         caption: draft.caption,
         media: [draft.uploadedUrl!],
@@ -293,7 +293,7 @@ export default function NewPublication({
       }
       const failure = error instanceof Error ? error : new Error(t("Falha ao publicar."));
       const normalizedError = /load failed|failed to fetch|networkerror/i.test(failure.message)
-        ? new Error(`Falha de conexão ao ${stage}. Seu rascunho foi preservado. Retome o envio quando a conexão voltar.`)
+        ? new Error(`Errore di connessione durante ${stage}. La bozza è conservata. Riprendi l’invio quando la connessione sarà ripristinata.`)
         : failure;
       setErrorMessage(normalizedError.message);
       onPublishFailed?.(normalizedError);
@@ -320,7 +320,7 @@ export default function NewPublication({
           <div className="relative h-full w-full max-w-lg overflow-hidden bg-black shadow-2xl">
           <button
             type="button"
-            onClick={() => { controllerRef.current?.abort(new Error('Envio interrompido. O rascunho foi preservado.')); onClose(); }}
+            onClick={() => { controllerRef.current?.abort(new Error("Invio interrotto. La bozza è conservata.")); onClose(); }}
             disabled={draftLoading}
             className={`absolute right-3 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/70 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-neutral-900 ${
               currentImage ? "top-14" : "top-3"
@@ -330,8 +330,8 @@ export default function NewPublication({
             <X className="h-4.5 w-4.5" />
           </button>
 
-          {(draftNotice || draftLoading || discarding) && <div role="status" className="absolute top-16 inset-x-4 z-40 rounded-lg bg-white p-3 text-xs text-slate-900 shadow"><p>{draftLoading ? 'Recuperando rascunho...' : discarding ? 'Descartando rascunho...' : draftNotice}</p>{currentImage && !draftLoading && <button type="button" disabled={discarding} className="mt-2 font-semibold text-red-700 underline" onClick={() => void discardDraft()}>Descartar rascunho e escolher outra foto</button>}</div>}
-          {isPublishing && <div role="status" aria-label="Publicando" className="ts-comment-progress absolute inset-x-0 top-0 z-50" />}
+          {(draftNotice || draftLoading || discarding) && <div role="status" className="absolute top-16 inset-x-4 z-40 rounded-lg bg-white p-3 text-xs text-slate-900 shadow"><p>{draftLoading ? "Recupero della bozza..." : discarding ? "Eliminazione della bozza..." : draftNotice}</p>{currentImage && !draftLoading && <button type="button" disabled={discarding} className="mt-2 font-semibold text-red-700 underline" onClick={() => void discardDraft()}>Elimina la bozza e scegli un’altra foto</button>}</div>}
+          {isPublishing && <div role="status" aria-label="Pubblicazione in corso" className="ts-comment-progress absolute inset-x-0 top-0 z-50" />}
           {!currentImage ? (
             <main className="h-full w-full">
               <CameraCapture onPhotoTaken={handlePhotoTaken} />
@@ -355,11 +355,11 @@ export default function NewPublication({
                   className="flex items-center gap-1 rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs font-semibold text-neutral-300 transition hover:text-white active:scale-95"
                 >
                   <ChevronLeft className="h-4 w-4" />
-                  Tirar outra
+                  Scegli un’altra foto
                 </button>
 
                 <span className="text-xs font-bold tracking-wide text-neutral-200">
-                  Editar Foto
+                  Modifica foto
                 </span>
 
                 <button
@@ -374,7 +374,7 @@ export default function NewPublication({
                   ) : (
                     <Send className="h-3.5 w-3.5" />
                   )}
-                  <span>{isPublishing ? "Publicando..." : "Publicar"}</span>
+                  <span>{isPublishing ? "Pubblicazione..." : "Pubblica"}</span>
                 </button>
               </header>
 
@@ -426,7 +426,7 @@ export default function NewPublication({
                       }`}
                     >
                       <Sparkles className="h-3 w-3 text-amber-400" />
-                      <span>Filtros & Efeitos</span>
+                      <span>Filtri ed effetti</span>
                     </button>
 
                     <button
@@ -440,7 +440,7 @@ export default function NewPublication({
                       }`}
                     >
                       <MessageSquare className="h-3 w-3 text-sky-400" />
-                      <span>Legenda</span>
+                      <span>Didascalia</span>
                       {caption.trim() && <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />}
                     </button>
                   </div>
