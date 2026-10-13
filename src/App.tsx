@@ -473,7 +473,7 @@ export default function App() {
     isVendedoresOpen ||
     Boolean(selectedProduct) ||
     (hasMemberAccess &&
-      (isNewProductOpen ||
+      ((isNewProductOpen && pendingPublicationCount === 0) ||
         Boolean(editingProduct) ||
         isMeusAnunciosOpen ||
         isCurtidasOpen ||
