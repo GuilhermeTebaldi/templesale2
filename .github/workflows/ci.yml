@@ -55,7 +55,7 @@ jobs:
         run: node --experimental-sqlite --import tsx --test tests/legal.test.mjs tests/account-archive.test.mjs
 
       - name: Comment delivery and write admission tests
-        run: node --import tsx --test tests/comment-delivery.test.ts tests/write-admission.test.ts
+        run: node --import tsx --test tests/comment-delivery.test.ts tests/write-admission.test.ts tests/write-operation.test.ts
 
       - name: Build
         run: npm run build

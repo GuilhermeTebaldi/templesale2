@@ -5922,7 +5922,8 @@ async function countPublicationComments(publicationId: number): Promise<number> 
   return toRequiredNonNegativeInteger(row?.total, 0);
 }
 
-async function selectPublicationCommentsRows(publicationId: number, limit?: number, page?: { parentCommentId: number | null; cursor?: CommentCursor; ids?: number[] }): Promise<ProductCommentRow[]> {
+async function selectPublicationCommentsRows(publicationId: number, requestedLimit = 30, page?: { parentCommentId: number | null; cursor?: CommentCursor; ids?: number[] }): Promise<ProductCommentRow[]> {
+  const limit = Number.isSafeInteger(requestedLimit) ? Math.max(1,Math.min(31,requestedLimit)) : 30;
   let cursorDate: string | number | undefined = page?.cursor?.createdAt;
   if (pgPool && page?.cursor) {
     cursorDate = page.cursor.rawCreatedAt;
@@ -6002,6 +6003,14 @@ async function selectPublicationCommentsRows(publicationId: number, limit?: numb
     )
     .all(publicationId, ...sqliteFilter.values, ...(limit ? [limit] : [])) as Array<Record<string, unknown>>;
   return rows.map(normalizeProductCommentRow);
+}
+
+async function legacyPublicationCommentPage(publicationId: number, locale: AppLocale) {
+  const rows = await selectPublicationCommentsRows(publicationId,31,{parentCommentId:null});
+  const page = rows.slice(0,30);
+  return { comments:buildProductCommentsThread(page,locale), pagination:{
+    hasMore:rows.length>30,nextCursor:rows.length>30?encodeCommentCursor(page[page.length-1]):null,
+  } };
 }
 
 async function createProductCommentRecord(input: {
@@ -10320,7 +10329,7 @@ async function bootstrap() {
       ok: true,
       mode: isProduction ? "production" : "development",
       database: USE_SQLITE_DATABASE ? "sqlite" : "postgres",
-      publicationProtection: 'observable-v5.2',
+      publicationProtection: 'observable-v5.3',
       directUpload:directUpload.snapshot(),
       sharedCapacity: capacity.snapshot(),
       writeCapacity: { publications: admitPublicationWrite.snapshot(), comments: admitCommentWrite.snapshot(), uploads: admitMediaUpload.snapshot() },
@@ -12632,8 +12641,10 @@ async function bootstrap() {
           pagination: { hasMore: rows.length > 30, nextCursor: rows.length > 30 ? encodeCommentCursor(page[page.length-1]) : null } });
         return;
       }
-      const comments = await selectPublicationCommentsRows(publicationId, req.query.preview === "1" ? 2 : undefined);
-      res.json({ comments: buildProductCommentsThread(comments, locale), totalCount: await countPublicationComments(publicationId) });
+      const result = req.query.preview === "1"
+        ? {comments:buildProductCommentsThread(await selectPublicationCommentsRows(publicationId,2),locale)}
+        : await legacyPublicationCommentPage(publicationId,locale);
+      res.json({ ...result, totalCount: await countPublicationComments(publicationId) });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao carregar comentários da publicação.";
@@ -12648,8 +12659,7 @@ async function bootstrap() {
         const publicationId = Number(req.params.id);
         if (Number.isInteger(publicationId) && publicationId > 0) {
           const locale = getRequestLocale(req);
-          const comments = await selectPublicationCommentsRows(publicationId);
-          res.status(201).json({ comments: buildProductCommentsThread(comments, locale), readOnly: true });
+          res.status(201).json({ ...await legacyPublicationCommentPage(publicationId,locale), readOnly: true });
           return;
         }
       }
@@ -12710,8 +12720,7 @@ async function bootstrap() {
         res.status(201).json({ comment: rowToProductComment(created, locale), totalCount: await countPublicationComments(publicationId) });
         return;
       }
-      const comments = await selectPublicationCommentsRows(publicationId);
-      res.status(201).json({ comments: buildProductCommentsThread(comments, locale) });
+      res.status(201).json(await legacyPublicationCommentPage(publicationId,locale));
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao salvar comentário da publicação.";
@@ -12760,8 +12769,7 @@ async function bootstrap() {
         if (!updated) throw new Error("Comentário não encontrado.");
         res.json({ comment: rowToProductComment(updated, locale) }); return;
       }
-      const comments = await selectPublicationCommentsRows(publicationId);
-      res.json({ comments: buildProductCommentsThread(comments, locale) });
+      res.json(await legacyPublicationCommentPage(publicationId,locale));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao editar comentário.";
       res.status(400).json({ error: message });
@@ -12800,8 +12808,7 @@ async function bootstrap() {
       }
 
       if (req.query.response === "changed") { res.json({ deletedId: commentId }); return; }
-      const comments = await selectPublicationCommentsRows(publicationId);
-      res.json({ comments: buildProductCommentsThread(comments, locale) });
+      res.json(await legacyPublicationCommentPage(publicationId,locale));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao excluir comentário.";
       res.status(400).json({ error: message });
