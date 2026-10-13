@@ -1,5 +1,4 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { api } from '../../../lib/api';
 import {
   Camera,
   Image as ImageIcon,
@@ -22,9 +21,14 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
   const [isStartingCamera, setIsStartingCamera] = useState<boolean>(false);
   const [flashAnimation, setFlashAnimation] = useState<boolean>(false);
   const shouldAutoStartCameraRef = useRef(false);
+  const startingRef = useRef(false);
+  const generationRef = useRef(0);
 
   // Initialize and switch camera stream
   const startCamera = async () => {
+    if (startingRef.current) return;
+    startingRef.current = true;
+    const generation = generationRef.current;
     shouldAutoStartCameraRef.current = true;
     setIsStartingCamera(true);
     setCameraError(null);
@@ -45,6 +49,10 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
       };
 
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (generation !== generationRef.current) {
+        newStream.getTracks().forEach(track=>track.stop());
+        return;
+      }
       streamRef.current = newStream;
       setStream(newStream);
 
@@ -53,15 +61,15 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
         await videoRef.current.play().catch(() => {});
       }
       setIsStartingCamera(false);
-      void api.saveCameraPermissionGranted().catch(() => {});
     } catch (err) {
+      if (generation !== generationRef.current) return;
       const error = err as Error;
       console.warn('Camera stream error:', error);
       setCameraError(
         'Câmera indisponível no navegador. Você pode selecionar uma foto da galeria abaixo.'
       );
       setIsStartingCamera(false);
-    }
+    } finally {startingRef.current=false;}
   };
 
   useEffect(() => {
@@ -83,17 +91,8 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
           return;
         }
       } catch {
-        // Continue with the account-level permission record below.
-      }
-
-      try {
-        const storedPermission = await api.getCameraPermissionStatus();
-        if (!cancelled && storedPermission.granted) {
-          shouldAutoStartCameraRef.current = true;
-          await startCamera();
-        }
-      } catch {
-        // Unauthenticated/legacy deployments keep the manual camera button available.
+        // An account record cannot grant this browser permission. Unsupported
+        // permission queries keep the explicit camera button available.
       }
     };
 
@@ -101,6 +100,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
 
     return () => {
       cancelled = true;
+      generationRef.current += 1;
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
@@ -247,6 +247,9 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
             <p className="text-xs text-neutral-400 max-w-xs leading-relaxed mb-5">
               Abra a câmera só quando for fotografar. Para publicar sem pedir câmera, use a galeria.
             </p>
+            <p className="text-xs text-neutral-500 max-w-xs leading-relaxed mb-4">
+              No Safari, escolha Fotocamera → Consenti nas configurações deste site para lembrar a permissão.
+            </p>
             <button
               type="button"
               id="btn-start-camera"
@@ -288,6 +291,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
           type="button"
           id="btn-capture-shutter"
           onClick={handleCapture}
+          disabled={!stream || isStartingCamera}
           aria-label="Capturar foto"
           className="relative w-20 h-20 rounded-full border-4 border-white p-1 flex items-center justify-center transition transform active:scale-90 hover:scale-105 shadow-2xl"
         >
@@ -301,6 +305,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
           type="button"
           id="btn-switch-camera"
           onClick={toggleFacingMode}
+          disabled={!stream || isStartingCamera}
           aria-label="Alternar câmera"
           className="flex flex-col items-center gap-1.5 text-neutral-300 hover:text-white transition active:scale-95 group"
         >
