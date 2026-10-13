@@ -18,6 +18,7 @@ import type {
   PhotoCrop,
 } from "./photo-publisher/types";
 import { useI18n } from "../i18n/provider";
+import { loadPublicationDraft, savePublicationDraft, clearPublicationDraft, type PublicationDraft } from "../lib/publication-draft";
 
 interface NewPublicationProps {
   establishment: EstablishmentDto;
@@ -67,6 +68,24 @@ export default function NewPublication({
   const [isPublishing, setIsPublishing] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState("");
   const [isKeyboardOpen, setIsKeyboardOpen] = React.useState(false);
+  const [draftLoading, setDraftLoading] = React.useState(true);
+  const [draftNotice, setDraftNotice] = React.useState('');
+  const preparedRef = React.useRef<{ image: string; settings: string; draft: PublicationDraft } | null>(null);
+  const sendingRef = React.useRef(false);
+  const controllerRef = React.useRef<AbortController | null>(null);
+  const settings = JSON.stringify([selectedFilter, adjustments, overlays, photoCrop]);
+  React.useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | undefined;
+    void loadPublicationDraft(establishment.id).then(draft => {
+      if (cancelled || !draft) return;
+      objectUrl = URL.createObjectURL(draft.file);
+      preparedRef.current = { image: objectUrl, settings, draft };
+      setCurrentImage(objectUrl); setCaption(draft.caption);
+      setDraftNotice('Rascunho recuperado. Você pode retomar a publicação.');
+    }).finally(() => { if (!cancelled) setDraftLoading(false); });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [establishment.id]);
 
   const selectedOverlay = overlays.find((overlay) => overlay.id === selectedOverlayId);
 
@@ -171,11 +190,24 @@ export default function NewPublication({
   };
 
   const handlePublish = async () => {
-    if (!currentImage || isPublishing) return;
+    if (!currentImage || sendingRef.current || draftLoading) return;
+    sendingRef.current = true;
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    const deadline = setTimeout(() => controller.abort(new Error('O envio excedeu o prazo. Seu rascunho foi preservado; confira a publicação antes de retomar.')), 120000);
 
     setIsPublishing(true);
     setErrorMessage("");
     try {
+      onPublishStarted?.();
+      const cached = preparedRef.current;
+      let draft = cached?.image === currentImage && cached.settings === settings ? cached.draft : undefined;
+      if (cached?.draft.operationKey) {
+        const confirmed = await api.getPublicationOperation(establishment.id, cached.draft.operationKey, controller.signal);
+        if (confirmed) { await clearPublicationDraft(establishment.id); onPublished(confirmed); onClose(); return; }
+        if (!draft || caption.trim() !== cached.draft.caption) throw new Error('Há um envio sem confirmação. Feche e reabra este editor para retomar o rascunho anterior antes de publicar outra foto.');
+      }
+      if (!draft) {
       const finalCompositeUrl = await renderCompositeImage(
         currentImage,
         selectedFilter,
@@ -185,26 +217,36 @@ export default function NewPublication({
         containerDims,
       );
       const imageFile = dataUrlToFile(finalCompositeUrl, `templesale-publication-${Date.now()}.jpg`);
-
-      onPublishStarted?.();
-      onClose();
-
-      const uploadResponse = await api.uploadProductImage(imageFile);
+        draft = { file: imageFile, caption: caption.trim(), savedAt: Date.now() };
+        preparedRef.current = { image: currentImage, settings, draft };
+      }
+      if (!draft.operationKey) draft.caption = caption.trim();
+      const persist = async () => {
+        if (!await savePublicationDraft(establishment.id, draft!)) setDraftNotice('O navegador não permitiu salvar o rascunho. Ele está preservado apenas nesta sessão.');
+      };
+      await persist();
+      if (!draft.uploadedUrl) {
+      const uploadResponse = await api.uploadProductImage(draft.file, { signal: controller.signal });
       const imageUrl = getCompatibleImageUrl(uploadResponse.url);
       if (!imageUrl) {
         throw new Error(t("Falha ao enviar imagem."));
       }
-
+        draft.uploadedUrl = imageUrl; await persist();
+      }
       const publication = await api.createPublication(establishment.id, {
-        caption: caption.trim(),
-        media: [imageUrl],
-      });
+        caption: draft.caption,
+        media: [draft.uploadedUrl!],
+      }, { signal: controller.signal, clientRequestId: draft.operationKey, onOperation: async key => { draft!.operationKey = key; await persist(); } });
+      await clearPublicationDraft(establishment.id);
       onPublished(publication);
+      onClose();
     } catch (error) {
       const normalizedError = error instanceof Error ? error : new Error(t("Falha ao publicar."));
       setErrorMessage(normalizedError.message);
       onPublishFailed?.(normalizedError);
     } finally {
+      clearTimeout(deadline); sendingRef.current = false;
+      controllerRef.current = null;
       setIsPublishing(false);
       onPublishFinished?.();
     }
@@ -223,7 +265,8 @@ export default function NewPublication({
           <div className="relative h-full w-full max-w-lg overflow-hidden bg-black shadow-2xl">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => { controllerRef.current?.abort(new Error('Envio interrompido. O rascunho foi preservado.')); onClose(); }}
+            disabled={draftLoading}
             className={`absolute right-3 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/70 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-neutral-900 ${
               currentImage ? "top-14" : "top-3"
             }`}
@@ -232,6 +275,8 @@ export default function NewPublication({
             <X className="h-4.5 w-4.5" />
           </button>
 
+          {(draftNotice || draftLoading) && <p role="status" className="absolute top-16 inset-x-4 z-40 rounded-lg bg-neutral-900/95 p-3 text-xs text-white">{draftLoading ? 'Recuperando rascunho...' : draftNotice}</p>}
+          {isPublishing && <div role="status" aria-label="Publicando" className="ts-comment-progress absolute inset-x-0 top-0 z-50" />}
           {!currentImage ? (
             <main className="h-full w-full">
               <CameraCapture onPhotoTaken={handlePhotoTaken} />
@@ -239,6 +284,7 @@ export default function NewPublication({
           ) : (
             <main
               id="editor-main-layout"
+              inert={isPublishing ? true : undefined}
               className={`relative flex h-full min-h-0 w-full flex-col ${
                 isKeyboardOpen
                   ? "overflow-y-auto overscroll-contain ts-publication-keyboard-open"
@@ -250,6 +296,7 @@ export default function NewPublication({
                   type="button"
                   id="btn-back-camera"
                   onClick={resetEditor}
+                  disabled={isPublishing || draftLoading}
                   className="flex items-center gap-1 rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs font-semibold text-neutral-300 transition hover:text-white active:scale-95"
                 >
                   <ChevronLeft className="h-4 w-4" />

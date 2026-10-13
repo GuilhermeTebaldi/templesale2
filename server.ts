@@ -1,6 +1,8 @@
 import { parseCommentCursor, encodeCommentCursor, type CommentCursor } from "./server/comment-pagination";
-import { createPublicationEvolution, WriteConflict } from "./server/publication-evolution";
+import { createPublicationEvolution, WriteConflict, requestKey } from "./server/publication-evolution";
 import { createWriteAdmission } from "./server/write-admission";
+import { createPublicationCapacity } from './server/publication-capacity';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { buildLocalFeedQuery, buildPublicationPreviewsQuery, encodeFeedCursor, parseFeedCursor, parseFeedExclusions, type FeedCursor } from "./server/local-feed";
 import { createAdminSessionToken as createSignedAdminSessionToken, verifyAdminSessionToken as verifySignedAdminSessionToken } from "./server/admin-session";
 import cors from "cors";
@@ -115,6 +117,7 @@ type ProductCommentRow = {
   author_name: string;
   author_avatar_url: string | null;
   has_replies?: boolean;
+  cursor_created_at?: string;
 };
 
 type ProductCommentRecord = {
@@ -1727,16 +1730,10 @@ function normalizeNotificationEventRow(row: Record<string, unknown>): Notificati
 
 function normalizeProductCommentRow(row: Record<string, unknown>): ProductCommentRow {
   const parsedCreatedAt = (() => {
+    if (row.created_at instanceof Date) return Math.floor(row.created_at.getTime() / 1000);
     const numericValue = Number(row.created_at);
     if (Number.isFinite(numericValue)) {
       return Math.floor(numericValue);
-    }
-
-    if (row.created_at instanceof Date) {
-      const fromDate = Math.floor(row.created_at.getTime() / 1000);
-      if (Number.isFinite(fromDate)) {
-        return fromDate;
-      }
     }
 
     const asText = String(row.created_at ?? "").trim();
@@ -1759,6 +1756,7 @@ function normalizeProductCommentRow(row: Record<string, unknown>): ProductCommen
     rating: toNullableNumber(row.rating),
     body: String(row.body ?? ""),
     has_replies: row.has_replies === undefined ? undefined : Boolean(row.has_replies),
+    cursor_created_at: row.cursor_created_at === undefined ? undefined : String(row.cursor_created_at),
     body_translations: toNullableString(row.body_translations),
     created_at: parsedCreatedAt,
     author_name: String(row.author_name ?? "").trim() || `Usuário ${toRequiredNumber(row.user_id)}`,
@@ -4417,13 +4415,8 @@ async function selectPublicationsByEstablishmentRows(
       `
         SELECT
           ep.*,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
         WHERE ep.establishment_id = $1
         ORDER BY created_at DESC, id DESC
         LIMIT $2
@@ -4437,13 +4430,8 @@ async function selectPublicationsByEstablishmentRows(
       `
         SELECT
           ep.*,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
         WHERE ep.establishment_id = ?
         ORDER BY created_at DESC, id DESC
         LIMIT ?
@@ -4467,13 +4455,8 @@ async function selectPublicationsByEstablishmentPageRows(input: {
       `
         SELECT
           ep.*,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
         WHERE ep.establishment_id = $1
         ORDER BY ep.created_at DESC, ep.id DESC
         LIMIT $2 OFFSET $3
@@ -4489,13 +4472,8 @@ async function selectPublicationsByEstablishmentPageRows(input: {
       `
         SELECT
           ep.*,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
         WHERE ep.establishment_id = ?
         ORDER BY ep.created_at DESC, ep.id DESC
         LIMIT ? OFFSET ?
@@ -4560,15 +4538,10 @@ async function selectAdminPublicationRows(search: string, limit: number): Promis
           e.logo_url AS establishment_logo_url,
           e.cover_url AS establishment_cover_url,
           u.avatar_url AS owner_avatar_url,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM establishment_publications ep
         INNER JOIN establishments e ON e.id = ep.establishment_id
         LEFT JOIN users u ON u.id = ep.owner_user_id
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
         WHERE e.is_active = TRUE
           AND (
             ep.caption ILIKE $1
@@ -4596,15 +4569,10 @@ async function selectAdminPublicationRows(search: string, limit: number): Promis
           e.logo_url AS establishment_logo_url,
           e.cover_url AS establishment_cover_url,
           u.avatar_url AS owner_avatar_url,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM establishment_publications ep
         INNER JOIN establishments e ON e.id = ep.establishment_id
         LEFT JOIN users u ON u.id = ep.owner_user_id
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
         WHERE e.is_active = 1
           AND (
             LOWER(COALESCE(ep.caption, '')) LIKE LOWER(?)
@@ -4633,16 +4601,11 @@ async function selectSavedPublicationsByUserRows(userId: number): Promise<Establ
           e.logo_url AS establishment_logo_url,
           e.cover_url AS establishment_cover_url,
           u.avatar_url AS owner_avatar_url,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM publication_saves ps
         INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.id = ps.publication_id
         INNER JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = ep.establishment_id
         LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = ep.owner_user_id
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
         WHERE ps.user_id = $1
         ORDER BY ps.created_at DESC, ep.id DESC
       `,
@@ -4663,16 +4626,11 @@ async function selectSavedPublicationsByUserRows(userId: number): Promise<Establ
           e.logo_url AS establishment_logo_url,
           e.cover_url AS establishment_cover_url,
           u.avatar_url AS owner_avatar_url,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM publication_saves ps
         INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.id = ps.publication_id
         INNER JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = ep.establishment_id
         LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = ep.owner_user_id
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
         WHERE ps.user_id = ?
         ORDER BY ps.created_at DESC, ep.id DESC
       `,
@@ -4729,16 +4687,11 @@ async function selectLikedPublicationsByUserRows(userId: number): Promise<Establ
           e.logo_url AS establishment_logo_url,
           e.cover_url AS establishment_cover_url,
           u.avatar_url AS owner_avatar_url,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM publication_likes current_like
         INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.id = current_like.publication_id
         INNER JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = ep.establishment_id
         LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = ep.owner_user_id
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
         WHERE current_like.user_id = $1
         ORDER BY current_like.created_at DESC, ep.id DESC
       `,
@@ -4759,16 +4712,11 @@ async function selectLikedPublicationsByUserRows(userId: number): Promise<Establ
           e.logo_url AS establishment_logo_url,
           e.cover_url AS establishment_cover_url,
           u.avatar_url AS owner_avatar_url,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM publication_likes current_like
         INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.id = current_like.publication_id
         INNER JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = ep.establishment_id
         LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = ep.owner_user_id
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
         WHERE current_like.user_id = ?
         ORDER BY current_like.created_at DESC, ep.id DESC
       `,
@@ -4872,13 +4820,8 @@ async function selectPublicationByIdRecord(publicationId: number): Promise<Estab
       `
         SELECT
           ep.*,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
         WHERE ep.id = $1
         LIMIT 1
       `,
@@ -4891,13 +4834,8 @@ async function selectPublicationByIdRecord(publicationId: number): Promise<Estab
       `
         SELECT
           ep.*,
-          COALESCE(pl.likes_count, 0) AS likes_count
+          (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
-        LEFT JOIN (
-          SELECT publication_id, COUNT(*) AS likes_count
-          FROM publication_likes
-          GROUP BY publication_id
-        ) pl ON pl.publication_id = ep.id
         WHERE ep.id = ?
         LIMIT 1
       `,
@@ -5983,13 +5921,22 @@ async function countPublicationComments(publicationId: number): Promise<number> 
 }
 
 async function selectPublicationCommentsRows(publicationId: number, limit?: number, page?: { parentCommentId: number | null; cursor?: CommentCursor; ids?: number[] }): Promise<ProductCommentRow[]> {
+  let cursorDate: string | number | undefined = page?.cursor?.createdAt;
+  if (pgPool && page?.cursor) {
+    cursorDate = page.cursor.rawCreatedAt;
+    if (cursorDate === undefined) {
+      const anchor = await pgPool.query('SELECT created_at::text AS value FROM product_comments WHERE id=$1 AND publication_id=$2', [page.cursor.id, publicationId]);
+      if (!anchor.rows[0]) throw new Error('Cursor de comentários inválido.');
+      cursorDate = anchor.rows[0].value;
+    }
+  }
   const values: unknown[] = [publicationId];
   const parameter = (value: unknown) => { values.push(value); return `$${values.length}`; };
   let filter = '';
   if (page?.ids) filter = ` AND c.id IN (${page.ids.map(id => parameter(id)).join(',')})`;
   else if (page) {
     filter = page.parentCommentId === null ? ' AND c.parent_comment_id IS NULL' : ` AND c.parent_comment_id=${parameter(page.parentCommentId)}`;
-    if (page.cursor) filter += ` AND (c.created_at,c.id) ${page.parentCommentId === null ? '<' : '>'} (${parameter(page.cursor.createdAt)},${parameter(page.cursor.id)})`;
+    if (page.cursor) filter += ` AND (c.created_at,c.id) ${page.parentCommentId === null ? '<' : '>'} (${parameter(cursorDate)},${parameter(page.cursor.id)})`;
   }
   const order = page?.parentCommentId ? 'ASC' : 'DESC';
   const sqliteFilter = sqliteBindings(filter, values);
@@ -6001,6 +5948,7 @@ async function selectPublicationCommentsRows(publicationId: number, limit?: numb
         SELECT
           c.id,
           ${page ? "EXISTS(SELECT 1 FROM product_comments child WHERE child.parent_comment_id=c.id) AS has_replies," : ""}
+          c.created_at::text AS cursor_created_at,
           c.product_id,
           c.publication_id,
           c.user_id,
@@ -8303,14 +8251,18 @@ async function deleteSessionsByUserIdRecord(userId: number): Promise<void> {
     .run(userId);
 }
 
+let nextSessionCleanup = 0;
+let sessionCleanupRunning = false;
 async function deleteExpiredSessionsRecords(): Promise<void> {
   if (IS_DEV_REMOTE_READ_ONLY) {
     return;
   }
-
+  if (sessionCleanupRunning || Date.now() < nextSessionCleanup) return;
+  sessionCleanupRunning = true;
+  try {
   if (pgPool) {
     await pgPool.query(
-      "DELETE FROM sessions WHERE expires_at <= EXTRACT(EPOCH FROM NOW())::BIGINT",
+      "DELETE FROM sessions WHERE token_hash IN (SELECT token_hash FROM sessions WHERE expires_at <= EXTRACT(EPOCH FROM NOW())::BIGINT ORDER BY expires_at LIMIT 500)",
     );
     return;
   }
@@ -8319,10 +8271,11 @@ async function deleteExpiredSessionsRecords(): Promise<void> {
     .prepare(
       `
         DELETE FROM sessions
-        WHERE expires_at <= strftime('%s', 'now')
+        WHERE token_hash IN (SELECT token_hash FROM sessions WHERE expires_at <= strftime('%s', 'now') ORDER BY expires_at LIMIT 500)
       `,
     )
     .run();
+  } finally { sessionCleanupRunning = false; nextSessionCleanup = Date.now() + 60000; }
 }
 
 async function selectSessionUserByTokenHashRow(
@@ -10169,9 +10122,19 @@ async function bootstrap() {
 
   const app = express();
   const databaseUnderPressure = () => Boolean(pgPool && pgPool.waitingCount >= 4);
-  const admitPublicationWrite = createWriteAdmission(toRequiredNonNegativeInteger(process.env.PUBLICATION_WRITE_CONCURRENCY ?? 4, 4), databaseUnderPressure);
-  const admitCommentWrite = createWriteAdmission(toRequiredNonNegativeInteger(process.env.COMMENT_WRITE_CONCURRENCY ?? 4, 4), databaseUnderPressure);
-  const admitMediaUpload = createWriteAdmission(toRequiredNonNegativeInteger(process.env.MEDIA_UPLOAD_CONCURRENCY ?? 2, 2), databaseUnderPressure);
+  const capacity = createPublicationCapacity(pgPool, {
+    publications: toRequiredNonNegativeInteger(process.env.PUBLICATION_GLOBAL_CONCURRENCY ?? 4, 4),
+    comments: toRequiredNonNegativeInteger(process.env.COMMENT_GLOBAL_CONCURRENCY ?? 4, 4),
+    uploads: toRequiredNonNegativeInteger(process.env.MEDIA_GLOBAL_CONCURRENCY ?? 2, 2),
+  });
+  await capacity.initialize(IS_DEV_REMOTE_READ_ONLY);
+  const admitPublicationWrite = createWriteAdmission(toRequiredNonNegativeInteger(process.env.PUBLICATION_WRITE_CONCURRENCY ?? 4, 4), databaseUnderPressure, () => capacity.acquire('publications'));
+  const admitCommentWrite = createWriteAdmission(toRequiredNonNegativeInteger(process.env.COMMENT_WRITE_CONCURRENCY ?? 4, 4), databaseUnderPressure, () => capacity.acquire('comments'));
+  const admitMediaUpload = createWriteAdmission(toRequiredNonNegativeInteger(process.env.MEDIA_UPLOAD_CONCURRENCY ?? 2, 2), databaseUnderPressure, () => capacity.acquire('uploads'));
+  const loopDelay = monitorEventLoopDelay({ resolution: 20 }); loopDelay.enable();
+  const metrics = () => ({ writes: { publications: admitPublicationWrite.snapshot(), comments: admitCommentWrite.snapshot(), uploads: admitMediaUpload.snapshot() },
+    memory: process.memoryUsage(), eventLoopP99Ms: loopDelay.percentile(99) / 1000000, capacity: capacity.snapshot(),
+    databasePool: pgPool ? { total: pgPool.totalCount, idle: pgPool.idleCount, waiting: pgPool.waitingCount, max: pgPool.options.max } : null });
   const isProduction = process.env.NODE_ENV === "production";
   const port = Number(process.env.PORT || 5173);
   const cspHeaderValue = buildContentSecurityPolicy(isProduction);
@@ -10338,7 +10301,8 @@ async function bootstrap() {
       ok: true,
       mode: isProduction ? "production" : "development",
       database: USE_SQLITE_DATABASE ? "sqlite" : "postgres",
-      publicationProtection: 'bounded-v3',
+      publicationProtection: 'resilient-v4',
+      sharedCapacity: capacity.snapshot(),
       writeCapacity: { publications: admitPublicationWrite.snapshot(), comments: admitCommentWrite.snapshot(), uploads: admitMediaUpload.snapshot() },
       commentDelivery: "evolution-v2",
       commentTranslation: false,
@@ -10350,6 +10314,15 @@ async function bootstrap() {
           ? "configured"
           : "missing_env",
     });
+  });
+
+  app.get('/api/admin/publication-capacity', async (req,res) => {
+    if (!requireAdmin(req,res)) return;
+    try {
+      const tables = pgPool ? (await pgPool.query(`SELECT relname,n_live_tup,n_dead_tup,last_autovacuum,last_autoanalyze
+        FROM pg_stat_user_tables WHERE schemaname=current_schema() AND relname IN ('sessions','product_comments','establishment_publications','publication_write_operations')`)).rows : [];
+      res.json({ ...metrics(), globalActive: await capacity.active(), databaseTables: tables });
+    } catch (error) { res.status(503).json({ error: error instanceof Error ? error.message : 'Métricas indisponíveis.' }); }
   });
 
   app.post("/api/visitor/ping", async (req, res) => {
@@ -12083,6 +12056,22 @@ async function bootstrap() {
       res.status(error instanceof WriteConflict ? 409 : 400).json({ error: message });
     }
   }));
+
+  app.get('/api/establishments/:id/publication-operations/:key', async (req, res) => {
+    try {
+      const user = await requireAuth(req, res);
+      if (!user) return;
+      const id = Number(req.params.id);
+      const key = requestKey(req.params.key);
+      if (!Number.isSafeInteger(id) || id <= 0 || !key) { res.status(400).json({ error: 'Identificação inválida.' }); return; }
+      const sql = `SELECT p.* FROM publication_write_operations op INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} p ON p.id=op.resource_id
+        WHERE op.user_id=$1 AND op.operation_key=$2 AND op.kind='publication' AND p.establishment_id=$3 AND p.owner_user_id=$1`;
+      const bound = sqliteBindings(sql, [user.id,key,id]);
+      const row = pgPool ? (await pgPool.query(sql, [user.id,key,id])).rows[0]
+        : requireSqliteDb().prepare(bound.sql).get(...bound.values) as Record<string, unknown> | undefined;
+      res.json({ publication: row ? normalizePublicationRow(row) : null });
+    } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : 'Falha ao confirmar publicação.' }); }
+  });
 
   app.get("/api/publications", async (req, res) => {
     let location: GeoPoint | undefined;
