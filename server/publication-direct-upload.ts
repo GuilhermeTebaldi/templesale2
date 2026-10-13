@@ -16,13 +16,17 @@ export function createPublicationDirectUpload(pool: Pool | null, config: Config,
   };
   const acceptMetadata=async(id:string,data:any) => {
     if (!pool) return;
-    const original=(await pool.query("SELECT public_id FROM publication_upload_receipts WHERE id=$1 AND state IN ('pending','expired')",[id])).rows[0];
+    const original=(await pool.query("SELECT public_id FROM publication_upload_receipts WHERE id=$1 AND state IN ('pending','expired','cancelled')",[id])).rows[0];
     if(!original||data.public_id!==original.public_id)return;
     const bytes=Number(data.bytes),version=Number(data.version);
     const valid=data.resource_type==='image'&&data.format==='jpg'&&Number.isSafeInteger(bytes)&&bytes>0&&bytes<=config.maxBytes&&Number.isSafeInteger(version)&&version>0;
     const url=valid?`https://res.cloudinary.com/${config.cloud}/image/upload/f_auto,q_auto,c_limit,w_1600/v${version}/${original.public_id}.jpg`:null;
     const changed=await pool.query("UPDATE publication_upload_receipts SET state=$2,url=$3,bytes=$4 WHERE id=$1 AND state IN ('pending','expired') RETURNING *",[id,valid?'ready':'rejected',url,Number.isSafeInteger(bytes)?bytes:null]);
     if(changed.rows.length){releaseRow(changed.rows[0]);onFinished(Date.now()-Number(changed.rows[0].created_at),valid);}
+    // Cancelled signatures cannot be revoked. Hold their capacity until the
+    // signed upload finishes (or the lease expires), without reviving the draft.
+    const cancelled=await pool.query("UPDATE publication_upload_receipts SET state='cancelled-confirmed' WHERE id=$1 AND public_id=$2 AND state='cancelled' RETURNING *",[id,data.public_id]);
+    if(cancelled.rows.length){releaseRow(cancelled.rows[0]);onFinished(Date.now()-Number(cancelled.rows[0].created_at),valid);}
   };
   const refresh = async () => {
     if (refreshing) return refreshing;
@@ -81,7 +85,7 @@ export function createPublicationDirectUpload(pool: Pool | null, config: Config,
         await client.query("UPDATE publication_upload_receipts SET state='expired' WHERE user_id=$1 AND state='pending' AND lease_expires_at<(EXTRACT(EPOCH FROM clock_timestamp())*1000)::bigint",[userId]);
         row = (await client.query('SELECT * FROM publication_upload_receipts WHERE id=$1 FOR UPDATE',[input.id])).rows[0];
         if (row && (Number(row.user_id)!==userId || row.payload_hash!==fingerprint)) throw new Error('Esta identificação de foto já foi usada para outro envio.');
-        if (row?.state === 'rejected') throw new Error('Esta foto foi recusada na validação. Escolha outra foto.');
+        if (row?.state === 'rejected' || row?.state?.startsWith('cancelled')) throw new Error('Esta foto foi recusada ou descartada. Escolha outra foto.');
         if (!row || row.state==='expired') {
           if ((await client.query("SELECT 1 FROM publication_upload_receipts WHERE user_id=$1 AND state='pending' LIMIT 1",[userId])).rows.length) throw new DirectUploadBusy('Aguarde a confirmação da foto anterior.');
           const lease = await capacity.acquire('uploads',client);
@@ -98,6 +102,10 @@ export function createPublicationDirectUpload(pool: Pool | null, config: Config,
       if (row.state==='ready') return { direct:true,ready:true,url:row.url,id:input.id };
       const params = { public_id:row.public_id,timestamp:Math.floor(Date.now()/1000),overwrite:'false',format:'jpg',allowed_formats:'jpg',notification_url:`${config.callbackBase.replace(/\/+$/,'')}/api/uploads/publication-image/notify/${input.id}` };
       return { direct:true,ready:false,id:input.id,endpoint:`https://api.cloudinary.com/v1_1/${config.cloud}/image/upload`,params:{...params,api_key:config.key,signature:sign(params)} };
+    },
+    async discard(userId:number,establishmentId:number,id:string) {
+      if (!pool || !keyValid(id)) return;
+      await pool.query("UPDATE publication_upload_receipts SET state=CASE WHEN state IN ('pending','expired') THEN 'cancelled' ELSE 'cancelled-confirmed' END WHERE id=$1 AND user_id=$2 AND establishment_id=$3 AND state NOT LIKE 'cancelled%'",[id,userId,establishmentId]);
     },
     async status(userId: number, establishmentId: number, id: string) {
       if (!pool || !keyValid(id)) throw new Error('Identificação de foto inválida.');

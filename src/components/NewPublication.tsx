@@ -72,6 +72,7 @@ export default function NewPublication({
   const [isKeyboardOpen, setIsKeyboardOpen] = React.useState(false);
   const [draftLoading, setDraftLoading] = React.useState(true);
   const [draftNotice, setDraftNotice] = React.useState('');
+  const [discarding, setDiscarding] = React.useState(false);
   const preparedRef = React.useRef<{ image: string; settings: string; draft: PublicationDraft } | null>(null);
   const sendingRef = React.useRef(false);
   const controllerRef = React.useRef<AbortController | null>(null);
@@ -133,6 +134,21 @@ export default function NewPublication({
       document.documentElement.style.removeProperty("--ts-publication-vv-top");
     };
   }, []);
+
+  const discardDraft = async () => {
+    if (sendingRef.current || draftLoading || discarding) return;
+    setDiscarding(true);
+    const old=preparedRef.current?.draft;
+    await clearPublicationDraft(establishment.id);
+    preparedRef.current=null;
+    resetEditor();
+    setDraftNotice('');
+    if (old?.uploadKey) {
+      try { await api.discardPublicationUpload(establishment.id,old.uploadKey); }
+      catch { setDraftNotice('Rascunho descartado. A reserva do envio anterior pode levar alguns minutos para expirar.'); }
+    }
+    setDiscarding(false);
+  };
 
   const resetEditor = React.useCallback(() => {
     setCurrentImage(null);
@@ -301,7 +317,7 @@ export default function NewPublication({
             <X className="h-4.5 w-4.5" />
           </button>
 
-          {(draftNotice || draftLoading) && <p role="status" className="absolute top-16 inset-x-4 z-40 rounded-lg bg-neutral-900/95 p-3 text-xs text-white">{draftLoading ? 'Recuperando rascunho...' : draftNotice}</p>}
+          {(draftNotice || draftLoading || discarding) && <div role="status" className="absolute top-16 inset-x-4 z-40 rounded-lg bg-white p-3 text-xs text-slate-900 shadow"><p>{draftLoading ? 'Recuperando rascunho...' : discarding ? 'Descartando rascunho...' : draftNotice}</p>{currentImage && !draftLoading && <button type="button" disabled={discarding} className="mt-2 font-semibold text-red-700 underline" onClick={() => void discardDraft()}>Descartar rascunho e escolher outra foto</button>}</div>}
           {isPublishing && <div role="status" aria-label="Publicando" className="ts-comment-progress absolute inset-x-0 top-0 z-50" />}
           {!currentImage ? (
             <main className="h-full w-full">
@@ -321,8 +337,8 @@ export default function NewPublication({
                 <button
                   type="button"
                   id="btn-back-camera"
-                  onClick={resetEditor}
-                  disabled={isPublishing || draftLoading}
+                  onClick={() => void discardDraft()}
+                  disabled={isPublishing || draftLoading || discarding}
                   className="flex items-center gap-1 rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs font-semibold text-neutral-300 transition hover:text-white active:scale-95"
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -337,7 +353,7 @@ export default function NewPublication({
                   type="button"
                   id="btn-header-publish"
                   onClick={() => { if (!currentImage || sendingRef.current || draftLoading) return; setBackgroundPublishing(true); void handlePublish(); }}
-                  disabled={isPublishing || draftLoading}
+                  disabled={isPublishing || draftLoading || discarding}
                   className="flex items-center gap-1.5 rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white shadow-md transition hover:bg-blue-500 disabled:opacity-50 active:scale-95"
                 >
                   {isPublishing ? (
