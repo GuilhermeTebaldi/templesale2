@@ -1,4 +1,5 @@
 import React from "react";
+import AdminPublicationHealth from './AdminPublicationHealth';
 import {
   LoaderCircle,
   Shield,
@@ -1281,9 +1282,10 @@ async function adminRequest<T>(
     method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
     token?: string;
     body?: unknown;
+    signal?: AbortSignal;
   } = {},
 ): Promise<T> {
-  const { method = "GET", token = "", body } = options;
+  const { method = "GET", token = "", body, signal } = options;
   const headers = new Headers();
   if (body !== undefined) {
     headers.set("Content-Type", "application/json");
@@ -1297,6 +1299,7 @@ async function adminRequest<T>(
   const response = await fetch(buildApiUrl(path), {
     method,
     credentials: "include",
+    signal,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -2770,6 +2773,7 @@ export default function AdminPanelV2() {
 
 	        {activeView === "overview" ? (
 	          <section className="space-y-4">
+                <AdminPublicationHealth token={authToken} request={adminRequest} />
 	            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
 	              <article className="border border-stone-200 bg-white p-4 sm:p-5">
 	                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">

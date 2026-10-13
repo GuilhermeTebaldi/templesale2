@@ -1,4 +1,4 @@
-import { beginWriteOperation, completeWriteOperation, WriteBusyError, retryWriteWhenBusy } from "./write-operation";
+import { beginWriteOperation, completeWriteOperation, WriteBusyError, retryWriteWhenBusy, waitForWriteDelay } from "./write-operation";
 import { previewComments } from "./comment-delivery";
 import { trackedFetch } from "./networkActivity";
 import { AUTH0_DEBUG_LOGS } from "./auth0-config";
@@ -3042,7 +3042,7 @@ export const api = {
     }
     return establishment;
   },
-  async createPublication(establishmentId: number, input: { caption?: string; media: string[] }, options?: { signal?: AbortSignal; clientRequestId?: string; onOperation?: (key: string) => Promise<void> }) {
+  async createPublication(establishmentId: number, input: { caption?: string; media: string[]; uploadReceiptId?: string }, options?: { signal?: AbortSignal; clientRequestId?: string; onOperation?: (key: string) => Promise<void> }) {
     const scope = `${getOrCreateDeviceId()}:publication:${establishmentId}`;
     const key = options?.clientRequestId ?? await beginWriteOperation(scope, input);
     await options?.onOperation?.(key);
@@ -3513,6 +3513,30 @@ export const api = {
   },
   uploadProductImage(file: File, options?: UploadImageOptions) {
     return uploadProductImageFile(file, options);
+  },
+  async uploadPublicationImage(establishmentId:number,file:File,id:string,options?:UploadImageOptions):Promise<UploadImageResponse & {receiptId?:string}> {
+    const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer())),byte=>byte.toString(16).padStart(2,'0')).join('');
+    let prepared:any;
+    try {prepared=await retryWriteWhenBusy(()=>request<any>(`/api/establishments/${establishmentId}/publication-upload`,{
+        method:'POST',body:JSON.stringify({id,bytes:file.size,mime:file.type,sha256}),signal:options?.signal,skipGlobalLoadingOverlay:true,
+      }),options?.signal);
+    } catch(error) {if(isMissingApiRouteError(error))return uploadProductImageFile(file,options);throw error;}
+    if (!prepared.direct) return uploadProductImageFile(file,options);
+    if (prepared.ready) return {url:prepared.url,publicId:'',receiptId:id};
+    const endpoint=new URL(prepared.endpoint);
+    if (endpoint.protocol!=='https:'||endpoint.hostname!=='api.cloudinary.com'||!endpoint.pathname.endsWith('/image/upload')) throw new Error('Destino de foto inválido.');
+    const form=new FormData();form.append('file',file);
+    for(const [key,value] of Object.entries(prepared.params))form.append(key,String(value));
+    const response=await trackedFetch(endpoint.href,{method:'POST',body:form,signal:options?.signal,skipGlobalLoadingOverlay:true});
+    const started=Date.now();
+    while(Date.now()-started<60000) {
+      const status=await request<any>(`/api/establishments/${establishmentId}/publication-upload/${encodeURIComponent(id)}`,{signal:options?.signal,skipGlobalLoadingOverlay:true});
+      if(status.state==='ready')return {url:status.url,publicId:prepared.params.public_id,receiptId:id};
+      if(status.state==='rejected')throw new Error('A foto foi recusada na validação.');
+      if(!response.ok)throw new Error('O serviço de imagens não confirmou o envio. Seu rascunho foi preservado.');
+      await waitForWriteDelay(2000,options?.signal);
+    }
+    throw new Error('A foto aguarda confirmação do serviço de imagens. Retome pelo rascunho preservado.');
   },
   uploadProfileImage(file: File) {
     return uploadProfileImageFile(file);

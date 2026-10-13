@@ -1,4 +1,4 @@
-export type PublicationDraft = { file: File; caption: string; uploadedUrl?: string; operationKey?: string; savedAt: number };
+export type PublicationDraft = { file: File; caption: string; uploadedUrl?: string; operationKey?: string; uploadKey?: string; uploadReceiptId?:string; savedAt: number };
 const MAX_AGE = 7 * 86400000;
 const memory = new Map<number, PublicationDraft>();
 async function database(): Promise<IDBDatabase> {

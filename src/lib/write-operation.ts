@@ -2,6 +2,13 @@ const PREFIX = 'templesale:write-operation:';
 export class WriteBusyError extends Error {
   constructor(message: string, readonly retryAfter: number) { super(message); }
 }
+export function waitForWriteDelay(delay:number,signal?:AbortSignal):Promise<void> {
+  return new Promise<void>((resolve,reject) => {
+    const abort=()=>{clearTimeout(timer);signal?.removeEventListener('abort',abort);reject(signal?.reason??new Error('Envio cancelado.'));};
+    const timer=setTimeout(()=>{signal?.removeEventListener('abort',abort);resolve();},delay);
+    signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
+  });
+}
 // Only retry explicit admission refusals: the server has not started the write/upload.
 export async function retryWriteWhenBusy<T>(send: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
@@ -10,12 +17,7 @@ export async function retryWriteWhenBusy<T>(send: () => Promise<T>, signal?: Abo
     catch (error) {
       if (!(error instanceof WriteBusyError) || attempt >= 2) throw error;
       const delay = Math.min(10000, Math.max(1000 * 2 ** attempt, Number.isFinite(error.retryAfter) ? error.retryAfter * 1000 : 2000)) + Math.random() * 1000;
-      await new Promise<void>((resolve, reject) => {
-        const abort = () => { clearTimeout(timer); reject(signal?.reason ?? new Error('Envio cancelado.')); };
-        const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, delay);
-        signal?.addEventListener('abort', abort, { once: true });
-        if (signal?.aborted) abort();
-      });
+      await waitForWriteDelay(delay,signal);
     }
   }
 }
