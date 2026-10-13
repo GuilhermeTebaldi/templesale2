@@ -615,9 +615,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                       onClick={() => onOpenPost(post)}
                       className="text-xs text-neutral-400 hover:text-neutral-200 cursor-pointer block text-left font-medium"
                     >
-                      {post.comments.length === 1
-                        ? 'Ver 1 comentário'
-                        : `Ver todos os ${post.comments.length} comentários`}
+                      Ver comentários
                     </button>
                     {/* Último comentário */}
                     <div className="text-xs text-neutral-300">
