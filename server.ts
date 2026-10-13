@@ -5973,6 +5973,13 @@ async function selectProductCommentsRows(productId: number): Promise<ProductComm
   return rows.map(normalizeProductCommentRow);
 }
 
+async function countPublicationComments(publicationId: number): Promise<number> {
+  const sql = `SELECT COUNT(*) AS total FROM product_comments c INNER JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id=c.user_id WHERE c.publication_id=$1`;
+  const row = pgPool ? (await pgPool.query(sql, [publicationId])).rows[0]
+    : requireSqliteDb().prepare(sqliteBindings(sql, [publicationId]).sql).get(publicationId) as { total: number };
+  return toRequiredNonNegativeInteger(row?.total, 0);
+}
+
 async function selectPublicationCommentsRows(publicationId: number, limit?: number, page?: { parentCommentId: number | null; cursor?: CommentCursor; ids?: number[] }): Promise<ProductCommentRow[]> {
   const values: unknown[] = [publicationId];
   const parameter = (value: unknown) => { values.push(value); return `$${values.length}`; };
@@ -12564,7 +12571,7 @@ async function bootstrap() {
         return;
       }
       const comments = await selectPublicationCommentsRows(publicationId, req.query.preview === "1" ? 2 : undefined);
-      res.json({ comments: buildProductCommentsThread(comments, locale) });
+      res.json({ comments: buildProductCommentsThread(comments, locale), totalCount: await countPublicationComments(publicationId) });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao carregar comentários da publicação.";
@@ -12638,7 +12645,7 @@ async function bootstrap() {
       if (req.query.response === "created") {
         const created = await selectProductCommentByIdRow(createdCommentId);
         if (!created) throw new Error("Não foi possível confirmar o comentário criado.");
-        res.status(201).json({ comment: rowToProductComment(created, locale) });
+        res.status(201).json({ comment: rowToProductComment(created, locale), totalCount: await countPublicationComments(publicationId) });
         return;
       }
       const comments = await selectPublicationCommentsRows(publicationId);

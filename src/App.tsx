@@ -386,6 +386,7 @@ export default function App() {
   const commentLoadsRef = React.useRef(new Set<number>());
   const [publicationSubmitError, setPublicationSubmitError] = React.useState("");
   const [publicationCommentsById, setPublicationCommentsById] = React.useState<Record<number, ProductCommentDto[]>>({});
+  const [publicationCommentCounts, setPublicationCommentCounts] = React.useState<Record<number, number>>({});
   const [isLoadingEstablishments, setIsLoadingEstablishments] = React.useState(false);
   const activityOnboardingShownRef = React.useRef<number | null>(null);
   const [cartQuantitiesByProductId, setCartQuantitiesByProductId] = React.useState<Record<number, number>>(
@@ -704,7 +705,7 @@ export default function App() {
     missingPublicationIds.forEach(id => commentLoadsRef.current.add(id));
     void Promise.all(missingPublicationIds.map(async id => {
       try {
-        return [id, await api.getPublicationComments(id, true, true)] as const;
+        return [id, await api.getPublicationComments(id, true, true, count => setPublicationCommentCounts(current => ({ ...current, [id]: count })))] as const;
       } catch (error) {
         console.error("Error loading publication comments for feed:", error);
         return [id, []] as const;
@@ -2976,11 +2977,13 @@ export default function App() {
           createdAt: toIsoFromUnixOrMillis(publication.createdAt),
           comments: toSocialComments(withPendingComment(publicationCommentsById[publication.id] ?? [], commentDeliveries[publication.id])),
           likesCount: publication.likesCount ?? 0,
+          commentsCount: publicationCommentCounts[publication.id],
         }));
     },
     [
       deletedPublicationIds,
       publicationCommentsById,
+      publicationCommentCounts,
       commentDeliveries,
       publicationFeed,
       searchPreviewPublications,
@@ -3019,6 +3022,7 @@ export default function App() {
           createdAt: toIsoFromUnixOrMillis(publication.createdAt),
           comments: toSocialComments(withPendingComment(publicationCommentsById[publication.id] ?? [], commentDeliveries[publication.id])),
           likesCount: publication.likesCount ?? 0,
+          commentsCount: publicationCommentCounts[publication.id],
         }));
     }
 
@@ -3029,6 +3033,7 @@ export default function App() {
     establishmentIdFromSocialCompanyId,
     memberProfilePhoto,
     publicationCommentsById,
+    publicationCommentCounts,
     commentDeliveries,
     profilePublicationsEstablishmentId,
     selectedEstablishmentPublications,
@@ -3204,6 +3209,7 @@ export default function App() {
       setCommentDeliveries(current => ({ ...current, [publicationId]: draft }));
       try {
         const result = await api.createPublicationComment(publicationId, { body: text, parentCommentId });
+        if (result.totalCount !== undefined) setPublicationCommentCounts(current => ({ ...current, [publicationId]: result.totalCount! }));
         setPublicationCommentsById(current => ({ ...current, [publicationId]: previewComments(reconcileCommentMutation(current[publicationId] ?? [], result)) }));
         setCommentDeliveries(current => {
           const next = { ...current }; delete next[publicationId]; return next;
@@ -3764,6 +3770,7 @@ export default function App() {
               void openEstablishmentPage(establishmentId);
             }}
             onCommentsChanged={(publicationId, comments) => {
+              void api.getPublicationComments(publicationId, true, true, count => setPublicationCommentCounts(current => ({ ...current, [publicationId]: count }))).catch(() => {});
               setPublicationCommentsById((current) => ({
                 ...current,
                 [publicationId]: previewComments(comments),

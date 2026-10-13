@@ -18,6 +18,7 @@ export interface Post {
   createdAt: string;
   comments: Comment[];
   likesCount?: number;
+  commentsCount?: number;
 }
 
 export interface Company {
