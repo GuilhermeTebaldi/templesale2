@@ -215,13 +215,13 @@ export interface ProductCommentDto {
   hasReplies?: boolean;
 }
 
-export interface CommentMutationResult { comments: ProductCommentDto[]; incremental: boolean; deletedId?: number; }
+export interface CommentMutationResult { comments: ProductCommentDto[]; incremental: boolean; deletedId?: number; totalCount?: number; }
 export interface CommentPage { comments: ProductCommentDto[]; focused: ProductCommentDto[]; hasMore: boolean; nextCursor: string | null; }
 function commentMutationResult(value: unknown): CommentMutationResult {
   const payload = parseJsonIfNeeded(value);
   const comment = isRecord(payload) ? normalizeProductCommentItem(payload.comment) : null;
   const deletedId = isRecord(payload) ? toOptionalNumber(payload.deletedId) : undefined;
-  return comment ? { comments: [comment], incremental: true } : deletedId !== undefined
+  return comment ? { comments: [comment], incremental: true, totalCount: isRecord(payload) ? toNonNegativeInteger(payload.totalCount) : undefined } : deletedId !== undefined
     ? { comments: [], incremental: true, deletedId } : { comments: normalizeProductCommentList(value), incremental: false };
 }
 
@@ -3142,7 +3142,7 @@ export const api = {
     return { comments: normalizeProductCommentList(value), focused: isRecord(value) ? normalizeProductCommentList(value.focused) : [],
       hasMore: pagination.hasMore === true, nextCursor: typeof pagination.nextCursor === "string" ? pagination.nextCursor : null };
   },
-  async getPublicationComments(publicationId: number, background = false, preview = false) {
+  async getPublicationComments(publicationId: number, background = false, preview = false, onCount?: (count: number) => void) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
       throw new Error("ID de publicação inválido.");
     }
@@ -3152,6 +3152,8 @@ export const api = {
         skipAuthToken: true, skipGlobalLoadingOverlay: background,
       });
       const comments = normalizeProductCommentList(payload);
+      const count = isRecord(payload) ? toNonNegativeInteger(payload.totalCount) : undefined;
+      if (count !== undefined) onCount?.(count);
       return preview ? previewComments(comments) : comments;
     } catch (error) {
       if (isMissingApiRouteError(error)) {
