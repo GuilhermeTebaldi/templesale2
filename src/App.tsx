@@ -472,6 +472,7 @@ export default function App() {
     isMapOpen ||
     isVendedoresOpen ||
     Boolean(selectedProduct) ||
+    Boolean(selectedPublication) ||
     (hasMemberAccess &&
       ((isNewProductOpen && pendingPublicationCount === 0) ||
         Boolean(editingProduct) ||
