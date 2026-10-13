@@ -3563,7 +3563,7 @@ export default function App() {
 
       <main className="flex-1 pb-24 sm:pb-16 sm:pl-[72px]">
         <div style={{ display: socialActiveTab === "feed" ? "block" : "none" }}>
-          {publicationSubmitError && <p role="alert" className="mx-auto max-w-xl px-4 py-3 text-sm text-red-600">{publicationSubmitError}</p>}
+          {publicationSubmitError && <div role="alert" className="mx-auto max-w-xl rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700"><p>{publicationSubmitError}</p><button type="button" className="mt-2 font-semibold underline" onClick={() => {setPublicationSubmitError('');handleOpenNewProduct();}}>Retomar rascunho</button></div>}
           {pendingPublicationCount > 0 && (
             <div className="sticky top-14 z-30 mx-auto max-w-xl px-3 pt-2 sm:top-16 sm:max-w-3xl">
               <div className="overflow-hidden rounded-full border border-neutral-200 bg-white/95 shadow-sm">
@@ -3808,6 +3808,7 @@ export default function App() {
               setPublicationSubmitError("");
               setPendingPublicationCount((current) => current + 1);
               setSocialActiveTab("feed");
+              scrollWindowToTop();
             }}
             onPublishFinished={() => {
               setPendingPublicationCount((current) => Math.max(0, current - 1));
