@@ -441,6 +441,18 @@ function buildApiUrl(path: string): string {
   return API_BASE_URL ? `${API_BASE_URL}${normalizedPath}` : normalizedPath;
 }
 
+export async function fetchLinkPreview(url: string, signal: AbortSignal) {
+  const response = await fetch(buildApiUrl(`/api/link-preview?${new URLSearchParams({ url })}`), {
+    signal, credentials: 'omit',
+  });
+  if (!response.ok) return null;
+  const body = await response.json();
+  const data = body?.data;
+  return data && typeof data.title === 'string' && typeof data.description === 'string'
+    ? { title: data.title.slice(0, 180), description: data.description.slice(0, 280), image: typeof data.image === 'string' ? data.image : undefined }
+    : null;
+}
+
 function buildApiUrlWithQuery(path: string, query: Record<string, string>): string {
   const url = buildApiUrl(path);
   const separator = url.includes("?") ? "&" : "?";

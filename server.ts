@@ -4,6 +4,7 @@ import { createWriteAdmission } from "./server/write-admission";
 import { createPublicationCapacity } from './server/publication-capacity';
 import { createPublicationDirectUpload, DirectUploadBusy } from './server/publication-direct-upload';
 import { createPublicationMonitor } from './server/publication-monitor';
+import { registerLinkPreview } from './server/link-preview';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { translate as translateInterface } from './src/i18n';
 import { buildLocalFeedQuery, buildPublicationPreviewsQuery, encodeFeedCursor, parseFeedCursor, parseFeedExclusions, type FeedCursor } from "./server/local-feed";
@@ -10027,6 +10028,7 @@ async function bootstrap() {
     next();
   });
   app.use(cors({ origin: true, credentials: true }));
+  registerLinkPreview(app);
   app.post('/api/uploads/publication-image/notify/:id',admitUploadNotification.beforeBody,express.raw({type:'application/json',limit:'64kb'}),admitUploadNotification(async (req,res) => {
     try {
       if (!Buffer.isBuffer(req.body)) {res.status(400).end();return;}

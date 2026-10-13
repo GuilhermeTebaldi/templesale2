@@ -18,6 +18,7 @@ import { api } from '../lib/api';
 import { distanceMeters, isValidGeoPoint } from '../lib/discovery-location';
 import { TempleSaleLikeIcon } from './TempleSaleLikeIcon';
 import { ProgressiveProductImage } from './ProductCard';
+import { LinkedText, LinkPreview } from './SharedLink';
 
 interface FeedViewProps {
   isActive?: boolean;
@@ -518,8 +519,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   >
                     {company.name}
                   </button>
-                  <span className="whitespace-pre-wrap">{post.caption}</span>
+                  <span className="whitespace-pre-wrap"><LinkedText text={post.caption} /></span>
                 </div>
+                <LinkPreview text={post.caption} />
 
               {/* 2. Foto da Publicação (1:1 Quadrado Perfeito) - O clique simples na foto NÃO abre detalhes ou comentários */}
               <div
@@ -624,7 +626,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                       <span className="font-semibold text-neutral-200 mr-1.5">
                         {post.comments[post.comments.length - 1].authorName}:
                       </span>
-                      <span>{post.comments[post.comments.length - 1].text}</span>
+                      <span><LinkedText text={post.comments[post.comments.length - 1].text} /></span>
                     </div>
                   </div>
                 ) : (
