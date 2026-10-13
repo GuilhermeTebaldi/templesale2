@@ -910,7 +910,7 @@ const MAP_TILE_CACHE_CONTROL = "public, max-age=21600, stale-while-revalidate=43
 const SECURITY_PERMISSIONS_POLICY = [
   "accelerometer=()",
   "autoplay=()",
-  "camera=()",
+  "camera=(self)",
   "display-capture=()",
   "fullscreen=(self)",
   "geolocation=(self)",
