@@ -230,16 +230,19 @@ export default function NewPublication({
     setIsPublishing(true);
     setErrorMessage("");
     const resumingOperation = Boolean(preparedRef.current?.draft.operationKey);
+    let stage = 'preparar a foto';
     try {
       onPublishStarted?.();
       const cached = preparedRef.current;
       let draft = cached?.image === currentImage && cached.settings === settings ? cached.draft : undefined;
       if (cached?.draft.operationKey) {
+        stage = 'verificar o envio anterior';
         const confirmed = await api.getPublicationOperation(establishment.id, cached.draft.operationKey, controller.signal);
         if (confirmed) { await clearPublicationDraft(establishment.id); onPublished(confirmed, true); onClose(); return; }
         if (!draft || caption.trim() !== cached.draft.caption) throw new Error('O envio anterior ainda precisa ser confirmado. Retome a foto e a legenda preservadas antes de iniciar outro envio.');
       }
       if (!draft) {
+      stage = 'preparar a foto';
       const finalCompositeUrl = await renderCompositeImage(
         currentImage,
         selectedFilter,
@@ -249,7 +252,12 @@ export default function NewPublication({
         containerDims,
       );
       const imageFile = dataUrlToFile(finalCompositeUrl, `templesale-publication-${Date.now()}.jpg`);
-        const source = await (await fetch(currentImage)).blob();
+        // CameraCapture supplies a local data URL; recovered images already
+        // have their Blob in the draft. Do not fetch data:/blob: URLs: our
+        // connect-src policy intentionally permits only network API endpoints.
+        const source = cached?.image === currentImage
+          ? cached.draft.source ?? cached.draft.file
+          : dataUrlToFile(currentImage, `templesale-original-${Date.now()}`);
         draft = { file: imageFile, source, editor: { filter:selectedFilter, adjustments, overlays, crop:photoCrop, dimensions:containerDims }, caption: caption.trim(), savedAt: Date.now() };
         preparedRef.current = { image: currentImage, settings, draft };
       }
@@ -259,6 +267,7 @@ export default function NewPublication({
       };
       await persist();
       if (!draft.uploadedUrl) {
+      stage = 'enviar a foto';
       draft.uploadKey??=crypto.randomUUID();await persist();
       const uploadResponse = await api.uploadPublicationImage(establishment.id,draft.file,draft.uploadKey,{signal:controller.signal});
       const imageUrl = getCompatibleImageUrl(uploadResponse.url);
@@ -267,6 +276,7 @@ export default function NewPublication({
       }
         draft.uploadedUrl = imageUrl; draft.uploadReceiptId=uploadResponse.receiptId;await persist();
       }
+      stage = 'confirmar a publicação';
       const publication = await api.createPublication(establishment.id, {
         caption: draft.caption,
         media: [draft.uploadedUrl!],
@@ -281,7 +291,10 @@ export default function NewPublication({
         preparedRef.current.draft.operationKey = undefined;
         await savePublicationDraft(establishment.id,preparedRef.current.draft);
       }
-      const normalizedError = error instanceof Error ? error : new Error(t("Falha ao publicar."));
+      const failure = error instanceof Error ? error : new Error(t("Falha ao publicar."));
+      const normalizedError = /load failed|failed to fetch|networkerror/i.test(failure.message)
+        ? new Error(`Falha de conexão ao ${stage}. Seu rascunho foi preservado. Retome o envio quando a conexão voltar.`)
+        : failure;
       setErrorMessage(normalizedError.message);
       onPublishFailed?.(normalizedError);
       onClose();
