@@ -6,7 +6,7 @@ import { api, type EstablishmentDto, type ProductCommentDto, type CommentMutatio
 import { formatRelativeTime } from "../i18n/formatters";
 import { useI18n } from "../i18n/provider";
 import { ProgressiveProductImage } from "./ProductCard";
-import { LinkedText, LinkPreview } from './SharedLink';
+import { LinkedText } from './SharedLink';
 
 interface PublicationViewerProps {
   publication: PublicationDto;
@@ -298,7 +298,6 @@ export default function PublicationViewer({
             ) : (
               <div>
                 <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-neutral-300"><LinkedText text={comment.body} /></p>
-                <LinkPreview text={comment.body} />
               </div>
             )}
             <div className="mt-2 flex items-center gap-3">
@@ -418,7 +417,6 @@ export default function PublicationViewer({
             {publication.caption ? (
               <div>
                 <p className="whitespace-pre-wrap text-sm leading-6 text-neutral-200"><LinkedText text={publication.caption} /></p>
-                <LinkPreview text={publication.caption} />
               </div>
             ) : (
               <p className="text-sm italic text-neutral-500">{t("Senza didascalia.")}</p>
