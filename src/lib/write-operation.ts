@@ -22,32 +22,58 @@ export async function retryWriteWhenBusy<T>(send: () => Promise<T>, signal?: Abo
   }
 }
 const WINDOW = 7 * 86400000;
-const volatile = new Map<string, { fingerprint: string; key: string; at: number }>();
+const MAX_PENDING = 32;
+type Operation = { fingerprint: string; key: string; at: number };
+const volatile = new Map<string, Operation>();
+function validOperation(value: any): value is Operation {
+  return value && /^[a-f0-9]{64}$/.test(value.fingerprint) &&
+    typeof value.key === 'string' && /^[\w-]{16,80}$/.test(value.key) &&
+    Number.isFinite(value.at) && value.at > Date.now()-WINDOW;
+}
+function readOperation(storageKey: string): Operation | undefined {
+  let saved = volatile.get(storageKey);
+  try {
+    const persisted = JSON.parse(localStorage.getItem(storageKey) || 'null');
+    if (validOperation(persisted)) saved = persisted;
+  } catch { /* Session fallback. */ }
+  return validOperation(saved) ? saved : undefined;
+}
+function retainedKeys(): string[] {
+  for (const [key,value] of volatile) if (!validOperation(value)) volatile.delete(key);
+  const retained = new Set(volatile.keys());
+  try {
+    for (const key of Object.keys(localStorage).filter(key=>key.startsWith(PREFIX))) {
+      let value: unknown;
+      try { value=JSON.parse(localStorage.getItem(key) || 'null'); } catch { /* Remove invalid metadata. */ }
+      if (validOperation(value)) retained.add(key);
+      else localStorage.removeItem(key);
+    }
+  } catch { /* Session fallback. */ }
+  return [...retained];
+}
 export async function beginWriteOperation(scope: string, payload: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
   const fingerprint = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
-  const storageKey = PREFIX + scope;
-  let saved = volatile.get(storageKey);
-  try { saved = JSON.parse(localStorage.getItem(storageKey) || 'null') || saved; } catch { /* Storage can be unavailable. */ }
-  if (saved?.fingerprint === fingerprint && typeof saved.key === 'string' && /^[\w-]{16,80}$/.test(saved.key) && saved.at > Date.now() - WINDOW) return saved.key;
+  const legacyKey = PREFIX + scope;
+  const storageKey = legacyKey + ':' + fingerprint;
+  const retained = retainedKeys();
+  // Preserve the old single-entry format during rollout. Sending another
+  // payload must not replace this older uncertain request.
+  const saved = readOperation(storageKey) ?? readOperation(legacyKey);
+  if (saved?.fingerprint === fingerprint) return saved.key;
+  // Never evict an uncertain identity merely to make room for another send.
+  if (retained.length >= MAX_PENDING) throw new Error('Há 32 envios sem confirmação neste navegador. Retome os envios anteriores antes de iniciar outros.');
   const operation = { fingerprint, key: crypto.randomUUID(), at: Date.now() };
   volatile.set(storageKey, operation);
-  while (volatile.size > 32) volatile.delete(volatile.keys().next().value!);
-  try {
-    const keys = Object.keys(localStorage).filter(key => key.startsWith(PREFIX));
-    for (const key of keys) {
-      try { if (JSON.parse(localStorage.getItem(key) || 'null')?.at < Date.now() - WINDOW) localStorage.removeItem(key); } catch { localStorage.removeItem(key); }
-    }
-    if (keys.length >= 32) {
-      const oldest = keys.sort((a,b) => JSON.parse(localStorage.getItem(a) || '{"at":0}').at - JSON.parse(localStorage.getItem(b) || '{"at":0}').at);
-      oldest.slice(0, keys.length - 31).forEach(key => localStorage.removeItem(key));
-    }
-    localStorage.setItem(storageKey, JSON.stringify(operation));
-  } catch { /* Session fallback retains retry identity without requiring storage. */ }
+  try { localStorage.setItem(storageKey, JSON.stringify(operation)); } catch { /* Session fallback. */ }
   return operation.key;
 }
 export function completeWriteOperation(scope: string, key: string) {
-  const storageKey = PREFIX + scope;
-  if (volatile.get(storageKey)?.key === key) volatile.delete(storageKey);
-  try { if (JSON.parse(localStorage.getItem(storageKey) || 'null')?.key === key) localStorage.removeItem(storageKey); } catch { /* Optional storage. */ }
+  const legacyKey = PREFIX + scope;
+  for (const storageKey of retainedKeys()) {
+    if (storageKey !== legacyKey && !storageKey.startsWith(legacyKey + ':')) continue;
+    if (readOperation(storageKey)?.key !== key) continue;
+    volatile.delete(storageKey);
+    try { localStorage.removeItem(storageKey); } catch { /* Optional storage. */ }
+  }
 }
