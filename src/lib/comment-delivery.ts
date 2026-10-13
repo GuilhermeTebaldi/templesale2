@@ -27,12 +27,35 @@ export function withPendingComment(items: ProductCommentDto[], draft?: ProductCo
 
 export function reconcileCommentMutation(items: ProductCommentDto[], result: CommentMutationResult): ProductCommentDto[] {
   if (!result.incremental) return result.comments;
+  if (result.deletedId !== undefined) {
+    const remove = (comments: ProductCommentDto[]): ProductCommentDto[] => comments.filter(comment => comment.id !== result.deletedId)
+      .map(comment => ({ ...comment, replies: remove(comment.replies) }));
+    return remove(items);
+  }
   const incoming = result.comments[0];
   if (!incoming) return items;
-  const remove = (comments: ProductCommentDto[]): ProductCommentDto[] => comments
-    .filter(comment => comment.id !== incoming.id)
-    .map(comment => ({ ...comment, replies: remove(comment.replies) }));
-  return withPendingComment(remove(items), incoming);
+  let found = false;
+  const replace = (comments: ProductCommentDto[]): ProductCommentDto[] => comments.map(comment => {
+    if (comment.id === incoming.id) { found = true; return { ...comment, ...incoming, replies: mergeCommentPages(comment.replies, incoming.replies) }; }
+    return { ...comment, replies: replace(comment.replies) };
+  });
+  const next = replace(items);
+  return found ? next : withPendingComment(items, incoming);
+}
+
+export function mergeCommentPages(items: ProductCommentDto[], page: ProductCommentDto[]): ProductCommentDto[] {
+  let next = items;
+  for (const incoming of page) {
+    let found = false;
+    const merge = (comments: ProductCommentDto[]): ProductCommentDto[] => comments.map(comment => {
+      if (comment.id === incoming.id) { found = true; return { ...comment, ...incoming, replies: mergeCommentPages(comment.replies, incoming.replies) }; }
+      if (comment.id === incoming.parentCommentId) { found = true; return { ...comment, replies: mergeCommentPages(comment.replies, [incoming]) }; }
+      return { ...comment, replies: merge(comment.replies) };
+    });
+    const merged = merge(next);
+    next = found ? merged : [...next, incoming];
+  }
+  return next;
 }
 
 export function previewComments(items: ProductCommentDto[]): ProductCommentDto[] {

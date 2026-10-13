@@ -1,3 +1,4 @@
+import { beginWriteOperation, completeWriteOperation } from "./write-operation";
 import { previewComments } from "./comment-delivery";
 import { trackedFetch } from "./networkActivity";
 import { AUTH0_DEBUG_LOGS } from "./auth0-config";
@@ -211,9 +212,18 @@ export interface ProductCommentDto {
   authorName: string;
   authorAvatarUrl?: string;
   replies: ProductCommentDto[];
+  hasReplies?: boolean;
 }
 
-export interface CommentMutationResult { comments: ProductCommentDto[]; incremental: boolean; }
+export interface CommentMutationResult { comments: ProductCommentDto[]; incremental: boolean; deletedId?: number; }
+export interface CommentPage { comments: ProductCommentDto[]; focused: ProductCommentDto[]; hasMore: boolean; nextCursor: string | null; }
+function commentMutationResult(value: unknown): CommentMutationResult {
+  const payload = parseJsonIfNeeded(value);
+  const comment = isRecord(payload) ? normalizeProductCommentItem(payload.comment) : null;
+  const deletedId = isRecord(payload) ? toOptionalNumber(payload.deletedId) : undefined;
+  return comment ? { comments: [comment], incremental: true } : deletedId !== undefined
+    ? { comments: [], incremental: true, deletedId } : { comments: normalizeProductCommentList(value), incremental: false };
+}
 
 export interface CreateProductCommentInput {
   body: string;
@@ -1836,6 +1846,8 @@ function normalizeProductCommentItem(value: unknown): ProductCommentDto | null {
     replies,
   };
 
+  if (typeof parsed.hasReplies === "boolean") comment.hasReplies = parsed.hasReplies;
+
   if (productId !== undefined) {
     comment.productId = productId;
   }
@@ -3025,16 +3037,19 @@ export const api = {
     return establishment;
   },
   async createPublication(establishmentId: number, input: { caption?: string; media: string[] }) {
+    const scope = `${getOrCreateDeviceId()}:publication:${establishmentId}`;
+    const key = await beginWriteOperation(scope, input);
     const payload = await request<unknown>(`/api/establishments/${establishmentId}/publications`, {
       method: "POST",
       skipGlobalLoadingOverlay: true,
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, clientRequestId: key }),
     });
     const parsed = parseJsonIfNeeded(payload);
     const publication = normalizePublicationItem(isRecord(parsed) ? parsed.publication : parsed);
     if (!publication) {
       throw new Error("Resposta inválida ao publicar.");
     }
+    completeWriteOperation(scope, key);
     return publication;
   },
   async getPublication(publicationId: number) {
@@ -3116,6 +3131,17 @@ export const api = {
     });
     return true;
   },
+  async getPublicationCommentPage(publicationId: number, input: { cursor?: string | null; parentId?: number; focus?: number | null } = {}): Promise<CommentPage> {
+    const params = new URLSearchParams({ page: "1" });
+    if (input.cursor) params.set("cursor", input.cursor);
+    if (input.parentId) params.set("parentId", String(input.parentId));
+    if (input.focus) params.set("focus", String(input.focus));
+    const payload = await request<unknown>(`/api/publications/${publicationId}/comments?${params}`, { skipAuthToken: true, skipGlobalLoadingOverlay: true });
+    const value = parseJsonIfNeeded(payload);
+    const pagination = isRecord(value) && isRecord(value.pagination) ? value.pagination : {};
+    return { comments: normalizeProductCommentList(value), focused: isRecord(value) ? normalizeProductCommentList(value.focused) : [],
+      hasMore: pagination.hasMore === true, nextCursor: typeof pagination.nextCursor === "string" ? pagination.nextCursor : null };
+  },
   async getPublicationComments(publicationId: number, background = false, preview = false) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
       throw new Error("ID de publicação inválido.");
@@ -3144,22 +3170,23 @@ export const api = {
       throw new Error("Comentário é obrigatório.");
     }
 
+    const scope = `${getOrCreateDeviceId()}:comment:${publicationId}`;
+    const key = await beginWriteOperation(scope, [normalizedBody, input.parentCommentId ?? null]);
     const response = await request<unknown>(`/api/publications/${publicationId}/comments?response=created`, {
       method: "POST",
       skipGlobalLoadingOverlay: true,
       body: JSON.stringify({
         body: normalizedBody,
+        clientRequestId: key,
         parentCommentId:
           Number.isInteger(input.parentCommentId) && Number(input.parentCommentId) > 0
             ? Number(input.parentCommentId)
             : undefined,
       }),
     });
-    const payload = parseJsonIfNeeded(response);
-    const comment = isRecord(payload) ? normalizeProductCommentItem(payload.comment) : null;
-    return comment
-      ? { comments: [comment], incremental: true }
-      : { comments: normalizeProductCommentList(response), incremental: false };
+    const result = commentMutationResult(response);
+    completeWriteOperation(scope, key);
+    return result;
   },
   async updatePublicationComment(publicationId: number, commentId: number, input: UpdateProductCommentInput) {
     if (!Number.isInteger(publicationId) || publicationId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
@@ -3171,21 +3198,23 @@ export const api = {
       throw new Error("Comentário é obrigatório.");
     }
 
-    const response = await request<unknown>(`/api/publications/${publicationId}/comments/${commentId}`, {
+    const response = await request<unknown>(`/api/publications/${publicationId}/comments/${commentId}?response=changed`, {
       method: "PATCH",
+      skipGlobalLoadingOverlay: true,
       body: JSON.stringify({ body: normalizedBody }),
     });
-    return normalizeProductCommentList(response);
+    return commentMutationResult(response);
   },
   async deletePublicationComment(publicationId: number, commentId: number) {
     if (!Number.isInteger(publicationId) || publicationId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
       throw new Error("ID de comentário inválido.");
     }
 
-    const response = await request<unknown>(`/api/publications/${publicationId}/comments/${commentId}`, {
+    const response = await request<unknown>(`/api/publications/${publicationId}/comments/${commentId}?response=changed`, {
       method: "DELETE",
+      skipGlobalLoadingOverlay: true,
     });
-    return normalizeProductCommentList(response);
+    return commentMutationResult(response);
   },
   async geocodeLocation(query: string) {
     const normalizedQuery = toStringValue(query);

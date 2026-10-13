@@ -1,5 +1,5 @@
 import React from "react";
-import { withPendingComment, reconcileCommentMutation, type PendingComment } from "../lib/comment-delivery";
+import { withPendingComment, reconcileCommentMutation, mergeCommentPages, type PendingComment } from "../lib/comment-delivery";
 import { motion } from "motion/react";
 import { Loader2, MessageCircle, Pencil, Send, Trash2, X } from "lucide-react";
 import { api, type EstablishmentDto, type ProductCommentDto, type CommentMutationResult, type PublicationDto, type SessionUser } from "../lib/api";
@@ -44,7 +44,19 @@ export default function PublicationViewer({
   onCommentsChanged,
 }: PublicationViewerProps) {
   const { t, locale } = useI18n();
-  const [comments, setComments] = React.useState<ProductCommentDto[]>([]);
+  const [comments, setCommentState] = React.useState<ProductCommentDto[]>([]);
+  const commentsRef = React.useRef<ProductCommentDto[]>([]);
+  const setComments = (next: React.SetStateAction<ProductCommentDto[]>) => {
+    commentsRef.current = typeof next === "function" ? next(commentsRef.current) : next;
+    setCommentState(commentsRef.current);
+  };
+  const [nextCursor, setNextCursor] = React.useState<string | null>(null);
+  const [hasMoreComments, setHasMoreComments] = React.useState(false);
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false);
+  const [replyPages, setReplyPages] = React.useState<Record<number, { nextCursor: string | null; hasMore: boolean; loading: boolean }>>({});
+  const pageRequestsRef = React.useRef(new Set<string>());
+  const currentPublicationRef = React.useRef(publication.id);
+  currentPublicationRef.current = publication.id;
   const [commentBody, setCommentBody] = React.useState("");
   const [replyToCommentId, setReplyToCommentId] = React.useState<number | null>(null);
   const [editingCommentId, setEditingCommentId] = React.useState<number | null>(null);
@@ -76,14 +88,17 @@ export default function PublicationViewer({
     const readVersion = commentsVersionRef.current;
     initialReadCreatesRef.current = [];
     initialReadPendingRef.current = true;
+    setComments([]);
+    setNextCursor(null); setHasMoreComments(false); setReplyPages({}); setIsLoadingMore(false);
     setIsLoadingComments(true);
     setCommentsError("");
     api
-      .getPublicationComments(publication.id, true)
-      .then((items) => {
+      .getPublicationCommentPage(publication.id, { focus: focusCommentId })
+      .then((page) => {
+        if (isActive) { setNextCursor(page.nextCursor); setHasMoreComments(page.hasMore); }
         if (isActive && readVersion === commentsVersionRef.current) {
           setComments(initialReadCreatesRef.current.reduce((current, comment) =>
-            reconcileCommentMutation(current, { comments: [comment], incremental: true }), items));
+            reconcileCommentMutation(current, { comments: [comment], incremental: true }), mergeCommentPages(page.comments, page.focused)));
         }
       })
       .catch((error) => {
@@ -101,7 +116,7 @@ export default function PublicationViewer({
     return () => {
       isActive = false;
     };
-  }, [publication.id, t]);
+  }, [publication.id, t, focusCommentId]);
 
   React.useEffect(() => {
     if (!focusCommentId || isLoadingComments || comments.length === 0) {
@@ -114,6 +129,31 @@ export default function PublicationViewer({
       highlightedCommentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 120);
   }, [comments, focusCommentId, isLoadingComments]);
+
+  const loadMoreComments = async (parentId?: number) => {
+    const publicationId = publication.id;
+    const requestId = `${publicationId}:${parentId ?? "roots"}`;
+    if (pageRequestsRef.current.has(requestId)) return;
+    pageRequestsRef.current.add(requestId);
+    if (parentId) setReplyPages(current => ({ ...current, [parentId]: { nextCursor: current[parentId]?.nextCursor ?? null, hasMore: true, loading: true } }));
+    else setIsLoadingMore(true);
+    setCommentsError("");
+    try {
+      const page = await api.getPublicationCommentPage(publicationId, { parentId, cursor: parentId ? replyPages[parentId]?.nextCursor : nextCursor });
+      if (currentPublicationRef.current !== publicationId) return;
+      setComments(current => mergeCommentPages(current, page.comments));
+      if (parentId) setReplyPages(current => ({ ...current, [parentId]: { nextCursor: page.nextCursor, hasMore: page.hasMore, loading: false } }));
+      else { setNextCursor(page.nextCursor); setHasMoreComments(page.hasMore); }
+    } catch (error) {
+      if (currentPublicationRef.current === publicationId) setCommentsError(error instanceof Error ? error.message : t("Não foi possível carregar comentários."));
+    } finally {
+      pageRequestsRef.current.delete(requestId);
+      if (currentPublicationRef.current === publicationId) {
+        if (parentId) setReplyPages(current => ({ ...current, [parentId]: { nextCursor: current[parentId]?.nextCursor ?? null, hasMore: current[parentId]?.hasMore ?? true, loading: false } }));
+        else setIsLoadingMore(false);
+      }
+    }
+  };
 
   const submitComment = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -149,7 +189,8 @@ export default function PublicationViewer({
     }
     setCommentsError("");
     try {
-      const nextComments = await api.updatePublicationComment(publication.id, commentId, { body });
+      const result = await api.updatePublicationComment(publication.id, commentId, { body });
+      const nextComments = reconcileCommentMutation(commentsRef.current, result);
       commentsVersionRef.current += 1;
       setComments(nextComments);
       onCommentsChanged?.(publication.id, nextComments);
@@ -163,7 +204,8 @@ export default function PublicationViewer({
   const deleteComment = async (commentId: number) => {
     setCommentsError("");
     try {
-      const nextComments = await api.deletePublicationComment(publication.id, commentId);
+      const result = await api.deletePublicationComment(publication.id, commentId);
+      const nextComments = reconcileCommentMutation(commentsRef.current, result);
       commentsVersionRef.current += 1;
       setComments(nextComments);
       onCommentsChanged?.(publication.id, nextComments);
@@ -292,6 +334,12 @@ export default function PublicationViewer({
             {deliveryStatus === "sending" && <div role="status" aria-label={t("Enviando comentário")} className="ts-comment-progress mt-2" />}
             {deliveryStatus === "failed" && <p role="alert" className="mt-2 text-xs text-red-600">{t("Não foi possível confirmar o comentário. O texto foi preservado; confira os comentários antes de reenviar.")}</p>}
             {comment.replies.map((reply) => renderComment(reply, true))}
+            {comment.id > 0 && (comment.hasReplies !== false || comment.replies.length > 0) && (replyPages[comment.id]?.hasMore ?? true) && (
+              <button type="button" disabled={replyPages[comment.id]?.loading} onClick={() => void loadMoreComments(comment.id)}
+                className="mt-2 text-xs text-neutral-500 hover:text-sky-600 disabled:opacity-50">
+                {replyPages[comment.id]?.loading ? t("Carregando...") : t("Ver respostas")}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -406,6 +454,12 @@ export default function PublicationViewer({
               <p className="py-8 text-sm text-neutral-500">{t("Ancora nessun commento.")}</p>
             ) : (
               <div>{visibleComments.map((comment) => renderComment(comment))}</div>
+            )}
+            {hasMoreComments && (
+              <button type="button" disabled={isLoadingMore || isLoadingComments} onClick={() => void loadMoreComments()}
+                className="mt-4 rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-500 hover:text-sky-600 disabled:opacity-50">
+                {isLoadingMore ? t("Carregando...") : t("Carregar mais comentários")}
+              </button>
             )}
             {commentsError && (
               <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">

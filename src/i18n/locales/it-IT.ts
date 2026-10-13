@@ -390,5 +390,7 @@ export const itITTranslations: Record<string, string> = {
   "Produto compartilhado.": "Prodotto condiviso.",
   "Carregar mais": "Carica altro",
   "Carregando...": "Caricamento...",
-  "Falha ao carregar produtos.": "Errore durante il caricamento dei prodotti."
+  "Falha ao carregar produtos.": "Errore durante il caricamento dei prodotti.",
+  "Ver respostas": "Vedi le risposte",
+  "Carregar mais comentários": "Carica altri commenti",
 };
