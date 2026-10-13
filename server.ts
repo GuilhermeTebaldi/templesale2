@@ -1,3 +1,5 @@
+import { parseCommentCursor, encodeCommentCursor, type CommentCursor } from "./server/comment-pagination";
+import { createPublicationEvolution, WriteConflict } from "./server/publication-evolution";
 import { createWriteAdmission } from "./server/write-admission";
 import { buildLocalFeedQuery, buildPublicationPreviewsQuery, encodeFeedCursor, parseFeedCursor, parseFeedExclusions, type FeedCursor } from "./server/local-feed";
 import { createAdminSessionToken as createSignedAdminSessionToken, verifyAdminSessionToken as verifySignedAdminSessionToken } from "./server/admin-session";
@@ -112,6 +114,7 @@ type ProductCommentRow = {
   created_at: number;
   author_name: string;
   author_avatar_url: string | null;
+  has_replies?: boolean;
 };
 
 type ProductCommentRecord = {
@@ -126,6 +129,7 @@ type ProductCommentRecord = {
   authorName: string;
   authorAvatarUrl: string;
   replies: ProductCommentRecord[];
+  hasReplies?: boolean;
 };
 
 type NotificationEventType =
@@ -1252,6 +1256,7 @@ const SESSION_USER_SELECT_FIELDS = `
 
 let sqliteDb: Database.Database | null = null;
 let pgPool: Pool | null = null;
+let publicationEvolution: ReturnType<typeof createPublicationEvolution>;
 
 if (!USE_SQLITE_DATABASE) {
   pgPool = new Pool({
@@ -1751,6 +1756,7 @@ function normalizeProductCommentRow(row: Record<string, unknown>): ProductCommen
     parent_comment_id: toNullableNumber(row.parent_comment_id),
     rating: toNullableNumber(row.rating),
     body: String(row.body ?? ""),
+    has_replies: row.has_replies === undefined ? undefined : Boolean(row.has_replies),
     body_translations: toNullableString(row.body_translations),
     created_at: parsedCreatedAt,
     author_name: String(row.author_name ?? "").trim() || `Usuário ${toRequiredNumber(row.user_id)}`,
@@ -4901,7 +4907,7 @@ async function selectPublicationByIdRecord(publicationId: number): Promise<Estab
 async function createPublicationRecord(
   establishmentId: number,
   ownerId: number,
-  input: { caption?: string; media?: unknown; imageUrl?: string },
+  input: { caption?: string; media?: unknown; imageUrl?: string; clientRequestId?: unknown },
 ): Promise<EstablishmentPublicationRecord> {
   const establishment = await selectEstablishmentByIdOrSlugRow(String(establishmentId));
   if (!establishment || establishment.ownerId !== ownerId) {
@@ -4914,33 +4920,7 @@ async function createPublicationRecord(
     throw new Error("Aggiungi almeno una foto.");
   }
   const caption = normalizeTextField(input.caption ?? "", "Didascalia", 2200);
-  if (pgPool) {
-    const result = await pgPool.query<Record<string, unknown>>(
-      `
-        INSERT INTO establishment_publications (
-          establishment_id, owner_user_id, caption, media, image_url
-        )
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING *
-      `,
-      [establishmentId, ownerId, caption, JSON.stringify(media), imageUrl],
-    );
-    return normalizePublicationRow(result.rows[0]);
-  }
-  const result = requireSqliteDb()
-    .prepare(
-      `
-        INSERT INTO establishment_publications (
-          establishment_id, owner_user_id, caption, media, image_url
-        )
-        VALUES (?, ?, ?, ?, ?)
-      `,
-    )
-    .run(establishmentId, ownerId, caption, JSON.stringify(media), imageUrl);
-  const row = requireSqliteDb()
-    .prepare("SELECT * FROM establishment_publications WHERE id = ?")
-    .get(Number(result.lastInsertRowid)) as Record<string, unknown>;
-  return normalizePublicationRow(row);
+  return normalizePublicationRow(await publicationEvolution.createPublication(establishmentId, ownerId, caption, media, input.clientRequestId));
 }
 
 async function updatePublicationRecord(
@@ -5993,12 +5973,25 @@ async function selectProductCommentsRows(productId: number): Promise<ProductComm
   return rows.map(normalizeProductCommentRow);
 }
 
-async function selectPublicationCommentsRows(publicationId: number, limit?: number): Promise<ProductCommentRow[]> {
+async function selectPublicationCommentsRows(publicationId: number, limit?: number, page?: { parentCommentId: number | null; cursor?: CommentCursor; ids?: number[] }): Promise<ProductCommentRow[]> {
+  const values: unknown[] = [publicationId];
+  const parameter = (value: unknown) => { values.push(value); return `$${values.length}`; };
+  let filter = '';
+  if (page?.ids) filter = ` AND c.id IN (${page.ids.map(id => parameter(id)).join(',')})`;
+  else if (page) {
+    filter = page.parentCommentId === null ? ' AND c.parent_comment_id IS NULL' : ` AND c.parent_comment_id=${parameter(page.parentCommentId)}`;
+    if (page.cursor) filter += ` AND (c.created_at,c.id) ${page.parentCommentId === null ? '<' : '>'} (${parameter(page.cursor.createdAt)},${parameter(page.cursor.id)})`;
+  }
+  const order = page?.parentCommentId ? 'ASC' : 'DESC';
+  const sqliteFilter = sqliteBindings(filter, values);
+  const limitClause = limit ? `LIMIT ${parameter(limit)}` : '';
+
   if (pgPool) {
     const result = await pgPool.query<Record<string, unknown>>(
       `
         SELECT
           c.id,
+          ${page ? "EXISTS(SELECT 1 FROM product_comments child WHERE child.parent_comment_id=c.id) AS has_replies," : ""}
           c.product_id,
           c.publication_id,
           c.user_id,
@@ -6016,11 +6009,11 @@ async function selectPublicationCommentsRows(publicationId: number, limit?: numb
           NULLIF(BTRIM(u.avatar_url), '') AS author_avatar_url
         FROM product_comments c
         INNER JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = c.user_id
-        WHERE c.publication_id = $1
-        ORDER BY c.created_at DESC, c.id DESC
-        ${limit ? "LIMIT $2" : ""}
+        WHERE c.publication_id = $1 ${filter}
+        ORDER BY c.created_at ${order}, c.id ${order}
+        ${limitClause}
       `,
-      limit ? [publicationId, limit] : [publicationId],
+      values,
     );
     return result.rows.map(normalizeProductCommentRow);
   }
@@ -6030,6 +6023,7 @@ async function selectPublicationCommentsRows(publicationId: number, limit?: numb
       `
         SELECT
           c.id,
+          ${page ? "EXISTS(SELECT 1 FROM product_comments child WHERE child.parent_comment_id=c.id) AS has_replies," : ""}
           c.product_id,
           c.publication_id,
           c.user_id,
@@ -6042,117 +6036,24 @@ async function selectPublicationCommentsRows(publicationId: number, limit?: numb
           NULLIF(TRIM(u.avatar_url), '') AS author_avatar_url
         FROM product_comments c
         INNER JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = c.user_id
-        WHERE c.publication_id = ?
-        ORDER BY c.created_at DESC, c.id DESC
+        WHERE c.publication_id = ? ${sqliteFilter.sql}
+        ORDER BY c.created_at ${order}, c.id ${order}
         ${limit ? "LIMIT ?" : ""}
       `,
     )
-    .all(...(limit ? [publicationId, limit] : [publicationId])) as Array<Record<string, unknown>>;
+    .all(publicationId, ...sqliteFilter.values, ...(limit ? [limit] : [])) as Array<Record<string, unknown>>;
   return rows.map(normalizeProductCommentRow);
 }
 
 async function createProductCommentRecord(input: {
-  productId?: number | null;
-  publicationId?: number | null;
-  userId: number;
-  parentCommentId: number | null;
-  rating: number | null;
-  body: string;
+  productId?: number | null; publicationId?: number | null; userId: number;
+  parentCommentId: number | null; rating: number | null; body: string; clientRequestId?: unknown;
 }): Promise<number> {
-  const createdAt = Math.floor(Date.now() / 1000);
-  let bodyTranslations = "{}";
-  try {
-    const translations = await buildContentTranslations({ body: input.body });
-    bodyTranslations = stringifyTranslationMap(translations.body.translations);
-  } catch (error) {
-    console.warn("Skipping comment translation after provider failure:", error);
-  }
-
-  if (pgPool) {
-    const result = await pgPool.query<{ id: number | string }>(
-      `
-        INSERT INTO product_comments (
-          product_id,
-          publication_id,
-          user_id,
-          parent_comment_id,
-          rating,
-          body,
-          body_translations
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING id
-      `,
-      [
-        input.productId ?? null,
-        input.publicationId ?? null,
-        input.userId,
-        input.parentCommentId,
-        input.rating,
-        input.body,
-        bodyTranslations,
-      ],
-    );
-    return toRequiredNumber(result.rows[0]?.id);
-  }
-
-  const result = requireSqliteDb()
-    .prepare(
-      `
-        INSERT INTO product_comments (
-          product_id,
-          publication_id,
-          user_id,
-          parent_comment_id,
-          rating,
-          body,
-          body_translations,
-          created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-    )
-    .run(
-      input.productId ?? null,
-      input.publicationId ?? null,
-      input.userId,
-      input.parentCommentId,
-      input.rating,
-      input.body,
-      bodyTranslations,
-      createdAt,
-    );
-
-  return Number(result.lastInsertRowid);
+  return publicationEvolution.createComment(input);
 }
 
 async function updateProductCommentRecord(commentId: number, userId: number, body: string): Promise<boolean> {
-  const normalizedBody = normalizeIncomingProductCommentBody(body);
-  let bodyTranslations = "{}";
-  try {
-    const translations = await buildContentTranslations({ body: normalizedBody });
-    bodyTranslations = stringifyTranslationMap(translations.body.translations);
-  } catch (error) {
-    console.warn("Skipping comment translation after provider failure:", error);
-  }
-
-  if (pgPool) {
-    const result = await pgPool.query(
-      `
-        UPDATE product_comments
-        SET body = $1,
-            body_translations = $2
-        WHERE id = $3 AND user_id = $4
-      `,
-      [normalizedBody, bodyTranslations, commentId, userId],
-    );
-    return (result.rowCount ?? 0) > 0;
-  }
-
-  const result = requireSqliteDb()
-    .prepare("UPDATE product_comments SET body = ?, body_translations = ? WHERE id = ? AND user_id = ?")
-    .run(normalizedBody, bodyTranslations, commentId, userId);
-  return result.changes > 0;
+  return publicationEvolution.updateComment(commentId, userId, normalizeIncomingProductCommentBody(body));
 }
 
 async function deleteProductCommentRecord(commentId: number, userId: number): Promise<boolean> {
@@ -8594,12 +8495,14 @@ function rowToProductComment(
   const normalized: ProductCommentRecord = {
     id: row.id,
     userId: row.user_id,
-    body: locale ? getLocalizedText(row.body, row.body_translations, locale) : row.body,
+    body: row.body,
     createdAt: row.created_at,
     authorName: row.author_name.trim() || `Usuário ${row.user_id}`,
     authorAvatarUrl: row.author_avatar_url ?? "",
     replies: [],
   };
+
+  if (row.has_replies !== undefined) normalized.hasReplies = row.has_replies;
 
   if (row.product_id !== null) {
     normalized.productId = row.product_id;
@@ -10216,6 +10119,9 @@ async function fetchTileFromProviders(
 
 async function bootstrap() {
   await initializeDatabase();
+  publicationEvolution = createPublicationEvolution(pgPool, sqliteDb);
+  await publicationEvolution.initialize(IS_DEV_REMOTE_READ_ONLY);
+  publicationEvolution.start();
 
   const discoveryQuery = async (sql: string, values: unknown[] = []): Promise<Record<string, any>[]> => {
     if (pgPool) return (await pgPool.query(sql, values)).rows;
@@ -10421,7 +10327,10 @@ async function bootstrap() {
       mode: isProduction ? "production" : "development",
       database: USE_SQLITE_DATABASE ? "sqlite" : "postgres",
       writeCapacity: { publications: admitPublicationWrite.snapshot(), uploads: admitMediaUpload.snapshot() },
-      commentDelivery: "compact-v1",
+      commentDelivery: "evolution-v2",
+      commentTranslation: false,
+      commentPageSize: 30,
+      idempotency: publicationEvolution.snapshot(),
       databasePool: pgPool ? { total: pgPool.totalCount, idle: pgPool.idleCount, waiting: pgPool.waitingCount } : null,
       cloudinary:
         CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET
@@ -12149,13 +12058,14 @@ async function bootstrap() {
       const body = req.body as Record<string, unknown>;
       const publication = await createPublicationRecord(id, user.id, {
         caption: String(body.caption ?? ""),
+        clientRequestId: body.clientRequestId,
         media: body.media ?? body.images,
         imageUrl: String(body.imageUrl ?? body.image_url ?? body.image ?? ""),
       });
       res.status(201).json({ publication });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao publicar.";
-      res.status(400).json({ error: message });
+      res.status(error instanceof WriteConflict ? 409 : 400).json({ error: message });
     }
   }));
 
@@ -12633,12 +12543,32 @@ async function bootstrap() {
         res.status(404).json({ error: "Pubblicazione non trovata." });
         return;
       }
+      if (req.query.page === "1") {
+        const parentCommentId = req.query.parentId === undefined ? null : Number(req.query.parentId);
+        if (parentCommentId !== null && (!Number.isSafeInteger(parentCommentId) || parentCommentId <= 0)) {
+          res.status(400).json({ error: "Comentário pai inválido." }); return;
+        }
+        const cursor = parseCommentCursor(req.query.cursor);
+        const rows = await selectPublicationCommentsRows(publicationId, 31, { parentCommentId, cursor });
+        const page = rows.slice(0,30);
+        let focused: ProductCommentRow[] = [];
+        if (req.query.focus !== undefined && !cursor && parentCommentId === null) {
+          const targetId = Number(req.query.focus);
+          if (!Number.isSafeInteger(targetId) || targetId <= 0) { res.status(400).json({ error: "Comentário inválido." }); return; }
+          const target = await selectProductCommentByIdRow(targetId);
+          if (target?.publication_id === publicationId) focused = await selectPublicationCommentsRows(publicationId, 2,
+            { parentCommentId: null, ids: [target.id, target.parent_comment_id].filter((id): id is number => id !== null) });
+        }
+        res.json({ comments: buildProductCommentsThread(page, locale), focused: buildProductCommentsThread(focused, locale),
+          pagination: { hasMore: rows.length > 30, nextCursor: rows.length > 30 ? encodeCommentCursor(page[page.length-1]) : null } });
+        return;
+      }
       const comments = await selectPublicationCommentsRows(publicationId, req.query.preview === "1" ? 2 : undefined);
       res.json({ comments: buildProductCommentsThread(comments, locale) });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao carregar comentários da publicação.";
-      res.status(500).json({ error: message });
+      res.status(message === "Cursor de comentários inválido." ? 400 : 500).json({ error: message });
     }
   });
 
@@ -12697,6 +12627,7 @@ async function bootstrap() {
         parentCommentId,
         rating: null,
         body: commentBody,
+        clientRequestId: body.clientRequestId,
       });
       if (isReply && parentComment?.user_id && parentComment.user_id !== user.id) {
         notifyUserNotificationsChanged(parentComment.user_id, "publication-comment-reply");
@@ -12715,7 +12646,7 @@ async function bootstrap() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha ao salvar comentário da publicação.";
-      res.status(400).json({ error: message });
+      res.status(error instanceof WriteConflict ? 409 : 400).json({ error: message });
     }
   }));
 
@@ -12755,6 +12686,11 @@ async function bootstrap() {
         return;
       }
 
+      if (req.query.response === "changed") {
+        const updated = await selectProductCommentByIdRow(commentId);
+        if (!updated) throw new Error("Comentário não encontrado.");
+        res.json({ comment: rowToProductComment(updated, locale) }); return;
+      }
       const comments = await selectPublicationCommentsRows(publicationId);
       res.json({ comments: buildProductCommentsThread(comments, locale) });
     } catch (error) {
@@ -12794,6 +12730,7 @@ async function bootstrap() {
         return;
       }
 
+      if (req.query.response === "changed") { res.json({ deletedId: commentId }); return; }
       const comments = await selectPublicationCommentsRows(publicationId);
       res.json({ comments: buildProductCommentsThread(comments, locale) });
     } catch (error) {
