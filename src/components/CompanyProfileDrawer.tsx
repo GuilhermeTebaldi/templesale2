@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   Heart,
   LogOut,
+  Settings,
 } from 'lucide-react';
 import { Company, Post, Auth0User } from '../types';
 import { TempleSaleAvatarFrame } from './TempleSaleAvatarFrame';
@@ -52,7 +53,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
   onCloseAccount,
   onViewPublicProfile,
 }) => {
-  const [currentView, setCurrentView] = useState<'main' | 'saved' | 'language' | 'account'>('main');
+  const [currentView, setCurrentView] = useState<'main' | 'saved' | 'settings' | 'language' | 'account'>('main');
 
   const [accountMode, setAccountMode] = useState<'deactivate' | 'delete'>('deactivate');
   const [accountEmail, setAccountEmail] = useState('');
@@ -83,7 +84,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
         if (currentView !== 'main') {
-          setCurrentView('main');
+          setCurrentView(currentView === 'account' || currentView === 'language' ? 'settings' : 'main');
         } else {
           onClose();
         }
@@ -114,7 +115,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
             {currentView !== 'main' ? (
               <button
                 type="button"
-                onClick={() => setCurrentView('main')}
+                onClick={() => setCurrentView(currentView === 'account' || currentView === 'language' ? 'settings' : 'main')}
                 className="p-1 -ml-1 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
                 title="Indietro"
               >
@@ -126,6 +127,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
             <h2 className="font-bold text-base text-neutral-100 truncate">
               {currentView === 'main' && "Menu dell’attività"}
               {currentView === 'saved' && `Pubblicazioni salvate (${savedPosts.length})`}
+              {currentView === 'settings' && 'Impostazioni'}
               {currentView === 'language' && 'Traduci questa pagina'}
               {currentView === 'account' && accountText('Encerrar conta', 'Chiudi account')}
             </h2>
@@ -266,30 +268,18 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                     <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-neutral-300 shrink-0" />
                   </button>
 
-                  {onOpenTerms && <button type="button" onClick={onOpenTerms}
-                    className="flex w-full items-center justify-between p-3.5 text-left hover:bg-neutral-800/50">
-                    <div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-emerald-300" />
-                      <span className="text-sm font-semibold">Condizioni e ricevuta</span>
-                    </div><ChevronRight className="h-4 w-4 text-neutral-500" />
-                  </button>}
-                  {/* Item: Idioma */}
                   <button
                     type="button"
-                    onClick={() => setCurrentView('language')}
+                    onClick={() => setCurrentView('settings')}
                     className="w-full flex items-center justify-between p-3.5 hover:bg-neutral-800/50 transition-colors text-left group cursor-pointer"
                   >
                     <div className="flex items-center space-x-3 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-sky-400/10 flex items-center justify-center text-sky-400 shrink-0">
-                        <Globe className="w-4.5 h-4.5" />
+                      <div className="w-9 h-9 rounded-xl bg-neutral-800 flex items-center justify-center text-neutral-300 shrink-0">
+                        <Settings className="w-4.5 h-4.5" />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-sm font-semibold text-neutral-200 group-hover:text-white flex items-center space-x-2">
-                          <span>Traduci questa pagina</span>
-
-                        </div>
-                        <div className="text-xs text-neutral-400 truncate">
-                          Usa la traduzione del browser
-                        </div>
+                        <div className="text-sm font-semibold text-neutral-200 group-hover:text-white">Impostazioni</div>
+                        <div className="text-xs text-neutral-400">Account, condizioni e traduzione</div>
                       </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-neutral-300 shrink-0" />
@@ -320,10 +310,6 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                 </div>
               </div>
 
-              {onCloseAccount && <button type="button" onClick={() => setCurrentView('account')}
-                className="w-full rounded-2xl border border-neutral-700 px-4 py-3 text-sm text-neutral-300">
-                {accountText('Desativar ou excluir conta', 'Disattiva o elimina account')}
-              </button>}
               {/* RODAPÉ DO DRAWER */}
               <div className="pt-2 text-center text-[11px] text-neutral-400 space-y-1">
                 {onLogout && (
@@ -349,6 +335,54 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                 </div>
                 <p>Senza prezzo • Senza carrello • Contatto diretto tramite WhatsApp</p>
               </div>
+            </div>
+          )}
+
+          {currentView === 'settings' && (
+            <div className="p-5 space-y-6">
+              <div className="bg-neutral-950/60 border border-neutral-800/70 rounded-2xl overflow-hidden divide-y divide-neutral-800/60 shadow-sm">
+                  {onOpenTerms && <button type="button" onClick={onOpenTerms}
+                    className="flex w-full items-center justify-between p-3.5 text-left hover:bg-neutral-800/50">
+                    <div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-emerald-300" />
+                      <span className="text-sm font-semibold">Condizioni e ricevuta</span>
+                    </div><ChevronRight className="h-4 w-4 text-neutral-500" />
+                  </button>}
+                  {/* Item: Idioma */}
+                  <button
+                    type="button"
+                    onClick={() => setCurrentView('language')}
+                    className="w-full flex items-center justify-between p-3.5 hover:bg-neutral-800/50 transition-colors text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-sky-400/10 flex items-center justify-center text-sky-400 shrink-0">
+                        <Globe className="w-4.5 h-4.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-neutral-200 group-hover:text-white flex items-center space-x-2">
+                          <span>Traduci questa pagina</span>
+
+                        </div>
+                        <div className="text-xs text-neutral-400 truncate">
+                          Usa la traduzione del browser
+                        </div>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-neutral-300 shrink-0" />
+                  </button>
+              </div>
+              {onCloseAccount && (
+                <div className="space-y-2">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 px-1">Gestione dell’account</h3>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentView('account')}
+                    className="w-full flex items-center justify-between rounded-2xl border border-neutral-800/70 bg-neutral-950/60 p-3.5 text-left text-sm text-neutral-200 hover:bg-neutral-800/50 transition-colors"
+                  >
+                    <span>Disattiva o elimina account</span>
+                    <ChevronRight className="w-4 h-4 text-neutral-500 shrink-0" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
