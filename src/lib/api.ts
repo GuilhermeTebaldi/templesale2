@@ -3042,14 +3042,16 @@ export const api = {
     }
     return establishment;
   },
-  async createPublication(establishmentId: number, input: { caption?: string; media: string[] }) {
+  async createPublication(establishmentId: number, input: { caption?: string; media: string[] }, options?: { signal?: AbortSignal; clientRequestId?: string; onOperation?: (key: string) => Promise<void> }) {
     const scope = `${getOrCreateDeviceId()}:publication:${establishmentId}`;
-    const key = await beginWriteOperation(scope, input);
+    const key = options?.clientRequestId ?? await beginWriteOperation(scope, input);
+    await options?.onOperation?.(key);
     const payload = await retryWriteWhenBusy(() => request<unknown>(`/api/establishments/${establishmentId}/publications`, {
       method: "POST",
       skipGlobalLoadingOverlay: true,
+      signal: options?.signal,
       body: JSON.stringify({ ...input, clientRequestId: key }),
-    }));
+    }), options?.signal);
     const parsed = parseJsonIfNeeded(payload);
     const publication = normalizePublicationItem(isRecord(parsed) ? parsed.publication : parsed);
     if (!publication) {
@@ -3057,6 +3059,10 @@ export const api = {
     }
     completeWriteOperation(scope, key);
     return publication;
+  },
+  async getPublicationOperation(establishmentId: number, key: string, signal?: AbortSignal) {
+    const payload = await request<unknown>(`/api/establishments/${establishmentId}/publication-operations/${encodeURIComponent(key)}`, { signal, skipGlobalLoadingOverlay: true });
+    return isRecord(payload) ? normalizePublicationItem(payload.publication) : null;
   },
   async getPublication(publicationId: number) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
