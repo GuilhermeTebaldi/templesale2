@@ -2,6 +2,8 @@ import { parseCommentCursor, encodeCommentCursor, type CommentCursor } from "./s
 import { createPublicationEvolution, WriteConflict, requestKey } from "./server/publication-evolution";
 import { createWriteAdmission } from "./server/write-admission";
 import { createPublicationCapacity } from './server/publication-capacity';
+import { createPublicationDirectUpload, DirectUploadBusy } from './server/publication-direct-upload';
+import { createPublicationMonitor } from './server/publication-monitor';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { buildLocalFeedQuery, buildPublicationPreviewsQuery, encodeFeedCursor, parseFeedCursor, parseFeedExclusions, type FeedCursor } from "./server/local-feed";
 import { createAdminSessionToken as createSignedAdminSessionToken, verifyAdminSessionToken as verifySignedAdminSessionToken } from "./server/admin-session";
@@ -10131,10 +10133,20 @@ async function bootstrap() {
   const admitPublicationWrite = createWriteAdmission(toRequiredNonNegativeInteger(process.env.PUBLICATION_WRITE_CONCURRENCY ?? 4, 4), databaseUnderPressure, () => capacity.acquire('publications'));
   const admitCommentWrite = createWriteAdmission(toRequiredNonNegativeInteger(process.env.COMMENT_WRITE_CONCURRENCY ?? 4, 4), databaseUnderPressure, () => capacity.acquire('comments'));
   const admitMediaUpload = createWriteAdmission(toRequiredNonNegativeInteger(process.env.MEDIA_UPLOAD_CONCURRENCY ?? 2, 2), databaseUnderPressure, () => capacity.acquire('uploads'));
+  const admitUploadPermit = createWriteAdmission(4,databaseUnderPressure);
+  const admitUploadNotification=createWriteAdmission(4,databaseUnderPressure);
+  const directUpload = createPublicationDirectUpload(pgPool, {
+    cloud:CLOUDINARY_CLOUD_NAME,key:CLOUDINARY_API_KEY,secret:CLOUDINARY_API_SECRET,
+    webhookSecret:String(process.env.CLOUDINARY_WEBHOOK_SECRET??CLOUDINARY_API_SECRET),folder:CLOUDINARY_UPLOAD_FOLDER,
+    callbackBase:String(process.env.PUBLIC_API_BASE_URL??process.env.RENDER_EXTERNAL_URL??'https://saleday-backend.onrender.com'),maxBytes:UPLOAD_MAX_BYTES,
+  },capacity,(ms,success)=>admitMediaUpload.recordExternal(ms,success));
+  await directUpload.initialize(IS_DEV_REMOTE_READ_ONLY);
   const loopDelay = monitorEventLoopDelay({ resolution: 20 }); loopDelay.enable();
   const metrics = () => ({ writes: { publications: admitPublicationWrite.snapshot(), comments: admitCommentWrite.snapshot(), uploads: admitMediaUpload.snapshot() },
     memory: process.memoryUsage(), eventLoopP99Ms: loopDelay.percentile(99) / 1000000, capacity: capacity.snapshot(),
     databasePool: pgPool ? { total: pgPool.totalCount, idle: pgPool.idleCount, waiting: pgPool.waitingCount, max: pgPool.options.max } : null });
+  const publicationMonitor=createPublicationMonitor(pgPool,metrics,()=>directUpload.snapshot());
+  await publicationMonitor.initialize(IS_DEV_REMOTE_READ_ONLY);
   const isProduction = process.env.NODE_ENV === "production";
   const port = Number(process.env.PORT || 5173);
   const cspHeaderValue = buildContentSecurityPolicy(isProduction);
@@ -10153,6 +10165,13 @@ async function bootstrap() {
     next();
   });
   app.use(cors({ origin: true, credentials: true }));
+  app.post('/api/uploads/publication-image/notify/:id',admitUploadNotification.beforeBody,express.raw({type:'application/json',limit:'64kb'}),admitUploadNotification(async (req,res) => {
+    try {
+      if (!Buffer.isBuffer(req.body)) {res.status(400).end();return;}
+      const accepted=await directUpload.notify(req.params.id,req.body,String(req.header('x-cld-timestamp')??''),String(req.header('x-cld-signature')??''));
+      res.status(accepted?200:401).end();
+    } catch {res.status(503).end();}
+  }));
   app.use(express.json({ limit: "2mb" }));
   app.use((req, res, next) => {
     const normalizedPath = normalizeSecurityMonitorPath(String(req.originalUrl ?? req.url ?? ""));
@@ -10301,7 +10320,8 @@ async function bootstrap() {
       ok: true,
       mode: isProduction ? "production" : "development",
       database: USE_SQLITE_DATABASE ? "sqlite" : "postgres",
-      publicationProtection: 'resilient-v4',
+      publicationProtection: 'observable-v5',
+      directUpload:directUpload.snapshot(),
       sharedCapacity: capacity.snapshot(),
       writeCapacity: { publications: admitPublicationWrite.snapshot(), comments: admitCommentWrite.snapshot(), uploads: admitMediaUpload.snapshot() },
       commentDelivery: "evolution-v2",
@@ -10321,8 +10341,18 @@ async function bootstrap() {
     try {
       const tables = pgPool ? (await pgPool.query(`SELECT relname,n_live_tup,n_dead_tup,last_autovacuum,last_autoanalyze
         FROM pg_stat_user_tables WHERE schemaname=current_schema() AND relname IN ('sessions','product_comments','establishment_publications','publication_write_operations')`)).rows : [];
-      res.json({ ...metrics(), globalActive: await capacity.active(), databaseTables: tables });
+      res.json({ ...metrics(), globalActive: await capacity.active(), databaseTables: tables,directUpload:directUpload.snapshot(),monitor:await publicationMonitor.snapshot() });
     } catch (error) { res.status(503).json({ error: error instanceof Error ? error.message : 'Métricas indisponíveis.' }); }
+  });
+
+  app.put('/api/admin/publication-capacity/policy',async (req,res) => {
+    if (!requireAdmin(req,res)) return;
+    try {res.json({policy:await publicationMonitor.updatePolicy(req.body)});}
+    catch (error) {res.status(400).json({error:error instanceof Error?error.message:'Parâmetro inválido.'});}
+  });
+  app.post('/api/admin/publication-capacity/cloudinary-refresh',async (req,res) => {
+    if (!requireAdmin(req,res)) return;
+    res.json(await directUpload.refresh());
   });
 
   app.post("/api/visitor/ping", async (req, res) => {
@@ -10601,6 +10631,28 @@ async function bootstrap() {
       }
     }),
   );
+
+  app.post('/api/establishments/:id/publication-upload',admitUploadPermit(async (req,res) => {
+    try {
+      const user=await requireAuth(req,res);if(!user)return;
+      const id=Number(req.params.id);
+      if (!Number.isSafeInteger(id)||id<=0) {res.status(400).json({error:'Estabelecimento inválido.'});return;}
+      const establishment=await selectEstablishmentByIdOrSlugRow(String(id));
+      if (!establishment||establishment.ownerId!==user.id) {res.status(403).json({error:'Estabelecimento não autorizado.'});return;}
+      res.json(await directUpload.prepare(user.id,id,req.body??{}));
+    } catch (error) {
+      if (error instanceof DirectUploadBusy) {res.setHeader('Retry-After','2');res.status(503).json({code:'WRITE_BUSY',error:error.message});}
+      else res.status(400).json({error:error instanceof Error?error.message:'Falha ao preparar foto.'});
+    }
+  }));
+  app.get('/api/establishments/:id/publication-upload/:key',async (req,res) => {
+    try {
+      const user=await requireAuth(req,res);if(!user)return;
+      const id=Number(req.params.id);
+      if (!Number.isSafeInteger(id)||id<=0) {res.status(400).json({error:'Estabelecimento inválido.'});return;}
+      res.json(await directUpload.status(user.id,id,req.params.key));
+    } catch (error) {res.status(400).json({error:error instanceof Error?error.message:'Foto sem confirmação.'});}
+  });
 
   app.post(
     "/api/uploads/profile-image",
@@ -12044,6 +12096,10 @@ async function bootstrap() {
     }
     try {
       const body = req.body as Record<string, unknown>;
+      if (body.uploadReceiptId!==undefined) {
+        const media=normalizeImages(body.media??body.images,String(body.imageUrl??body.image_url??body.image??''));
+        await directUpload.validate(user.id,id,body.uploadReceiptId,media[0]??'');
+      }
       const publication = await createPublicationRecord(id, user.id, {
         caption: String(body.caption ?? ""),
         clientRequestId: body.clientRequestId,
