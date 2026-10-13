@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 
 type WriteHandler = (req: Request, res: Response) => Promise<void>;
-type Reservation = { running: boolean; release: () => void; timer: ReturnType<typeof setTimeout>; sharedRelease?: () => void; sharedReady?: boolean; closed?: boolean };
+type Reservation = { running: boolean; release: () => void; timer: ReturnType<typeof setTimeout>; sharedRelease?: () => void; sharedReady?: boolean; closed?: boolean; busy?: boolean };
 
 // Per-process budget: reject excess writes rather than building an unbounded queue.
 // A slot remains occupied until the operation ends, even if the client disconnects.
@@ -29,12 +29,14 @@ export function createWriteAdmission(maxConcurrent: number, underPressure: () =>
       running: false,
       release: () => {
         if (released) return;
-        released = true; clearTimeout(reservation.timer); active -= 1; completed += 1;
+        released = true; clearTimeout(reservation.timer); active -= 1;
         reservation.closed = true;
         reservation.sharedRelease?.();
-        if (res.statusCode >= 400 || !res.writableEnded) failed += 1;
-        maxDurationMs = Math.max(maxDurationMs, Date.now() - startedAt);
-        durationCounts[durationBucketsMs.findIndex(bound => Date.now()-startedAt <= bound)] += 1;
+        if(!reservation.busy){completed+=1;
+          if (res.statusCode >= 400 || !res.writableEnded) failed += 1;
+          maxDurationMs = Math.max(maxDurationMs, Date.now() - startedAt);
+          durationCounts[durationBucketsMs.findIndex(bound => Date.now()-startedAt <= bound)] += 1;
+        }
         reservations.delete(req);
       },
       timer: setTimeout(() => {
@@ -54,6 +56,7 @@ export function createWriteAdmission(maxConcurrent: number, underPressure: () =>
       reservation.sharedReady = true;
       if (reservation.closed) { reservation.sharedRelease?.(); return false; }
       if (!reservation.sharedRelease || req.destroyed || res.destroyed) {
+        reservation.busy=!reservation.sharedRelease;
         reservation.release(); rejected += 1;
         if (!res.destroyed) { res.setHeader('Retry-After','2'); res.status(503).json({ code:'WRITE_BUSY',error:'Servidor ocupado. Aguarde antes de tentar novamente.' }); }
         return false;
@@ -76,6 +79,12 @@ export function createWriteAdmission(maxConcurrent: number, underPressure: () =>
     catch (error) { next(error); }
     finally { reservation.running = false; reservation.release(); }
   };
-  return Object.assign(admit, { beforeBody, snapshot: () => ({ active, limit, admitted, rejected, completed, failed, peak, maxDurationMs,
+  const recordExternal = (ms: number, success: boolean) => {
+    const duration = Math.max(0,ms);
+    admitted += 1; completed += 1; if (!success) failed += 1;
+    maxDurationMs = Math.max(maxDurationMs,duration);
+    durationCounts[durationBucketsMs.findIndex(bound => duration<=bound)] += 1;
+  };
+  return Object.assign(admit, { beforeBody, recordExternal, snapshot: () => ({ active, limit, admitted, rejected, completed, failed, peak, maxDurationMs,
     durations: durationBucketsMs.map((bound,index) => ({ upToMs: Number.isFinite(bound) ? bound : null, count: durationCounts[index] })) }) });
 }
