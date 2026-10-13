@@ -1,4 +1,5 @@
-export type PublicationDraft = { file: File; caption: string; uploadedUrl?: string; operationKey?: string; uploadKey?: string; uploadReceiptId?:string; savedAt: number };
+import type { FilterPreset, PhotoAdjustments, PhotoCrop, OverlayItem } from '../components/photo-publisher/types';
+export type PublicationDraft = { file: File; source?: Blob; editor?: { filter: FilterPreset; adjustments: PhotoAdjustments; crop: PhotoCrop; overlays: OverlayItem[]; dimensions: {width:number;height:number} }; caption: string; uploadedUrl?: string; operationKey?: string; uploadKey?: string; uploadReceiptId?:string; savedAt: number };
 const MAX_AGE = 7 * 86400000;
 const memory = new Map<number, PublicationDraft>();
 async function database(): Promise<IDBDatabase> {
