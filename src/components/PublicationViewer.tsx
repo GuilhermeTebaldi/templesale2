@@ -353,7 +353,7 @@ export default function PublicationViewer({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-130 flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+      className="fixed inset-0 z-130 flex items-end justify-center overscroll-none bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-6"
     >
       <motion.div
         initial={{ opacity: 0, y: 24, scale: 0.98 }}
@@ -410,7 +410,7 @@ export default function PublicationViewer({
               <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5">
             {publication.caption ? (
               <p className="whitespace-pre-wrap text-sm leading-6 text-neutral-200">{publication.caption}</p>
             ) : (
