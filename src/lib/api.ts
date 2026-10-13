@@ -3186,9 +3186,13 @@ export const api = {
 
     const scope = `${getOrCreateDeviceId()}:comment:${publicationId}`;
     const key = await beginWriteOperation(scope, [normalizedBody, input.parentCommentId ?? null]);
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(new Error('Não foi possível confirmar o comentário em 30 segundos. O texto foi preservado; confira os comentários ou retome o mesmo envio.')),30000);
+    try {
     const response = await request<unknown>(`/api/publications/${publicationId}/comments?response=created`, {
       method: "POST",
       skipGlobalLoadingOverlay: true,
+      signal:controller.signal,
       body: JSON.stringify({
         body: normalizedBody,
         clientRequestId: key,
@@ -3201,6 +3205,10 @@ export const api = {
     const result = commentMutationResult(response);
     completeWriteOperation(scope, key);
     return result;
+    } catch (error) {
+      if (controller.signal.aborted) throw controller.signal.reason;
+      throw error;
+    } finally {clearTimeout(deadline);}
   },
   async updatePublicationComment(publicationId: number, commentId: number, input: UpdateProductCommentInput) {
     if (!Number.isInteger(publicationId) || publicationId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
