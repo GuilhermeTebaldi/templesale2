@@ -10320,7 +10320,7 @@ async function bootstrap() {
       ok: true,
       mode: isProduction ? "production" : "development",
       database: USE_SQLITE_DATABASE ? "sqlite" : "postgres",
-      publicationProtection: 'observable-v5.1',
+      publicationProtection: 'observable-v5.2',
       directUpload:directUpload.snapshot(),
       sharedCapacity: capacity.snapshot(),
       writeCapacity: { publications: admitPublicationWrite.snapshot(), comments: admitCommentWrite.snapshot(), uploads: admitMediaUpload.snapshot() },
@@ -10644,6 +10644,15 @@ async function bootstrap() {
       if (error instanceof DirectUploadBusy) {res.setHeader('Retry-After','2');res.status(503).json({code:'WRITE_BUSY',error:error.message});}
       else res.status(400).json({error:error instanceof Error?error.message:'Falha ao preparar foto.'});
     }
+  }));
+  app.delete('/api/establishments/:id/publication-upload/:key',admitUploadPermit(async (req,res) => {
+    try {
+      const user=await requireAuth(req,res);if(!user)return;
+      const id=Number(req.params.id);
+      if (!Number.isSafeInteger(id)||id<=0) {res.status(400).json({error:'Estabelecimento inválido.'});return;}
+      await directUpload.discard(user.id,id,req.params.key);
+      res.json({success:true});
+    } catch {res.status(503).json({error:'Não foi possível cancelar a reserva da foto agora.'});}
   }));
   app.get('/api/establishments/:id/publication-upload/:key',async (req,res) => {
     try {
