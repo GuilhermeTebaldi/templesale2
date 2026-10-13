@@ -1,5 +1,5 @@
 import React from "react";
-import { pendingComment, withPendingComment, type PendingComment } from "./lib/comment-delivery";
+import { pendingComment, withPendingComment, reconcileCommentMutation, previewComments, type PendingComment } from "./lib/comment-delivery";
 import { usePublicationFeed } from "./lib/use-publication-feed";
 import { FeedRequestGate } from "./lib/publication-feed";
 import { useAuth0 } from "@auth0/auth0-react";
@@ -704,7 +704,7 @@ export default function App() {
     missingPublicationIds.forEach(id => commentLoadsRef.current.add(id));
     void Promise.all(missingPublicationIds.map(async id => {
       try {
-        return [id, await api.getPublicationComments(id, true)] as const;
+        return [id, await api.getPublicationComments(id, true, true)] as const;
       } catch (error) {
         console.error("Error loading publication comments for feed:", error);
         return [id, []] as const;
@@ -3203,12 +3203,12 @@ export default function App() {
       const draft = pendingComment(publicationId, text.trim(), currentUser, parentCommentId);
       setCommentDeliveries(current => ({ ...current, [publicationId]: draft }));
       try {
-        const comments = await api.createPublicationComment(publicationId, { body: text, parentCommentId });
-        setPublicationCommentsById(current => ({ ...current, [publicationId]: comments }));
+        const result = await api.createPublicationComment(publicationId, { body: text, parentCommentId });
+        setPublicationCommentsById(current => ({ ...current, [publicationId]: previewComments(reconcileCommentMutation(current[publicationId] ?? [], result)) }));
         setCommentDeliveries(current => {
           const next = { ...current }; delete next[publicationId]; return next;
         });
-        return comments;
+        return result;
       } catch (error) {
         setCommentDeliveries(current => ({ ...current, [publicationId]: { ...draft, deliveryStatus: "failed" } }));
         throw error;
@@ -3766,7 +3766,7 @@ export default function App() {
             onCommentsChanged={(publicationId, comments) => {
               setPublicationCommentsById((current) => ({
                 ...current,
-                [publicationId]: comments,
+                [publicationId]: previewComments(comments),
               }));
             }}
             onDeleted={(publicationId) => {
