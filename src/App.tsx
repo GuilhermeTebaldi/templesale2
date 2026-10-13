@@ -16,7 +16,7 @@ import { FeedView as SocialFeedView } from "./components/FeedView";
 import { isValidGeoPoint, useDiscoveryLocation } from "./lib/discovery-location";
 import { CompanyProfile as SocialCompanyProfile } from "./components/CompanyProfile";
 import { CompanySearch as SocialCompanySearch } from "./components/CompanySearch";
-import { CompanyProfileDrawer as SocialCompanyProfileDrawer, type SupportedLanguage as SocialSupportedLanguage } from "./components/CompanyProfileDrawer";
+import { CompanyProfileDrawer as SocialCompanyProfileDrawer } from "./components/CompanyProfileDrawer";
 import { NotificationsPopover as SocialNotificationsPopover } from "./components/NotificationsPopover";
 import { TempleSaleLogo as SocialTempleSaleLogo } from "./components/TempleSaleLogo";
 import PostAuthIntroOverlay from "./components/PostAuthIntroOverlay";
@@ -42,7 +42,6 @@ import {
   type ProductCommentDto,
 } from "./lib/api";
 import { useI18n } from "./i18n/provider";
-import { localeOptions, type AppLocale } from "./i18n";
 import { formatCollectionDate, formatRelativeTime } from "./i18n/formatters";
 import { getCategoryLabel } from "./i18n/categories";
 import { parsePriceToNumber } from "./lib/currency";
@@ -322,7 +321,7 @@ function scrollWindowToTop(behavior: ScrollBehavior = "auto"): void {
 }
 
 export default function App() {
-  const { locale, setLocale, t } = useI18n();
+  const { locale, t } = useI18n();
   const {
     getAccessTokenSilently,
     getIdTokenClaims,
@@ -334,7 +333,6 @@ export default function App() {
   } = useAuth0();
   const [activeCategory, setActiveCategory] = React.useState("All");
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
-  const [isLanguageMenuOpen, setIsLanguageMenuOpen] = React.useState(false);
   const [isUserOpen, setIsUserOpen] = React.useState(false);
   const [isMapOpen, setIsMapOpen] = React.useState(false);
   const [mapInitialCategory, setMapInitialCategory] = React.useState("All");
@@ -891,7 +889,7 @@ export default function App() {
             })
           : idToken;
         if (!token) {
-          throw new Error("Auth0 não retornou token para sincronizar sessão.");
+          throw new Error("Auth0 non ha restituito un token per sincronizzare la sessione.");
         }
 
         const user = await api.syncAuth0(token, idToken);
@@ -980,16 +978,6 @@ export default function App() {
       cancelled = true;
     };
   }, [currentUser]);
-
-  React.useEffect(() => {
-    const preferredLocale = currentUser?.preferredLocale;
-    if (!preferredLocale) {
-      return;
-    }
-    if (preferredLocale !== locale) {
-      setLocale(preferredLocale);
-    }
-  }, [currentUser?.id, currentUser?.preferredLocale, locale, setLocale]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1262,7 +1250,6 @@ export default function App() {
   React.useEffect(() => {
     if (!hasMemberAccess) {
       setIsMenuOpen(false);
-      setIsLanguageMenuOpen(false);
       setIsUserOpen(false);
       setIsMapOpen(false);
       setIsNewProductOpen(false);
@@ -1363,7 +1350,6 @@ export default function App() {
     setEditingProduct(null);
     setIsUserOpen(false);
     setIsMenuOpen(false);
-    setIsLanguageMenuOpen(false);
     setIsMapOpen(false);
     setIsCurtidasOpen(false);
     setProfileCompletionMessage("");
@@ -1407,40 +1393,6 @@ export default function App() {
     setCurrentUser(user);
     setIsAuthModalOpen(false);
   };
-
-  const handleLocaleChange = React.useCallback(
-    (nextLocale: AppLocale) => {
-      setLocale(nextLocale);
-      if (!currentUser) {
-        return;
-      }
-
-      setCurrentUser((prev) =>
-        prev ? { ...prev, preferredLocale: nextLocale } : prev,
-      );
-
-      void api
-        .updatePreferredLocale(nextLocale)
-        .then((updatedUser) => {
-          if (!updatedUser) {
-            return;
-          }
-          setCurrentUser((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  ...updatedUser,
-                  preferredLocale: updatedUser.preferredLocale ?? nextLocale,
-                }
-              : prev,
-          );
-        })
-        .catch((error) => {
-          console.error("Error updating preferred locale:", error);
-        });
-    },
-    [currentUser, setLocale],
-  );
 
   const likedProductIds = React.useMemo(
     () => new Set(likedProducts.map((product) => product.id)),
@@ -1753,7 +1705,7 @@ export default function App() {
       }
     } catch (error) {
       if (!profilePublicationsGate.current.accepts(request)) return;
-      setProfilePublicationsError("Não foi possível carregar as fotos deste perfil.");
+      setProfilePublicationsError("Impossibile caricare le foto di questo profilo.");
       console.error("Error opening establishment:", error);
     } finally {
       if (profilePublicationsGate.current.accepts(request)) {
@@ -1808,7 +1760,7 @@ export default function App() {
       setNextSelectedEstablishmentPublicationsOffset(page.nextOffset);
     } catch (error) {
       if (!profilePublicationsGate.current.accepts(request)) return;
-      setProfilePublicationsError("Não foi possível carregar as próximas fotos.");
+      setProfilePublicationsError("Impossibile caricare le foto successive.");
       console.error("Error loading more establishment publications:", error);
     } finally {
       if (profilePublicationsGate.current.accepts(request)) {
@@ -3204,7 +3156,7 @@ export default function App() {
 
   const submitPublicationComment = React.useCallback(
     async (publicationId: number, text: string, parentCommentId?: number) => {
-      if (commentWritesRef.current.has(publicationId)) throw new Error("Aguarde a confirmação do comentário anterior.");
+      if (commentWritesRef.current.has(publicationId)) throw new Error("Attendi la conferma del commento precedente.");
       commentWritesRef.current.add(publicationId);
       const draft = pendingComment(publicationId, text.trim(), currentUser, parentCommentId);
       setCommentDeliveries(current => ({ ...current, [publicationId]: draft }));
@@ -3473,7 +3425,7 @@ export default function App() {
 
   return (
     <div inert={Boolean(currentUser && !termsAccess) || isTermsOpen} className="min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
-      <TermsDialog key={currentUser?.id ?? "visitor"} user={currentUser} locale={locale === "it-IT" ? "it-IT" : "pt-BR"}
+      <TermsDialog key={currentUser?.id ?? "visitor"} user={currentUser} locale="it-IT"
         open={isTermsOpen} introComplete={!isPostAuthIntroOpen} companyName={myEstablishment?.name} onClose={() => setIsTermsOpen(false)}
         onAccess={setTermsAccess} onReject={handleLogout}
         getIdentityToken={async () => String((await getIdTokenClaims())?.__raw ?? "")} />
@@ -3564,12 +3516,12 @@ export default function App() {
 
       <main className="flex-1 pb-24 sm:pb-16 sm:pl-[72px]">
         <div style={{ display: socialActiveTab === "feed" ? "block" : "none" }}>
-          {publicationSubmitError && <div role="alert" className="mx-auto max-w-xl rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700"><p>{publicationSubmitError}</p><button type="button" className="mt-2 font-semibold underline" onClick={() => {setPublicationSubmitError('');handleOpenNewProduct();}}>Retomar rascunho</button></div>}
+          {publicationSubmitError && <div role="alert" className="mx-auto max-w-xl rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700"><p>{publicationSubmitError}</p><button type="button" className="mt-2 font-semibold underline" onClick={() => {setPublicationSubmitError('');handleOpenNewProduct();}}>Riprendi la bozza</button></div>}
           {pendingPublicationCount > 0 && (
             <div className="sticky top-14 z-30 mx-auto max-w-xl px-3 pt-2 sm:top-16 sm:max-w-3xl">
               <div className="overflow-hidden rounded-full border border-neutral-200 bg-white/95 shadow-sm">
                 <div className="flex items-center justify-between px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
-                  <span>Publicando foto</span>
+                  <span>Pubblicazione della foto</span>
                   {pendingPublicationCount > 1 && <span>{pendingPublicationCount}x</span>}
                 </div>
                 <div className="h-0.5 w-full overflow-hidden bg-neutral-200">
@@ -3607,9 +3559,9 @@ export default function App() {
             <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-900 text-amber-300">
               <Store className="h-7 w-7" />
             </div>
-            <h2 className="text-xl font-bold text-neutral-100">Entre para ver sua empresa</h2>
+            <h2 className="text-xl font-bold text-neutral-100">Accedi per vedere la tua attività</h2>
             <p className="mt-2 max-w-sm text-sm leading-6 text-neutral-400">
-              A aba Empresa é o seu perfil comercial no TempleSale. Faça login para editar dados, publicar fotos e gerenciar sua vitrine.
+              La sezione Attività è il tuo profilo commerciale su <span translate="no" className="notranslate">TempleSale</span>. Accedi per modificare i dati, pubblicare foto e gestire la vetrina.
             </p>
             <button
               type="button"
@@ -3619,7 +3571,7 @@ export default function App() {
               }}
               className="mt-6 rounded-2xl bg-neutral-100 px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-neutral-950 transition-colors hover:bg-white"
             >
-              Fazer login
+              Accedi
             </button>
           </section>
         )}
@@ -3691,9 +3643,9 @@ export default function App() {
               <span className="text-emerald-400 font-semibold ml-0.5">Sale</span>
             </span>
             <span>•</span>
-            <span>Rede de Descoberta de Empresas</span>
+            <span>Scopri le attività vicino a te</span>
           </div>
-          <span className="text-[11px] text-neutral-500">Empresa -&gt; Foto -&gt; Legenda</span>
+          <span className="text-[11px] text-neutral-500">Attività → Foto → Didascalia</span>
           <button onClick={() => setIsTermsOpen(true)} className="text-[11px] text-neutral-400 underline">{t("Termos e privacidade")}</button>
         </div>
       </footer>
@@ -3729,12 +3681,6 @@ export default function App() {
         onViewPublicProfile={(companyId) => {
           selectSocialCompany(companyId);
           setIsUserOpen(false);
-        }}
-        currentLanguage={locale as SocialSupportedLanguage}
-        onChangeLanguage={(language) => {
-          if (language === "pt-BR" || language === "it-IT") {
-            handleLocaleChange(language);
-          }
         }}
       />
 

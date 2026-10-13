@@ -451,7 +451,7 @@ export default function NewProduct({
         }
         setDraftSaveFeedback({
           type: "error",
-          message: "Falha ao carregar as informações salvas.",
+          message: "Impossibile caricare i dati salvati.",
         });
       })
       .finally(() => {

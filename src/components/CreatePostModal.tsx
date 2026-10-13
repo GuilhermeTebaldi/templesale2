@@ -11,23 +11,23 @@ interface CreatePostModalProps {
 
 const SAMPLE_PHOTO_PRESETS = [
   {
-    label: 'Balcão & Bebidas',
+    label: "Bancone e bevande",
     url: 'https://images.unsplash.com/photo-1514933651103-005eec06c04b?w=900&auto=format&fit=crop&q=80',
   },
   {
-    label: 'Prato / Pizza no Forno',
+    label: "Piatto / Pizza al forno",
     url: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=900&auto=format&fit=crop&q=80',
   },
   {
-    label: 'Mecânica & Motor',
+    label: "Meccanica e motori",
     url: 'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=900&auto=format&fit=crop&q=80',
   },
   {
-    label: 'Corte de Barba / Cabelo',
+    label: "Taglio barba e capelli",
     url: 'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?w=900&auto=format&fit=crop&q=80',
   },
   {
-    label: 'Ambiente & Fachada',
+    label: "Ambiente e facciata",
     url: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=900&auto=format&fit=crop&q=80',
   },
 ];
@@ -111,14 +111,14 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
           <div className="flex items-center space-x-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
             <h3 className="font-semibold text-base text-neutral-100">
-              {step === 'select-source' ? '+ Publicar no TempleSale' : 'Foto e Legenda'}
+              {step === 'select-source' ? "+ Pubblica su TempleSale" : "Foto e didascalia"}
             </h3>
           </div>
           <button
             id="btn-close-create-post"
             onClick={onClose}
             className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors"
-            title="Fechar"
+            title="Chiudi"
           >
             <X className="w-5 h-5" />
           </button>
@@ -137,7 +137,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
             </span>
           </div>
           <span className="text-[11px] bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-full font-mono">
-            Sem preço • Sem estoque • Sem carrinho
+            Senza prezzo • Senza magazzino • Senza carrello
           </span>
         </div>
 
@@ -145,7 +145,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
         {step === 'select-source' && (
           <div className="p-6 space-y-6">
             <p className="text-sm text-neutral-300 text-center">
-              Mostre seu trabalho, serviços, ambiente ou novidades através de uma foto.
+              Mostra il tuo lavoro, i servizi, l’ambiente o le novità con una foto.
             </p>
 
             {/* Hidden native inputs */}
@@ -176,8 +176,8 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                 <div className="w-12 h-12 rounded-full bg-neutral-700/60 group-hover:bg-neutral-700 flex items-center justify-center mb-3 text-neutral-200 group-hover:text-white transition-colors">
                   <Camera className="w-6 h-6" />
                 </div>
-                <span className="font-semibold text-sm text-neutral-200">Câmera</span>
-                <span className="text-xs text-neutral-400 mt-1">Tirar foto agora</span>
+                <span className="font-semibold text-sm text-neutral-200">Fotocamera</span>
+                <span className="text-xs text-neutral-400 mt-1">Scatta una foto</span>
               </button>
 
               <button
@@ -189,8 +189,8 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                 <div className="w-12 h-12 rounded-full bg-neutral-700/60 group-hover:bg-neutral-700 flex items-center justify-center mb-3 text-neutral-200 group-hover:text-white transition-colors">
                   <ImageIcon className="w-6 h-6" />
                 </div>
-                <span className="font-semibold text-sm text-neutral-200">Galeria</span>
-                <span className="text-xs text-neutral-400 mt-1">Escolher do dispositivo</span>
+                <span className="font-semibold text-sm text-neutral-200">Galleria</span>
+                <span className="text-xs text-neutral-400 mt-1">Scegli dal dispositivo</span>
               </button>
             </div>
 
@@ -198,7 +198,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
             <div className="border-t border-neutral-800 pt-4">
               <div className="flex items-center space-x-1.5 text-xs text-neutral-400 mb-3 font-medium">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span>Ou selecione uma foto de exemplo para testar:</span>
+                <span>Oppure scegli una foto di esempio:</span>
               </div>
               <div className="grid grid-cols-5 gap-2">
                 {SAMPLE_PHOTO_PRESETS.map((preset, idx) => (
@@ -228,7 +228,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
             <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-black border border-neutral-800">
               <img
                 src={selectedImage}
-                alt="Prévia da foto"
+                alt="Anteprima della foto"
                 className="w-full h-full object-cover"
               />
               <button
@@ -236,7 +236,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                 onClick={handleReset}
                 className="absolute top-3 right-3 bg-black/70 hover:bg-black text-white px-3 py-1.5 rounded-lg text-xs font-medium backdrop-blur-xs transition-colors"
               >
-                Trocar Foto
+                Cambia foto
               </button>
             </div>
 
@@ -246,14 +246,14 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                 htmlFor="post-caption-input"
                 className="block text-xs font-medium text-neutral-300 mb-1.5"
               >
-                Legenda da publicação
+                Didascalia della pubblicazione
               </label>
               <textarea
                 id="post-caption-input"
                 rows={3}
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
-                placeholder="Conte sobre o serviço realizado, prato do dia, novidade do ambiente ou detalhes do trabalho..."
+                placeholder="Descrivi il servizio svolto, il piatto del giorno, le novità o i dettagli del lavoro..."
                 className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-neutral-100 placeholder-neutral-500 focus:outline-hidden focus:border-neutral-400 transition-colors resize-none"
               />
             </div>
@@ -265,7 +265,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                 onClick={handleReset}
                 className="w-1/3 py-2.5 px-4 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white rounded-xl text-sm font-medium transition-colors"
               >
-                Voltar
+                Indietro
               </button>
               <button
                 id="btn-confirm-publish"
@@ -275,11 +275,11 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                 className="w-2/3 py-2.5 px-4 bg-neutral-100 hover:bg-white text-neutral-950 font-semibold rounded-xl text-sm transition-all shadow-md active:scale-98 flex items-center justify-center space-x-2"
               >
                 {isPublishing ? (
-                  <span>Publicando...</span>
+                  <span>Pubblicazione...</span>
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Publicar</span>
+                    <span>Pubblica</span>
                   </>
                 )}
               </button>

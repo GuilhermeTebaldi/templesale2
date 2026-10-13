@@ -67,79 +67,79 @@ const WRITE_METHODS: Array<SecurityProbeDefinition["method"]> = [
 ];
 
 const PUBLIC_READ_ROUTES = [
-  { id: "health", title: "Saúde da API", path: "/api/health" },
-  { id: "products-list", title: "Lista pública de produtos", path: "/api/products" },
-  { id: "product-detail", title: "Detalhe público de produto", path: "/api/products/1" },
-  { id: "product-comments", title: "Comentários públicos do produto", path: "/api/products/1/comments" },
-  { id: "vendors-list", title: "Lista pública de vendedores", path: "/api/vendors" },
-  { id: "vendor-products", title: "Produtos públicos por vendedor", path: "/api/vendors/1/products" },
-  { id: "public-user", title: "Perfil público de vendedor", path: "/api/users/1" },
-  { id: "map-tiles", title: "Tiles públicos do mapa", path: "/api/map-tiles/13/2413/3074.png" },
-  { id: "agent-status", title: "Status público do agente", path: "/api/agent/status/templesale" },
-  { id: "agent-script", title: "Script público do agente", path: "/api/agent/script/templesale.js" },
-  { id: "health-query", title: "Saúde da API com query", path: "/api/health?probe=1" },
-  { id: "products-query", title: "Produtos com query pública", path: "/api/products?limit=5" },
+  { id: "health", title: "Stato API", path: "/api/health" },
+  { id: "products-list", title: "Elenco pubblico dei prodotti", path: "/api/products" },
+  { id: "product-detail", title: "Dettaglio pubblico del prodotto", path: "/api/products/1" },
+  { id: "product-comments", title: "Commenti pubblici del prodotto", path: "/api/products/1/comments" },
+  { id: "vendors-list", title: "Elenco pubblico dei venditori", path: "/api/vendors" },
+  { id: "vendor-products", title: "Prodotti pubblici per venditore", path: "/api/vendors/1/products" },
+  { id: "public-user", title: "Profilo pubblico del venditore", path: "/api/users/1" },
+  { id: "map-tiles", title: "Riquadri pubblici della mappa", path: "/api/map-tiles/13/2413/3074.png" },
+  { id: "agent-status", title: "Stato pubblico dell’agente", path: "/api/agent/status/templesale" },
+  { id: "agent-script", title: "Script pubblico dell’agente", path: "/api/agent/script/templesale.js" },
+  { id: "health-query", title: "Stato API con parametri", path: "/api/health?probe=1" },
+  { id: "products-query", title: "Prodotti con parametri pubblici", path: "/api/products?limit=5" },
 ] as const;
 
 const PUBLIC_MUTATION_ROUTES = [
-  { id: "products", title: "Mutação indevida em produtos", path: "/api/products" },
-  { id: "product-detail", title: "Mutação indevida em detalhe de produto", path: "/api/products/1" },
-  { id: "product-comments", title: "Mutação indevida em comentários públicos", path: "/api/products/1/comments" },
-  { id: "vendors", title: "Mutação indevida em vendedores públicos", path: "/api/vendors" },
-  { id: "vendor-products", title: "Mutação indevida em produtos do vendedor", path: "/api/vendors/1/products" },
-  { id: "public-user", title: "Mutação indevida em usuário público", path: "/api/users/1" },
-  { id: "map-tiles", title: "Mutação indevida em tiles de mapa", path: "/api/map-tiles/13/2413/3074.png" },
-  { id: "health", title: "Mutação indevida em saúde da API", path: "/api/health" },
-  { id: "agent-status", title: "Mutação indevida em status do agente", path: "/api/agent/status/templesale" },
-  { id: "agent-script", title: "Mutação indevida em script do agente", path: "/api/agent/script/templesale.js" },
+  { id: "products", title: "Modifica non autorizzata dei prodotti", path: "/api/products" },
+  { id: "product-detail", title: "Modifica non autorizzata del dettaglio prodotto", path: "/api/products/1" },
+  { id: "product-comments", title: "Modifica non autorizzata dei commenti pubblici", path: "/api/products/1/comments" },
+  { id: "vendors", title: "Modifica non autorizzata dei venditori pubblici", path: "/api/vendors" },
+  { id: "vendor-products", title: "Modifica non autorizzata dei prodotti del venditore", path: "/api/vendors/1/products" },
+  { id: "public-user", title: "Modifica non autorizzata dell’utente pubblico", path: "/api/users/1" },
+  { id: "map-tiles", title: "Modifica non autorizzata dei riquadri della mappa", path: "/api/map-tiles/13/2413/3074.png" },
+  { id: "health", title: "Modifica non autorizzata dello stato API", path: "/api/health" },
+  { id: "agent-status", title: "Modifica non autorizzata dello stato agente", path: "/api/agent/status/templesale" },
+  { id: "agent-script", title: "Modifica non autorizzata dello script agente", path: "/api/agent/script/templesale.js" },
 ] as const;
 
 const AUTH_READ_ROUTES = [
-  { id: "auth-me", title: "Sessão do usuário autenticado", path: "/api/auth/me" },
-  { id: "profile-defaults", title: "Defaults do formulário de anúncio", path: "/api/profile/new-product-defaults" },
-  { id: "my-products", title: "Meus produtos", path: "/api/my-products" },
-  { id: "likes", title: "Produtos curtidos", path: "/api/likes" },
-  { id: "notifications", title: "Notificações do usuário", path: "/api/notifications" },
-  { id: "my-products-query", title: "Meus produtos com query", path: "/api/my-products?limit=5" },
+  { id: "auth-me", title: "Sessione dell’utente autenticato", path: "/api/auth/me" },
+  { id: "profile-defaults", title: "Valori predefiniti del modulo annuncio", path: "/api/profile/new-product-defaults" },
+  { id: "my-products", title: "I miei prodotti", path: "/api/my-products" },
+  { id: "likes", title: "Prodotti che mi piacciono", path: "/api/likes" },
+  { id: "notifications", title: "Notifiche dell’utente", path: "/api/notifications" },
+  { id: "my-products-query", title: "I miei prodotti con parametri", path: "/api/my-products?limit=5" },
 ] as const;
 
 const AUTH_MUTATION_ROUTES = [
-  { id: "profile", title: "Atualização de perfil", path: "/api/profile" },
-  { id: "profile-avatar", title: "Atualização de avatar", path: "/api/profile/avatar" },
-  { id: "profile-defaults", title: "Atualização de defaults de anúncio", path: "/api/profile/new-product-defaults" },
-  { id: "auth-logout", title: "Logout autenticado", path: "/api/auth/logout" },
-  { id: "products-create", title: "Criação de produto autenticada", path: "/api/products" },
-  { id: "product-update", title: "Edição de produto autenticada", path: "/api/products/1" },
-  { id: "product-comments", title: "Criação de comentário autenticado", path: "/api/products/1/comments" },
-  { id: "product-cart-interest", title: "Interesse no carrinho autenticado", path: "/api/products/1/cart-interest" },
-  { id: "product-like", title: "Curtida autenticada", path: "/api/products/1/like" },
-  { id: "product-delete", title: "Remoção de produto autenticada", path: "/api/products/1" },
-  { id: "product-unlike", title: "Descurtir produto autenticado", path: "/api/products/1/like?mode=delete" },
+  { id: "profile", title: "Aggiornamento del profilo", path: "/api/profile" },
+  { id: "profile-avatar", title: "Aggiornamento dell’avatar", path: "/api/profile/avatar" },
+  { id: "profile-defaults", title: "Aggiornamento dei valori predefiniti dell’annuncio", path: "/api/profile/new-product-defaults" },
+  { id: "auth-logout", title: "Disconnessione autenticata", path: "/api/auth/logout" },
+  { id: "products-create", title: "Creazione prodotto autenticata", path: "/api/products" },
+  { id: "product-update", title: "Modifica prodotto autenticata", path: "/api/products/1" },
+  { id: "product-comments", title: "Creazione commento autenticata", path: "/api/products/1/comments" },
+  { id: "product-cart-interest", title: "Interesse nel carrello autenticato", path: "/api/products/1/cart-interest" },
+  { id: "product-like", title: "Mi piace autenticato", path: "/api/products/1/like" },
+  { id: "product-delete", title: "Eliminazione prodotto autenticata", path: "/api/products/1" },
+  { id: "product-unlike", title: "Rimozione Mi piace autenticata", path: "/api/products/1/like?mode=delete" },
 ] as const;
 
 const ADMIN_READ_ROUTES = [
-  { id: "admin-auth-me", title: "Sessão administrativa", path: "/api/admin/auth/me" },
-  { id: "admin-me", title: "Sessão admin legada", path: "/api/admin/me" },
-  { id: "admin-root", title: "Sessão admin raiz", path: "/api/admin" },
-  { id: "admin-users", title: "Lista administrativa de usuários", path: "/api/admin/users" },
-  { id: "admin-user-products", title: "Produtos por usuário no admin", path: "/api/admin/users/1/products" },
-  { id: "admin-events-a", title: "Eventos de segurança (rota A)", path: "/api/admin/security-test/events?limit=1" },
-  { id: "admin-events-b", title: "Eventos de segurança (rota B)", path: "/api/admin/security-tests/events?limit=1" },
-  { id: "admin-agent-status", title: "Status do agente no admin", path: "/api/admin/agent/status/templesale" },
-  { id: "admin-auth-alt", title: "Sessão admin alternativa", path: "/api/admin/auth" },
-  { id: "admin-auth-alt-query", title: "Sessão admin com query", path: "/api/admin/auth?probe=1" },
+  { id: "admin-auth-me", title: "Sessione amministrativa", path: "/api/admin/auth/me" },
+  { id: "admin-me", title: "Sessione amministratore precedente", path: "/api/admin/me" },
+  { id: "admin-root", title: "Sessione amministratore principale", path: "/api/admin" },
+  { id: "admin-users", title: "Elenco amministrativo degli utenti", path: "/api/admin/users" },
+  { id: "admin-user-products", title: "Prodotti per utente nell’amministrazione", path: "/api/admin/users/1/products" },
+  { id: "admin-events-a", title: "Eventi di sicurezza (percorso A)", path: "/api/admin/security-test/events?limit=1" },
+  { id: "admin-events-b", title: "Eventi di sicurezza (percorso B)", path: "/api/admin/security-tests/events?limit=1" },
+  { id: "admin-agent-status", title: "Stato agente nell’amministrazione", path: "/api/admin/agent/status/templesale" },
+  { id: "admin-auth-alt", title: "Sessione amministratore alternativa", path: "/api/admin/auth" },
+  { id: "admin-auth-alt-query", title: "Sessione amministratore con parametri", path: "/api/admin/auth?probe=1" },
 ] as const;
 
 const ADMIN_MUTATION_ROUTES = [
-  { id: "admin-users-delete", title: "Remoção de usuário no admin", path: "/api/admin/users/1" },
-  { id: "admin-products-delete", title: "Remoção de produto no admin", path: "/api/admin/products/1" },
-  { id: "admin-events-clear-a", title: "Limpeza de eventos (rota A)", path: "/api/admin/security-test/events" },
-  { id: "admin-events-clear-b", title: "Limpeza de eventos (rota B)", path: "/api/admin/security-tests/events" },
-  { id: "admin-agent-status-patch", title: "Alteração de status do agente no admin", path: "/api/admin/agent/status/templesale" },
-  { id: "admin-auth-logout-a", title: "Logout admin auth", path: "/api/admin/auth/logout" },
-  { id: "admin-auth-logout-b", title: "Logout admin legado", path: "/api/admin/logout" },
-  { id: "admin-auth-delete", title: "Logout admin por DELETE auth", path: "/api/admin/auth" },
-  { id: "admin-root-delete", title: "Logout admin por DELETE raiz", path: "/api/admin" },
+  { id: "admin-users-delete", title: "Eliminazione utente nell’amministrazione", path: "/api/admin/users/1" },
+  { id: "admin-products-delete", title: "Eliminazione prodotto nell’amministrazione", path: "/api/admin/products/1" },
+  { id: "admin-events-clear-a", title: "Pulizia eventi (percorso A)", path: "/api/admin/security-test/events" },
+  { id: "admin-events-clear-b", title: "Pulizia eventi (percorso B)", path: "/api/admin/security-tests/events" },
+  { id: "admin-agent-status-patch", title: "Modifica dello stato agente nell’amministrazione", path: "/api/admin/agent/status/templesale" },
+  { id: "admin-auth-logout-a", title: "Disconnessione amministratore auth", path: "/api/admin/auth/logout" },
+  { id: "admin-auth-logout-b", title: "Disconnessione amministratore precedente", path: "/api/admin/logout" },
+  { id: "admin-auth-delete", title: "Disconnessione amministratore con DELETE auth", path: "/api/admin/auth" },
+  { id: "admin-root-delete", title: "Disconnessione amministratore con DELETE principale", path: "/api/admin" },
 ] as const;
 
 const FUZZING_FRAGMENTS = [
@@ -399,7 +399,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
     for (const method of READ_METHODS) {
       pushProbe({
         idSuffix: `public-anon-${route.id}-${method.toLowerCase()}`,
-        title: `${route.title} (${method}) sem login`,
+        title: `${route.title} (${method}) senza accesso`,
         category: "api-public",
         path: route.path,
         method,
@@ -408,7 +408,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
       });
       pushProbe({
         idSuffix: `public-session-${route.id}-${method.toLowerCase()}`,
-        title: `${route.title} (${method}) com sessão`,
+        title: `${route.title} (${method}) con sessione`,
         category: "api-public",
         path: route.path,
         method,
@@ -422,7 +422,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
     for (const method of WRITE_METHODS) {
       pushProbe({
         idSuffix: `public-mutation-anon-${route.id}-${method.toLowerCase()}`,
-        title: `${route.title} (${method}) sem login`,
+        title: `${route.title} (${method}) senza accesso`,
         category: "authorization",
         path: route.path,
         method,
@@ -436,7 +436,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
     for (const method of READ_METHODS) {
       pushProbe({
         idSuffix: `auth-read-anon-${route.id}-${method.toLowerCase()}`,
-        title: `${route.title} (${method}) sem login`,
+        title: `${route.title} (${method}) senza accesso`,
         category: "auth",
         path: route.path,
         method,
@@ -445,7 +445,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
       });
       pushProbe({
         idSuffix: `auth-read-session-${route.id}-${method.toLowerCase()}`,
-        title: `${route.title} (${method}) com sessão`,
+        title: `${route.title} (${method}) con sessione`,
         category: "api-private",
         path: route.path,
         method,
@@ -459,7 +459,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
     for (const method of WRITE_METHODS) {
       pushProbe({
         idSuffix: `auth-mutation-anon-${route.id}-${method.toLowerCase()}`,
-        title: `${route.title} (${method}) sem login`,
+        title: `${route.title} (${method}) senza accesso`,
         category: "authorization",
         path: route.path,
         method,
@@ -473,7 +473,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
     for (const method of READ_METHODS) {
       pushProbe({
         idSuffix: `admin-read-anon-${route.id}-${method.toLowerCase()}`,
-        title: `${route.title} (${method}) sem admin`,
+        title: `${route.title} (${method}) senza amministratore`,
         category: "api-admin",
         path: route.path,
         method,
@@ -482,7 +482,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
       });
       pushProbe({
         idSuffix: `admin-read-session-${route.id}-${method.toLowerCase()}`,
-        title: `${route.title} (${method}) com admin`,
+        title: `${route.title} (${method}) con amministratore`,
         category: "api-admin",
         path: route.path,
         method,
@@ -496,7 +496,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
     for (const method of WRITE_METHODS) {
       pushProbe({
         idSuffix: `admin-mutation-anon-${route.id}-${method.toLowerCase()}`,
-        title: `${route.title} (${method}) sem admin`,
+        title: `${route.title} (${method}) senza amministratore`,
         category: "api-admin",
         path: route.path,
         method,
@@ -517,7 +517,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
     }> = [
       {
         id: "auth-login",
-        title: "Fuzzing em login de usuário",
+        title: "Fuzzing dell’accesso utente",
         path: "/api/auth/login",
         category: "input-validation",
         body: {
@@ -527,7 +527,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
       },
       {
         id: "auth-register",
-        title: "Fuzzing em registro de usuário",
+        title: "Fuzzing della registrazione utente",
         path: "/api/auth/register",
         category: "input-validation",
         body: {
@@ -538,7 +538,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
       },
       {
         id: "admin-login",
-        title: "Fuzzing em login administrativo",
+        title: "Fuzzing dell’accesso amministratore",
         path: "/api/admin/login",
         category: "api-admin",
         body: {
@@ -548,7 +548,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
       },
       {
         id: "admin-auth-login",
-        title: "Fuzzing em login admin alternativo",
+        title: "Fuzzing dell’accesso amministratore alternativo",
         path: "/api/admin/auth/login",
         category: "api-admin",
         body: {
@@ -558,7 +558,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
       },
       {
         id: "product-create",
-        title: "Fuzzing em criação de produto sem login",
+        title: "Fuzzing della creazione prodotto senza accesso",
         path: "/api/products",
         category: "authorization",
         body: {
@@ -573,7 +573,7 @@ function buildComprehensiveProbeCatalog(): SecurityProbeDefinition[] {
       },
       {
         id: "product-comment",
-        title: "Fuzzing em comentários sem login",
+        title: "Fuzzing dei commenti senza accesso",
         path: "/api/products/1/comments",
         category: "authorization",
         body: {
@@ -707,7 +707,7 @@ async function runHeaderAndExposureChecks(
       /express|nginx|apache|vite|node/i.test(serverHeader);
     checks.push({
       id: "exposure-server-fingerprint",
-      title: "Exposição de fingerprint de servidor",
+      title: "Esposizione dell’impronta del server",
       status: hasDetailedFingerprint ? "warn" : "pass",
       category: "exposure",
       details: hasDetailedFingerprint
@@ -726,7 +726,7 @@ async function runHeaderAndExposureChecks(
     const leakedKeyword = exposureKeywords.find((keyword) => lowerBody.includes(keyword));
     checks.push({
       id: "exposure-sensitive-health-body",
-      title: "Exposição de segredo em resposta pública",
+      title: "Esposizione di segreti nella risposta pubblica",
       status: leakedKeyword ? "fail" : "pass",
       category: "exposure",
       details: leakedKeyword
@@ -741,7 +741,7 @@ async function runHeaderAndExposureChecks(
     const message = error instanceof Error ? error.message : "erro ao validar headers/exposição";
     checks.push({
       id: "headers-health-unreachable",
-      title: "Validação de headers e exposição",
+      title: "Verifica degli header e dell’esposizione",
       status: "fail",
       category: "headers",
       details: `Não foi possível validar os headers de segurança porque /api/health falhou: ${message}`,
@@ -760,7 +760,7 @@ async function runHeaderAndExposureChecks(
     const leaksStack = lowerBody.includes("stack") || lowerBody.includes("trace") || lowerBody.includes("exception");
     checks.push({
       id: "error-handling-unknown-route",
-      title: "Tratamento de erro em rota inexistente",
+      title: "Gestione degli errori per un percorso inesistente",
       status:
         unknownRouteResponse.status === 404
           ? leaksStack
@@ -788,7 +788,7 @@ async function runHeaderAndExposureChecks(
     const message = error instanceof Error ? error.message : "erro desconhecido";
     checks.push({
       id: "error-handling-unknown-route",
-      title: "Tratamento de erro em rota inexistente",
+      title: "Gestione degli errori per un percorso inesistente",
       status: "fail",
       category: "error-handling",
       details: `Falha ao testar comportamento de rota inexistente: ${message}`,
@@ -804,7 +804,7 @@ async function runHeaderAndExposureChecks(
     });
     checks.push({
       id: "monitoring-admin-events-protection",
-      title: "Proteção do monitor de segurança (acesso anônimo)",
+      title: "Protezione del monitor di sicurezza (accesso anonimo)",
       status: anonMonitor.status === 401 || anonMonitor.status === 403 ? "pass" : "fail",
       category: "monitoring",
       details:
@@ -821,7 +821,7 @@ async function runHeaderAndExposureChecks(
     const message = error instanceof Error ? error.message : "erro desconhecido";
     checks.push({
       id: "monitoring-admin-events-protection",
-      title: "Proteção do monitor de segurança (acesso anônimo)",
+      title: "Protezione del monitor di sicurezza (accesso anonimo)",
       status: "fail",
       category: "monitoring",
       details: `Falha ao testar proteção do monitor de eventos: ${message}`,

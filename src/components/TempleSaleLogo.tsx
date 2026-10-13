@@ -9,7 +9,7 @@ export const TempleSaleLogo: React.FC<TempleSaleLogoProps> = ({
   className = 'w-8 h-8',
 }) => {
   return (
-    <div className={`relative inline-flex items-center justify-center shrink-0 ${className}`}>
+    <div translate="no" className={`notranslate relative inline-flex items-center justify-center shrink-0 ${className}`}>
       <img
         src="/templesale-logo.svg"
         alt="TempleSale Logo"

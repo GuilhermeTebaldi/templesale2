@@ -19,8 +19,7 @@ import {
 import { Company, Post, Auth0User } from '../types';
 import { TempleSaleAvatarFrame } from './TempleSaleAvatarFrame';
 import { ProgressiveProductImage } from './ProductCard';
-
-export type SupportedLanguage = 'pt-BR' | 'it-IT' | 'en-US';
+import BrowserTranslationHelp from './BrowserTranslationHelp';
 
 interface CompanyProfileDrawerProps {
   isOpen: boolean;
@@ -36,15 +35,7 @@ interface CompanyProfileDrawerProps {
   onOpenTerms?: () => void;
   onCloseAccount?: (mode: "deactivate" | "delete", confirmation: string) => Promise<void>;
   onViewPublicProfile: (companyId: string) => void;
-  currentLanguage: SupportedLanguage;
-  onChangeLanguage: (lang: SupportedLanguage) => void;
 }
-
-const LANGUAGE_OPTIONS: { id: SupportedLanguage; name: string; flag: string; region: string }[] = [
-  { id: 'pt-BR', name: 'Português (Brasil)', flag: '🇧🇷', region: 'Padrão' },
-  { id: 'it-IT', name: 'Italiano', flag: '🇮🇹', region: 'Ardea, Roma' },
-  { id: 'en-US', name: 'English', flag: '🇺🇸', region: 'International' },
-];
 
 export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
   isOpen,
@@ -60,8 +51,6 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
   onOpenTerms,
   onCloseAccount,
   onViewPublicProfile,
-  currentLanguage,
-  onChangeLanguage,
 }) => {
   const [currentView, setCurrentView] = useState<'main' | 'saved' | 'language' | 'account'>('main');
 
@@ -69,7 +58,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
   const [accountEmail, setAccountEmail] = useState('');
   const [accountBusy, setAccountBusy] = useState(false);
   const [accountError, setAccountError] = useState('');
-  const accountText = (pt: string, it: string) => currentLanguage === 'it-IT' ? it : pt;
+  const accountText = (_pt: string, it: string) => it;
   const closeAccount = async () => {
     if (!onCloseAccount || accountBusy || accountEmail !== user.email) return;
     const message = accountMode === 'delete'
@@ -106,7 +95,6 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
 
   if (!isOpen) return null;
 
-  const currentLangLabel = LANGUAGE_OPTIONS.find((l) => l.id === currentLanguage)?.flag || '🇧🇷';
   const userProfileImage = user.picture || '/templesale-logo.svg';
   const userDisplayName = user.name || company.name;
 
@@ -128,7 +116,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                 type="button"
                 onClick={() => setCurrentView('main')}
                 className="p-1 -ml-1 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
-                title="Voltar"
+                title="Indietro"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
@@ -136,9 +124,9 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
               <Building2 className="w-5 h-5 text-neutral-400 shrink-0" />
             )}
             <h2 className="font-bold text-base text-neutral-100 truncate">
-              {currentView === 'main' && 'Menu da Empresa'}
-              {currentView === 'saved' && `Publicações Salvas (${savedPosts.length})`}
-              {currentView === 'language' && 'Idioma / Lingua'}
+              {currentView === 'main' && "Menu dell’attività"}
+              {currentView === 'saved' && `Pubblicazioni salvate (${savedPosts.length})`}
+              {currentView === 'language' && 'Traduci questa pagina'}
               {currentView === 'account' && accountText('Encerrar conta', 'Chiudi account')}
             </h2>
           </div>
@@ -147,7 +135,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
             type="button"
             onClick={onClose}
             className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
-            title="Fechar menu"
+            title="Chiudi menu"
           >
             <X className="w-5 h-5" />
           </button>
@@ -188,7 +176,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                   }}
                   className="w-full flex items-center justify-center space-x-2 py-2 px-3 bg-neutral-800/80 hover:bg-neutral-700/90 text-neutral-200 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
                 >
-                  <span>Ver perfil público no feed</span>
+                  <span>Vedi il profilo pubblico nel feed</span>
                   <ExternalLink className="w-3.5 h-3.5 text-neutral-400" />
                 </button>
               </div>
@@ -196,7 +184,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
               {/* ACTION MENU ITEMS */}
               <div className="space-y-2">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 px-1">
-                  Gerenciamento & Preferências
+                  Gestione e preferenze
                 </span>
 
                 <div className="bg-neutral-950/60 border border-neutral-800/70 rounded-2xl overflow-hidden divide-y divide-neutral-800/60 shadow-sm">
@@ -215,10 +203,10 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                       </div>
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-neutral-200 group-hover:text-white">
-                          Editar perfil do usuário
+                          Modifica profilo
                         </div>
                         <div className="text-xs text-neutral-400 truncate">
-                          Nome, WhatsApp, endereço, empresa, fotos e horários
+                          Nome, WhatsApp, indirizzo, attività, foto e orari
                         </div>
                       </div>
                     </div>
@@ -240,10 +228,10 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                         </div>
                         <div className="min-w-0">
                           <div className="text-sm font-semibold text-neutral-200 group-hover:text-white">
-                            Favoritos
+                            Preferiti
                           </div>
                           <div className="text-xs text-neutral-400 truncate">
-                            Produtos e publicações salvas
+                            Prodotti e pubblicazioni salvati
                           </div>
                         </div>
                       </div>
@@ -263,7 +251,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                       </div>
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-neutral-200 group-hover:text-white flex items-center space-x-2">
-                          <span>Salvos & Preferidos</span>
+                          <span>Salvati e preferiti</span>
                           {savedPosts.length > 0 && (
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300">
                               {savedPosts.length}
@@ -271,7 +259,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                           )}
                         </div>
                         <div className="text-xs text-neutral-400 truncate">
-                          Fotos e publicações marcadas para rever
+                          Foto e pubblicazioni salvate da rivedere
                         </div>
                       </div>
                     </div>
@@ -281,7 +269,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                   {onOpenTerms && <button type="button" onClick={onOpenTerms}
                     className="flex w-full items-center justify-between p-3.5 text-left hover:bg-neutral-800/50">
                     <div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-emerald-300" />
-                      <span className="text-sm font-semibold">{currentLanguage === "it-IT" ? "Condizioni e ricevuta" : "Termos e comprovante"}</span>
+                      <span className="text-sm font-semibold">Condizioni e ricevuta</span>
                     </div><ChevronRight className="h-4 w-4 text-neutral-500" />
                   </button>}
                   {/* Item: Idioma */}
@@ -296,11 +284,11 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                       </div>
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-neutral-200 group-hover:text-white flex items-center space-x-2">
-                          <span>Idioma do Aplicativo</span>
-                          <span className="text-xs text-neutral-300 font-normal">{currentLangLabel}</span>
+                          <span>Traduci questa pagina</span>
+
                         </div>
                         <div className="text-xs text-neutral-400 truncate">
-                          Português, Italiano ou English
+                          Usa la traduzione del browser
                         </div>
                       </div>
                     </div>
@@ -312,18 +300,18 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
               {/* AUTH0 & SEGURANÇA */}
               <div className="space-y-2">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 px-1">
-                  Conta & Segurança
+                  Account e sicurezza
                 </span>
                 <div className="bg-neutral-950/60 border border-neutral-800/70 rounded-2xl p-3.5 space-y-2 shadow-sm">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2 min-w-0">
                       <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                       <span className="text-xs font-semibold text-neutral-200 truncate">
-                        Autenticado via Auth0
+                        Autenticato tramite Auth0
                       </span>
                     </div>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/60 border border-emerald-800/50 text-emerald-300">
-                      Verificado
+                      Verificato
                     </span>
                   </div>
                   <div className="text-xs text-neutral-400 truncate pl-6">
@@ -348,18 +336,18 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                     className="mb-4 w-full flex items-center justify-center space-x-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-bold text-red-300 transition-colors hover:bg-red-500/15 hover:text-red-200"
                   >
                     <LogOut className="h-4 w-4" />
-                    <span>Sair da conta</span>
+                    <span>Esci dall’account</span>
                   </button>
                 )}
                 <div className="flex items-center justify-center space-x-1.5 font-medium text-neutral-400">
                   <Sparkles className="w-3 h-3 text-amber-400" />
                   <span>
-                    <span className="text-amber-400 font-medium">Temple</span>
-                    <span className="text-emerald-400 font-semibold ml-0.5">Sale</span>
-                    <span className="text-neutral-400"> • Vitrine Direta</span>
+                    <span translate="no" className="notranslate text-amber-400 font-medium">Temple</span>
+                    <span translate="no" className="notranslate text-emerald-400 font-semibold ml-0.5">Sale</span>
+                    <span className="text-neutral-400"> • Vetrina diretta</span>
                   </span>
                 </div>
-                <p>Sem preço • Sem carrinho • Conexão direta via WhatsApp</p>
+                <p>Senza prezzo • Senza carrello • Contatto diretto tramite WhatsApp</p>
               </div>
             </div>
           )}
@@ -381,7 +369,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
             {accountError && <p role="alert" className="text-sm text-red-300">{accountError}</p>}
             <button type="button" disabled={accountBusy || accountEmail !== user.email} onClick={() => void closeAccount()}
               className="w-full rounded-xl bg-red-500/15 p-3 font-semibold text-red-300 disabled:opacity-40">
-              {accountBusy ? accountText('Processando…', 'Elaborazione…') : accountMode === 'delete' ? accountText('Excluir definitivamente', 'Elimina definitivamente') : accountText('Desativar empresa', 'Disattiva attività')}
+              {accountBusy ? accountText('Processando…', 'Elaborazione…') : accountMode === 'delete' ? accountText("Elimina definitivamente", 'Elimina definitivamente') : accountText("Disattiva attività", 'Disattiva attività')}
             </button>
           </div>}
 
@@ -394,17 +382,17 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                     <Bookmark className="w-7 h-7 stroke-[1.5]" />
                   </div>
                   <h4 className="text-sm font-bold text-neutral-200">
-                    Nenhuma publicação salva ainda
+                    Nessuna pubblicazione salvata
                   </h4>
                   <p className="text-xs text-neutral-400 max-w-xs mx-auto leading-relaxed">
-                    Navegue pelo feed de empresas e toque no marcador das fotos que você gostar para guardá-las aqui.
+                    Esplora il feed delle attività e tocca il segnalibro delle foto per salvarle qui.
                   </p>
                 </div>
               ) : (
                 <>
                   <div className="flex items-center justify-between text-xs text-neutral-400 px-1">
-                    <span>{savedPosts.length} {savedPosts.length === 1 ? 'foto salva' : 'fotos salvas'}</span>
-                    <span className="text-[11px] text-neutral-500">Toque para abrir</span>
+                    <span>{savedPosts.length} {savedPosts.length === 1 ? "foto salvata" : "foto salvate"}</span>
+                    <span className="text-[11px] text-neutral-500">Tocca per aprire</span>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
@@ -440,54 +428,8 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
           )}
 
           {/* VIEW: IDIOMA */}
-          {currentView === 'language' && (
-            <div className="p-4 sm:p-5 space-y-4">
-              <p className="text-xs text-neutral-400 px-1">
-                Escolha o idioma preferido para a sua navegação no TempleSale:
-              </p>
+          {currentView === 'language' && <BrowserTranslationHelp />}
 
-              <div className="space-y-2">
-                {LANGUAGE_OPTIONS.map((lang) => {
-                  const isSelected = currentLanguage === lang.id;
-                  return (
-                    <button
-                      key={lang.id}
-                      type="button"
-                      onClick={() => {
-                        onChangeLanguage(lang.id);
-                      }}
-                      className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all text-left cursor-pointer ${
-                        isSelected
-                          ? 'bg-neutral-800/90 border-neutral-600 shadow-md text-white'
-                          : 'bg-neutral-950/60 border-neutral-800/70 hover:bg-neutral-800/40 text-neutral-300'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <span className="text-2xl">{lang.flag}</span>
-                        <div>
-                          <div className="text-sm font-semibold flex items-center space-x-2">
-                            <span>{lang.name}</span>
-                            {isSelected && (
-                              <span className="text-[10px] bg-neutral-700 text-neutral-200 px-2 py-0.2 rounded-full">
-                                Ativo
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-neutral-400">{lang.region}</div>
-                        </div>
-                      </div>
-
-                      {isSelected && (
-                        <div className="w-6 h-6 rounded-full bg-emerald-500 text-neutral-950 flex items-center justify-center shrink-0">
-                          <Check className="w-3.5 h-3.5 stroke-[3]" />
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

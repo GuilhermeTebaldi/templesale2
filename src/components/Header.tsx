@@ -167,9 +167,10 @@ export const Header: React.FC<HeaderProps> = ({
               }}
               className="text-[22px] font-semibold tracking-[0.03em] text-white transition-opacity active:opacity-70 sm:text-[25px] sm:hover:opacity-85"
               style={{ fontFamily: CINEMA_BRAND_FONT }}
-              title="TempleSale - Início"
+              title="TempleSale - Home"
             >
               <span
+                translate="no"
                 className={
                   hasBrandIntroStarted
                     ? 'ts-brand-cinema-intro'
@@ -195,10 +196,10 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'bg-neutral-800 text-white'
                   : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50'
               }`}
-              title="Descobrir empresas próximas"
+              title="Scopri le attività vicine"
             >
               <Home className="w-4 h-4" />
-              <span>Início</span>
+              <span>Home</span>
             </button>
 
             {/* Search Tab */}
@@ -210,10 +211,10 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'bg-neutral-800 text-white'
                   : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50'
               }`}
-              title="Buscar Empresas"
+              title="Cerca attività"
             >
               <Search className="w-4 h-4" />
-              <span>Buscar</span>
+              <span>Cerca</span>
             </button>
 
             {/* Mapa Tab (Desktop) */}
@@ -226,10 +227,10 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'bg-neutral-800 text-white'
                   : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50'
               }`}
-              title="Mapa de Empresas"
+              title="Mappa delle attività"
             >
               <MapPin className="w-4 h-4 text-amber-400" />
-              <span>Mapa</span>
+              <span>Mappa</span>
             </button>
 
             {/* Perfil da Minha Empresa Tab */}
@@ -242,10 +243,10 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'bg-neutral-800 text-white'
                   : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50'
               }`}
-              title="Perfil da Empresa"
+              title="Profilo dell’attività"
             >
               <Building2 className="w-4 h-4" />
-              <span>Minha Empresa</span>
+              <span>La mia attività</span>
             </button>
 
             <div className="h-6 w-px bg-neutral-800 mx-1" />
@@ -256,10 +257,10 @@ export const Header: React.FC<HeaderProps> = ({
                 id="btn-header-publish"
                 onClick={onOpenCreatePost}
                 className="-my-2 flex items-center space-x-2 rounded-2xl bg-neutral-100 px-5 py-3.5 text-sm font-black uppercase tracking-[0.14em] text-neutral-950 shadow-xl shadow-black/25 transition-all hover:-translate-y-0.5 hover:bg-white active:scale-98 cursor-pointer"
-                title="+ PUBLICAR foto da empresa"
+                title="+ PUBBLICA foto dell’attività"
               >
                 <Plus className="w-5 h-5" />
-                <span>Publicar</span>
+                <span>Pubblica</span>
               </button>
             )}
 
@@ -270,7 +271,7 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={onToggleNotifications}
                 hidden={!hasRegisteredAccount}
                 className="relative p-2 text-neutral-300 hover:text-white rounded-xl hover:bg-neutral-800/80 transition-all active:scale-95 cursor-pointer"
-                title="Notificações"
+                title="Notifiche"
               >
                 <Bell className="w-5 h-5 transition-transform group-hover:scale-105" />
                 {unreadNotificationsCount > 0 && (
@@ -289,7 +290,7 @@ export const Header: React.FC<HeaderProps> = ({
               id="btn-user-company-menu"
               onClick={onOpenCompanyModal}
               className="flex items-center space-x-2 p-1.5 rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer"
-              title={hasRegisteredAccount ? 'Gerenciar dados da empresa' : 'Entrar ou cadastrar'}
+              title={hasRegisteredAccount ? "Gestisci i dati dell’attività" : "Accedi o registrati"}
             >
               {hasRegisteredAccount ? (
                 <div className="relative h-7 w-7 overflow-hidden rounded-full border border-neutral-700">
@@ -321,7 +322,7 @@ export const Header: React.FC<HeaderProps> = ({
                     ? 'bg-neutral-800 text-white'
                     : 'text-neutral-300 active:text-white hover:bg-neutral-800/80'
                 }`}
-                title="Buscar Empresas"
+                title="Cerca attività"
               >
                 <Search className="w-5 h-5" />
               </button>
@@ -332,7 +333,7 @@ export const Header: React.FC<HeaderProps> = ({
               id="btn-mobile-bell"
               onClick={onToggleNotifications}
               className="relative p-2 text-neutral-300 active:text-white rounded-full hover:bg-neutral-800/80 transition-colors cursor-pointer"
-              title="Notificações"
+              title="Notifiche"
             >
               <Bell className="w-5 h-5" />
               {unreadNotificationsCount > 0 && (
@@ -346,7 +347,7 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={onOpenFavorites}
                 hidden={hasRegisteredAccount}
                 className="relative p-2 text-neutral-300 active:text-red-300 rounded-full hover:bg-neutral-800/80 transition-colors cursor-pointer"
-                title="Curtidas"
+                title="Preferiti"
               >
                 <TempleSaleLikeIcon liked={false} className="w-5 h-5" />
               </button>
@@ -357,7 +358,7 @@ export const Header: React.FC<HeaderProps> = ({
               id="btn-mobile-avatar"
               onClick={onOpenCompanyModal}
               className="p-0.5 rounded-full hover:ring-2 hover:ring-neutral-700 active:scale-95 transition-all cursor-pointer"
-              title={hasRegisteredAccount ? 'Menu da Empresa' : 'Entrar ou cadastrar'}
+              title={hasRegisteredAccount ? "Menu dell’attività" : "Accedi o registrati"}
             >
               {hasRegisteredAccount ? (
                 <div className="relative h-7 w-7 overflow-hidden rounded-full border border-neutral-700/80 shadow-xs">
@@ -391,8 +392,8 @@ export const Header: React.FC<HeaderProps> = ({
             id="desktop-rail-feed"
             onClick={() => setActiveTab('feed')}
             className={desktopRailButtonClass(activeTab === 'feed')}
-            title="Início"
-            aria-label="Início"
+            title="Home"
+            aria-label="Home"
           >
             <Home className="h-6 w-6" />
           </button>
@@ -401,8 +402,8 @@ export const Header: React.FC<HeaderProps> = ({
             id="desktop-rail-search"
             onClick={() => setActiveTab('search')}
             className={desktopRailButtonClass(activeTab === 'search')}
-            title="Buscar"
-            aria-label="Buscar"
+            title="Cerca"
+            aria-label="Cerca"
           >
             <Search className="h-6 w-6" />
           </button>
@@ -412,8 +413,8 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setActiveTab('map')}
             hidden={hasRegisteredAccount}
             className={desktopRailButtonClass(activeTab === 'map')}
-            title="Mapa"
-            aria-label="Mapa"
+            title="Mappa"
+            aria-label="Mappa"
           >
             <MapPin className="h-6 w-6" />
           </button>
@@ -424,8 +425,8 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={onOpenFavorites}
               hidden={hasRegisteredAccount}
               className={desktopRailButtonClass(false)}
-              title="Favoritos"
-              aria-label="Favoritos"
+              title="Preferiti"
+              aria-label="Preferiti"
             >
               <TempleSaleLikeIcon liked={false} className="h-6 w-6" />
             </button>
@@ -436,8 +437,8 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setActiveTab('profile')}
             hidden={!hasRegisteredAccount}
             className={desktopRailButtonClass(activeTab === 'profile')}
-            title="Empresa"
-            aria-label="Empresa"
+            title="Attività"
+            aria-label="Attività"
           >
             <Building2 className="h-6 w-6" />
           </button>
@@ -447,8 +448,8 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenCreatePost}
             hidden={!hasRegisteredAccount}
             className="group relative mt-1 flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100 text-neutral-950 shadow-lg shadow-black/30 transition-all hover:bg-white active:scale-95"
-            title="Publicar"
-            aria-label="Publicar"
+            title="Pubblica"
+            aria-label="Pubblica"
           >
             <Plus className="h-7 w-7 stroke-[2.8]" />
           </button>
@@ -458,8 +459,8 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onToggleNotifications}
             hidden={!hasRegisteredAccount}
             className={desktopRailButtonClass(false)}
-            title="Notificações"
-            aria-label="Notificações"
+            title="Notifiche"
+            aria-label="Notifiche"
           >
             <Bell className="h-6 w-6" />
             {unreadNotificationsCount > 0 && (
@@ -477,8 +478,8 @@ export const Header: React.FC<HeaderProps> = ({
           id="desktop-rail-user-menu"
           onClick={onOpenCompanyModal}
           className="flex h-11 w-11 items-center justify-center rounded-2xl text-neutral-300 transition-all hover:bg-neutral-900 hover:text-white active:scale-95"
-          title={hasRegisteredAccount ? 'Gerenciar dados da empresa' : 'Entrar ou cadastrar'}
-          aria-label={hasRegisteredAccount ? 'Gerenciar dados da empresa' : 'Entrar ou cadastrar'}
+          title={hasRegisteredAccount ? "Gestisci i dati dell’attività" : "Accedi o registrati"}
+          aria-label={hasRegisteredAccount ? "Gestisci i dati dell’attività" : "Accedi o registrati"}
         >
           {hasRegisteredAccount ? (
             <div className="relative h-7 w-7 overflow-hidden rounded-full border border-neutral-700">
@@ -512,7 +513,7 @@ export const Header: React.FC<HeaderProps> = ({
           }`}
         >
           <Home className="w-4.5 h-4.5" />
-          <span className="text-[10px] font-medium mt-0.5">Início</span>
+          <span className="text-[10px] font-medium mt-0.5">Home</span>
         </button>
 
         {/* Search Tab */}
@@ -524,7 +525,7 @@ export const Header: React.FC<HeaderProps> = ({
           }`}
         >
           <Search className="w-4.5 h-4.5" />
-          <span className="text-[10px] font-medium mt-0.5">Buscar</span>
+          <span className="text-[10px] font-medium mt-0.5">Cerca</span>
         </button>
 
         {/* + Publicar Central Highlight Button */}
@@ -532,12 +533,12 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenCreatePost}
             className="group flex h-12 min-w-16 flex-col items-center justify-end rounded-lg px-2.5 pb-1 cursor-pointer"
-            title="+ Publicar Foto"
+            title="+ Pubblica foto"
           >
             <div className="mb-0.5 flex h-14 w-14 -translate-y-3 items-center justify-center rounded-full border-4 border-neutral-900 bg-neutral-100 text-neutral-950 shadow-2xl transition-transform group-active:-translate-y-3 group-active:scale-95">
               <Plus className="w-6 h-6 stroke-[2.8]" />
             </div>
-            <span className="-mt-3 text-[10px] font-bold leading-none text-neutral-100">Publicar</span>
+            <span className="-mt-3 text-[10px] font-bold leading-none text-neutral-100">Pubblica</span>
           </button>
         )}
 
@@ -549,10 +550,10 @@ export const Header: React.FC<HeaderProps> = ({
           className={`flex h-12 min-w-16 flex-col items-center justify-end rounded-lg px-2.5 pb-1 transition-colors cursor-pointer ${
             activeTab === 'map' ? 'text-white' : 'text-neutral-400'
           }`}
-          title="Mapa de Empresas"
+          title="Mappa delle attività"
         >
           <MapPin className="w-4.5 h-4.5" />
-          <span className="text-[10px] font-medium mt-0.5">Mapa</span>
+          <span className="text-[10px] font-medium mt-0.5">Mappa</span>
         </button>
 
         {/* Minha Empresa Tab */}
@@ -564,7 +565,7 @@ export const Header: React.FC<HeaderProps> = ({
           }`}
         >
           <Building2 className="w-4.5 h-4.5" />
-          <span className="text-[10px] font-medium mt-0.5">Empresa</span>
+          <span className="text-[10px] font-medium mt-0.5">Attività</span>
         </button>
       </nav>
     </>

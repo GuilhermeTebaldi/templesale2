@@ -5,6 +5,7 @@ import { createPublicationCapacity } from './server/publication-capacity';
 import { createPublicationDirectUpload, DirectUploadBusy } from './server/publication-direct-upload';
 import { createPublicationMonitor } from './server/publication-monitor';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
+import { translate as translateInterface } from './src/i18n';
 import { buildLocalFeedQuery, buildPublicationPreviewsQuery, encodeFeedCursor, parseFeedCursor, parseFeedExclusions, type FeedCursor } from "./server/local-feed";
 import { createAdminSessionToken as createSignedAdminSessionToken, verifyAdminSessionToken as verifySignedAdminSessionToken } from "./server/admin-session";
 import cors from "cors";
@@ -508,28 +509,6 @@ const RUN_DATABASE_MIGRATIONS =
   "true";
 const SUPPORTED_APP_LOCALES: AppLocale[] = ["it-IT", "pt-BR", "ar-SA"];
 const DEFAULT_APP_LOCALE: AppLocale = "it-IT";
-const TRANSLATE_API_KEY = String(process.env.TRANSLATE_API_KEY ?? "").trim();
-const TRANSLATE_PROVIDER_TIMEOUT_MS = Math.max(
-  1500,
-  Number(process.env.TRANSLATE_TIMEOUT_MS ?? 5500) || 5500,
-);
-const TRANSLATE_PROVIDER_BASE_URLS = Array.from(
-  new Set(
-    [
-      String(process.env.TRANSLATE_API_BASE_URL ?? "").trim(),
-      "https://libretranslate.de",
-      "https://translate.astian.org",
-      "https://libretranslate.com",
-      "https://translate.argosopentech.com",
-    ].filter(Boolean),
-  ),
-);
-const TRANSLATE_LOCALE_TARGETS: Record<AppLocale, string> = {
-  "it-IT": "it",
-  "pt-BR": "pt",
-  "ar-SA": "ar",
-};
-const translationCache = new Map<string, string>();
 
 function normalizePostgresSearchPath(value: unknown): string {
   const raw = String(value ?? DEFAULT_DATABASE_SEARCH_PATH).trim();
@@ -601,124 +580,11 @@ function getLocalizedText(
   translations: unknown,
   locale: AppLocale | null | undefined,
 ): string {
-  const normalizedOriginal = String(original ?? "");
-  const normalizedLocale = normalizeAppLocale(locale) ?? DEFAULT_APP_LOCALE;
-  return parseTranslationMap(translations)[normalizedLocale] || normalizedOriginal;
+  return String(original ?? "");
 }
 
-function getRequestLocale(req: Request): AppLocale {
-  const explicitLocale = normalizeAppLocale(req.headers["x-templesale-locale"]);
-  if (explicitLocale) {
-    return explicitLocale;
-  }
-
-  const acceptLanguage = String(req.headers["accept-language"] ?? "");
-  for (const part of acceptLanguage.split(",")) {
-    const locale = normalizeAppLocale(part.split(";")[0]);
-    if (locale) {
-      return locale;
-    }
-  }
-
-  return DEFAULT_APP_LOCALE;
-}
-
-async function translateWithLibreProvider(
-  text: string,
-  target: string,
-  baseUrl: string,
-): Promise<string | null> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TRANSLATE_PROVIDER_TIMEOUT_MS);
-  try {
-    const payload: Record<string, unknown> = {
-      q: text,
-      source: "auto",
-      target,
-      format: "text",
-    };
-    if (TRANSLATE_API_KEY) {
-      payload.api_key = TRANSLATE_API_KEY;
-    }
-
-    const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/translate`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      return null;
-    }
-    const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-    const translated = String(data?.translatedText ?? "").trim();
-    return translated || null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-async function translateWithMyMemory(text: string, target: string): Promise<string | null> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TRANSLATE_PROVIDER_TIMEOUT_MS);
-  try {
-    const normalizedTarget = target.trim().toLowerCase();
-    const sourceLanguage = normalizedTarget === "pt" ? "it" : "en";
-    const url = new URL("https://api.mymemory.translated.net/get");
-    url.searchParams.set("q", text.slice(0, 5000));
-    url.searchParams.set("langpair", `${sourceLanguage}|${normalizedTarget}`);
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) {
-      return null;
-    }
-    const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-    const responseData = data?.responseData as Record<string, unknown> | undefined;
-    const translated = String(responseData?.translatedText ?? "").trim();
-    const normalizedTranslated = translated.toUpperCase();
-    const invalidTranslation =
-      !translated ||
-      normalizedTranslated.includes("INVALID SOURCE LANGUAGE") ||
-      normalizedTranslated.includes("LANGPAIR=") ||
-      normalizedTranslated.includes("NO CONTENT") ||
-      normalizedTranslated.includes("MYMEMORY WARNING");
-    return invalidTranslation ? null : translated;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-async function translateTextToLocale(text: string, locale: AppLocale): Promise<string | null> {
-  const normalizedText = String(text ?? "").trim();
-  if (!normalizedText) {
-    return null;
-  }
-
-  const target = TRANSLATE_LOCALE_TARGETS[locale];
-  const cacheKey = `${locale}|${normalizedText}`;
-  const cached = translationCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  for (const baseUrl of TRANSLATE_PROVIDER_BASE_URLS) {
-    const translated = await translateWithLibreProvider(normalizedText, target, baseUrl);
-    if (translated) {
-      translationCache.set(cacheKey, translated);
-      return translated;
-    }
-  }
-
-  const fallback = await translateWithMyMemory(normalizedText, target);
-  if (fallback) {
-    translationCache.set(cacheKey, fallback);
-    return fallback;
-  }
-
-  return null;
+function getRequestLocale(_req: Request): AppLocale {
+  return 'it-IT';
 }
 
 async function buildTranslationsForText(
@@ -727,28 +593,9 @@ async function buildTranslationsForText(
   translations: Partial<Record<AppLocale, string>>;
   status: Partial<Record<AppLocale, string>>;
 }> {
-  const normalizedText = String(text ?? "").trim();
-  const translations: Partial<Record<AppLocale, string>> = {};
-  const status: Partial<Record<AppLocale, string>> = {};
-  if (!normalizedText) {
-    return { translations, status };
-  }
-
-  await Promise.all(
-    SUPPORTED_APP_LOCALES.map(async (locale) => {
-      try {
-        const translated = await translateTextToLocale(normalizedText, locale);
-        translations[locale] = translated || normalizedText;
-        status[locale] = translated ? "translated" : "fallback";
-      } catch (error) {
-        console.warn(`Skipping ${locale} translation after provider failure:`, error);
-        translations[locale] = normalizedText;
-        status[locale] = "fallback";
-      }
-    }),
-  );
-
-  return { translations, status };
+  // The original text is delivered unchanged. Translation belongs to the
+  // browser; publishing must never wait for external translation providers.
+  return {translations:{},status:{}};
 }
 
 async function buildContentTranslations(input: {
@@ -8560,8 +8407,8 @@ function rowToPublicVendor(row: VendorRow): PublicVendorRecord {
 }
 
 function rowToNotification(row: NotificationEventRow): NotificationRecord {
-  const actorName = row.actor_name.trim() || "Alguém";
-  const productName = row.product_name.trim() || "seu anúncio";
+  const actorName = row.actor_name.trim() || "Qualcuno";
+  const productName = row.product_name.trim() || "il tuo annuncio";
   const createdAt = Number.isFinite(row.created_at)
     ? row.created_at
     : Math.floor(Date.now() / 1000);
@@ -8569,7 +8416,7 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
     const recipientLocale = normalizeAppLocale(row.recipient_locale) ?? DEFAULT_APP_LOCALE;
     const title = getLocalizedText(actorName || "TempleSale", row.title_translations, recipientLocale);
     const message = getLocalizedText(
-      productName || "Atualização TempleSale",
+      productName || "Aggiornamento TempleSale",
       row.message_translations,
       recipientLocale,
     );
@@ -8600,26 +8447,26 @@ function rowToNotification(row: NotificationEventRow): NotificationRecord {
     row.event_id.startsWith("publication_comment_reply:");
   const title =
     row.type === "product_cart_interest"
-      ? "Novo interesse no carrinho"
+      ? "Nuovo interesse nel carrello"
       : row.type === "product_comment" || row.type === "publication_comment"
         ? isProductCommentReply
           ? "Risposta al tuo commento"
           : "Nuovo commento"
-        : "Nova curtida";
+        : "Nuovo Mi piace";
   const message =
     row.type === "product_cart_interest"
-      ? `${actorName} adicionou seu anúncio "${productName}" ao carrinho.`
+      ? `${actorName} ha aggiunto il tuo annuncio "${productName}" al carrello.`
       : row.type === "product_comment"
         ? isProductCommentReply
-          ? `${actorName} respondeu seu comentário em "${productName}".`
-          : `${actorName} comentou na sua publicação "${productName}".`
+          ? `${actorName} ha risposto al tuo commento su "${productName}".`
+          : `${actorName} ha commentato la tua pubblicazione "${productName}".`
         : row.type === "publication_comment"
           ? isProductCommentReply
             ? `${actorName} ha risposto al tuo commento.`
             : `${actorName} ha commentato la tua pubblicazione.`
           : row.type === "publication_like"
-            ? `${actorName} curtiu sua publicação "${productName}".`
-        : `${actorName} curtiu seu anúncio "${productName}".`;
+            ? `A ${actorName} piace la tua pubblicazione "${productName}".`
+        : `A ${actorName} piace il tuo annuncio "${productName}".`;
 
   const normalized: NotificationRecord = {
     id: row.event_id,
@@ -10132,6 +9979,12 @@ async function bootstrap() {
   await legalService.initialize();
 
   const app = express();
+  app.use('/api',(_req,res,next)=>{
+    const json=res.json.bind(res);
+    res.json=((body:any)=>json(res.statusCode>=400&&body&&typeof body.error==='string'
+      ? {...body,error:translateInterface('it-IT',body.error)} : body)) as typeof res.json;
+    next();
+  });
   const databaseUnderPressure = () => Boolean(pgPool && pgPool.waitingCount >= 4);
   const capacity = createPublicationCapacity(pgPool, {
     publications: toRequiredNonNegativeInteger(process.env.PUBLICATION_GLOBAL_CONCURRENCY ?? 4, 4),
@@ -10330,6 +10183,8 @@ async function bootstrap() {
       mode: isProduction ? "production" : "development",
       database: USE_SQLITE_DATABASE ? "sqlite" : "postgres",
       publicationProtection: 'observable-v5.3',
+      interfaceLanguage: 'it-IT',
+      contentTranslation: 'browser-only',
       directUpload:directUpload.snapshot(),
       sharedCapacity: capacity.snapshot(),
       writeCapacity: { publications: admitPublicationWrite.snapshot(), comments: admitCommentWrite.snapshot(), uploads: admitMediaUpload.snapshot() },

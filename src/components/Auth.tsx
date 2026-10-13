@@ -86,7 +86,7 @@ export default function Auth({
         },
       });
       writeAuth0Diagnostic("loginWithRedirect-returned-without-navigation", {
-        message: "Auth0 SDK returned control to the app instead of leaving the current page.",
+        message: "Auth0 ha restituito il controllo all’app senza aprire la pagina di accesso.",
       });
       console.warn("[auth0-login] loginWithRedirect returned without navigation");
     } catch (error) {
@@ -134,7 +134,7 @@ export default function Auth({
             {t("Termos e privacidade")}
           </button>}
           <p className="text-center text-sm leading-relaxed text-neutral-300">
-            Entre com Google para cadastrar ou gerenciar sua empresa no TempleSale. O perfil criado sera o perfil publico da sua loja.
+            Accedi con Google per registrare o gestire la tua attività su <span translate="no" className="notranslate">TempleSale</span>. Il profilo creato sarà quello pubblico della tua attività.
           </p>
 
           {errorMessage && (

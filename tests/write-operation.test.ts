@@ -48,7 +48,7 @@ test('a full pending journal refuses new work without evicting a recoverable ide
   const scope='capacity-device:comment:103';
   const keys:string[]=[];
   for(let i=0;i<32;i++)keys.push(await beginWriteOperation(scope,[String(i),null]));
-  await assert.rejects(beginWriteOperation(scope,['overflow',null]),/32 envios/);
+  await assert.rejects(beginWriteOperation(scope,['overflow',null]),/32 invii/);
   assert.equal(await beginWriteOperation(scope,['0',null]),keys[0]);
   for(const key of keys)completeWriteOperation(scope,key);
 });

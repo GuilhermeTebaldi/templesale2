@@ -68,7 +68,7 @@ export function usePublicationFeed(input: {
         const nextCursor = page.nextCursor;
         const canContinue = nextCursor === undefined ? page.hasMore : page.hasMore && nextCursor !== null;
         if (canContinue && (nextCursor === undefined ? page.nextOffset <= offset : nextCursor === cursor)) {
-          throw new Error('Não foi possível continuar o feed. Tente atualizar novamente.');
+          throw new Error("Impossibile continuare il feed. Prova ad aggiornare nuovamente.");
         }
         const candidates = page.publications.filter(item => !latest.current.deletedIds.includes(item.id));
         cursor = nextCursor;
@@ -86,7 +86,7 @@ export function usePublicationFeed(input: {
       }
     } catch (failure) {
       if (!gate.current.accepts(request)) return;
-      setError(failure instanceof Error ? failure.message : 'Falha ao carregar publicações.');
+      setError(failure instanceof Error ? failure.message : "Impossibile caricare le pubblicazioni.");
       setHasMore(false);
       paging.current.hasMore = false;
       // Existing cards remain available offline; the next foreground refresh retries.

@@ -1000,7 +1000,7 @@ export default function FrameStudio() {
             </a>
             <div>
               <p className="text-[10px] uppercase tracking-[0.2em] text-stone-500">
-                TempleSale Studio
+                <span translate="no" className="notranslate">TempleSale</span> Studio
               </p>
               <h1 className="text-sm sm:text-base font-semibold tracking-[0.04em]">
                 Generatore Moldura Instagram
@@ -1275,7 +1275,7 @@ export default function FrameStudio() {
                     ) : (
                       <span />
                     )}
-                    <span className={currentTheme.footerClass}>templesale.com</span>
+                    <span className={currentTheme.footerClass}><span translate="no" className="notranslate">templesale</span>.com</span>
                   </div>
                 </div>
               </div>

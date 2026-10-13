@@ -598,10 +598,10 @@ export function ensureLeafletAssets(): Promise<LeafletGlobal> {
             resolve(loadedLeaflet);
             return;
           }
-          reject(new Error("Leaflet não carregado."));
+          reject(new Error("Leaflet non caricato."));
         });
         existingScript.addEventListener("error", () => {
-          reject(new Error("Falha ao carregar Leaflet."));
+          reject(new Error("Errore durante il caricamento di Leaflet."));
         });
         return;
       }
@@ -613,7 +613,7 @@ export function ensureLeafletAssets(): Promise<LeafletGlobal> {
       script.onload = () => {
         const loadedLeaflet = getLeafletFromWindow();
         if (!loadedLeaflet) {
-          reject(new Error("Leaflet não carregado."));
+          reject(new Error("Leaflet non caricato."));
           return;
         }
 
@@ -629,7 +629,7 @@ export function ensureLeafletAssets(): Promise<LeafletGlobal> {
         resolve(loadedLeaflet);
       };
       script.onerror = () => {
-        reject(new Error("Falha ao carregar Leaflet."));
+        reject(new Error("Errore durante il caricamento di Leaflet."));
       };
       document.head.appendChild(script);
     });
@@ -2019,7 +2019,7 @@ export default function ProductMap({
             height: "max(14px, calc(env(safe-area-inset-bottom) + 8px))",
           }}
         >
-          TempleSale
+          <span translate="no" className="notranslate">TempleSale</span>
         </div>
 
         <AnimatePresence>

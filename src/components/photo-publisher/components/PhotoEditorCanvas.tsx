@@ -480,7 +480,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
           className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-neutral-900/90 backdrop-blur-md border border-neutral-700 text-white text-xs font-semibold hover:bg-neutral-800 transition active:scale-95 shadow-lg cursor-pointer"
         >
           <Type className="w-3.5 h-3.5 text-blue-400" />
-          + Texto / Emoji
+          + Testo / Emoji
         </button>
       </div>
       )}
@@ -499,7 +499,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
         <div className="w-full h-full relative overflow-hidden flex items-center justify-center pointer-events-none">
           <img
             src={imageSrc}
-            alt="Foto para edição"
+            alt="Foto da modificare"
             referrerPolicy="no-referrer"
             className="absolute left-1/2 top-1/2 max-w-none transition-transform duration-75 select-none pointer-events-none"
             style={{
@@ -582,7 +582,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
                       className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-semibold active:scale-95 transition cursor-pointer"
                     >
                       <Edit3 className="w-3 h-3" />
-                      <span>Editar</span>
+                      <span>Modifica</span>
                     </button>
 
                     {/* Direct Size Minus Button */}
@@ -594,7 +594,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
                         })
                       }
                       className="w-5 h-5 flex items-center justify-center rounded-full bg-neutral-800 hover:bg-neutral-700 text-white text-[11px] active:scale-95 transition"
-                      title="Diminuir"
+                      title="Riduci"
                     >
                       <Minus className="w-2.5 h-2.5" />
                     </button>
@@ -608,7 +608,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
                         })
                       }
                       className="w-5 h-5 flex items-center justify-center rounded-full bg-neutral-800 hover:bg-neutral-700 text-white text-[11px] active:scale-95 transition"
-                      title="Aumentar"
+                      title="Aumenta"
                     >
                       <Plus className="w-2.5 h-2.5" />
                     </button>
@@ -655,7 +655,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
                       id={`btn-rotate-${item.id}`}
                       onPointerDown={(e) => handleRotatePointerDown(e, item)}
                       className="absolute -top-6 -right-6 w-8 h-8 rounded-full bg-neutral-900 border-2 border-blue-400 text-blue-300 flex items-center justify-center shadow-2xl cursor-grab active:cursor-grabbing active:scale-110 transition z-50"
-                      title="Girar"
+                      title="Ruota"
                     >
                       <RotateCw className="w-3.5 h-3.5 pointer-events-none" />
                     </div>
@@ -665,7 +665,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
                       id={`btn-resize-${item.id}`}
                       onPointerDown={(e) => handleResizePointerDown(e, item)}
                       className="absolute -bottom-6 -right-6 w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-500 border-2 border-white text-white flex items-center justify-center shadow-2xl cursor-se-resize touch-none active:scale-125 transition z-50 ring-4 ring-black/40"
-                      title="Arraste para aumentar ou diminuir o tamanho"
+                      title="Trascina per aumentare o ridurre la dimensione"
                     >
                       <Maximize2 className="w-4 h-4 pointer-events-none" />
                     </div>
@@ -686,7 +686,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
           >
             <div className="flex items-center gap-1 text-[11px] font-medium text-neutral-300 mr-1">
               <Move className="w-3 h-3 text-sky-400" />
-              <span className="hidden sm:inline">Mover foto</span>
+              <span className="hidden sm:inline">Sposta foto</span>
             </div>
 
             {/* Zoom Out Button */}
@@ -701,7 +701,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
               }
               disabled={crop.scale <= 1}
               className="w-6 h-6 rounded-full bg-neutral-800 hover:bg-neutral-700 disabled:opacity-35 text-white flex items-center justify-center transition active:scale-95 cursor-pointer"
-              title="Diminuir zoom"
+              title="Riduci zoom"
             >
               <Minus className="w-3 h-3" />
             </button>
@@ -722,7 +722,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
               }
               disabled={crop.scale >= 3}
               className="w-6 h-6 rounded-full bg-neutral-800 hover:bg-neutral-700 disabled:opacity-35 text-white flex items-center justify-center transition active:scale-95 cursor-pointer"
-              title="Aumentar zoom"
+              title="Aumenta zoom"
             >
               <Plus className="w-3 h-3" />
             </button>
@@ -734,10 +734,10 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
                 id="btn-reset-crop"
                 onClick={() => onChangeCrop({ x: 0, y: 0, scale: 1 })}
                 className="flex items-center gap-1 ml-1 px-2 py-0.5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-[10px] font-medium transition active:scale-95 border border-neutral-600/60 cursor-pointer"
-                title="Centralizar foto original"
+                title="Centra la foto originale"
               >
                 <RotateCcw className="w-2.5 h-2.5" />
-                <span>Centralizar</span>
+                <span>Centra</span>
               </button>
             )}
           </div>

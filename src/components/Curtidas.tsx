@@ -104,7 +104,7 @@ export default function Curtidas({
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 px-1 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500">
                     <ImageIcon className="h-3.5 w-3.5" />
-                    <span>Publicações curtidas</span>
+                    <span>Pubblicazioni che ti piacciono</span>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
                     {publications.map((publication) => {
@@ -144,7 +144,7 @@ export default function Curtidas({
                                 void handleRemovePublication(publication.id);
                               }}
                               className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border border-neutral-700/80 bg-neutral-950/85 text-neutral-300 transition-colors hover:border-red-500 hover:bg-red-600 hover:text-white disabled:opacity-50"
-                              title="Remover curtida"
+                              title="Rimuovi preferito"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>

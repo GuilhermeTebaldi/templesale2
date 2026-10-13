@@ -36,7 +36,7 @@ const FONTS: { id: FontStyleType; label: string }[] = [
   { id: 'sans', label: 'Sans' },
   { id: 'display', label: 'Impact' },
   { id: 'serif', label: 'Serif' },
-  { id: 'handwriting', label: 'Cursivo' },
+  { id: 'handwriting', label: "Corsivo" },
   { id: 'mono', label: 'Mono' },
   { id: 'neon', label: 'Neon' },
 ];
@@ -45,10 +45,10 @@ const BACKGROUND_STYLES: {
   id: OverlayItem['backgroundColor'];
   label: string;
 }[] = [
-  { id: 'transparent', label: 'Transp.' },
-  { id: 'black-translucent', label: 'Escuro' },
-  { id: 'white-translucent', label: 'Claro' },
-  { id: 'primary', label: 'Azul' },
+  { id: 'transparent', label: "Trasp." },
+  { id: 'black-translucent', label: "Scuro" },
+  { id: 'white-translucent', label: "Chiaro" },
+  { id: 'primary', label: "Blu" },
   { id: 'neon', label: 'Neon' },
 ];
 
@@ -172,10 +172,10 @@ export const OverlayToolbar: React.FC<OverlayToolbarProps> = ({
             id="toolbar-btn-edit-text"
             onClick={onEdit}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium transition active:scale-95"
-            title="Editar texto"
+            title="Modifica testo"
           >
             <Edit3 className="w-3.5 h-3.5 text-blue-400" />
-            <span>Editar</span>
+            <span>Modifica</span>
           </button>
 
           {/* Size */}
@@ -188,7 +188,7 @@ export const OverlayToolbar: React.FC<OverlayToolbarProps> = ({
                 ? 'bg-blue-600 text-white'
                 : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200'
             }`}
-            title="Tamanho"
+            title="Dimensione"
           >
             <ZoomIn className="w-3.5 h-3.5" />
             <span>{selectedItem.fontSize}px</span>
@@ -204,13 +204,13 @@ export const OverlayToolbar: React.FC<OverlayToolbarProps> = ({
                 ? 'bg-blue-600 text-white'
                 : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200'
             }`}
-            title="Cor"
+            title="Colore"
           >
             <div
               className="w-3.5 h-3.5 rounded-full border border-white/50"
               style={{ backgroundColor: selectedItem.color }}
             />
-            <span>Cor</span>
+            <span>Colore</span>
           </button>
 
           {/* Font style */}
@@ -223,10 +223,10 @@ export const OverlayToolbar: React.FC<OverlayToolbarProps> = ({
                 ? 'bg-blue-600 text-white'
                 : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200'
             }`}
-            title="Estilo da fonte"
+            title="Stile del carattere"
           >
             <Type className="w-3.5 h-3.5 text-amber-400" />
-            <span>Fonte</span>
+            <span>Carattere</span>
           </button>
 
           {/* Background */}
@@ -239,10 +239,10 @@ export const OverlayToolbar: React.FC<OverlayToolbarProps> = ({
                 ? 'bg-blue-600 text-white'
                 : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200'
             }`}
-            title="Destaque de fundo"
+            title="Evidenziazione dello sfondo"
           >
             <Palette className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Fundo</span>
+            <span>Sfondo</span>
           </button>
 
           {/* Alignment */}
@@ -251,7 +251,7 @@ export const OverlayToolbar: React.FC<OverlayToolbarProps> = ({
             id="toolbar-btn-align"
             onClick={cycleAlignment}
             className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition active:scale-95"
-            title="Alinhamento"
+            title="Allineamento"
           >
             {selectedItem.textAlign === 'left' && <AlignLeft className="w-3.5 h-3.5" />}
             {(!selectedItem.textAlign || selectedItem.textAlign === 'center') && (
@@ -268,7 +268,7 @@ export const OverlayToolbar: React.FC<OverlayToolbarProps> = ({
             id="toolbar-btn-duplicate"
             onClick={onDuplicate}
             className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition active:scale-95"
-            title="Duplicar"
+            title="Duplica"
           >
             <Copy className="w-3.5 h-3.5" />
           </button>
@@ -278,7 +278,7 @@ export const OverlayToolbar: React.FC<OverlayToolbarProps> = ({
             id="toolbar-btn-delete"
             onClick={onDelete}
             className="p-1.5 rounded-lg bg-red-900/60 hover:bg-red-800 text-red-300 transition active:scale-95 border border-red-800/60"
-            title="Excluir"
+            title="Elimina"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>

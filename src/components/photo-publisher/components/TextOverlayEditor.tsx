@@ -30,17 +30,17 @@ const FONTS: { id: FontStyleType; label: string; fontClass: string }[] = [
   { id: 'sans', label: 'Sans', fontClass: 'font-sans' },
   { id: 'display', label: 'Impact', fontClass: 'font-black tracking-wider uppercase' },
   { id: 'serif', label: 'Serif', fontClass: 'font-serif' },
-  { id: 'handwriting', label: 'Cursivo', fontClass: 'italic font-serif' },
+  { id: 'handwriting', label: "Corsivo", fontClass: 'italic font-serif' },
   { id: 'mono', label: 'Mono', fontClass: 'font-mono' },
   { id: 'neon', label: 'Neon', fontClass: 'font-bold tracking-wide' },
 ];
 
 const BACKGROUNDS: { id: OverlayItem['backgroundColor']; label: string }[] = [
-  { id: 'transparent', label: 'Transparente' },
-  { id: 'black-translucent', label: 'Fundo Escuro' },
-  { id: 'white-translucent', label: 'Fundo Claro' },
-  { id: 'primary', label: 'Destaque Azul' },
-  { id: 'neon', label: 'Borda Neon' },
+  { id: 'transparent', label: "Trasparente" },
+  { id: 'black-translucent', label: "Sfondo scuro" },
+  { id: 'white-translucent', label: "Sfondo chiaro" },
+  { id: 'primary', label: "Evidenziazione blu" },
+  { id: 'neon', label: "Bordo neon" },
 ];
 
 const QUICK_EMOJIS = [
@@ -91,7 +91,7 @@ export const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({
         <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
           <div className="flex items-center gap-2">
             <Type className="w-4 h-4 text-blue-400" />
-            <h3 className="text-sm font-semibold text-neutral-200">Texto & Emojis</h3>
+            <h3 className="text-sm font-semibold text-neutral-200">Testo ed emoji</h3>
           </div>
           <button
             type="button"
@@ -130,7 +130,7 @@ export const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({
             }}
           >
             <span className="break-words whitespace-pre-wrap">
-              {text || 'Digite algo...'}
+              {text || "Scrivi qualcosa..."}
             </span>
           </div>
         </div>
@@ -144,7 +144,7 @@ export const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({
             maxLength={80}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Digite seu texto ou toque nos emojis..."
+            placeholder="Scrivi il testo o tocca gli emoji..."
             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition"
           />
         </div>
@@ -165,7 +165,7 @@ export const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({
 
         {/* Font Style Selection */}
         <div>
-          <label className="block text-[11px] font-medium text-neutral-400 mb-1">Fonte</label>
+          <label className="block text-[11px] font-medium text-neutral-400 mb-1">Carattere</label>
           <div className="grid grid-cols-6 gap-1.5">
             {FONTS.map((f) => (
               <button
@@ -187,7 +187,7 @@ export const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({
 
         {/* Colors */}
         <div>
-          <label className="block text-[11px] font-medium text-neutral-400 mb-1">Cor</label>
+          <label className="block text-[11px] font-medium text-neutral-400 mb-1">Colore</label>
           <div className="flex gap-2 flex-wrap">
             {COLORS.map((c) => (
               <button
@@ -208,7 +208,7 @@ export const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({
         {/* Background & Alignment */}
         <div className="grid grid-cols-2 gap-2.5 items-center">
           <div>
-            <label className="block text-[11px] font-medium text-neutral-400 mb-1">Fundo</label>
+            <label className="block text-[11px] font-medium text-neutral-400 mb-1">Sfondo</label>
             <select
               id="select-text-bg"
               value={backgroundColor}
@@ -224,7 +224,7 @@ export const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({
           </div>
 
           <div>
-            <label className="block text-[11px] font-medium text-neutral-400 mb-1">Alinhamento</label>
+            <label className="block text-[11px] font-medium text-neutral-400 mb-1">Allineamento</label>
             <div className="flex bg-neutral-950 rounded-xl border border-neutral-800 p-0.5">
               <button
                 type="button"
@@ -260,7 +260,7 @@ export const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({
         {/* Font Size Slider */}
         <div>
           <div className="flex justify-between text-[11px] text-neutral-400 mb-1">
-            <span>Tamanho</span>
+            <span>Dimensione</span>
             <span className="font-semibold text-neutral-200">{fontSize}px</span>
           </div>
           <input
@@ -282,7 +282,7 @@ export const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({
             onClick={onCancel}
             className="flex-1 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-300 transition active:scale-98"
           >
-            Cancelar
+            Annulla
           </button>
           <button
             type="button"
@@ -292,7 +292,7 @@ export const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({
             className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-xs font-semibold text-white flex items-center justify-center gap-1.5 transition active:scale-98 shadow-lg shadow-blue-600/25"
           >
             <Check className="w-4 h-4" />
-            Salvar
+            Salva
           </button>
         </div>
       </div>

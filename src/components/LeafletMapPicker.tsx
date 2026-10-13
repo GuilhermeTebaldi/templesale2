@@ -79,10 +79,10 @@ function ensureLeafletAssets(): Promise<LeafletGlobal> {
             resolve(window.L);
             return;
           }
-          reject(new Error("Leaflet não carregado."));
+          reject(new Error("Leaflet non caricato."));
         });
         existingScript.addEventListener("error", () => {
-          reject(new Error("Falha ao carregar Leaflet."));
+          reject(new Error("Errore durante il caricamento di Leaflet."));
         });
         return;
       }
@@ -93,7 +93,7 @@ function ensureLeafletAssets(): Promise<LeafletGlobal> {
       script.async = true;
       script.onload = () => {
         if (!window.L) {
-          reject(new Error("Leaflet não carregado."));
+          reject(new Error("Leaflet non caricato."));
           return;
         }
 
@@ -109,7 +109,7 @@ function ensureLeafletAssets(): Promise<LeafletGlobal> {
         resolve(window.L);
       };
       script.onerror = () => {
-        reject(new Error("Falha ao carregar Leaflet."));
+        reject(new Error("Errore durante il caricamento di Leaflet."));
       };
       document.head.appendChild(script);
     });

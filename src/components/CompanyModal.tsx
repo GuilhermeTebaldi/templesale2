@@ -77,7 +77,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
               type="button"
               onClick={onClose}
               className="p-2 -ml-2 text-neutral-400 hover:text-white rounded-xl hover:bg-neutral-900 transition-colors cursor-pointer"
-              title="Voltar / Fechar"
+              title="Indietro / Chiudi"
             >
               <ArrowLeft className="w-5 h-5 sm:hidden" />
               <X className="w-5 h-5 hidden sm:block" />
@@ -86,10 +86,10 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
               <Building2 className="w-5 h-5 text-neutral-300 hidden xs:block" />
               <div>
                 <h2 className="font-bold text-base sm:text-lg text-neutral-100 leading-tight">
-                  Editar Perfil
+                  Modifica profilo
                 </h2>
                 <p className="text-[11px] text-neutral-400">
-                  Dados da Empresa no TempleSale
+                  Dati dell’attività su <span translate="no" className="notranslate">TempleSale</span>
                 </p>
               </div>
             </div>
@@ -103,7 +103,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
             className="px-4 py-2 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-xl text-xs sm:text-sm flex items-center space-x-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
           >
             <Check className="w-4 h-4" />
-            <span>Salvar</span>
+            <span>Salva</span>
           </button>
         </div>
 
@@ -112,7 +112,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
           <div className="flex items-center space-x-2 min-w-0">
             <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
             <span className="truncate">
-              Autenticado via <strong>Auth0</strong> ({user.email})
+              Autenticato tramite <strong>Auth0</strong> ({user.email})
             </span>
           </div>
           <span className="text-[11px] bg-neutral-800/80 px-2 py-0.5 rounded-full text-neutral-300 font-mono shrink-0 ml-2">
@@ -130,7 +130,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
             {/* Logo / Foto da Empresa */}
             <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5">
               <label className="block text-xs font-semibold text-neutral-300 mb-2.5">
-                Logo / Foto da Empresa (URL)
+                Logo / Foto dell’attività (URL)
               </label>
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
                 <div className="relative shrink-0">
@@ -139,7 +139,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
                       formData.logo ||
                       'https://images.unsplash.com/photo-1514933651103-005eec06c04b?w=120'
                     }
-                    alt="Logo preview"
+                    alt="Anteprima del logo"
                     className="w-20 h-20 rounded-2xl object-cover border border-neutral-700 shadow-md bg-neutral-950"
                   />
                   <div className="absolute -bottom-1 -right-1 p-1 bg-neutral-900 border border-neutral-700 rounded-full text-neutral-300">
@@ -158,7 +158,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
                     className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-base sm:text-xs text-neutral-100 placeholder-neutral-500 focus:outline-hidden focus:border-neutral-400"
                   />
                   <span className="block text-[11px] text-neutral-400 mt-1.5">
-                    Insira o link direto da imagem que representará o seu perfil.
+                    Inserisci il link diretto all’immagine del profilo.
                   </span>
                 </div>
               </div>
@@ -167,7 +167,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
             {/* Nome da Empresa */}
             <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5">
               <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                Nome da Empresa *
+                Nome dell’attività *
               </label>
               <input
                 id="input-company-name"
@@ -194,14 +194,14 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
                   value={formData.category}
                   onChange={handleInputChange}
                   required
-                  placeholder="Ex: Bar & Choperia, Pizzaria, Barbearia..."
+                  placeholder="Es.: Bar, pizzeria, barbiere..."
                   className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-base sm:text-xs text-neutral-100 placeholder-neutral-500 focus:outline-hidden focus:border-neutral-400"
                 />
               </div>
 
               <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5">
                 <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                  Cidade *
+                  Città *
                 </label>
                 <input
                   id="input-company-city"
@@ -210,7 +210,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
                   value={formData.city}
                   onChange={handleInputChange}
                   required
-                  placeholder="Ex: Ardea, Roma, São Paulo..."
+                  placeholder="Es.: Ardea, Roma, Milano..."
                   className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-base sm:text-xs text-neutral-100 placeholder-neutral-500 focus:outline-hidden focus:border-neutral-400"
                 />
               </div>
@@ -219,7 +219,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
             {/* Descrição */}
             <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5">
               <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                Descrição da Empresa
+                Descrizione dell’attività
               </label>
               <textarea
                 id="textarea-company-description"
@@ -227,7 +227,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
                 rows={4}
                 value={formData.description}
                 onChange={handleInputChange}
-                placeholder="Fale brevemente sobre sua empresa, serviços, ambiente ou diferenciais..."
+                placeholder="Descrivi brevemente la tua attività, i servizi, l’ambiente o i punti di forza..."
                 className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-base sm:text-xs text-neutral-100 placeholder-neutral-500 focus:outline-hidden focus:border-neutral-400 resize-none leading-relaxed"
               />
             </div>
@@ -236,7 +236,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5">
                 <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                  WhatsApp (para contato direto) *
+                  WhatsApp (contatto diretto) *
                 </label>
                 <input
                   id="input-company-whatsapp"
@@ -252,7 +252,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
 
               <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5">
                 <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                  Horários de Funcionamento *
+                  Orari di apertura *
                 </label>
                 <input
                   id="input-company-hours"
@@ -261,7 +261,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
                   value={formData.hours}
                   onChange={handleInputChange}
                   required
-                  placeholder="Ex: Ter - Dom: 17:00 às 01:00"
+                  placeholder="Es.: Mar - Dom: dalle 17:00 alle 01:00"
                   className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-base sm:text-xs text-neutral-100 placeholder-neutral-500 focus:outline-hidden focus:border-neutral-400"
                 />
               </div>
@@ -270,7 +270,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
             {/* Endereço / Mapa */}
             <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5">
               <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                Endereço / Localização (Mapa)
+                Indirizzo / Posizione (mappa)
               </label>
               <input
                 id="input-company-address"
@@ -279,7 +279,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
                 value={formData.address}
                 onChange={handleInputChange}
                 required
-                placeholder="Ex: Via Laurentina 142, 00040 Ardea RM, Itália"
+                placeholder="Es.: Via Laurentina 142, 00040 Ardea RM, Italia"
                 className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-base sm:text-xs text-neutral-100 placeholder-neutral-500 focus:outline-hidden focus:border-neutral-400"
               />
             </div>
@@ -287,7 +287,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
             {/* Palavras-chave */}
             <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5">
               <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                Palavras-chave (busca de empresas)
+                Parole chiave (ricerca delle attività)
               </label>
               <div className="flex items-center space-x-2 mb-3">
                 <input
@@ -301,7 +301,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
                       handleAddKeyword();
                     }
                   }}
-                  placeholder="Ex: bar, pizza, barbeiro, birra, motor..."
+                  placeholder="Es.: bar, pizza, barbiere, birra, motori..."
                   className="flex-1 bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-base sm:text-xs text-neutral-100 placeholder-neutral-500 focus:outline-hidden focus:border-neutral-400"
                 />
                 <button
@@ -311,7 +311,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
                   className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium rounded-xl transition-colors flex items-center space-x-1.5 shrink-0 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>Adicionar</span>
+                  <span>Aggiungi</span>
                 </button>
               </div>
 
@@ -326,7 +326,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
                       type="button"
                       onClick={() => handleRemoveKeyword(kw)}
                       className="hover:text-rose-400 transition-colors p-0.5 cursor-pointer"
-                      title={`Remover #${kw}`}
+                      title={`Rimuovi #${kw}`}
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -345,7 +345,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
             onClick={onClose}
             className="flex-1 sm:flex-none px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 hover:text-white rounded-xl text-xs font-medium transition-colors cursor-pointer text-center"
           >
-            Cancelar
+            Annulla
           </button>
           <button
             id="btn-bottom-save-company"
@@ -354,7 +354,7 @@ export const CompanyModal: React.FC<CompanyModalProps> = ({
             className="flex-1 sm:flex-none px-6 py-2.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold rounded-xl text-xs transition-all shadow-md active:scale-98 flex items-center justify-center space-x-2 cursor-pointer text-center"
           >
             <Save className="w-4 h-4" />
-            <span>Salvar Dados da Empresa</span>
+            <span>Salva i dati dell’attività</span>
           </button>
         </div>
       </motion.div>

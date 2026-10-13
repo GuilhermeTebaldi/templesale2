@@ -40,7 +40,7 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
   useEffect(() => { onOriginChange?.(origin); }, [onOriginChange, origin]);
   const previous = useRef<{ lat: number; lng: number; at: number } | null>(null);
   const useGps = useCallback(() => {
-    if (!navigator.geolocation) { setError('Este navegador não oferece localização. Escolha uma cidade.'); return; }
+    if (!navigator.geolocation) { setError("Questo browser non supporta la posizione. Scegli una città."); return; }
     setError(''); setLocating(true); setEnabled(true);
   }, []);
   const useCity = useCallback((city: string) => {
@@ -75,7 +75,7 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
     const watch = navigator.geolocation.watchPosition(position => {
       if (cancelled) return;
       setLocating(false);
-      if (position.coords.accuracy > 1000) { setError('Localização imprecisa. Tente novamente ou escolha uma cidade.'); return; }
+      if (position.coords.accuracy > 1000) { setError("Posizione imprecisa. Riprova o scegli una città."); return; }
       const next = { lat: position.coords.latitude, lng: position.coords.longitude };
       setError(''); setFresh(true);
       if (!shouldUpdateLocation(previous.current, next, Date.now())) return;
@@ -89,7 +89,7 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
     }, failure => {
       if (cancelled) return;
       setLocating(false);
-      setError(failure.code === 1 ? 'Localização não autorizada. Escolha uma cidade ou libere a permissão no navegador.' : 'Não foi possível obter sua localização. Tente novamente ou escolha uma cidade.');
+      setError(failure.code === 1 ? "Posizione non autorizzata. Scegli una città o consenti l’accesso nel browser." : "Impossibile ottenere la posizione. Riprova o scegli una città.");
       if (failure.code === 1) {
         setEnabled(false);
         previous.current = null;

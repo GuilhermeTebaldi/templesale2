@@ -15,7 +15,7 @@ async function database(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => request.result.createObjectStore('drafts');
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error('Armazenamento de rascunhos indisponível.'));
+    request.onblocked = () => reject(new Error("Archiviazione delle bozze non disponibile."));
   });
 }
 async function access<T>(id: number, mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
