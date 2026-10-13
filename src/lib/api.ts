@@ -1,3 +1,4 @@
+import { previewComments } from "./comment-delivery";
 import { trackedFetch } from "./networkActivity";
 import { AUTH0_DEBUG_LOGS } from "./auth0-config";
 import type { LegalLocale, LegalStatus, LegalReceipt } from "./legal-types";
@@ -211,6 +212,8 @@ export interface ProductCommentDto {
   authorAvatarUrl?: string;
   replies: ProductCommentDto[];
 }
+
+export interface CommentMutationResult { comments: ProductCommentDto[]; incremental: boolean; }
 
 export interface CreateProductCommentInput {
   body: string;
@@ -3113,16 +3116,17 @@ export const api = {
     });
     return true;
   },
-  async getPublicationComments(publicationId: number, background = false) {
+  async getPublicationComments(publicationId: number, background = false, preview = false) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
       throw new Error("ID de publicação inválido.");
     }
 
     try {
-      const payload = await request<unknown>(`/api/publications/${publicationId}/comments`, {
+      const payload = await request<unknown>(`/api/publications/${publicationId}/comments${preview ? "?preview=1" : ""}`, {
         skipAuthToken: true, skipGlobalLoadingOverlay: background,
       });
-      return normalizeProductCommentList(payload);
+      const comments = normalizeProductCommentList(payload);
+      return preview ? previewComments(comments) : comments;
     } catch (error) {
       if (isMissingApiRouteError(error)) {
         return [];
@@ -3130,7 +3134,7 @@ export const api = {
       throw error;
     }
   },
-  async createPublicationComment(publicationId: number, input: CreateProductCommentInput) {
+  async createPublicationComment(publicationId: number, input: CreateProductCommentInput): Promise<CommentMutationResult> {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
       throw new Error("ID de publicação inválido.");
     }
@@ -3140,7 +3144,7 @@ export const api = {
       throw new Error("Comentário é obrigatório.");
     }
 
-    const response = await request<unknown>(`/api/publications/${publicationId}/comments`, {
+    const response = await request<unknown>(`/api/publications/${publicationId}/comments?response=created`, {
       method: "POST",
       skipGlobalLoadingOverlay: true,
       body: JSON.stringify({
@@ -3151,7 +3155,11 @@ export const api = {
             : undefined,
       }),
     });
-    return normalizeProductCommentList(response);
+    const payload = parseJsonIfNeeded(response);
+    const comment = isRecord(payload) ? normalizeProductCommentItem(payload.comment) : null;
+    return comment
+      ? { comments: [comment], incremental: true }
+      : { comments: normalizeProductCommentList(response), incremental: false };
   },
   async updatePublicationComment(publicationId: number, commentId: number, input: UpdateProductCommentInput) {
     if (!Number.isInteger(publicationId) || publicationId <= 0 || !Number.isInteger(commentId) || commentId <= 0) {
