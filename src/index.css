@@ -248,9 +248,8 @@ body.ts-scroll-lock {
 
 /* Ajuste do editor de publicação quando o teclado móvel ocupa a viewport */
 #editor-main-layout.ts-publication-keyboard-open #photo-viewport-container {
-  aspect-ratio: auto;
-  flex: 1 1 0%;
-  min-height: 0;
+  aspect-ratio: 1;
+  flex-shrink: 0;
 }
 
 /* Tema claro compartilhado por páginas, painéis e diálogos. */
@@ -259,6 +258,7 @@ body.ts-scroll-lock {
   .hover\:text-red-200:hover,
   .hover\:text-red-300:hover,
   .hover\:text-red-400:hover,
+  .text-red-100,
   .text-red-200,
   .text-red-300,
   .text-red-400 { color: #b91c1c; }
