@@ -80,6 +80,7 @@ export function createPublicationEvolution(pool: Pool | null, sqlite: Database.D
         PRIMARY KEY(user_id,operation_key,kind))`);
       await query('CREATE INDEX IF NOT EXISTS idx_publication_operations_retention ON publication_write_operations(created_at)');
       await query(`CREATE INDEX ${pool ? "CONCURRENTLY " : ""}IF NOT EXISTS idx_publication_comment_pages ON product_comments(publication_id,parent_comment_id,created_at DESC,id DESC)`);
+      await query(`CREATE INDEX ${pool ? "CONCURRENTLY " : ""}IF NOT EXISTS idx_sessions_expiration ON sessions(expires_at)`);
       enabled = true;
     },
     start() {
