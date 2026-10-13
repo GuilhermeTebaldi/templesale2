@@ -54,3 +54,13 @@ Não foi realizado teste de carga com milhões de operações. Os limites atuais
 - node-postgres, pool, espera por conexões e connectionTimeoutMillis: https://node-postgres.com/apis/pool
 - AWS, limitar filas e falhar rapidamente em sobrecarga: https://docs.aws.amazon.com/wellarchitected/2022-03-31/framework/rel_mitigate_interaction_failure_fail_fast.html
 - AWS, reenvios com backoff e requisito de idempotência: https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/retry-backoff.html
+
+## Redução do custo por envio — 13/10/2026
+
+- Feed usa GET de comentários com preview=1: no máximo dois registros, via LIMIT parametrizado no PostgreSQL e SQLite. O cliente também limita a prévia se o servidor antigo ignorar a opção.
+- Criação usa response=created: devolve só o comentário inserido. O cliente incorpora esse registro à lista existente, sem consultar ou transferir a árvore inteira. Servidores/clientes antigos continuam usando o contrato anterior.
+- O cache de comentários do feed mantém apenas dois registros por publicação. O botão diz Ver comentários, sem apresentar a quantidade parcial como total.
+- O visualizador mantém sua lista e incorpora confirmações incrementalmente. A consulta inicial da lista completa e os fluxos de editar/excluir ainda usam o contrato anterior: paginação de comentários principais/respostas segue pendente, especialmente para posts muito populares.
+- /api/health identifica commentDelivery=compact-v1 e apresenta total/idle/waiting do pool. São dados por processo, não métricas agregadas.
+- Não foram apagados comentários, publicações ou outros registros; nenhum índice foi duplicado nem o schema alterado. Crescimento legítimo do banco continua exigindo acompanhamento de armazenamento e backups.
+- Tradução síncrona, idempotência durável, recuperação de rascunho de foto e políticas de retenção de registros técnicos continuam sendo trabalhos distintos. Não existe garantia de capacidade ilimitada no plano inicial.
