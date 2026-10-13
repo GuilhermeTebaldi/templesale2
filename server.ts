@@ -1,3 +1,4 @@
+import { createWriteAdmission } from "./server/write-admission";
 import { buildLocalFeedQuery, buildPublicationPreviewsQuery, encodeFeedCursor, parseFeedCursor, parseFeedExclusions, type FeedCursor } from "./server/local-feed";
 import { createAdminSessionToken as createSignedAdminSessionToken, verifyAdminSessionToken as verifySignedAdminSessionToken } from "./server/admin-session";
 import cors from "cors";
@@ -1255,6 +1256,7 @@ let pgPool: Pool | null = null;
 if (!USE_SQLITE_DATABASE) {
   pgPool = new Pool({
     connectionString: DATABASE_URL,
+    connectionTimeoutMillis: 5000,
     options: `-c search_path=${DATABASE_SEARCH_PATH}`,
     ssl: String(process.env.PGSSL ?? "").toLowerCase() === "false"
       ? false
@@ -10248,6 +10250,8 @@ async function bootstrap() {
   await legalService.initialize();
 
   const app = express();
+  const admitPublicationWrite = createWriteAdmission(Number(process.env.PUBLICATION_WRITE_CONCURRENCY ?? 16));
+  const admitMediaUpload = createWriteAdmission(Number(process.env.MEDIA_UPLOAD_CONCURRENCY ?? 4));
   const isProduction = process.env.NODE_ENV === "production";
   const port = Number(process.env.PORT || 5173);
   const cspHeaderValue = buildContentSecurityPolicy(isProduction);
@@ -10414,6 +10418,7 @@ async function bootstrap() {
       ok: true,
       mode: isProduction ? "production" : "development",
       database: USE_SQLITE_DATABASE ? "sqlite" : "postgres",
+      writeCapacity: { publications: admitPublicationWrite.snapshot(), uploads: admitMediaUpload.snapshot() },
       cloudinary:
         CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET
           ? "configured"
@@ -10667,7 +10672,7 @@ async function bootstrap() {
       type: "image/*",
       limit: `${UPLOAD_MAX_BYTES}b`,
     }),
-    async (req, res) => {
+    admitMediaUpload(async (req, res) => {
       const user = await requireAuth(req, res);
       if (!user) {
         return;
@@ -10694,7 +10699,7 @@ async function bootstrap() {
               : 500;
         res.status(statusCode).json({ error: message });
       }
-    },
+    }),
   );
 
   app.post(
@@ -12126,7 +12131,7 @@ async function bootstrap() {
     }
   });
 
-  app.post("/api/establishments/:id/publications", async (req, res) => {
+  app.post("/api/establishments/:id/publications", admitPublicationWrite(async (req, res) => {
     const user = await requireAuth(req, res);
     if (!user) {
       return;
@@ -12148,7 +12153,7 @@ async function bootstrap() {
       const message = error instanceof Error ? error.message : "Falha ao publicar.";
       res.status(400).json({ error: message });
     }
-  });
+  }));
 
   app.get("/api/publications", async (req, res) => {
     let location: GeoPoint | undefined;
@@ -12633,7 +12638,7 @@ async function bootstrap() {
     }
   });
 
-  app.post("/api/publications/:id/comments", async (req, res) => {
+  app.post("/api/publications/:id/comments", admitPublicationWrite(async (req, res) => {
     const user = await requireInteractionUser(req, res);
     if (!user) {
       if (IS_DEV_REMOTE_READ_ONLY) {
@@ -12702,7 +12707,7 @@ async function bootstrap() {
         error instanceof Error ? error.message : "Falha ao salvar comentário da publicação.";
       res.status(400).json({ error: message });
     }
-  });
+  }));
 
   app.patch("/api/publications/:publicationId/comments/:commentId", async (req, res) => {
     const user = await requireAuth(req, res);

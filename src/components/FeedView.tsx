@@ -27,7 +27,7 @@ interface FeedViewProps {
   companies: Company[];
   onOpenPost: (post: Post) => void;
   onSelectCompany: (companyId: string) => void;
-  onAddComment: (postId: string, text: string) => void;
+  onAddComment: (postId: string, text: string) => Promise<void>;
   onOpenCreatePost: () => void;
   savedPostIds?: string[];
   likedPostIds?: string[];
@@ -319,12 +319,16 @@ export const FeedView: React.FC<FeedViewProps> = ({
     triggerFlyLike(postId, e.clientX, e.clientY);
   };
 
-  const handleQuickComment = (e: React.FormEvent, postId: string) => {
+  const handleQuickComment = async (e: React.FormEvent, postId: string) => {
     e.preventDefault();
     const text = commentInputs[postId]?.trim();
-    if (!text) return;
-    onAddComment(postId, text);
+    if (!text || posts.find(post => post.id === postId)?.comments.some(comment => comment.deliveryStatus === 'sending')) return;
     setCommentInputs((prev) => ({ ...prev, [postId]: '' }));
+    try {
+      await onAddComment(postId, text);
+    } catch {
+      setCommentInputs(prev => ({ ...prev, [postId]: prev[postId] || text }));
+    }
   };
 
   const handleAddEmoji = (postId: string, emoji: string) => {
@@ -427,6 +431,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
           const likesCount = post.likesCount || 0;
           const currentCommentText = commentInputs[post.id] || '';
           const authorAvatarUrl = post.authorAvatarUrl || company.logo;
+          const delivery = post.comments.find(comment => comment.deliveryStatus);
 
           const cleanWhatsApp = company.whatsapp.replace(/\D/g, '');
           const whatsappUrl = `https://wa.me/${cleanWhatsApp}?text=${encodeURIComponent(
@@ -635,6 +640,11 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   </div>
                 )}
 
+                {delivery?.deliveryStatus === 'sending' && <div role="status" aria-label="Enviando comentário" className="ts-comment-progress" />}
+                {delivery?.deliveryStatus === 'failed' && (
+                  <p role="alert" className="text-xs text-red-600">Não foi possível confirmar o comentário. O texto foi preservado; confira os comentários antes de reenviar.</p>
+                )}
+
                 {/* Horário Relativo */}
                 <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-medium pt-0.5">
                   {formatRelativeTime(post.createdAt)}
@@ -675,7 +685,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   {/* Botão Publicar */}
                   <button
                     type="submit"
-                    disabled={!currentCommentText.trim()}
+                    disabled={delivery?.deliveryStatus === 'sending' || !currentCommentText.trim()}
                     className="text-xs font-semibold text-sky-400 hover:text-sky-300 disabled:opacity-20 disabled:hover:text-sky-400 transition-opacity cursor-pointer disabled:cursor-default shrink-0 px-1 py-0.5"
                   >
                     Publicar

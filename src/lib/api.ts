@@ -3024,6 +3024,7 @@ export const api = {
   async createPublication(establishmentId: number, input: { caption?: string; media: string[] }) {
     const payload = await request<unknown>(`/api/establishments/${establishmentId}/publications`, {
       method: "POST",
+      skipGlobalLoadingOverlay: true,
       body: JSON.stringify(input),
     });
     const parsed = parseJsonIfNeeded(payload);
@@ -3141,6 +3142,7 @@ export const api = {
 
     const response = await request<unknown>(`/api/publications/${publicationId}/comments`, {
       method: "POST",
+      skipGlobalLoadingOverlay: true,
       body: JSON.stringify({
         body: normalizedBody,
         parentCommentId:
