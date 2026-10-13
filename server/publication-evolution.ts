@@ -85,12 +85,12 @@ export function createPublicationEvolution(pool: Pool | null, sqlite: Database.D
       timer.unref();
     },
     stop() { if (timer) clearInterval(timer); timer = undefined; },
-    snapshot() { return { enabled, retentionDays: 7 }; },
+    snapshot() { return { enabled, retentionDays: 7, commentTimestampSource: 'database-default' }; },
     async createComment(input: { productId?: number | null; publicationId?: number | null; userId: number; parentCommentId: number | null; rating: number | null; body: string; clientRequestId?: unknown }) {
       const key = requestKey(input.clientRequestId);
       const row = await atomic(creation('comment',input.userId,key,[input.productId??null,input.publicationId??null,input.parentCommentId,input.rating,input.body],
-        { sql: 'INSERT INTO product_comments(product_id,publication_id,user_id,parent_comment_id,rating,body,body_translations,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
-          values: [input.productId??null,input.publicationId??null,input.userId,input.parentCommentId,input.rating,input.body,'{}',Math.floor(Date.now()/1000)] }, 'product_comments','user_id'));
+        { sql: 'INSERT INTO product_comments(product_id,publication_id,user_id,parent_comment_id,rating,body,body_translations) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+          values: [input.productId??null,input.publicationId??null,input.userId,input.parentCommentId,input.rating,input.body,'{}'] }, 'product_comments','user_id'));
       return Number(row.id);
     },
     async createPublication(establishmentId: number, ownerId: number, caption: string, media: string[], clientRequestId?: unknown) {
