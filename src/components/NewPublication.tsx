@@ -226,16 +226,18 @@ export default function NewPublication({
       };
       await persist();
       if (!draft.uploadedUrl) {
-      const uploadResponse = await api.uploadProductImage(draft.file, { signal: controller.signal });
+      draft.uploadKey??=crypto.randomUUID();await persist();
+      const uploadResponse = await api.uploadPublicationImage(establishment.id,draft.file,draft.uploadKey,{signal:controller.signal});
       const imageUrl = getCompatibleImageUrl(uploadResponse.url);
       if (!imageUrl) {
         throw new Error(t("Falha ao enviar imagem."));
       }
-        draft.uploadedUrl = imageUrl; await persist();
+        draft.uploadedUrl = imageUrl; draft.uploadReceiptId=uploadResponse.receiptId;await persist();
       }
       const publication = await api.createPublication(establishment.id, {
         caption: draft.caption,
         media: [draft.uploadedUrl!],
+        uploadReceiptId:draft.uploadReceiptId,
       }, { signal: controller.signal, clientRequestId: draft.operationKey, onOperation: async key => { draft!.operationKey = key; await persist(); } });
       await clearPublicationDraft(establishment.id);
       onPublished(publication);
