@@ -19,6 +19,12 @@ export function createPublicationEvolution(pool: Pool | null, sqlite: Database.D
   let enabled = false;
   let cleaning = false;
   let timer: ReturnType<typeof setInterval> | undefined;
+  const timeout = (name: string, fallback: number) => {
+    const value = Number(process.env[name] ?? fallback);
+    return Number.isSafeInteger(value) && value >= 100 && value <= 60000 ? value : fallback;
+  };
+  const statementTimeoutMs = timeout('PUBLICATION_STATEMENT_TIMEOUT_MS', 8000);
+  const lockTimeoutMs = Math.min(timeout('PUBLICATION_LOCK_TIMEOUT_MS', 2000), statementTimeoutMs);
   const syncQuery = (sql: string, values: unknown[] = []): Row[] => {
     if (!sqlite) throw new Error('Banco indisponível.');
     const bound = sqliteBindings(sql, values);
@@ -36,12 +42,15 @@ export function createPublicationEvolution(pool: Pool | null, sqlite: Database.D
       return step.value;
     })();
     const client = await pool.connect();
+    let discard = false;
     try {
-      await client.query('BEGIN'); let step = recipe.next();
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('statement_timeout',$1,true),set_config('lock_timeout',$2,true),set_config('idle_in_transaction_session_timeout',$1,true)", [String(statementTimeoutMs),String(lockTimeoutMs)]);
+      let step = recipe.next();
       while (!step.done) { const q = step.value as Statement; step = recipe.next((await client.query(q.sql, q.values)).rows); }
       await client.query('COMMIT'); return step.value;
-    } catch (error) { await client.query('ROLLBACK'); throw error; }
-    finally { client.release(); }
+    } catch (error) { try { await client.query('ROLLBACK'); } catch { discard = true; } throw error; }
+    finally { client.release(discard); }
   };
 
   function* creation(kind: 'comment' | 'publication', userId: number, key: string | null, payload: unknown, insert: Statement, table: string, ownerColumn: string): Recipe<Row> {
@@ -85,7 +94,7 @@ export function createPublicationEvolution(pool: Pool | null, sqlite: Database.D
       timer.unref();
     },
     stop() { if (timer) clearInterval(timer); timer = undefined; },
-    snapshot() { return { enabled, retentionDays: 7, commentTimestampSource: 'database-default' }; },
+    snapshot() { return { enabled, retentionDays: 7, commentTimestampSource: 'database-default', statementTimeoutMs, lockTimeoutMs }; },
     async createComment(input: { productId?: number | null; publicationId?: number | null; userId: number; parentCommentId: number | null; rating: number | null; body: string; clientRequestId?: unknown }) {
       const key = requestKey(input.clientRequestId);
       const row = await atomic(creation('comment',input.userId,key,[input.productId??null,input.publicationId??null,input.parentCommentId,input.rating,input.body],
