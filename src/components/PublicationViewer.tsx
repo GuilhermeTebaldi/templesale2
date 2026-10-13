@@ -1,8 +1,8 @@
 import React from "react";
-import { withPendingComment, type PendingComment } from "../lib/comment-delivery";
+import { withPendingComment, reconcileCommentMutation, type PendingComment } from "../lib/comment-delivery";
 import { motion } from "motion/react";
 import { Loader2, MessageCircle, Pencil, Send, Trash2, X } from "lucide-react";
-import { api, type EstablishmentDto, type ProductCommentDto, type PublicationDto, type SessionUser } from "../lib/api";
+import { api, type EstablishmentDto, type ProductCommentDto, type CommentMutationResult, type PublicationDto, type SessionUser } from "../lib/api";
 import { formatRelativeTime } from "../i18n/formatters";
 import { useI18n } from "../i18n/provider";
 import { ProgressiveProductImage } from "./ProductCard";
@@ -12,7 +12,7 @@ interface PublicationViewerProps {
   establishment: EstablishmentDto;
   currentUser: SessionUser | null;
   pendingComment?: PendingComment;
-  onSubmitComment: (publicationId: number, body: string, parentCommentId?: number) => Promise<ProductCommentDto[] | undefined>;
+  onSubmitComment: (publicationId: number, body: string, parentCommentId?: number) => Promise<CommentMutationResult>;
   focusCommentId?: number | null;
   onClose: () => void;
   onOpenEstablishment?: (establishmentId: number) => void;
@@ -59,6 +59,8 @@ export default function PublicationViewer({
   const visibleComments = withPendingComment(comments, pendingComment);
   const submittingRef = React.useRef(false);
   const commentsVersionRef = React.useRef(0);
+  const initialReadCreatesRef = React.useRef<ProductCommentDto[]>([]);
+  const initialReadPendingRef = React.useRef(false);
 
   const openEstablishmentProfile = () => {
     onClose();
@@ -72,13 +74,16 @@ export default function PublicationViewer({
   React.useEffect(() => {
     let isActive = true;
     const readVersion = commentsVersionRef.current;
+    initialReadCreatesRef.current = [];
+    initialReadPendingRef.current = true;
     setIsLoadingComments(true);
     setCommentsError("");
     api
       .getPublicationComments(publication.id, true)
       .then((items) => {
         if (isActive && readVersion === commentsVersionRef.current) {
-          setComments(items);
+          setComments(initialReadCreatesRef.current.reduce((current, comment) =>
+            reconcileCommentMutation(current, { comments: [comment], incremental: true }), items));
         }
       })
       .catch((error) => {
@@ -88,6 +93,8 @@ export default function PublicationViewer({
       })
       .finally(() => {
         if (isActive) {
+          initialReadPendingRef.current = false;
+          initialReadCreatesRef.current = [];
           setIsLoadingComments(false);
         }
       });
@@ -121,11 +128,10 @@ export default function PublicationViewer({
     setReplyToCommentId(null);
     setCommentsError("");
     try {
-      const nextComments = await onSubmitComment(publication.id, body, parentCommentId);
-      if (!nextComments) return;
-      commentsVersionRef.current += 1;
-      setComments(nextComments);
-      onCommentsChanged?.(publication.id, nextComments);
+      const result = await onSubmitComment(publication.id, body, parentCommentId);
+      if (result.incremental && initialReadPendingRef.current) initialReadCreatesRef.current.push(...result.comments);
+      if (!result.incremental) commentsVersionRef.current += 1;
+      setComments(current => reconcileCommentMutation(current, result));
     } catch (error) {
       setCommentBody(current => current || body);
       setReplyToCommentId(current => current ?? parentCommentId ?? null);
