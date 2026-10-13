@@ -3816,7 +3816,7 @@ export default function App() {
               setPublicationSubmitError(error.message);
               console.error("Error publishing queued publication:", error);
             }}
-            onPublished={(publication) => {
+            onPublished={(publication, alreadyConfirmed) => {
               const publicationWithEstablishment: PublicationDto = {
                 ...publication,
                 establishmentName: myEstablishment.name,
@@ -3827,11 +3827,11 @@ export default function App() {
                 establishmentCoverUrl: myEstablishment.coverUrl,
                 ownerAvatarUrl: currentUser?.avatarUrl,
               };
-              setSelectedEstablishmentPublications((current) => [publicationWithEstablishment, ...current]);
+              setSelectedEstablishmentPublications((current) => [publicationWithEstablishment, ...current.filter(item => item.id !== publication.id)]);
               void loadPublicationFeedPage({ append: false, preserveSeen: true });
               setMyEstablishment((current) =>
                 current
-                  ? { ...current, publicationCount: (current.publicationCount ?? 0) + 1 }
+                  ? { ...current, publicationCount: (current.publicationCount ?? 0) + (alreadyConfirmed ? 0 : 1) }
                   : current,
               );
               void api.getMyEstablishment().then(setMyEstablishment).catch(() => null);
