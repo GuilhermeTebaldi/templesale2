@@ -5993,7 +5993,7 @@ async function selectProductCommentsRows(productId: number): Promise<ProductComm
   return rows.map(normalizeProductCommentRow);
 }
 
-async function selectPublicationCommentsRows(publicationId: number): Promise<ProductCommentRow[]> {
+async function selectPublicationCommentsRows(publicationId: number, limit?: number): Promise<ProductCommentRow[]> {
   if (pgPool) {
     const result = await pgPool.query<Record<string, unknown>>(
       `
@@ -6018,8 +6018,9 @@ async function selectPublicationCommentsRows(publicationId: number): Promise<Pro
         INNER JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = c.user_id
         WHERE c.publication_id = $1
         ORDER BY c.created_at DESC, c.id DESC
+        ${limit ? "LIMIT $2" : ""}
       `,
-      [publicationId],
+      limit ? [publicationId, limit] : [publicationId],
     );
     return result.rows.map(normalizeProductCommentRow);
   }
@@ -6043,9 +6044,10 @@ async function selectPublicationCommentsRows(publicationId: number): Promise<Pro
         INNER JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = c.user_id
         WHERE c.publication_id = ?
         ORDER BY c.created_at DESC, c.id DESC
+        ${limit ? "LIMIT ?" : ""}
       `,
     )
-    .all(publicationId) as Array<Record<string, unknown>>;
+    .all(...(limit ? [publicationId, limit] : [publicationId])) as Array<Record<string, unknown>>;
   return rows.map(normalizeProductCommentRow);
 }
 
@@ -10419,6 +10421,8 @@ async function bootstrap() {
       mode: isProduction ? "production" : "development",
       database: USE_SQLITE_DATABASE ? "sqlite" : "postgres",
       writeCapacity: { publications: admitPublicationWrite.snapshot(), uploads: admitMediaUpload.snapshot() },
+      commentDelivery: "compact-v1",
+      databasePool: pgPool ? { total: pgPool.totalCount, idle: pgPool.idleCount, waiting: pgPool.waitingCount } : null,
       cloudinary:
         CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET
           ? "configured"
@@ -12629,7 +12633,7 @@ async function bootstrap() {
         res.status(404).json({ error: "Pubblicazione non trovata." });
         return;
       }
-      const comments = await selectPublicationCommentsRows(publicationId);
+      const comments = await selectPublicationCommentsRows(publicationId, req.query.preview === "1" ? 2 : undefined);
       res.json({ comments: buildProductCommentsThread(comments, locale) });
     } catch (error) {
       const message =
@@ -12686,7 +12690,7 @@ async function bootstrap() {
 
       }
 
-      await createProductCommentRecord({
+      const createdCommentId = await createProductCommentRecord({
         productId: null,
         publicationId,
         userId: user.id,
@@ -12700,6 +12704,12 @@ async function bootstrap() {
         notifyUserNotificationsChanged(publication.ownerId, "publication-comment");
       }
 
+      if (req.query.response === "created") {
+        const created = await selectProductCommentByIdRow(createdCommentId);
+        if (!created) throw new Error("Não foi possível confirmar o comentário criado.");
+        res.status(201).json({ comment: rowToProductComment(created, locale) });
+        return;
+      }
       const comments = await selectPublicationCommentsRows(publicationId);
       res.status(201).json({ comments: buildProductCommentsThread(comments, locale) });
     } catch (error) {
