@@ -566,10 +566,12 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     <button
                       id={`btn-comment-${post.id}`}
                       onClick={() => onOpenPost(post)}
-                      className="text-neutral-200 hover:text-white transition-transform active:scale-125 cursor-pointer"
-                      title="Comentar"
+                      className="flex items-center gap-1.5 text-neutral-200 hover:text-white transition-transform active:scale-125 cursor-pointer"
+                      title={post.commentsCount === undefined ? 'Comentar' : `${post.commentsCount} comentários`}
+                      aria-label={post.commentsCount === undefined ? 'Comentar' : `${post.commentsCount} comentários`}
                     >
                       <MessageCircle className="w-6 h-6 stroke-neutral-200 hover:stroke-white" />
+                      {post.commentsCount !== undefined && <span className="text-xs tabular-nums">{post.commentsCount}</span>}
                     </button>
 
                     {/* Compartilhar WhatsApp */}
@@ -615,7 +617,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                       onClick={() => onOpenPost(post)}
                       className="text-xs text-neutral-400 hover:text-neutral-200 cursor-pointer block text-left font-medium"
                     >
-                      Ver comentários
+                      {post.commentsCount === undefined ? 'Ver comentários' : `Ver ${post.commentsCount} ${post.commentsCount === 1 ? 'comentário' : 'comentários'}`}
                     </button>
                     {/* Último comentário */}
                     <div className="text-xs text-neutral-300">
