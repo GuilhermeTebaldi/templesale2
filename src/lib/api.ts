@@ -3514,6 +3514,9 @@ export const api = {
   uploadProductImage(file: File, options?: UploadImageOptions) {
     return uploadProductImageFile(file, options);
   },
+  discardPublicationUpload(establishmentId:number,id:string) {
+    return request<{success:boolean}>(`/api/establishments/${establishmentId}/publication-upload/${encodeURIComponent(id)}`,{method:'DELETE',signal:AbortSignal.timeout(10000),skipGlobalLoadingOverlay:true});
+  },
   async uploadPublicationImage(establishmentId:number,file:File,id:string,options?:UploadImageOptions):Promise<UploadImageResponse & {receiptId?:string}> {
     const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer())),byte=>byte.toString(16).padStart(2,'0')).join('');
     let prepared:any;
