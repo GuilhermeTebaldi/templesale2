@@ -23,7 +23,7 @@ import { loadPublicationDraft, savePublicationDraft, clearPublicationDraft, type
 interface NewPublicationProps {
   establishment: EstablishmentDto;
   onClose: () => void;
-  onPublished: (publication: PublicationDto) => void;
+  onPublished: (publication: PublicationDto, alreadyConfirmed?: boolean) => void;
   onPublishStarted?: () => void;
   onPublishFinished?: () => void;
   onPublishFailed?: (error: Error) => void;
@@ -204,7 +204,7 @@ export default function NewPublication({
       let draft = cached?.image === currentImage && cached.settings === settings ? cached.draft : undefined;
       if (cached?.draft.operationKey) {
         const confirmed = await api.getPublicationOperation(establishment.id, cached.draft.operationKey, controller.signal);
-        if (confirmed) { await clearPublicationDraft(establishment.id); onPublished(confirmed); onClose(); return; }
+        if (confirmed) { await clearPublicationDraft(establishment.id); onPublished(confirmed, true); onClose(); return; }
         if (!draft || caption.trim() !== cached.draft.caption) throw new Error('Há um envio sem confirmação. Feche e reabra este editor para retomar o rascunho anterior antes de publicar outra foto.');
       }
       if (!draft) {
