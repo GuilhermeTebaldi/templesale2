@@ -1261,12 +1261,14 @@ let publicationEvolution: ReturnType<typeof createPublicationEvolution>;
 if (!USE_SQLITE_DATABASE) {
   pgPool = new Pool({
     connectionString: DATABASE_URL,
+    max: Math.max(2, toRequiredNonNegativeInteger(process.env.DATABASE_POOL_MAX ?? 10, 10)),
     connectionTimeoutMillis: 5000,
     options: `-c search_path=${DATABASE_SEARCH_PATH}`,
     ssl: String(process.env.PGSSL ?? "").toLowerCase() === "false"
       ? false
       : { rejectUnauthorized: false },
   });
+  pgPool.on('error', error => console.error('PostgreSQL idle connection error:', error.message));
 }
 if (IS_DEV_REMOTE_READ_ONLY && pgPool) {
   pgPool.on("connect", (client) => {
@@ -9380,6 +9382,7 @@ async function uploadImageToCloudinary(
     {
       method: "POST",
       body: formData,
+      signal: AbortSignal.timeout(45000),
     },
   );
 
@@ -10165,8 +10168,10 @@ async function bootstrap() {
   await legalService.initialize();
 
   const app = express();
-  const admitPublicationWrite = createWriteAdmission(Number(process.env.PUBLICATION_WRITE_CONCURRENCY ?? 16));
-  const admitMediaUpload = createWriteAdmission(Number(process.env.MEDIA_UPLOAD_CONCURRENCY ?? 4));
+  const databaseUnderPressure = () => Boolean(pgPool && pgPool.waitingCount >= 4);
+  const admitPublicationWrite = createWriteAdmission(toRequiredNonNegativeInteger(process.env.PUBLICATION_WRITE_CONCURRENCY ?? 4, 4), databaseUnderPressure);
+  const admitCommentWrite = createWriteAdmission(toRequiredNonNegativeInteger(process.env.COMMENT_WRITE_CONCURRENCY ?? 4, 4), databaseUnderPressure);
+  const admitMediaUpload = createWriteAdmission(toRequiredNonNegativeInteger(process.env.MEDIA_UPLOAD_CONCURRENCY ?? 2, 2), databaseUnderPressure);
   const isProduction = process.env.NODE_ENV === "production";
   const port = Number(process.env.PORT || 5173);
   const cspHeaderValue = buildContentSecurityPolicy(isProduction);
@@ -10333,7 +10338,8 @@ async function bootstrap() {
       ok: true,
       mode: isProduction ? "production" : "development",
       database: USE_SQLITE_DATABASE ? "sqlite" : "postgres",
-      writeCapacity: { publications: admitPublicationWrite.snapshot(), uploads: admitMediaUpload.snapshot() },
+      publicationProtection: 'bounded-v3',
+      writeCapacity: { publications: admitPublicationWrite.snapshot(), comments: admitCommentWrite.snapshot(), uploads: admitMediaUpload.snapshot() },
       commentDelivery: "evolution-v2",
       commentTranslation: false,
       commentPageSize: 30,
@@ -10588,6 +10594,7 @@ async function bootstrap() {
 
   app.post(
     "/api/uploads/product-image",
+    admitMediaUpload.beforeBody,
     express.raw({
       type: "image/*",
       limit: `${UPLOAD_MAX_BYTES}b`,
@@ -10624,11 +10631,12 @@ async function bootstrap() {
 
   app.post(
     "/api/uploads/profile-image",
+    admitMediaUpload.beforeBody,
     express.raw({
       type: "image/*",
       limit: `${UPLOAD_MAX_BYTES}b`,
     }),
-    async (req, res) => {
+    admitMediaUpload(async (req, res) => {
       const user = await requireAuth(req, res);
       if (!user) {
         return;
@@ -10656,7 +10664,7 @@ async function bootstrap() {
               : 500;
         res.status(statusCode).json({ error: message });
       }
-    },
+    }),
   );
 
   const isAllowedAdminEmail = (email: string) => {
@@ -12579,7 +12587,7 @@ async function bootstrap() {
     }
   });
 
-  app.post("/api/publications/:id/comments", admitPublicationWrite(async (req, res) => {
+  app.post("/api/publications/:id/comments", admitCommentWrite(async (req, res) => {
     const user = await requireInteractionUser(req, res);
     if (!user) {
       if (IS_DEV_REMOTE_READ_ONLY) {

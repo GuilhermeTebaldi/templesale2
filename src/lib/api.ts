@@ -1,4 +1,4 @@
-import { beginWriteOperation, completeWriteOperation } from "./write-operation";
+import { beginWriteOperation, completeWriteOperation, WriteBusyError, retryWriteWhenBusy } from "./write-operation";
 import { previewComments } from "./comment-delivery";
 import { trackedFetch } from "./networkActivity";
 import { AUTH0_DEBUG_LOGS } from "./auth0-config";
@@ -2086,9 +2086,11 @@ async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
         }
 
         let message = `${response.status} ${response.statusText}`;
+        let writeBusy = false;
         if (isJson) {
           try {
             const payload = (await response.json()) as unknown;
+            writeBusy = response.status === 503 && isRecord(payload) && payload.code === "WRITE_BUSY";
             const apiError = extractApiError(payload);
             if (apiError) {
               message = apiError;
@@ -2103,6 +2105,7 @@ async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
               "A API não respondeu corretamente. Reinicie com: pkill -f \"tsx server.ts\" && npm run dev";
           }
         }
+        if (writeBusy) throw new WriteBusyError(message, Number(response.headers.get("Retry-After") ?? 2));
         throw new Error(message);
       }
 
@@ -2181,9 +2184,11 @@ async function uploadImageFileToEndpoint(
 
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
+    let writeBusy = false;
     if (isJson) {
       try {
         const payload = (await response.json()) as unknown;
+        writeBusy = response.status === 503 && isRecord(payload) && payload.code === "WRITE_BUSY";
         const apiError = extractApiError(payload);
         if (apiError) {
           message = apiError;
@@ -2192,6 +2197,7 @@ async function uploadImageFileToEndpoint(
         // Keep default HTTP message when JSON parsing fails.
       }
     }
+    if (writeBusy) throw new WriteBusyError(message, Number(response.headers.get("Retry-After") ?? 2));
     throw new Error(message);
   }
 
@@ -2226,7 +2232,7 @@ async function uploadImageFile(
 
   for (const endpoint of endpointList) {
     try {
-      return await uploadImageFileToEndpoint(file, endpoint, options);
+      return await retryWriteWhenBusy(() => uploadImageFileToEndpoint(file, endpoint, options), options?.signal);
     } catch (error) {
       lastError = error;
       if (!isMissingApiRouteError(error)) {
@@ -3039,11 +3045,11 @@ export const api = {
   async createPublication(establishmentId: number, input: { caption?: string; media: string[] }) {
     const scope = `${getOrCreateDeviceId()}:publication:${establishmentId}`;
     const key = await beginWriteOperation(scope, input);
-    const payload = await request<unknown>(`/api/establishments/${establishmentId}/publications`, {
+    const payload = await retryWriteWhenBusy(() => request<unknown>(`/api/establishments/${establishmentId}/publications`, {
       method: "POST",
       skipGlobalLoadingOverlay: true,
       body: JSON.stringify({ ...input, clientRequestId: key }),
-    });
+    }));
     const parsed = parseJsonIfNeeded(payload);
     const publication = normalizePublicationItem(isRecord(parsed) ? parsed.publication : parsed);
     if (!publication) {
