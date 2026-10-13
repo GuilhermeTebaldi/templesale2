@@ -55,7 +55,9 @@ export function createWriteAdmission(maxConcurrent: number, underPressure: () =>
       catch (error) { console.error('Shared admission unavailable:', error instanceof Error ? error.message : 'unknown'); }
       reservation.sharedReady = true;
       if (reservation.closed) { reservation.sharedRelease?.(); return false; }
-      if (!reservation.sharedRelease || req.destroyed || res.destroyed) {
+      // IncomingMessage may be destroyed after its body was fully consumed.
+      // Only an aborted request or closed response means the client disconnected.
+      if (!reservation.sharedRelease || req.aborted || res.destroyed) {
         reservation.busy=!reservation.sharedRelease;
         reservation.release(); rejected += 1;
         if (!res.destroyed) { res.setHeader('Retry-After','2'); res.status(503).json({ code:'WRITE_BUSY',error:'Servidor ocupado. Aguarde antes de tentar novamente.' }); }
