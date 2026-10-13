@@ -168,7 +168,7 @@ export async function renderCompositeImage(
   containerDimensions?: { width: number; height: number },
   legacyStickers?: StickerOverlay[]
 ): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
 
@@ -177,7 +177,7 @@ export async function renderCompositeImage(
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          resolve(imageSrc);
+          reject(new Error('Não foi possível preparar a foto. O original foi preservado.'));
           return;
         }
 
@@ -355,12 +355,12 @@ export async function renderCompositeImage(
         const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
         resolve(dataUrl);
       } catch {
-        resolve(imageSrc);
+        reject(new Error('Não foi possível preparar a foto. O original foi preservado.'));
       }
     };
 
     img.onerror = () => {
-      resolve(imageSrc);
+      reject(new Error('Não foi possível abrir a foto. Escolha a imagem novamente.'));
     };
 
     img.src = imageSrc;

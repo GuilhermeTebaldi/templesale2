@@ -121,6 +121,8 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
       y: Math.round(clamp(nextCrop.y, -maxY, maxY)),
     };
   };
+  const clampCropRef = useRef(clampCropToImageBounds);
+  clampCropRef.current = clampCropToImageBounds;
 
   // Compute CSS filter string
   const cssFilterParts: string[] = [];
@@ -159,14 +161,17 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const img = new Image();
     img.onload = () => {
+      if (cancelled) return;
       setImageSize({
         width: img.naturalWidth || img.width || 1,
         height: img.naturalHeight || img.height || 1,
       });
     };
     img.src = imageSrc;
+    return () => {cancelled=true;};
   }, [imageSrc]);
 
   useEffect(() => {
@@ -207,7 +212,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
       if (interactionMode.current === 'pan-photo') {
         const newX = Math.round(initialCropState.current.x + deltaPixelX);
         const newY = Math.round(initialCropState.current.y + deltaPixelY);
-        onChangeCropRef.current(clampCropToImageBounds({
+        onChangeCropRef.current(clampCropRef.current({
           ...initialCropState.current,
           x: newX,
           y: newY,
@@ -464,7 +469,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
   };
 
   return (
-    <div className="relative w-full flex-1 min-h-0 flex flex-col items-center bg-black select-none overflow-hidden">
+    <div className="relative w-full shrink-0 flex flex-col items-center bg-black select-none overflow-hidden">
       {/* Top Floating Action Button: Add Text */}
       {enableTextOverlays && (
       <div className="absolute top-3 left-3 z-30 pointer-events-auto">
@@ -488,7 +493,7 @@ export const PhotoEditorCanvas: React.FC<PhotoEditorCanvasProps> = ({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="relative aspect-square w-full overflow-hidden bg-neutral-950 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
+        className="relative aspect-square w-full shrink-0 overflow-hidden bg-neutral-950 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
       >
         {/* Panning and Zooming Photo Layer */}
         <div className="w-full h-full relative overflow-hidden flex items-center justify-center pointer-events-none">

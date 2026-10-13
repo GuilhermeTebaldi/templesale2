@@ -3527,13 +3527,26 @@ export const api = {
     if (endpoint.protocol!=='https:'||endpoint.hostname!=='api.cloudinary.com'||!endpoint.pathname.endsWith('/image/upload')) throw new Error('Destino de foto inválido.');
     const form=new FormData();form.append('file',file);
     for(const [key,value] of Object.entries(prepared.params))form.append(key,String(value));
-    const response=await trackedFetch(endpoint.href,{method:'POST',body:form,signal:options?.signal,skipGlobalLoadingOverlay:true});
+    let response: Response | undefined;
+    let uploadError = '';
+    try {
+      response=await trackedFetch(endpoint.href,{method:'POST',body:form,signal:options?.signal,skipGlobalLoadingOverlay:true});
+      if (!response.ok) {
+        const detail=await response.json().catch(()=>null);
+        uploadError=typeof detail?.error?.message==='string' ? detail.error.message : 'O serviço de imagens não confirmou o envio.';
+      }
+    } catch (error) {
+      options?.signal?.throwIfAborted();
+      uploadError='A conexão com o serviço de imagens foi interrompida.';
+    }
     const started=Date.now();
     while(Date.now()-started<60000) {
       const status=await request<any>(`/api/establishments/${establishmentId}/publication-upload/${encodeURIComponent(id)}`,{signal:options?.signal,skipGlobalLoadingOverlay:true});
       if(status.state==='ready')return {url:status.url,publicId:prepared.params.public_id,receiptId:id};
       if(status.state==='rejected')throw new Error('A foto foi recusada na validação.');
-      if(!response.ok)throw new Error('O serviço de imagens não confirmou o envio. Seu rascunho foi preservado.');
+      // A retry with overwrite=false can find the asset already uploaded.
+      // Allow the verified webhook/resource lookup to reconcile it first.
+      if(uploadError && Date.now()-started>30000)throw new Error(`${uploadError} Seu rascunho foi preservado.`);
       await waitForWriteDelay(2000,options?.signal);
     }
     throw new Error('A foto aguarda confirmação do serviço de imagens. Retome pelo rascunho preservado.');

@@ -19,6 +19,7 @@ import type {
 } from "./photo-publisher/types";
 import { useI18n } from "../i18n/provider";
 import { loadPublicationDraft, savePublicationDraft, clearPublicationDraft, type PublicationDraft } from "../lib/publication-draft";
+import { WriteBusyError } from '../lib/write-operation';
 
 interface NewPublicationProps {
   establishment: EstablishmentDto;
@@ -66,6 +67,7 @@ export default function NewPublication({
   const [editingOverlay, setEditingOverlay] = React.useState<OverlayItem | null>(null);
   const [caption, setCaption] = React.useState("");
   const [isPublishing, setIsPublishing] = React.useState(false);
+  const [backgroundPublishing, setBackgroundPublishing] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState("");
   const [isKeyboardOpen, setIsKeyboardOpen] = React.useState(false);
   const [draftLoading, setDraftLoading] = React.useState(true);
@@ -79,8 +81,14 @@ export default function NewPublication({
     let objectUrl: string | undefined;
     void loadPublicationDraft(establishment.id).then(draft => {
       if (cancelled || !draft) return;
-      objectUrl = URL.createObjectURL(draft.file);
-      preparedRef.current = { image: objectUrl, settings, draft };
+      objectUrl = URL.createObjectURL(draft.source ?? draft.file);
+      const editor = draft.editor;
+      if (editor) {
+        setSelectedFilter(editor.filter); setAdjustments(editor.adjustments);
+        setPhotoCrop(editor.crop); setOverlays(editor.overlays);
+        setContainerDims(editor.dimensions);
+      }
+      preparedRef.current = { image: objectUrl, settings: editor ? JSON.stringify([editor.filter,editor.adjustments,editor.overlays,editor.crop]) : settings, draft };
       setCurrentImage(objectUrl); setCaption(draft.caption);
       setDraftNotice('Rascunho recuperado. Você pode retomar a publicação.');
     }).finally(() => { if (!cancelled) setDraftLoading(false); });
@@ -88,6 +96,13 @@ export default function NewPublication({
   }, [establishment.id]);
 
   const selectedOverlay = overlays.find((overlay) => overlay.id === selectedOverlayId);
+  const handleDimensionsChange = React.useCallback((next: {width:number;height:number}) => {
+    if (!next.width || !next.height) return;
+    const crop = { ...photoCrop, x:Math.round(photoCrop.x*next.width/containerDims.width), y:Math.round(photoCrop.y*next.height/containerDims.height) };
+    const cached=preparedRef.current;
+    if (cached?.settings===settings) cached.settings=JSON.stringify([selectedFilter,adjustments,overlays,crop]);
+    setPhotoCrop(crop);setContainerDims(next);
+  },[photoCrop,containerDims,settings,selectedFilter,adjustments,overlays]);
 
   React.useEffect(() => {
     if (typeof window === "undefined") {
@@ -198,6 +213,7 @@ export default function NewPublication({
 
     setIsPublishing(true);
     setErrorMessage("");
+    const resumingOperation = Boolean(preparedRef.current?.draft.operationKey);
     try {
       onPublishStarted?.();
       const cached = preparedRef.current;
@@ -205,7 +221,7 @@ export default function NewPublication({
       if (cached?.draft.operationKey) {
         const confirmed = await api.getPublicationOperation(establishment.id, cached.draft.operationKey, controller.signal);
         if (confirmed) { await clearPublicationDraft(establishment.id); onPublished(confirmed, true); onClose(); return; }
-        if (!draft || caption.trim() !== cached.draft.caption) throw new Error('Há um envio sem confirmação. Feche e reabra este editor para retomar o rascunho anterior antes de publicar outra foto.');
+        if (!draft || caption.trim() !== cached.draft.caption) throw new Error('O envio anterior ainda precisa ser confirmado. Retome a foto e a legenda preservadas antes de iniciar outro envio.');
       }
       if (!draft) {
       const finalCompositeUrl = await renderCompositeImage(
@@ -217,7 +233,8 @@ export default function NewPublication({
         containerDims,
       );
       const imageFile = dataUrlToFile(finalCompositeUrl, `templesale-publication-${Date.now()}.jpg`);
-        draft = { file: imageFile, caption: caption.trim(), savedAt: Date.now() };
+        const source = await (await fetch(currentImage)).blob();
+        draft = { file: imageFile, source, editor: { filter:selectedFilter, adjustments, overlays, crop:photoCrop, dimensions:containerDims }, caption: caption.trim(), savedAt: Date.now() };
         preparedRef.current = { image: currentImage, settings, draft };
       }
       if (!draft.operationKey) draft.caption = caption.trim();
@@ -243,9 +260,15 @@ export default function NewPublication({
       onPublished(publication);
       onClose();
     } catch (error) {
+      if (error instanceof WriteBusyError && !resumingOperation && preparedRef.current) {
+        // Explicit admission refusal means no publication write started.
+        preparedRef.current.draft.operationKey = undefined;
+        await savePublicationDraft(establishment.id,preparedRef.current.draft);
+      }
       const normalizedError = error instanceof Error ? error : new Error(t("Falha ao publicar."));
       setErrorMessage(normalizedError.message);
       onPublishFailed?.(normalizedError);
+      onClose();
     } finally {
       clearTimeout(deadline); sendingRef.current = false;
       controllerRef.current = null;
@@ -254,6 +277,7 @@ export default function NewPublication({
     }
   };
 
+  if (backgroundPublishing) return null;
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-[120] overflow-hidden overscroll-none bg-black text-neutral-100">
@@ -290,7 +314,7 @@ export default function NewPublication({
               className={`relative flex h-full min-h-0 w-full flex-col ${
                 isKeyboardOpen
                   ? "overflow-y-auto overscroll-contain ts-publication-keyboard-open"
-                  : "overflow-hidden"
+                  : "overflow-y-auto overscroll-contain"
               } bg-black`}
             >
               <header className="z-20 flex shrink-0 items-center justify-between border-b border-neutral-800/80 bg-neutral-950/90 px-4 py-2.5 backdrop-blur-md">
@@ -312,8 +336,8 @@ export default function NewPublication({
                 <button
                   type="button"
                   id="btn-header-publish"
-                  onClick={() => void handlePublish()}
-                  disabled={isPublishing}
+                  onClick={() => { if (!currentImage || sendingRef.current || draftLoading) return; setBackgroundPublishing(true); void handlePublish(); }}
+                  disabled={isPublishing || draftLoading}
                   className="flex items-center gap-1.5 rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white shadow-md transition hover:bg-blue-500 disabled:opacity-50 active:scale-95"
                 >
                   {isPublishing ? (
@@ -340,7 +364,7 @@ export default function NewPublication({
                   setIsTextEditorOpen(true);
                 }}
                 onRemoveOverlay={handleRemoveOverlay}
-                onDimensionsChange={setContainerDims}
+                onDimensionsChange={handleDimensionsChange}
                 enableTextOverlays={false}
               />
 
@@ -409,7 +433,7 @@ export default function NewPublication({
           )}
 
           {errorMessage && (
-            <div className="absolute inset-x-4 bottom-4 z-[60] rounded-2xl border border-red-500/30 bg-red-950/95 px-4 py-3 text-sm text-red-100 shadow-2xl">
+            <div role="alert" className="absolute inset-x-4 bottom-4 z-[60] rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-2xl">
               {errorMessage}
             </div>
           )}
