@@ -110,7 +110,7 @@ export function ProgressiveProductImage({
     <>
       <div
         aria-hidden="true"
-        className={`absolute inset-0 z-0 bg-linear-to-br from-stone-100 via-white to-stone-200 bg-cover bg-center transition-opacity duration-500 ${
+        className={`pointer-events-none absolute inset-0 z-0 bg-linear-to-br from-stone-100 via-white to-stone-200 bg-cover bg-center transition-opacity duration-500 ${
           isLoaded ? "opacity-0" : "opacity-100"
         }`}
         style={

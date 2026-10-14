@@ -27,7 +27,7 @@ export default function PublicationLikes({ publicationId }: { publicationId: num
     <div className="py-3" role="tabpanel" aria-label="Mi piace">
       {users.map(user => (
         <div key={user.id} className="flex items-center gap-3 border-b border-neutral-200/70 py-3">
-          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-stone-100">
+          <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-stone-100">
             {user.avatarUrl ? <ProgressiveProductImage src={user.avatarUrl} alt="" className="h-full w-full object-cover" variant="thumbnail" />
               : <span className="flex h-full items-center justify-center text-sm font-semibold text-stone-500">{user.name.slice(0, 1).toUpperCase()}</span>}
           </div>
