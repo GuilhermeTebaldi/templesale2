@@ -3547,6 +3547,8 @@ export default function App() {
             onToggleLikePost={toggleLikedSocialPost}
             onToggleSavePost={toggleSavedSocialPost}
             onRefresh={() => loadPublicationFeedPage({ append: false })}
+            isLoadingPosts={isLoadingPublicationFeed}
+            loadError={publicationFeedError}
             hasMorePosts={hasMorePublicationFeed}
             isLoadingMorePosts={isLoadingPublicationFeed || isLoadingMorePublicationFeed}
             isActive={isFeedActive}

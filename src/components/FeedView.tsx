@@ -37,6 +37,8 @@ interface FeedViewProps {
   onRefresh?: () => Promise<void> | void;
   hasMorePosts?: boolean;
   isLoadingMorePosts?: boolean;
+  isLoadingPosts?: boolean;
+  loadError?: string;
   onLoadMorePosts?: () => Promise<void> | void;
 }
 
@@ -67,6 +69,8 @@ export const FeedView: React.FC<FeedViewProps> = ({
   onRefresh,
   hasMorePosts = false,
   isLoadingMorePosts = false,
+  isLoadingPosts = false,
+  loadError = '',
   onLoadMorePosts,
 }) => {
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
@@ -419,6 +423,23 @@ export const FeedView: React.FC<FeedViewProps> = ({
 
       {/* Feed Posts */}
       <div className="ts-feed-posts">
+        {loadError && (
+          <div role="alert" className="border-b border-neutral-200 px-5 py-5 text-sm text-neutral-400">
+            <p>Impossibile caricare le pubblicazioni. Controlla la connessione o riprova tra poco.</p>
+            <button type="button" disabled={isLoadingPosts} onClick={() => void onRefresh?.()}
+              className="mt-3 rounded-full border border-neutral-200 px-4 py-2 font-semibold text-sky-600 disabled:opacity-50">Riprova</button>
+          </div>
+        )}
+        {isLoadingPosts && !posts.length && (
+          <div role="status" aria-label="Caricamento pubblicazioni" className="space-y-4 px-5 py-5">
+            <p className="text-sm text-neutral-400">Caricamento pubblicazioni…</p>
+            {[0, 1].map(index => <div key={index} aria-hidden="true" className="space-y-3 motion-safe:animate-pulse">
+              <div className="flex items-center gap-3"><div className="h-10 w-10 rounded-full bg-stone-100" /><div className="h-3 w-32 rounded bg-stone-100" /></div>
+              <div className="aspect-square rounded-2xl border border-neutral-200 bg-stone-100" />
+            </div>)}
+          </div>
+        )}
+        {!isLoadingPosts && !loadError && !posts.length && <p className="px-5 py-8 text-sm text-neutral-500">Nessuna pubblicazione disponibile.</p>}
         {posts.map((post) => {
           const company = companyMap.get(post.companyId);
           if (!company) return null;
