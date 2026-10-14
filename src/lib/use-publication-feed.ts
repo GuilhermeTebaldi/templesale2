@@ -20,6 +20,7 @@ export function usePublicationFeed(input: {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState('');
+  const startupRetries = useRef(0);
   const lat = input.origin?.lat;
   const lng = input.origin?.lng;
   const originKey = lat !== undefined && lng !== undefined ? lat + ':' + lng : 'no-gps';
@@ -45,6 +46,10 @@ export function usePublicationFeed(input: {
     if (mode === 'append' && (gate.current.busy || !paging.current.hasMore)) return;
     if (mode === 'append' && paging.current.origin !== originKey) mode = 'nearby';
     const request = gate.current.begin();
+    const deadline = new AbortController();
+    const cancel = () => deadline.abort(request.signal.reason);
+    request.signal.addEventListener('abort', cancel, { once: true });
+    const timeout = window.setTimeout(() => deadline.abort(), 20000);
     setIsLoadingMore(mode === 'append');
     setIsLoading(mode !== 'append');
     setError('');
@@ -63,7 +68,7 @@ export function usePublicationFeed(input: {
           limit: mode === 'append' ? 8 : 18, offset, pagination: 'cursor', cursor,
           excludeIds: [...excluded].slice(-200),
           ...(location?.lat !== undefined && location.lng !== undefined ? { lat: location.lat, lng: location.lng } : {}),
-        }, request.signal);
+        }, deadline.signal);
         if (!gate.current.accepts(request)) return;
         const nextCursor = page.nextCursor;
         const canContinue = nextCursor === undefined ? page.hasMore : page.hasMore && nextCursor !== null;
@@ -82,15 +87,19 @@ export function usePublicationFeed(input: {
         ).filter(item => !latest.current.deletedIds.includes(item.id)));
         paging.current = { origin: originKey, cursor, offset, hasMore: canContinue };
         setHasMore(canContinue);
+        startupRetries.current = 0;
         return;
       }
     } catch (failure) {
       if (!gate.current.accepts(request)) return;
-      setError(failure instanceof Error ? failure.message : "Impossibile caricare le pubblicazioni.");
+      setError(deadline.signal.aborted ? 'Il caricamento sta impiegando troppo tempo. Riprova.'
+        : failure instanceof Error ? failure.message : "Impossibile caricare le pubblicazioni.");
       setHasMore(false);
       paging.current.hasMore = false;
       // Existing cards remain available offline; the next foreground refresh retries.
     } finally {
+      window.clearTimeout(timeout);
+      request.signal.removeEventListener('abort', cancel);
       if (gate.current.accepts(request)) {
         gate.current.finish(request);
         setIsLoading(false);
@@ -121,5 +130,24 @@ export function usePublicationFeed(input: {
 
   const loadPage = useCallback(({ append, preserveSeen = false }: { append: boolean; preserveSeen?: boolean }) =>
     load(append ? 'append' : preserveSeen ? 'nearby' : 'reset'), [load]);
+
+  // One network attempt per read; only an empty failed startup gets a few spaced retries.
+  useEffect(() => {
+    if (!error || !input.active || !visible || input.publications.length || navigator.onLine === false) return;
+    const delays = [4000, 10000, 20000];
+    if (startupRetries.current >= delays.length) return;
+    const delay = delays[startupRetries.current++] * (0.8 + Math.random() * 0.4);
+    const timer = window.setTimeout(() => { if (!gate.current.busy) void load('nearby'); }, delay);
+    return () => window.clearTimeout(timer);
+  }, [error, input.active, input.publications.length, visible, load]);
+
+  useEffect(() => {
+    const reconnect = () => {
+      startupRetries.current = 0;
+      if (!gate.current.busy) void load('nearby');
+    };
+    window.addEventListener('online', reconnect);
+    return () => window.removeEventListener('online', reconnect);
+  }, [load]);
   return { loadPage, markSeen, isLoading, isLoadingMore, hasMore, error };
 }

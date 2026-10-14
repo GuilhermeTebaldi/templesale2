@@ -1998,6 +1998,7 @@ type ApiRequestInit = RequestInit & {
   useAdminToken?: boolean;
   skipAuthToken?: boolean;
   skipGlobalLoadingOverlay?: boolean;
+  retryAttempts?: number;
 };
 
 function waitForRetryDelay(attempt: number): Promise<void> {
@@ -2034,7 +2035,7 @@ function isTransientNetworkError(error: unknown): boolean {
 }
 
 async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
-  const { useAdminToken = false, skipAuthToken = false, ...fetchInit } = init ?? {};
+  const { useAdminToken = false, skipAuthToken = false, retryAttempts = RETRYABLE_FETCH_ATTEMPTS, ...fetchInit } = init ?? {};
   const headers = new Headers(fetchInit.headers ?? {});
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -2061,7 +2062,7 @@ async function request<T>(url: string, init?: ApiRequestInit): Promise<T> {
 
   const method = String(fetchInit.method ?? "GET").trim().toUpperCase() || "GET";
   const canRetry = RETRYABLE_HTTP_METHODS.has(method);
-  const maxAttempts = canRetry ? RETRYABLE_FETCH_ATTEMPTS : 1;
+  const maxAttempts = canRetry ? Math.min(RETRYABLE_FETCH_ATTEMPTS, Math.max(1, Math.floor(retryAttempts) || 1)) : 1;
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
@@ -2952,7 +2953,7 @@ export const api = {
     query.set("limit", String(limit));
     if (input.previews) query.set('previews', '3');
     const payload = await request<unknown>(`/api/establishments?${query.toString()}`, {
-      skipAuthToken: true, signal, cache: 'no-store', skipGlobalLoadingOverlay: true,
+      skipAuthToken: true, signal, cache: 'no-store', skipGlobalLoadingOverlay: true, retryAttempts: 1,
     });
     if (search) void api.trackDiscovery('search');
     return normalizeEstablishmentList(payload);
