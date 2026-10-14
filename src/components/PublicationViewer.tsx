@@ -17,6 +17,7 @@ interface PublicationViewerProps {
   onSubmitComment: (publicationId: number, body: string, parentCommentId?: number) => Promise<CommentMutationResult>;
   focusCommentId?: number | null;
   initialTab?: 'comments' | 'likes';
+  onOpenPhoto?: () => void;
   onClose: () => void;
   onOpenEstablishment?: (establishmentId: number) => void;
   onDeleted?: (publicationId: number) => void;
@@ -42,6 +43,7 @@ export default function PublicationViewer({
   onSubmitComment,
   focusCommentId,
   initialTab = 'comments',
+  onOpenPhoto,
   onClose,
   onOpenEstablishment,
   onDeleted,
@@ -372,7 +374,9 @@ export default function PublicationViewer({
         exit={{ opacity: 0, y: 24, scale: 0.98 }}
         className="grid h-[100dvh] w-full overflow-hidden bg-neutral-900 shadow-2xl sm:h-[92vh] sm:max-w-5xl sm:rounded-2xl sm:border sm:border-neutral-800 lg:grid-cols-[minmax(0,1.1fr)_380px]"
       >
-        <div className="relative h-[42dvh] overflow-hidden bg-neutral-950 sm:h-[58vh] lg:h-[92vh]">
+        <div className="relative h-[42dvh] overflow-hidden bg-neutral-950 sm:h-[58vh] lg:h-[92vh]"
+          role={onOpenPhoto ? 'button' : undefined} tabIndex={onOpenPhoto ? 0 : undefined} aria-label="Apri foto a schermo intero"
+          onClick={onOpenPhoto} onKeyDown={event => { if (onOpenPhoto && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onOpenPhoto(); } }}>
           <ProgressiveProductImage
             src={publication.imageUrl}
             alt={establishment.name}
