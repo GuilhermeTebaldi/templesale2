@@ -3115,6 +3115,11 @@ export const api = {
     const parsed = parseJsonIfNeeded(payload);
     return normalizePublicationList(isRecord(parsed) ? firstDefined(parsed, ["publications", "posts", "data"]) ?? [] : parsed);
   },
+  async getPublicationLikers(publicationId: number, cursor?: string | null) {
+    const query = cursor ? `?${new URLSearchParams({ cursor })}` : '';
+    const payload = await request<{ users: unknown[]; nextCursor: string | null; hasMore: boolean }>(`/api/publications/${publicationId}/likes${query}`);
+    return { users: normalizePublicLikerList(payload.users), nextCursor: payload.nextCursor, hasMore: payload.hasMore === true };
+  },
   async savePublication(publicationId: number) {
     if (!Number.isInteger(publicationId) || publicationId <= 0) {
       throw new Error("ID pubblicazione non valido.");

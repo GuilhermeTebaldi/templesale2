@@ -375,6 +375,7 @@ export default function App() {
   const [hasMoreSelectedEstablishmentPublications, setHasMoreSelectedEstablishmentPublications] = React.useState(false);
   const [nextSelectedEstablishmentPublicationsOffset, setNextSelectedEstablishmentPublicationsOffset] = React.useState(0);
   const [selectedPublication, setSelectedPublication] = React.useState<PublicationDto | null>(null);
+  const [publicationInitialTab, setPublicationInitialTab] = React.useState<'comments' | 'likes'>('comments');
   const [editingSocialPublication, setEditingSocialPublication] = React.useState<PublicationDto | null>(null);
   const [focusedPublicationCommentId, setFocusedPublicationCommentId] = React.useState<number | null>(null);
   const [isEstablishmentPageOpen, setIsEstablishmentPageOpen] = React.useState(false);
@@ -3031,7 +3032,7 @@ export default function App() {
   );
 
   const openSocialPost = React.useCallback(
-    (post: SocialPost) => {
+    (post: SocialPost, tab: 'comments' | 'likes' = 'comments') => {
       const publicationId = publicationIdFromSocialPostId(post.id);
       const publication = publicationId
         ? publicationFeed.find((item) => item.id === publicationId) ??
@@ -3045,6 +3046,7 @@ export default function App() {
       }
       const establishment = buildEstablishmentFromPublication(publication);
       setSelectedEstablishment(establishment);
+      setPublicationInitialTab(tab);
       setSelectedPublication(publication);
       setFocusedPublicationCommentId(null);
     },
@@ -3705,8 +3707,10 @@ export default function App() {
             pendingComment={commentDeliveries[selectedPublication.id]}
             onSubmitComment={submitPublicationComment}
             focusCommentId={focusedPublicationCommentId}
+            initialTab={focusedPublicationCommentId ? 'comments' : publicationInitialTab}
             onClose={() => {
               setSelectedPublication(null);
+              setPublicationInitialTab('comments');
               setFocusedPublicationCommentId(null);
             }}
             onOpenEstablishment={(establishmentId) => {
