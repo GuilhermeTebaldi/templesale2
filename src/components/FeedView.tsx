@@ -52,6 +52,30 @@ interface FlyingLikeState {
 
 const QUICK_EMOJIS = ['❤️', '👏', '🔥', '✨'];
 
+function FeedCaption({ text, onReadMore }: { text: string; onReadMore: () => void }) {
+  const content = useRef<HTMLDivElement>(null);
+  const [truncated, setTruncated] = useState(false);
+  useEffect(() => {
+    const element = content.current;
+    if (!element) return;
+    const measure = () => setTruncated(element.scrollHeight > element.clientHeight + 1);
+    measure();
+    let disposed = false;
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(element);
+    if (!observer) window.addEventListener('resize', measure);
+    void document.fonts?.ready.then(() => { if (!disposed) measure(); });
+    return () => { disposed = true; observer?.disconnect(); window.removeEventListener('resize', measure); };
+  }, [text]);
+  return (
+    <div>
+      <div ref={content} className="line-clamp-7 whitespace-pre-wrap"><LinkedText text={text} /></div>
+      {truncated && <button type="button" onClick={onReadMore}
+        className="mt-1 block text-sm font-semibold text-sky-600 hover:underline">Leggi di più</button>}
+    </div>
+  );
+}
+
 export const FeedView: React.FC<FeedViewProps> = ({
   posts,
   isActive = true,
@@ -540,7 +564,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   >
                     {company.name}
                   </button>
-                  <span className="whitespace-pre-wrap"><LinkedText text={post.caption} /></span>
+                  <FeedCaption text={post.caption} onReadMore={() => onOpenPost(post)} />
                 </div>
 
               {/* 2. Foto da Publicação (1:1 Quadrado Perfeito) - O clique simples na foto NÃO abre detalhes ou comentários */}
