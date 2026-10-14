@@ -2636,6 +2636,7 @@ function initializeSqliteDatabase() {
   `);
   db.exec("CREATE INDEX IF NOT EXISTS idx_publication_likes_user_created ON publication_likes(user_id, created_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_publication_likes_publication_id ON publication_likes(publication_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_publication_likes_people_page ON publication_likes(publication_id, user_id DESC)");
 
   const visitorColumns = db.prepare("PRAGMA table_info(site_daily_visitors)").all() as Array<{
     name: string;
@@ -2847,6 +2848,7 @@ async function ensurePostgresEstablishmentSchema() {
     "CREATE INDEX IF NOT EXISTS idx_publication_saves_publication_id ON publication_saves(publication_id)",
     "CREATE INDEX IF NOT EXISTS idx_publication_likes_user_created ON publication_likes(user_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_publication_likes_publication_id ON publication_likes(publication_id)",
+    "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_publication_likes_people_page ON publication_likes(publication_id, user_id DESC)",
     "ALTER TABLE product_comments ADD COLUMN IF NOT EXISTS publication_id BIGINT REFERENCES establishment_publications(id) ON DELETE CASCADE",
     "ALTER TABLE product_comments ALTER COLUMN product_id DROP NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_product_comments_publication_created ON product_comments(publication_id, created_at DESC)",
@@ -3281,6 +3283,7 @@ async function initializePostgresDatabase() {
     "CREATE INDEX IF NOT EXISTS idx_publication_saves_publication_id ON publication_saves(publication_id)",
     "CREATE INDEX IF NOT EXISTS idx_publication_likes_user_created ON publication_likes(user_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_publication_likes_publication_id ON publication_likes(publication_id)",
+    "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_publication_likes_people_page ON publication_likes(publication_id, user_id DESC)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_establishments_slug_unique ON establishments(slug)",
     "CREATE INDEX IF NOT EXISTS idx_establishments_owner ON establishments(owner_user_id)",
     "CREATE INDEX IF NOT EXISTS idx_establishments_category_city ON establishments(category, city)",
@@ -5962,6 +5965,22 @@ async function selectProductLikerRows(productId: number): Promise<Array<Record<s
       `,
     )
     .all(productId) as Array<Record<string, unknown>>;
+}
+
+async function selectPublicationLikerPage(publicationId: number, cursor: number | null) {
+  const whereCursor = cursor === null ? '' : `AND l.user_id < ${pgPool ? '$2' : '?'}`;
+  const sql = `SELECT u.id, COALESCE(NULLIF(TRIM(u.name), ''), 'Utente TempleSale') AS name,
+    u.avatar_url, l.created_at AS liked_at
+    FROM publication_likes l
+    INNER JOIN ${publicAccountRows('users', accountArchives?.ready)} u ON u.id = l.user_id
+    WHERE l.publication_id = ${pgPool ? '$1' : '?'} ${whereCursor}
+    ORDER BY l.user_id DESC LIMIT 31`;
+  const values = cursor === null ? [publicationId] : [publicationId, cursor];
+  const rows = pgPool ? (await pgPool.query<Record<string, unknown>>(sql, values)).rows
+    : requireSqliteDb().prepare(sql).all(...values) as Record<string, unknown>[];
+  const users = rows.slice(0, 30).map(rowToPublicLiker);
+  const hasMore = rows.length > 30;
+  return { users, hasMore, nextCursor: hasMore ? String(users[users.length - 1].id) : null };
 }
 
 async function ensureNotificationDismissalsStorage(): Promise<void> {
@@ -12844,6 +12863,23 @@ async function bootstrap() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao remover publicação salva.";
       res.status(500).json({ error: message });
+    }
+  });
+
+  app.get('/api/publications/:id/likes', async (req, res) => {
+    const id = Number(req.params.id);
+    const rawCursor = req.query.cursor;
+    const cursor = rawCursor === undefined ? null : typeof rawCursor === 'string' && /^\d+$/.test(rawCursor) ? Number(rawCursor) : NaN;
+    if (!Number.isSafeInteger(id) || id <= 0 || (cursor !== null && (!Number.isSafeInteger(cursor) || cursor <= 0))) {
+      res.status(400).json({ error: 'ID o cursore non valido.' }); return;
+    }
+    try {
+      const sql = `SELECT id FROM ${publicAccountRows('establishment_publications', accountArchives?.ready)} ep WHERE ep.id = ${pgPool ? '$1' : '?'}`;
+      const exists = pgPool ? (await pgPool.query(sql, [id])).rows.length > 0 : Boolean(requireSqliteDb().prepare(sql).get(id));
+      if (!exists) { res.status(404).json({ error: 'Pubblicazione non trovata.' }); return; }
+      res.json(await selectPublicationLikerPage(id, cursor));
+    } catch {
+      res.status(503).json({ error: 'Impossibile caricare i Mi piace. Riprova.' });
     }
   });
 

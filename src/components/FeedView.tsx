@@ -26,7 +26,7 @@ interface FeedViewProps {
   origin?: { lat: number; lng: number };
   posts: Post[];
   companies: Company[];
-  onOpenPost: (post: Post) => void;
+  onOpenPost: (post: Post, tab?: 'comments' | 'likes') => void;
   onSelectCompany: (companyId: string) => void;
   onAddComment: (postId: string, text: string) => Promise<void>;
   onOpenCreatePost: () => void;
@@ -543,15 +543,18 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
                     {/* Botão de Curtir com a Logomarca TempleSale */}
+                    <div className="flex items-center gap-1.5">
                     <button
                       id={`btn-like-${post.id}`}
                       onClick={() => handleToggleLike(post.id)}
-                      className={`transition-transform cursor-pointer flex items-center justify-center ${
+                      className={`transition-transform cursor-pointer flex items-center justify-center gap-1.5 ${
                         absorbedLikes[post.id]
                           ? 'animate-like-absorb'
                           : 'active:scale-125'
                       }`}
                       title={isLiked ? "Rimuovi Mi piace" : "Mi piace"}
+                      aria-pressed={isLiked}
+                      aria-label={`${isLiked ? 'Rimuovi Mi piace' : 'Mi piace'} (${likesCount})`}
                     >
                       <TempleSaleLikeIcon
                         liked={isLiked}
@@ -562,6 +565,10 @@ export const FeedView: React.FC<FeedViewProps> = ({
                         }`}
                       />
                     </button>
+                    <button type="button" onClick={() => onOpenPost(post, 'likes')}
+                      className="min-w-4 py-1 text-xs tabular-nums text-neutral-200 hover:underline"
+                      aria-label={`Vedi chi ha messo Mi piace (${likesCount})`}>{likesCount}</button>
+                    </div>
 
                     {/* Botão de Comentar - Abre a área de comentários */}
                     <button
@@ -605,9 +612,11 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 </div>
 
                 {/* Curtidas */}
-                <div className="text-xs font-bold text-neutral-100">
+                <button type="button" onClick={() => onOpenPost(post, 'likes')}
+                  className="block text-left text-xs font-bold text-neutral-100 hover:underline"
+                  aria-label={`Vedi chi ha messo Mi piace (${likesCount})`}>
                   {likesCount === 1 ? "1 Mi piace" : `${likesCount} Mi piace`}
-                </div>
+                </button>
 
                 {/* Comentários Recentes */}
                 {post.comments.length > 0 ? (

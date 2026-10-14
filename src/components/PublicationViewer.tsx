@@ -7,6 +7,7 @@ import { formatRelativeTime } from "../i18n/formatters";
 import { useI18n } from "../i18n/provider";
 import { ProgressiveProductImage } from "./ProductCard";
 import { LinkedText } from './SharedLink';
+import PublicationLikes from './PublicationLikes';
 
 interface PublicationViewerProps {
   publication: PublicationDto;
@@ -15,6 +16,7 @@ interface PublicationViewerProps {
   pendingComment?: PendingComment;
   onSubmitComment: (publicationId: number, body: string, parentCommentId?: number) => Promise<CommentMutationResult>;
   focusCommentId?: number | null;
+  initialTab?: 'comments' | 'likes';
   onClose: () => void;
   onOpenEstablishment?: (establishmentId: number) => void;
   onDeleted?: (publicationId: number) => void;
@@ -39,12 +41,18 @@ export default function PublicationViewer({
   pendingComment,
   onSubmitComment,
   focusCommentId,
+  initialTab = 'comments',
   onClose,
   onOpenEstablishment,
   onDeleted,
   onCommentsChanged,
 }: PublicationViewerProps) {
   const { t, locale } = useI18n();
+  const [interactionTab, setInteractionTab] = React.useState(initialTab);
+  const [likesOpened, setLikesOpened] = React.useState(initialTab === 'likes');
+  React.useEffect(() => {
+    setInteractionTab(initialTab); setLikesOpened(initialTab === 'likes');
+  }, [publication.id, initialTab]);
   const [comments, setCommentState] = React.useState<ProductCommentDto[]>([]);
   const commentsRef = React.useRef<ProductCommentDto[]>([]);
   const setComments = (next: React.SetStateAction<ProductCommentDto[]>) => {
@@ -444,12 +452,18 @@ export default function PublicationViewer({
                 {publicationError}
               </p>
             )}
-            <div className="mt-8 flex items-center gap-2 border-t border-neutral-800 pt-5">
-              <MessageCircle className="h-4 w-4 text-neutral-400" />
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-neutral-400">
-                {t("Commenti")}
-              </p>
+            <div className="mt-6 flex border-b border-neutral-200" role="tablist" aria-label="Interazioni">
+              <button type="button" role="tab" aria-selected={interactionTab === 'comments'} onClick={() => setInteractionTab('comments')}
+                className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold ${interactionTab === 'comments' ? 'border-sky-600 text-sky-600' : 'border-transparent text-neutral-400'}`}>
+                <MessageCircle className="h-4 w-4" />Commenti
+              </button>
+              <button type="button" role="tab" aria-selected={interactionTab === 'likes'} onClick={() => { setInteractionTab('likes'); setLikesOpened(true); }}
+                className={`flex-1 border-b-2 px-3 py-3 text-sm font-semibold ${interactionTab === 'likes' ? 'border-sky-600 text-sky-600' : 'border-transparent text-neutral-400'}`}>
+                Mi piace <span className="ml-1 text-xs tabular-nums">{publication.likesCount ?? 0}</span>
+              </button>
             </div>
+            <div key={publication.id} hidden={interactionTab !== 'likes'}>{likesOpened && <PublicationLikes publicationId={publication.id} />}</div>
+            <div hidden={interactionTab !== 'comments'} role="tabpanel" aria-label="Commenti">
             {isLoadingComments && !pendingComment ? (
               <div className="flex items-center gap-2 py-8 text-sm text-neutral-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -471,8 +485,9 @@ export default function PublicationViewer({
                 {commentsError}
               </p>
             )}
+            </div>
           </div>
-          <form onSubmit={submitComment} className="shrink-0 border-t border-neutral-800 bg-neutral-900/98 p-3 shadow-[0_-12px_30px_rgba(0,0,0,0.25)] sm:p-4">
+          <form hidden={interactionTab !== 'comments'} onSubmit={submitComment} className="shrink-0 border-t border-neutral-800 bg-neutral-900/98 p-3 shadow-[0_-12px_30px_rgba(0,0,0,0.25)] sm:p-4">
             {replyTarget && (
               <div className="mb-3 flex items-center justify-between rounded-lg bg-neutral-800 px-3 py-2 text-xs text-neutral-300">
                 <span>{t("Risposta a")} {replyTarget.authorName}</span>
