@@ -462,7 +462,7 @@ export default function PublicationViewer({
                 Mi piace <span className="ml-1 text-xs tabular-nums">{publication.likesCount ?? 0}</span>
               </button>
             </div>
-            <div hidden={interactionTab !== 'likes'}>{likesOpened && <PublicationLikes key={publication.id} publicationId={publication.id} />}</div>
+            <div key={publication.id} hidden={interactionTab !== 'likes'}>{likesOpened && <PublicationLikes publicationId={publication.id} />}</div>
             <div hidden={interactionTab !== 'comments'} role="tabpanel" aria-label="Commenti">
             {isLoadingComments && !pendingComment ? (
               <div className="flex items-center gap-2 py-8 text-sm text-neutral-400">
