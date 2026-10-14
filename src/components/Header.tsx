@@ -7,6 +7,7 @@ import {
   Building2,
   MapPin,
   Menu,
+  Bookmark,
 } from 'lucide-react';
 import { Company, ActiveTab, Auth0User } from '../types';
 import {
@@ -22,6 +23,7 @@ interface HeaderProps {
   unreadNotificationsCount: number;
   onToggleNotifications: () => void;
   onOpenFavorites?: () => void;
+  onOpenSaved?: () => void;
   onOpenCreatePost: () => void;
   onOpenCompanyModal: () => void;
   user: Auth0User;
@@ -38,6 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
   unreadNotificationsCount,
   onToggleNotifications,
   onOpenFavorites,
+  onOpenSaved,
   onOpenCreatePost,
   onOpenCompanyModal,
   user,
@@ -158,7 +161,7 @@ export const Header: React.FC<HeaderProps> = ({
         className="fixed inset-x-0 top-0 z-50 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800"
       >
         <div className="relative max-w-6xl mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-end gap-2 sm:justify-between sm:gap-4">
-          <div className="absolute inset-y-0 left-3 right-32 flex items-center justify-center sm:left-1/2 sm:right-auto sm:-translate-x-1/2">
+          <div className={`absolute inset-y-0 left-3 ${!hasRegisteredAccount && onOpenSaved ? 'right-40' : 'right-32'} flex items-center justify-center sm:left-1/2 sm:right-auto sm:-translate-x-1/2`}>
             <button
               id="brand-text-btn"
               onClick={() => {
@@ -249,6 +252,9 @@ export const Header: React.FC<HeaderProps> = ({
               <span>La mia attività</span>
             </button>
 
+            {!hasRegisteredAccount && onOpenSaved && <button type="button" id="btn-desktop-saved" onClick={onOpenSaved}
+              className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-neutral-300 hover:bg-neutral-800/50"
+              title="Salvati" aria-label="Pubblicazioni salvate"><Bookmark className="h-4 w-4" /><span>Salvati</span></button>}
             <div className="h-6 w-px bg-neutral-800 mx-1" />
 
             {/* + PUBLICAR Button (Desktop) */}
@@ -354,6 +360,10 @@ export const Header: React.FC<HeaderProps> = ({
             )}
 
             {/* Avatar no Mobile */}
+            {!hasRegisteredAccount && onOpenSaved && <button type="button" id="btn-mobile-saved" onClick={onOpenSaved}
+              className="p-2 text-neutral-300 rounded-full hover:bg-neutral-800/80" title="Salvati" aria-label="Pubblicazioni salvate">
+              <Bookmark className="h-5 w-5" />
+            </button>}
             <button
               id="btn-mobile-avatar"
               onClick={onOpenCompanyModal}
@@ -432,6 +442,10 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
+          {!hasRegisteredAccount && onOpenSaved && <button type="button" id="desktop-rail-saved" onClick={onOpenSaved}
+            className={desktopRailButtonClass(false)} title="Salvati" aria-label="Pubblicazioni salvate">
+            <Bookmark className="h-6 w-6" />
+          </button>}
           <button
             id="desktop-rail-profile"
             onClick={() => setActiveTab('profile')}

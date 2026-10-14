@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "motion/react";
-import { X, Heart, ExternalLink, Trash2, Image as ImageIcon } from "lucide-react";
+import { X, Heart, Bookmark, ExternalLink, Trash2, Image as ImageIcon } from "lucide-react";
 import { ProgressiveProductImage, type Product } from "./ProductCard";
 import { type PublicationDto } from "../lib/api";
 import { useI18n } from "../i18n/provider";
@@ -8,6 +8,7 @@ import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 
 interface CurtidasProps {
+  kind?: 'likes' | 'saved';
   products: Product[];
   publications?: PublicationDto[];
   onClose: () => void;
@@ -18,6 +19,7 @@ interface CurtidasProps {
 }
 
 export default function Curtidas({
+  kind = 'likes',
   products,
   publications = [],
   onClose,
@@ -29,6 +31,7 @@ export default function Curtidas({
   const { t, locale } = useI18n();
   const [removingProductId, setRemovingProductId] = React.useState<number | null>(null);
   const [removingPublicationId, setRemovingPublicationId] = React.useState<number | null>(null);
+  const [removeError, setRemoveError] = React.useState('');
   const [isDesktopDrawer, setIsDesktopDrawer] = React.useState(false);
   const hasItems = products.length > 0 || publications.length > 0;
 
@@ -62,8 +65,11 @@ export default function Curtidas({
       return;
     }
     setRemovingPublicationId(id);
+    setRemoveError('');
     try {
       await onRemovePublication(id);
+    } catch {
+      setRemoveError('Impossibile rimuovere la pubblicazione dalla raccolta. Riprova.');
     } finally {
       setRemovingPublicationId(null);
     }
@@ -79,8 +85,8 @@ export default function Curtidas({
     >
       <div className="flex items-center justify-between border-b border-neutral-800 bg-neutral-900/95 p-5 backdrop-blur-md sm:px-5 sm:py-4">
         <div className="flex items-center gap-4">
-          <Heart className="h-6 w-6 text-red-300" />
-          <h2 className="text-xl font-bold tracking-tight">{t("Preferiti")}</h2>
+          {kind === 'saved' ? <Bookmark className="h-6 w-6 text-sky-600" /> : <Heart className="h-6 w-6 text-red-300" />}
+          <h2 className="text-xl font-bold tracking-tight">{kind === 'saved' ? 'Salvati' : t("Preferiti")}</h2>
         </div>
         <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full transition-colors">
           <X className="w-6 h-6 text-neutral-300" />
@@ -88,6 +94,7 @@ export default function Curtidas({
       </div>
 
       <div className="grow overflow-y-auto overscroll-contain p-4 sm:p-4">
+        {removeError && <p role="alert" className="mb-4 text-sm text-red-600">{removeError}</p>}
         <div className="mx-auto max-w-4xl sm:max-w-none">
           {!hasItems ? (
             <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-10 text-center shadow-2xl">
@@ -95,7 +102,7 @@ export default function Curtidas({
                 <Heart className="w-7 h-7 text-neutral-500" />
               </div>
               <p className="text-neutral-400 uppercase tracking-[0.18em] text-xs">
-                {t("Non hai ancora salvato prodotti o attività.")}
+                {kind === 'saved' ? 'Non hai ancora salvato pubblicazioni.' : t("Non hai ancora salvato prodotti o attività.")}
               </p>
             </div>
           ) : (
@@ -104,7 +111,7 @@ export default function Curtidas({
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 px-1 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500">
                     <ImageIcon className="h-3.5 w-3.5" />
-                    <span>Pubblicazioni che ti piacciono</span>
+                    <span>{kind === 'saved' ? 'Pubblicazioni salvate' : 'Pubblicazioni che ti piacciono'}</span>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
                     {publications.map((publication) => {
@@ -144,7 +151,7 @@ export default function Curtidas({
                                 void handleRemovePublication(publication.id);
                               }}
                               className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border border-neutral-700/80 bg-neutral-950/85 text-neutral-300 transition-colors hover:border-red-500 hover:bg-red-600 hover:text-white disabled:opacity-50"
-                              title="Rimuovi preferito"
+                              title={kind === 'saved' ? 'Rimuovi dai salvati' : 'Rimuovi preferito'}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
