@@ -344,6 +344,7 @@ export default function App() {
   const [isMeusAnunciosOpen, setIsMeusAnunciosOpen] = React.useState(false);
   const [editingProduct, setEditingProduct] = React.useState<Product | null>(null);
   const [isCurtidasOpen, setIsCurtidasOpen] = React.useState(false);
+  const [isSavedPublicationsOpen, setIsSavedPublicationsOpen] = React.useState(false);
   const [isCartOpen, setIsCartOpen] = React.useState(false);
   const [isEditePerfilOpen, setIsEditePerfilOpen] = React.useState(false);
   const [isVendedoresOpen, setIsVendedoresOpen] = React.useState(false);
@@ -472,11 +473,11 @@ export default function App() {
     isVendedoresOpen ||
     Boolean(selectedProduct) ||
     Boolean(selectedPublication) ||
+    isCurtidasOpen || isSavedPublicationsOpen ||
     (hasMemberAccess &&
       ((isNewProductOpen && pendingPublicationCount === 0) ||
         Boolean(editingProduct) ||
         isMeusAnunciosOpen ||
-        isCurtidasOpen ||
         isCartOpen ||
         isEditePerfilOpen));
   const { origin: discoveryOrigin } = useDiscoveryLocation(true);
@@ -3333,10 +3334,6 @@ export default function App() {
     setSavedPublications((current) => current.map(updateCount));
     setSelectedPublication((current) => (current?.id === publicationId ? updateCount(current) : current));
 
-    if (!hasMemberAccess) {
-      return;
-    }
-
     void (wasLiked ? api.unlikePublication(publicationId) : api.likePublication(publicationId))
       .catch((error) => {
         if (isReadOnlyDevWriteError(error)) {
@@ -3372,7 +3369,6 @@ export default function App() {
         setSelectedPublication((current) => (current?.id === publicationId ? rollbackCount(current) : current));
       });
   }, [
-    hasMemberAccess,
     likedPublicationIds,
     likedPublications,
     publicationFeed,
@@ -3501,6 +3497,7 @@ export default function App() {
         unreadNotificationsCount={unreadNotificationsCount}
         onToggleNotifications={() => setIsNotificationsOpen((current) => !current)}
         onOpenFavorites={() => setIsCurtidasOpen(true)}
+        onOpenSaved={() => setIsSavedPublicationsOpen(true)}
         onOpenCreatePost={handleOpenNewProduct}
         onOpenCompanyModal={() => {
           if (!hasMemberAccess) {
@@ -3895,6 +3892,25 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {isSavedPublicationsOpen && (
+          <Curtidas kind="saved" products={[]} publications={savedPublications}
+            onClose={() => setIsSavedPublicationsOpen(false)} onOpenProduct={openProductDetails}
+            onRemove={async () => {}}
+            onOpenPublication={publication => {
+              setIsSavedPublicationsOpen(false);
+              window.requestAnimationFrame(() => {
+                setSelectedEstablishment(buildEstablishmentFromPublication(publication));
+                setPublicationInitialTab('comments'); setSelectedPublication(publication); setFocusedPublicationCommentId(null);
+              });
+            }}
+            onRemovePublication={async id => {
+              await api.unsavePublication(id);
+              setSavedPublicationIds(current => current.filter(item => item !== socialPostIdFromPublicationId(id)));
+              setSavedPublications(current => current.filter(item => item.id !== id));
+            }} />
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {isCurtidasOpen && (
           <Curtidas

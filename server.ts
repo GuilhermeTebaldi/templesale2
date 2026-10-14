@@ -4617,54 +4617,33 @@ async function mergeDeviceInteractionsIntoUser(deviceUserId: number, targetUserI
   if (deviceUserId === targetUserId) {
     return;
   }
-
+  const interactions = [['product_likes', 'product_id'], ['publication_saves', 'publication_id'], ['publication_likes', 'publication_id']] as const;
   if (pgPool) {
-    await pgPool.query(
-      `
-        INSERT INTO product_likes (user_id, product_id)
-        SELECT $2, product_id FROM product_likes WHERE user_id = $1
-        ON CONFLICT (user_id, product_id) DO NOTHING
-      `,
-      [deviceUserId, targetUserId],
-    );
-    await pgPool.query(
-      `
-        INSERT INTO publication_saves (user_id, publication_id)
-        SELECT $2, publication_id FROM publication_saves WHERE user_id = $1
-        ON CONFLICT (user_id, publication_id) DO NOTHING
-      `,
-      [deviceUserId, targetUserId],
-    );
-    await pgPool.query(
-      `
-        INSERT INTO publication_likes (user_id, publication_id)
-        SELECT $2, publication_id FROM publication_likes WHERE user_id = $1
-        ON CONFLICT (user_id, publication_id) DO NOTHING
-      `,
-      [deviceUserId, targetUserId],
-    );
+    const client = await pgPool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [deviceUserId]);
+      for (const [table, item] of interactions) {
+        await client.query(`INSERT INTO ${table} (user_id, ${item}, created_at)
+          SELECT $2, ${item}, created_at FROM ${table} WHERE user_id = $1
+          ON CONFLICT (user_id, ${item}) DO NOTHING`, [deviceUserId, targetUserId]);
+        await client.query(`DELETE FROM ${table} WHERE user_id = $1`, [deviceUserId]);
+      }
+      await client.query('UPDATE users SET device_id = NULL WHERE id = $1', [deviceUserId]);
+      await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
     return;
   }
-
   const db = requireSqliteDb();
-  db.prepare(
-    `
-      INSERT OR IGNORE INTO product_likes (user_id, product_id)
-      SELECT ?, product_id FROM product_likes WHERE user_id = ?
-    `,
-  ).run(targetUserId, deviceUserId);
-  db.prepare(
-    `
-      INSERT OR IGNORE INTO publication_saves (user_id, publication_id)
-      SELECT ?, publication_id FROM publication_saves WHERE user_id = ?
-    `,
-  ).run(targetUserId, deviceUserId);
-  db.prepare(
-    `
-      INSERT OR IGNORE INTO publication_likes (user_id, publication_id)
-      SELECT ?, publication_id FROM publication_likes WHERE user_id = ?
-    `,
-  ).run(targetUserId, deviceUserId);
+  db.transaction(() => {
+    for (const [table, item] of interactions) {
+      db.prepare(`INSERT OR IGNORE INTO ${table} (user_id, ${item}, created_at)
+        SELECT ?, ${item}, created_at FROM ${table} WHERE user_id = ?`).run(targetUserId, deviceUserId);
+      db.prepare(`DELETE FROM ${table} WHERE user_id = ?`).run(deviceUserId);
+    }
+    db.prepare('UPDATE users SET device_id = NULL WHERE id = ?').run(deviceUserId);
+  })();
 }
 
 async function selectPublicationByIdRecord(publicationId: number): Promise<EstablishmentPublicationRecord | null> {
@@ -7759,7 +7738,7 @@ async function createDeviceUserRecord(deviceId: string): Promise<number> {
 
   const digest = crypto.createHash("sha256").update(normalizedDeviceId).digest("hex").slice(0, 24);
   const email = `visitor-${digest}@device.templesale.local`;
-  const name = "Visitante";
+  const name = "Visitatore";
   const credentials = createPasswordCredentials(crypto.randomBytes(24).toString("hex"));
 
   if (pgPool) {
@@ -9706,7 +9685,7 @@ function sanitizePublicUser(
 function rowToPublicLiker(row: Record<string, unknown>) {
   return {
     id: toRequiredNumber(row.id),
-    name: String(row.name ?? "").trim() || "Usuário TempleSale",
+    name: String(row.name ?? "").trim() === 'Visitante' ? 'Visitatore' : String(row.name ?? "").trim() || "Utente TempleSale",
     avatarUrl: toNullableString(row.avatar_url) ?? "",
     country: toNullableString(row.country) ?? "",
     city: toNullableString(row.city) ?? "",
