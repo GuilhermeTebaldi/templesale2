@@ -10,6 +10,7 @@ import ProductDetails from "./components/ProductDetails";
 import NewProduct from "./components/NewProduct";
 import NewPublication from "./components/NewPublication";
 import PublicationViewer from "./components/PublicationViewer";
+import PublicationPhotoViewer from './components/PublicationPhotoViewer';
 import EditPublicationModal from "./components/EditPublicationModal";
 import { Header as SocialHeader } from "./components/Header";
 import { FeedView as SocialFeedView } from "./components/FeedView";
@@ -376,6 +377,8 @@ export default function App() {
   const [hasMoreSelectedEstablishmentPublications, setHasMoreSelectedEstablishmentPublications] = React.useState(false);
   const [nextSelectedEstablishmentPublicationsOffset, setNextSelectedEstablishmentPublicationsOffset] = React.useState(0);
   const [selectedPublication, setSelectedPublication] = React.useState<PublicationDto | null>(null);
+  const [isPublicationPhotoOpen, setIsPublicationPhotoOpen] = React.useState(false);
+  const [publicationDiscussionId, setPublicationDiscussionId] = React.useState<number | null>(null);
   const [publicationInitialTab, setPublicationInitialTab] = React.useState<'comments' | 'likes'>('comments');
   const [editingSocialPublication, setEditingSocialPublication] = React.useState<PublicationDto | null>(null);
   const [focusedPublicationCommentId, setFocusedPublicationCommentId] = React.useState<number | null>(null);
@@ -3033,7 +3036,7 @@ export default function App() {
   );
 
   const openSocialPost = React.useCallback(
-    (post: SocialPost, tab: 'comments' | 'likes' = 'comments') => {
+    (post: SocialPost, tab: 'comments' | 'likes' = 'comments', photo = false) => {
       const publicationId = publicationIdFromSocialPostId(post.id);
       const publication = publicationId
         ? publicationFeed.find((item) => item.id === publicationId) ??
@@ -3047,6 +3050,8 @@ export default function App() {
       }
       const establishment = buildEstablishmentFromPublication(publication);
       setSelectedEstablishment(establishment);
+      setIsPublicationPhotoOpen(photo);
+      setPublicationDiscussionId(photo ? null : publication.id);
       setPublicationInitialTab(tab);
       setSelectedPublication(publication);
       setFocusedPublicationCommentId(null);
@@ -3252,7 +3257,8 @@ export default function App() {
     }
     const existingPublication =
       publicationFeed.find((publication) => publication.id === publicationId) ??
-      savedPublications.find((publication) => publication.id === publicationId);
+      savedPublications.find((publication) => publication.id === publicationId) ??
+      (selectedPublication?.id === publicationId ? selectedPublication : null);
     const wasSaved = savedPublicationIds.includes(postId);
 
     setSavedPublicationIds((current) =>
@@ -3294,6 +3300,7 @@ export default function App() {
     publicationIdFromSocialPostId,
     savedPublicationIds,
     savedPublications,
+    selectedPublication,
   ]);
 
   const toggleLikedSocialPost = React.useCallback((postId: string) => {
@@ -3305,7 +3312,8 @@ export default function App() {
     const existingPublication =
       publicationFeed.find((publication) => publication.id === publicationId) ??
       savedPublications.find((publication) => publication.id === publicationId) ??
-      likedPublications.find((publication) => publication.id === publicationId);
+      likedPublications.find((publication) => publication.id === publicationId) ??
+      (selectedPublication?.id === publicationId ? selectedPublication : null);
     const wasLiked = likedPublicationIds.includes(postId);
     const likeDelta = wasLiked ? -1 : 1;
 
@@ -3374,6 +3382,7 @@ export default function App() {
     publicationFeed,
     publicationIdFromSocialPostId,
     savedPublications,
+    selectedPublication,
   ]);
 
   const deleteSocialPost = React.useCallback(
@@ -3536,6 +3545,7 @@ export default function App() {
             })}
             companies={socialCompanies}
             onOpenPost={openSocialPost}
+            onOpenPhoto={post => openSocialPost(post, 'comments', true)}
             onSelectCompany={selectSocialCompany}
             onAddComment={addSocialComment}
             onOpenCreatePost={handleOpenNewProduct}
@@ -3699,6 +3709,27 @@ export default function App() {
 
       <AnimatePresence>
         {selectedPublication && selectedEstablishment && (
+          <>
+          {isPublicationPhotoOpen && <PublicationPhotoViewer
+            publication={selectedPublication} establishment={selectedEstablishment}
+            liked={likedPublicationIds.includes(socialPostIdFromPublicationId(selectedPublication.id))}
+            saved={savedPublicationIds.includes(socialPostIdFromPublicationId(selectedPublication.id))}
+            commentsCount={publicationCommentCounts[selectedPublication.id]}
+            onLike={() => toggleLikedSocialPost(socialPostIdFromPublicationId(selectedPublication.id))}
+            onSave={() => toggleSavedSocialPost(socialPostIdFromPublicationId(selectedPublication.id))}
+            onDiscussion={tab => { setPublicationDiscussionId(selectedPublication.id); setPublicationInitialTab(tab); setIsPublicationPhotoOpen(false); }}
+            onProfile={() => {
+              const id = selectedEstablishment.id;
+              setIsPublicationPhotoOpen(false); setSelectedPublication(null);
+              setSocialSelectedCompanyId(socialCompanyIdFromEstablishmentId(id)); setSocialActiveTab('profile');
+              scrollWindowToTop(); void openEstablishmentPage(id);
+            }}
+            onClose={() => {
+              setIsPublicationPhotoOpen(false);
+              if (publicationDiscussionId !== selectedPublication.id) { setSelectedPublication(null); setPublicationInitialTab('comments'); setFocusedPublicationCommentId(null); }
+            }}
+          />}
+          {(!isPublicationPhotoOpen || publicationDiscussionId === selectedPublication.id) && <div key={selectedPublication.id} hidden={isPublicationPhotoOpen}>
           <PublicationViewer
             publication={selectedPublication}
             establishment={selectedEstablishment}
@@ -3707,6 +3738,7 @@ export default function App() {
             onSubmitComment={submitPublicationComment}
             focusCommentId={focusedPublicationCommentId}
             initialTab={focusedPublicationCommentId ? 'comments' : publicationInitialTab}
+            onOpenPhoto={() => { setPublicationDiscussionId(selectedPublication.id); setIsPublicationPhotoOpen(true); }}
             onClose={() => {
               setSelectedPublication(null);
               setPublicationInitialTab('comments');
@@ -3735,6 +3767,8 @@ export default function App() {
               refreshEstablishments();
             }}
           />
+          </div>}
+          </>
         )}
       </AnimatePresence>
 

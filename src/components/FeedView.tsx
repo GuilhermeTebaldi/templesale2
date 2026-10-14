@@ -27,6 +27,7 @@ interface FeedViewProps {
   posts: Post[];
   companies: Company[];
   onOpenPost: (post: Post, tab?: 'comments' | 'likes') => void;
+  onOpenPhoto?: (post: Post) => void;
   onSelectCompany: (companyId: string) => void;
   onAddComment: (postId: string, text: string) => Promise<void>;
   onOpenCreatePost: () => void;
@@ -83,6 +84,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
   origin,
   companies,
   onOpenPost,
+  onOpenPhoto,
   onSelectCompany,
   onAddComment,
   onOpenCreatePost,
@@ -305,13 +307,20 @@ export const FeedView: React.FC<FeedViewProps> = ({
 
   const lastTapRef = useRef<{ [postId: string]: { time: number; x: number; y: number } }>({});
   const lastTriggeredRef = useRef<{ [postId: string]: number }>({});
+  const photoOpenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!isActive && photoOpenTimer.current) clearTimeout(photoOpenTimer.current);
+    return () => { if (photoOpenTimer.current) clearTimeout(photoOpenTimer.current); };
+  }, [isActive]);
 
-  // Clique simples na foto não abre a publicação e nem comentários.
+  // Delay a single tap just enough to retain the existing double-tap like action.
   // Toque duplo / duplo clique na foto faz a logomarca TempleSale surgir no ponto exato tocado e voar para a curtida.
   const handlePhotoInteraction = (
-    postId: string,
+    post: Post,
     e: React.MouseEvent<HTMLDivElement>
   ) => {
+    const postId = post.id;
+    if (photoOpenTimer.current) clearTimeout(photoOpenTimer.current);
     const now = Date.now();
     const lastTriggered = lastTriggeredRef.current[postId] || 0;
     if (now - lastTriggered < 300) return;
@@ -330,6 +339,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
       triggerFlyLike(postId, e.clientX, e.clientY);
     } else {
       lastTapRef.current[postId] = { time: now, x: e.clientX, y: e.clientY };
+      photoOpenTimer.current = setTimeout(() => { (onOpenPhoto ?? onOpenPost)(post); }, 380);
     }
   };
 
@@ -337,6 +347,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
     postId: string,
     e: React.MouseEvent<HTMLDivElement>
   ) => {
+    if (photoOpenTimer.current) clearTimeout(photoOpenTimer.current);
     const now = Date.now();
     const lastTriggered = lastTriggeredRef.current[postId] || 0;
     if (now - lastTriggered < 300) return;
@@ -571,7 +582,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
               <div
                 id={`feed-photo-${post.id}`}
                 className="ts-feed-media relative aspect-square bg-stone-100 overflow-hidden select-none cursor-pointer"
-                onClick={(e) => handlePhotoInteraction(post.id, e)}
+                role="button" tabIndex={0} aria-label={`Apri foto di ${company.name}`}
+                onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); (onOpenPhoto ?? onOpenPost)(post); } }}
+                onClick={(e) => handlePhotoInteraction(post, e)}
                 onDoubleClick={(e) => handlePhotoDoubleClick(post.id, e)}
               >
                 <ProgressiveProductImage
