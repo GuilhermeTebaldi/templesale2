@@ -306,6 +306,8 @@ export default function NewPublication({
     }
   };
 
+  const beginPublish = () => { if (!currentImage || sendingRef.current || draftLoading) return; setBackgroundPublishing(true); void handlePublish(); };
+  const closeEditor = () => { controllerRef.current?.abort(new Error("Invio interrotto. La bozza è conservata.")); onClose(); };
   if (backgroundPublishing) return null;
   return (
     <AnimatePresence>
@@ -318,17 +320,15 @@ export default function NewPublication({
           }}
         >
           <div className="relative h-full w-full max-w-lg overflow-hidden bg-black shadow-2xl">
-          <button
+          {!currentImage && <button
             type="button"
-            onClick={() => { controllerRef.current?.abort(new Error("Invio interrotto. La bozza è conservata.")); onClose(); }}
+            onClick={closeEditor}
             disabled={draftLoading}
-            className={`absolute right-3 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/70 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-neutral-900 ${
-              currentImage ? "top-14" : "top-3"
-            }`}
+            className="absolute right-3 top-3 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/70 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-neutral-900"
             aria-label={t("Fechar")}
           >
             <X className="h-4.5 w-4.5" />
-          </button>
+          </button>}
 
           {(draftNotice || draftLoading || discarding) && <div role="status" className="absolute top-16 inset-x-4 z-40 rounded-lg bg-white p-3 text-xs text-slate-900 shadow"><p>{draftLoading ? "Recupero della bozza..." : discarding ? "Eliminazione della bozza..." : draftNotice}</p>{currentImage && !draftLoading && <button type="button" disabled={discarding} className="mt-2 font-semibold text-red-700 underline" onClick={() => void discardDraft()}>Elimina la bozza e scegli un’altra foto</button>}</div>}
           {isPublishing && <div role="status" aria-label="Pubblicazione in corso" className="ts-comment-progress absolute inset-x-0 top-0 z-50" />}
@@ -342,8 +342,8 @@ export default function NewPublication({
               inert={isPublishing ? true : undefined}
               className={`relative flex h-full min-h-0 w-full flex-col ${
                 isKeyboardOpen
-                  ? "overflow-y-auto overscroll-contain ts-publication-keyboard-open"
-                  : "overflow-y-auto overscroll-contain"
+                  ? "overflow-hidden ts-publication-keyboard-open"
+                  : "overflow-hidden"
               } bg-black`}
             >
               <header className="z-20 flex shrink-0 items-center justify-between border-b border-neutral-800/80 bg-neutral-950/90 px-4 py-2.5 backdrop-blur-md">
@@ -365,7 +365,7 @@ export default function NewPublication({
                 <button
                   type="button"
                   id="btn-header-publish"
-                  onClick={() => { if (!currentImage || sendingRef.current || draftLoading) return; setBackgroundPublishing(true); void handlePublish(); }}
+                  onClick={beginPublish}
                   disabled={isPublishing || draftLoading || discarding}
                   className="flex items-center gap-1.5 rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white shadow-md transition hover:bg-blue-500 disabled:opacity-50 active:scale-95"
                 >
@@ -378,6 +378,8 @@ export default function NewPublication({
                 </button>
               </header>
 
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <div className="relative">
               <PhotoEditorCanvas
                 imageSrc={currentImage}
                 filter={selectedFilter}
@@ -396,6 +398,13 @@ export default function NewPublication({
                 onDimensionsChange={handleDimensionsChange}
                 enableTextOverlays={false}
               />
+              <button type="button" onClick={closeEditor} disabled={draftLoading}
+                className="absolute right-3 top-3 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/70 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-neutral-900"
+                aria-label={t("Fechar")}>
+                <X className="h-4.5 w-4.5" />
+              </button>
+              </div>
+              </div>
 
               {false && selectedOverlay && (
                 <div className="z-30 shrink-0">
@@ -412,8 +421,8 @@ export default function NewPublication({
                 </div>
               )}
 
-              <div className="z-20 shrink-0 border-t border-neutral-800/80 bg-neutral-950">
-                <div className="flex items-center justify-between border-b border-neutral-900 bg-neutral-950/80 px-3 py-1.5">
+              <div className="z-20 max-h-[65%] shrink-0 overflow-y-auto overscroll-contain border-t border-neutral-800/80 bg-neutral-950">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-900 bg-neutral-950/80 px-3 py-1.5">
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
@@ -444,6 +453,12 @@ export default function NewPublication({
                       {caption.trim() && <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />}
                     </button>
                   </div>
+                  <button type="button" id="btn-caption-publish" onClick={beginPublish}
+                    disabled={isPublishing || draftLoading || discarding}
+                    className="ml-2 flex shrink-0 items-center gap-1.5 rounded-full bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50">
+                    <Send className="h-3.5 w-3.5" />
+                    <span>Pubblica</span>
+                  </button>
                 </div>
 
                 {activeBottomTab === "filters" ? (
