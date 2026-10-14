@@ -227,7 +227,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
 
   const cleanWhatsAppNumber = company.whatsapp.replace(/\D/g, '');
   const whatsappUrl = `https://wa.me/${cleanWhatsAppNumber}?text=${encodeURIComponent(
-    `Olá! Vi sua publicação no TempleSale e gostaria de mais informações.`
+    `Ciao! Ho visto la tua pubblicazione su TempleSale e vorrei maggiori informazioni.`
   )}`;
 
   return (

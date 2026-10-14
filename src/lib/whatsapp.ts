@@ -65,14 +65,9 @@ export function buildWhatsappUrl(
 
   const fullNumber = `${country.dialDigits}${localNumber}`;
   const kind = options.kind ?? "product";
-  const text =
-    country.iso === "IT"
-      ? kind === "establishment"
-        ? `Ciao! Vorrei contattare l'attività "${subjectName}".`
-        : `Ciao! Sono interessato/a al prodotto "${subjectName}".`
-      : kind === "establishment"
-        ? `Ola! Tenho interesse na atividade "${subjectName}".`
-        : `Ola! Tenho interesse no produto "${subjectName}".`;
+  const text = kind === "establishment"
+    ? `Ciao! Vorrei contattare l'attività "${subjectName}".`
+    : `Ciao! Sono interessato/a al prodotto "${subjectName}".`;
   return `https://wa.me/${fullNumber}?text=${encodeURIComponent(text)}`;
 }
 
