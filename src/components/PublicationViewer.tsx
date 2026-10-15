@@ -18,6 +18,7 @@ interface PublicationViewerProps {
   focusCommentId?: number | null;
   initialTab?: 'comments' | 'likes';
   onOpenPhoto?: () => void;
+  onNavigate?: (direction: -1 | 1) => void;
   onClose: () => void;
   onOpenEstablishment?: (establishmentId: number) => void;
   onDeleted?: (publicationId: number) => void;
@@ -44,6 +45,7 @@ export default function PublicationViewer({
   focusCommentId,
   initialTab = 'comments',
   onOpenPhoto,
+  onNavigate,
   onClose,
   onOpenEstablishment,
   onDeleted,
@@ -52,6 +54,25 @@ export default function PublicationViewer({
   const { t, locale } = useI18n();
   const [interactionTab, setInteractionTab] = React.useState(initialTab);
   const [likesOpened, setLikesOpened] = React.useState(initialTab === 'likes');
+  const swipeStart = React.useRef<{ x: number; y: number } | null>(null);
+  const onGalleryTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (!onNavigate || event.touches.length !== 1 ||
+      (event.target instanceof Element && event.target.closest('button, a, input, textarea, select, [contenteditable]'))) {
+      swipeStart.current = null;
+      return;
+    }
+    swipeStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+  };
+  const onGalleryTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const start = swipeStart.current;
+    swipeStart.current = null;
+    if (!start || !onNavigate || event.changedTouches.length !== 1) return;
+    const deltaX = event.changedTouches[0].clientX - start.x;
+    const deltaY = event.changedTouches[0].clientY - start.y;
+    if (Math.abs(deltaY) > 70 && Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
+      onNavigate(deltaY < 0 ? 1 : -1);
+    }
+  };
   React.useEffect(() => {
     setInteractionTab(initialTab); setLikesOpened(initialTab === 'likes');
   }, [publication.id, initialTab]);
@@ -375,6 +396,8 @@ export default function PublicationViewer({
         className="grid h-[100dvh] w-full overflow-hidden bg-neutral-900 shadow-2xl sm:h-[92vh] sm:max-w-5xl sm:rounded-2xl sm:border sm:border-neutral-800 lg:grid-cols-[minmax(0,1.1fr)_380px]"
       >
         <div className="relative h-[42dvh] overflow-hidden bg-neutral-950 sm:h-[58vh] lg:h-[92vh]"
+          onTouchStart={onGalleryTouchStart} onTouchEnd={onGalleryTouchEnd}
+          onTouchCancel={() => { swipeStart.current = null; }}
           role={onOpenPhoto ? 'button' : undefined} tabIndex={onOpenPhoto ? 0 : undefined} aria-label="Apri foto a schermo intero"
           onClick={onOpenPhoto} onKeyDown={event => { if (onOpenPhoto && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onOpenPhoto(); } }}>
           <ProgressiveProductImage

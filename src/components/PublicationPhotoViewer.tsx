@@ -9,10 +9,11 @@ type Pose = { scale: number; x: number; y: number };
 const initialPose: Pose = { scale: 1, x: 0, y: 0 };
 
 export default function PublicationPhotoViewer({ publication, establishment, liked, saved, commentsCount,
-  onClose, onLike, onSave, onDiscussion, onProfile }: {
+  onClose, onLike, onSave, onDiscussion, onProfile, onNavigate }: {
   publication: PublicationDto; establishment: EstablishmentDto; liked: boolean; saved: boolean; commentsCount?: number;
   onClose: () => void; onLike: () => void; onSave: () => void;
   onDiscussion: (tab: 'comments' | 'likes') => void; onProfile: () => void;
+  onNavigate?: (direction: -1 | 1) => void;
 }) {
   const stage = React.useRef<HTMLDivElement>(null);
   const dialog = React.useRef<HTMLDivElement>(null);
@@ -27,6 +28,14 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
   const lastTap = React.useRef(0);
   const close = React.useRef(onClose);
   close.current = onClose;
+  React.useEffect(() => {
+    pointers.current.clear();
+    livePose.current = initialPose;
+    setPose(initialPose);
+    setMenuOpen(false);
+    setNotice('');
+    lastTap.current = 0;
+  }, [publication.id]);
 
   const applyPose = React.useCallback((next: Pose) => {
     const bounds = stage.current?.getBoundingClientRect();
@@ -79,6 +88,12 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
     } else applyPose({ ...start.pose, x: start.pose.x + x - start.x, y: start.pose.y + y - start.y });
   };
   const pointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const singlePointer = pointers.current.size === 1 && pointers.current.has(event.pointerId);
+    const distanceX = event.clientX - gesture.current.x;
+    const distanceY = event.clientY - gesture.current.y;
+    const swipe = event.type === 'pointerup' && singlePointer && onNavigate &&
+      gesture.current.pose.scale === 1 && Math.abs(distanceY) > 70 &&
+      Math.abs(distanceY) > Math.abs(distanceX) * 1.5;
     pointers.current.delete(event.pointerId);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     if (event.type === 'pointerup' && !moved.current && !pointers.current.size) {
@@ -87,6 +102,7 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
       else lastTap.current = now;
     } else lastTap.current = 0;
     beginGesture();
+    if (swipe) onNavigate(distanceY < 0 ? 1 : -1);
   };
 
   React.useEffect(() => {
