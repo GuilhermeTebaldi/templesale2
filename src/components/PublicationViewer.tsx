@@ -69,8 +69,8 @@ export default function PublicationViewer({
     if (!start || !onNavigate || event.changedTouches.length !== 1) return;
     const deltaX = event.changedTouches[0].clientX - start.x;
     const deltaY = event.changedTouches[0].clientY - start.y;
-    if (Math.abs(deltaX) > 70 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
-      onNavigate(deltaX < 0 ? 1 : -1);
+    if (Math.abs(deltaY) > 70 && Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
+      onNavigate(deltaY < 0 ? 1 : -1);
     }
   };
   React.useEffect(() => {
@@ -393,12 +393,11 @@ export default function PublicationViewer({
         initial={{ opacity: 0, y: 24, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 24, scale: 0.98 }}
-        onTouchStart={onGalleryTouchStart}
-        onTouchEnd={onGalleryTouchEnd}
-        onTouchCancel={() => { swipeStart.current = null; }}
         className="grid h-[100dvh] w-full overflow-hidden bg-neutral-900 shadow-2xl sm:h-[92vh] sm:max-w-5xl sm:rounded-2xl sm:border sm:border-neutral-800 lg:grid-cols-[minmax(0,1.1fr)_380px]"
       >
         <div className="relative h-[42dvh] overflow-hidden bg-neutral-950 sm:h-[58vh] lg:h-[92vh]"
+          onTouchStart={onGalleryTouchStart} onTouchEnd={onGalleryTouchEnd}
+          onTouchCancel={() => { swipeStart.current = null; }}
           role={onOpenPhoto ? 'button' : undefined} tabIndex={onOpenPhoto ? 0 : undefined} aria-label="Apri foto a schermo intero"
           onClick={onOpenPhoto} onKeyDown={event => { if (onOpenPhoto && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onOpenPhoto(); } }}>
           <ProgressiveProductImage
