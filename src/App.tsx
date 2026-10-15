@@ -11,6 +11,7 @@ import NewProduct from "./components/NewProduct";
 import NewPublication from "./components/NewPublication";
 import PublicationViewer from "./components/PublicationViewer";
 import PublicationPhotoViewer from './components/PublicationPhotoViewer';
+import { LinkPreviewContext, LinkPreviewDialog } from './components/SharedLink';
 import EditPublicationModal from "./components/EditPublicationModal";
 import { Header as SocialHeader } from "./components/Header";
 import { FeedView as SocialFeedView } from "./components/FeedView";
@@ -422,6 +423,12 @@ export default function App() {
   const [nextProductsOffset, setNextProductsOffset] = React.useState(0);
   const [productsError, setProductsError] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [previewLink, setPreviewLink] = React.useState<string | null>(null);
+  const previewLinkOrigin = React.useRef<HTMLElement | null>(null);
+  const openLinkPreview = React.useCallback((href: string) => {
+    previewLinkOrigin.current = document.activeElement as HTMLElement | null;
+    setPreviewLink(href);
+  }, []);
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState("");
   const searchDebounceRef = React.useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const [socialActiveTab, setSocialActiveTab] = React.useState<SocialActiveTab>("feed");
@@ -477,6 +484,7 @@ export default function App() {
     isVendedoresOpen ||
     Boolean(selectedProduct) ||
     Boolean(selectedPublication) ||
+    Boolean(previewLink) ||
     isCurtidasOpen || isSavedPublicationsOpen ||
     (hasMemberAccess &&
       ((isNewProductOpen && pendingPublicationCount === 0) ||
@@ -3433,7 +3441,8 @@ export default function App() {
   );
 
   return (
-    <div inert={Boolean(currentUser && !termsAccess) || isTermsOpen} className="min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
+    <LinkPreviewContext.Provider value={openLinkPreview}>
+    <div inert={Boolean(currentUser && !termsAccess) || isTermsOpen || Boolean(previewLink)} className="min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
       <TermsDialog key={currentUser?.id ?? "visitor"} user={currentUser} locale="it-IT"
         open={isTermsOpen} introComplete={!isPostAuthIntroOpen} companyName={myEstablishment?.name} onClose={() => setIsTermsOpen(false)}
         onAccess={setTermsAccess} onReject={handleLogout}
@@ -4042,6 +4051,8 @@ export default function App() {
         )}
       </AnimatePresence>
     </div>
+    {previewLink && <LinkPreviewDialog href={previewLink} returnFocus={previewLinkOrigin.current} onClose={() => setPreviewLink(null)} />}
+    </LinkPreviewContext.Provider>
   );
 
 }

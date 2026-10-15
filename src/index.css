@@ -363,6 +363,26 @@ body.ts-scroll-lock {
 
 :root { color-scheme: light; }
 body { margin: 0; background: #fff; color: #0f1419; }
+.ts-link-backdrop { position: fixed; inset: 0; z-index: 100020; display: flex; align-items: flex-end; justify-content: center; background: rgb(0 0 0 / .65); backdrop-filter: blur(8px); overscroll-behavior: none; }
+.ts-link-dialog { width: 100%; max-width: 620px; max-height: 94dvh; display: flex; flex-direction: column; overflow: hidden; border-radius: 26px 26px 0 0; background: #fff; color: #0f1419; box-shadow: 0 -10px 70px rgb(0 0 0 / .2); }
+.ts-link-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; border-bottom: 1px solid #eff3f4; flex-shrink: 0; }
+.ts-link-header p { margin-top: 2px; font-size: 12px; color: #536471; }
+.ts-link-header button { display: grid; place-items: center; flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%; color: #0f1419; background: #eff3f4; cursor: pointer; }
+.ts-link-content { overflow-y: auto; min-height: 0; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.ts-link-hero { background: #f4f7f9; overflow: hidden; }
+.ts-link-hero img { display: block; width: 100%; max-height: min(45dvh, 420px); object-fit: contain; }
+.ts-link-placeholder { min-height: min(29dvh, 240px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; color: #536471; background: linear-gradient(145deg, #e8f3fc, #f4f7f9 65%); }
+.ts-link-placeholder span { max-width: 100%; overflow-wrap: anywhere; font-size: 14px; }
+.ts-link-details { padding: 22px 22px 26px; }
+.ts-link-domain { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; color: #536471; font-size: 12px; overflow-wrap: anywhere; }
+.ts-link-domain svg { flex-shrink: 0; }
+.ts-link-details h2 { font-size: clamp(21px, 4.5vw, 28px); line-height: 1.22; font-weight: 700; overflow-wrap: anywhere; }
+.ts-link-details p { margin-top: 12px; color: #536471; font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
+.ts-link-footer { flex-shrink: 0; padding: 16px 20px max(16px, env(safe-area-inset-bottom)); border-top: 1px solid #eff3f4; background: #fff; }
+.ts-link-footer .ts-link-open { display: flex; justify-content: center; align-items: center; gap: 9px; min-height: 50px; padding: 12px 18px; border-radius: 999px; background: #0f1419; color: #fff; font-size: 16px; font-weight: 700; text-decoration: none; }
+.ts-link-footer p { margin-top: 8px; text-align: center; font-size: 11px; color: #536471; }
+.ts-link-dialog button:focus-visible, .ts-link-dialog a:focus-visible { outline: 2px solid #1d9bf0; outline-offset: 3px; }
+@media (min-width: 640px) { .ts-link-backdrop { align-items: center; padding: 24px; } .ts-link-dialog { border-radius: 26px; max-height: 90dvh; } }
 .ts-photo-viewer { position: fixed; inset: 0; z-index: 160; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; background: #000; color: #fff; outline: none; color-scheme: dark; }
 .ts-photo-viewer button, .ts-photo-viewer a { color: inherit; }
 .ts-photo-header { display: flex; align-items: center; justify-content: space-between; padding: max(12px, env(safe-area-inset-top)) 16px 8px; flex-shrink: 0; }
