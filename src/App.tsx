@@ -423,6 +423,7 @@ export default function App() {
   const [productsError, setProductsError] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState("");
+  const searchDebounceRef = React.useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const [socialActiveTab, setSocialActiveTab] = React.useState<SocialActiveTab>("feed");
   const [socialSelectedCompanyId, setSocialSelectedCompanyId] = React.useState<string>("");
   const [savedPublicationIds, setSavedPublicationIds] = React.useState<string[]>([]);
@@ -589,12 +590,13 @@ export default function App() {
   }, [isOverlayBlockingScroll]);
 
   React.useEffect(() => {
-    const timeoutId = globalThis.setTimeout(() => {
+    searchDebounceRef.current = globalThis.setTimeout(() => {
       setDebouncedSearchQuery(searchQuery.trim());
+      searchDebounceRef.current = null;
     }, 350);
 
     return () => {
-      globalThis.clearTimeout(timeoutId);
+      if (searchDebounceRef.current !== null) globalThis.clearTimeout(searchDebounceRef.current);
     };
   }, [searchQuery]);
 
@@ -3631,6 +3633,16 @@ export default function App() {
           <SocialCompanySearch
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
+            onSearchSubmit={() => {
+              if (searchDebounceRef.current !== null) globalThis.clearTimeout(searchDebounceRef.current);
+              searchDebounceRef.current = null;
+              const query = searchQuery.trim();
+              if (isLoadingEstablishments && query === debouncedSearchQuery) return;
+              setIsLoadingEstablishments(true);
+              if (query === debouncedSearchQuery) refreshEstablishments();
+              else setDebouncedSearchQuery(query);
+            }}
+            isSearching={isLoadingEstablishments || searchQuery.trim() !== debouncedSearchQuery}
             companies={establishments.flatMap(establishment => {
               const company = socialCompanies.find(item => item.id === socialCompanyIdFromEstablishmentId(establishment.id));
               return company ? [company] : [];

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { MapPin, MessageSquare, X, CheckCircle2, Sparkles, Search } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { MapPin, MessageSquare, X, CheckCircle2, Sparkles, Search, LoaderCircle } from 'lucide-react';
 import { Company, Post } from '../types';
 import { api } from '../lib/api';
 import { ProgressiveProductImage } from './ProductCard';
@@ -9,6 +9,8 @@ import { distanceMeters } from '../lib/discovery-location';
 interface CompanySearchProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  onSearchSubmit?: () => void;
+  isSearching?: boolean;
   companies: Company[];
   posts: Post[];
   onSelectCompany: (companyId: string) => void;
@@ -31,6 +33,8 @@ function normalizeSearchTerm(value: string): string {
 export const CompanySearch: React.FC<CompanySearchProps> = ({
   searchQuery,
   onSearchChange,
+  onSearchSubmit,
+  isSearching = false,
   companies,
   posts,
   onSelectCompany,
@@ -40,6 +44,13 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
   serverResults = false,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [showSearchFeedback, setShowSearchFeedback] = useState(false);
+  const [submission, setSubmission] = useState(0);
+  useEffect(() => {
+    if (isSearching) { setShowSearchFeedback(true); return; }
+    const timer = setTimeout(() => setShowSearchFeedback(false), 450);
+    return () => clearTimeout(timer);
+  }, [isSearching, submission]);
 
   // Auto-foco suave no campo de busca quando a tela Buscar é aberta
   useEffect(() => {
@@ -182,13 +193,21 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
   return (
     <div id="search-view" className="max-w-3xl mx-auto px-3 sm:px-4 py-3 sm:py-5 space-y-3.5 sm:space-y-4 animate-in fade-in duration-200">
       {/* BARRA DE PESQUISA / BUSCA (Aparece ao clicar em Buscar) */}
-      <div className="relative group">
+      <form className="relative group" role="search" onSubmit={event => {
+        event.preventDefault();
+        setShowSearchFeedback(true);
+        setSubmission(value => value + 1);
+        onSearchSubmit?.();
+        inputRef.current?.blur();
+      }}>
         <div className="relative flex items-center w-full bg-neutral-900/95 hover:bg-neutral-900 border border-neutral-800/90 hover:border-neutral-700/90 focus-within:border-amber-400/70 focus-within:ring-2 focus-within:ring-amber-400/20 rounded-2xl transition-all duration-200 shadow-sm">
           <Search className="w-4 h-4 text-neutral-400 group-focus-within:text-amber-400 ml-3.5 shrink-0 transition-colors pointer-events-none" />
           <input
             ref={inputRef}
             id="company-search-input"
             type="text"
+            enterKeyHint="search"
+            aria-label="Cerca attività, servizi o città"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Cerca attività, servizi, città..."
@@ -205,6 +224,10 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
             </button>
           )}
         </div>
+      </form>
+
+      <div role="status" aria-live="polite" className="min-h-4 text-xs text-neutral-500 flex items-center gap-1.5">
+        {showSearchFeedback && (isSearching ? <><LoaderCircle className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" />Ricerca in corso…</> : <><CheckCircle2 className="w-3.5 h-3.5" />Ricerca inviata</>)}
       </div>
 
       {/* ÁREA DE RÁPIDOS: Tags e filtros rápidos */}
