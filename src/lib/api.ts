@@ -449,7 +449,7 @@ export async function fetchLinkPreview(url: string, signal: AbortSignal) {
   const body = await response.json();
   const data = body?.data;
   return data && typeof data.title === 'string' && typeof data.description === 'string'
-    ? { title: data.title.slice(0, 180), description: data.description.slice(0, 280), image: typeof data.image === 'string' ? data.image : undefined }
+    ? { title: data.title.slice(0, 180), description: data.description.slice(0, 280), image: typeof data.image === 'string' ? data.image : undefined, imageKind: data.imageKind === 'icon' ? 'icon' as const : 'cover' as const }
     : null;
 }
 
