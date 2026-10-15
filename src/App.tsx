@@ -380,6 +380,8 @@ export default function App() {
   const [selectedPublication, setSelectedPublication] = React.useState<PublicationDto | null>(null);
   const [profileSwipeCompanyId, setProfileSwipeCompanyId] = React.useState<string | null>(null);
   const [isPublicationPhotoOpen, setIsPublicationPhotoOpen] = React.useState(false);
+  const [publicationPhotoFirst, setPublicationPhotoFirst] = React.useState(false);
+  const [publicationNavigationDirection, setPublicationNavigationDirection] = React.useState<-1 | 0 | 1>(0);
   const [publicationDiscussionId, setPublicationDiscussionId] = React.useState<number | null>(null);
   const [publicationInitialTab, setPublicationInitialTab] = React.useState<'comments' | 'likes'>('comments');
   const [editingSocialPublication, setEditingSocialPublication] = React.useState<PublicationDto | null>(null);
@@ -2109,6 +2111,7 @@ export default function App() {
       setFocusedCommentId(null);
       void openEstablishmentPage(payload.establishment);
       setSelectedPublication(payload.publication);
+      setPublicationPhotoFirst(false); setPublicationNavigationDirection(0); setIsPublicationPhotoOpen(false);
       setFocusedPublicationCommentId(commentId);
       setIsEstablishmentPageOpen(true);
       setSocialSelectedCompanyId(`company_${payload.establishment.id}`);
@@ -3063,6 +3066,8 @@ export default function App() {
       setSelectedEstablishment(establishment);
       setProfileSwipeCompanyId(null);
       setIsPublicationPhotoOpen(photo);
+      setPublicationPhotoFirst(photo);
+      setPublicationNavigationDirection(0);
       setPublicationDiscussionId(photo ? null : publication.id);
       setPublicationInitialTab(tab);
       setSelectedPublication(publication);
@@ -3077,8 +3082,10 @@ export default function App() {
     const nextPost = selectedSocialCompanyPosts[index + direction];
     if (index < 0 || !nextPost) return;
     openSocialPost(nextPost, 'comments', isPublicationPhotoOpen);
+    setPublicationPhotoFirst(publicationPhotoFirst);
+    setPublicationNavigationDirection(direction);
     setProfileSwipeCompanyId(profileSwipeCompanyId);
-  }, [selectedPublication, profileSwipeCompanyId, selectedSocialCompany.id, selectedSocialCompanyPosts, publicationIdFromSocialPostId, openSocialPost, isPublicationPhotoOpen]);
+  }, [selectedPublication, profileSwipeCompanyId, selectedSocialCompany.id, selectedSocialCompanyPosts, publicationIdFromSocialPostId, openSocialPost, isPublicationPhotoOpen, publicationPhotoFirst]);
 
   const syncSocialPublication = React.useCallback((publication: PublicationDto) => {
     setSelectedPublication((current) => (current?.id === publication.id ? publication : current));
@@ -3621,7 +3628,7 @@ export default function App() {
                   selectedSocialCompanyPosts.find((post) => post.authorAvatarUrl)?.authorAvatarUrl
             }
             onBack={() => changeSocialTab("feed")}
-            onOpenPost={post => { openSocialPost(post); setProfileSwipeCompanyId(selectedSocialCompany.id); }}
+            onOpenPost={post => { openSocialPost(post, 'comments', true); setProfileSwipeCompanyId(selectedSocialCompany.id); }}
             onOpenCreatePost={handleOpenNewProduct}
             onEditCompany={() => setIsEditePerfilOpen(true)}
             onChangeCompanyPhoto={requestCompanyPhotoChange}
@@ -3747,6 +3754,7 @@ export default function App() {
             liked={likedPublicationIds.includes(socialPostIdFromPublicationId(selectedPublication.id))}
             saved={savedPublicationIds.includes(socialPostIdFromPublicationId(selectedPublication.id))}
             commentsCount={publicationCommentCounts[selectedPublication.id]}
+            navigationDirection={publicationNavigationDirection}
             onNavigate={profileSwipeCompanyId === selectedSocialCompany.id ? navigateProfilePublication : undefined}
             onLike={() => toggleLikedSocialPost(socialPostIdFromPublicationId(selectedPublication.id))}
             onSave={() => toggleSavedSocialPost(socialPostIdFromPublicationId(selectedPublication.id))}
@@ -3759,7 +3767,7 @@ export default function App() {
             }}
             onClose={() => {
               setIsPublicationPhotoOpen(false);
-              if (publicationDiscussionId !== selectedPublication.id) { setSelectedPublication(null); setPublicationInitialTab('comments'); setFocusedPublicationCommentId(null); }
+              if (publicationPhotoFirst || publicationDiscussionId !== selectedPublication.id) { setSelectedPublication(null); setPublicationInitialTab('comments'); setFocusedPublicationCommentId(null); }
             }}
           />}
           {(!isPublicationPhotoOpen || publicationDiscussionId === selectedPublication.id) && <div key={selectedPublication.id} hidden={isPublicationPhotoOpen}>
@@ -3771,9 +3779,11 @@ export default function App() {
             onSubmitComment={submitPublicationComment}
             focusCommentId={focusedPublicationCommentId}
             initialTab={focusedPublicationCommentId ? 'comments' : publicationInitialTab}
+            navigationDirection={publicationNavigationDirection}
             onNavigate={profileSwipeCompanyId === selectedSocialCompany.id ? navigateProfilePublication : undefined}
             onOpenPhoto={() => { setPublicationDiscussionId(selectedPublication.id); setIsPublicationPhotoOpen(true); }}
             onClose={() => {
+              if (publicationPhotoFirst) { setIsPublicationPhotoOpen(true); return; }
               setSelectedPublication(null);
               setPublicationInitialTab('comments');
               setFocusedPublicationCommentId(null);
@@ -3970,6 +3980,7 @@ export default function App() {
               window.requestAnimationFrame(() => {
                 setSelectedEstablishment(buildEstablishmentFromPublication(publication));
                 setPublicationInitialTab('comments'); setSelectedPublication(publication); setFocusedPublicationCommentId(null);
+                setPublicationPhotoFirst(false); setPublicationNavigationDirection(0); setIsPublicationPhotoOpen(false);
               });
             }}
             onRemovePublication={async id => {
@@ -3994,6 +4005,7 @@ export default function App() {
               window.requestAnimationFrame(() => {
                 setSelectedEstablishment(buildEstablishmentFromPublication(publication));
                 setSelectedPublication(publication);
+                setPublicationPhotoFirst(false); setPublicationNavigationDirection(0); setIsPublicationPhotoOpen(false);
                 setFocusedPublicationCommentId(null);
               });
             }}

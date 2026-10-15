@@ -363,6 +363,9 @@ body.ts-scroll-lock {
 
 :root { color-scheme: light; }
 body { margin: 0; background: #fff; color: #0f1419; }
+.ts-publication-enter { animation: ts-publication-enter 180ms ease-out both; }
+@keyframes ts-publication-enter { from { opacity: .45; transform: translateY(var(--ts-publication-enter-y, 28px)); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .ts-publication-enter { animation: none; } }
 .ts-link-backdrop { position: fixed; inset: 0; z-index: 100020; display: flex; align-items: flex-end; justify-content: center; background: rgb(0 0 0 / .65); backdrop-filter: blur(8px); overscroll-behavior: none; }
 .ts-link-dialog { width: 100%; max-width: 620px; max-height: 94dvh; display: flex; flex-direction: column; overflow: hidden; border-radius: 26px 26px 0 0; background: #fff; color: #0f1419; box-shadow: 0 -10px 70px rgb(0 0 0 / .2); }
 .ts-link-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; border-bottom: 1px solid #eff3f4; flex-shrink: 0; }
