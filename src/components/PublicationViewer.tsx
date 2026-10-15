@@ -378,7 +378,7 @@ export default function PublicationViewer({
         exit={{ opacity: 0, y: 24, scale: 0.98 }}
         className="grid h-[100dvh] w-full overflow-hidden bg-neutral-900 shadow-2xl sm:h-[92vh] sm:max-w-5xl sm:rounded-2xl sm:border sm:border-neutral-800 lg:grid-cols-[minmax(0,1.1fr)_380px]"
       >
-        <div className="relative h-[42dvh] overflow-hidden bg-neutral-950 sm:h-[58vh] lg:h-[92vh]"
+        <div className={`relative h-[42dvh] overflow-hidden bg-neutral-950 sm:h-[58vh] lg:h-[92vh] ${onNavigate ? "touch-none" : ""}`}
           role={onOpenPhoto ? 'button' : undefined} tabIndex={onOpenPhoto ? 0 : undefined} aria-label="Apri foto a schermo intero"
           onTouchStart={event => { const touch = event.touches.length === 1 ? event.touches[0] : null; photoTouchStart.current = touch ? { x: touch.clientX, y: touch.clientY } : null; }}
           onTouchEnd={event => {
@@ -387,9 +387,9 @@ export default function PublicationViewer({
             if (!onNavigate || !start || !event.changedTouches.length || event.touches.length) return;
             const dx = event.changedTouches[0].clientX - start.x;
             const dy = event.changedTouches[0].clientY - start.y;
-            if (Math.abs(dx) >= 65 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+            if (Math.abs(dy) >= 65 && Math.abs(dy) > Math.abs(dx) * 1.25) {
               ignorePhotoClickUntil.current = Date.now() + 350;
-              onNavigate(dx < 0 ? 1 : -1);
+              onNavigate(dy < 0 ? 1 : -1);
             }
           }}
           onTouchCancel={() => { photoTouchStart.current = null; }}
