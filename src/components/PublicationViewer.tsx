@@ -18,6 +18,7 @@ interface PublicationViewerProps {
   focusCommentId?: number | null;
   initialTab?: 'comments' | 'likes';
   onOpenPhoto?: () => void;
+  onNavigate?: (direction: -1 | 1) => void;
   onClose: () => void;
   onOpenEstablishment?: (establishmentId: number) => void;
   onDeleted?: (publicationId: number) => void;
@@ -44,12 +45,15 @@ export default function PublicationViewer({
   focusCommentId,
   initialTab = 'comments',
   onOpenPhoto,
+  onNavigate,
   onClose,
   onOpenEstablishment,
   onDeleted,
   onCommentsChanged,
 }: PublicationViewerProps) {
   const { t, locale } = useI18n();
+  const photoTouchStart = React.useRef<{ x: number; y: number } | null>(null);
+  const ignorePhotoClickUntil = React.useRef(0);
   const [interactionTab, setInteractionTab] = React.useState(initialTab);
   const [likesOpened, setLikesOpened] = React.useState(initialTab === 'likes');
   React.useEffect(() => {
@@ -376,7 +380,21 @@ export default function PublicationViewer({
       >
         <div className="relative h-[42dvh] overflow-hidden bg-neutral-950 sm:h-[58vh] lg:h-[92vh]"
           role={onOpenPhoto ? 'button' : undefined} tabIndex={onOpenPhoto ? 0 : undefined} aria-label="Apri foto a schermo intero"
-          onClick={onOpenPhoto} onKeyDown={event => { if (onOpenPhoto && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onOpenPhoto(); } }}>
+          onTouchStart={event => { const touch = event.touches.length === 1 ? event.touches[0] : null; photoTouchStart.current = touch ? { x: touch.clientX, y: touch.clientY } : null; }}
+          onTouchEnd={event => {
+            const start = photoTouchStart.current;
+            photoTouchStart.current = null;
+            if (!onNavigate || !start || !event.changedTouches.length || event.touches.length) return;
+            const dx = event.changedTouches[0].clientX - start.x;
+            const dy = event.changedTouches[0].clientY - start.y;
+            if (Math.abs(dx) >= 65 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+              ignorePhotoClickUntil.current = Date.now() + 350;
+              onNavigate(dx < 0 ? 1 : -1);
+            }
+          }}
+          onTouchCancel={() => { photoTouchStart.current = null; }}
+          onClick={() => { if (Date.now() >= ignorePhotoClickUntil.current) onOpenPhoto?.(); }}
+          onKeyDown={event => { if (onOpenPhoto && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onOpenPhoto(); } }}>
           <ProgressiveProductImage
             src={publication.imageUrl}
             alt={establishment.name}
