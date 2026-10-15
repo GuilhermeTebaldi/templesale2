@@ -5,6 +5,7 @@ import { createPublicationCapacity } from './server/publication-capacity';
 import { createPublicationDirectUpload, DirectUploadBusy } from './server/publication-direct-upload';
 import { createPublicationMonitor } from './server/publication-monitor';
 import { registerLinkPreview } from './server/link-preview';
+import { buildCompanySearch, initializeCompanySearch, searchCompanies } from './server/company-search';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { translate as translateInterface } from './src/i18n';
 import { buildLocalFeedQuery, buildPublicationPreviewsQuery, encodeFeedCursor, parseFeedCursor, parseFeedExclusions, type FeedCursor } from "./server/local-feed";
@@ -3737,10 +3738,21 @@ async function selectEstablishmentsRows(input: {
   requireLocation?: boolean;
 }): Promise<EstablishmentRecord[]> {
   const search = String(input.search ?? "").trim().toLowerCase();
-  const normalizedSearchKey = normalizeTaxonomyKey(search);
   const category = String(input.category ?? "").trim();
   const city = String(input.city ?? "").trim();
   const limit = Math.min(Math.max(Math.floor(Number(input.limit ?? 60)), 1), 100);
+
+  if (search) {
+    const built = buildCompanySearch({ ...input, search, limit }, Boolean(pgPool), {
+      publications: publicAccountRows('establishment_publications', accountArchives?.ready),
+      products: publicAccountRows('products', accountArchives?.ready),
+      users: publicAccountRows('users', accountArchives?.ready),
+      archived: Boolean(accountArchives?.ready),
+    });
+    if (pgPool) return (await searchCompanies(pgPool, built)).map(normalizeEstablishmentRow);
+    const bound = sqliteBindings(built.sql, built.values);
+    return (requireSqliteDb().prepare(bound.sql).all(...bound.values) as Record<string, unknown>[]).map(normalizeEstablishmentRow);
+  }
 
   if (pgPool) {
     const values: unknown[] = [];
@@ -3764,39 +3776,6 @@ async function selectEstablishmentsRows(input: {
     if (city) {
       whereParts.push(`LOWER(COALESCE(e.city, '')) LIKE ${addValue(`%${city.toLowerCase()}%`)}`);
     }
-    if (search) {
-      const like = addValue(`%${search}%`);
-      const exact = addValue(search);
-      const keywordExact = addValue(`%"${normalizedSearchKey || search}"%`);
-      whereParts.push(`
-        (
-          LOWER(COALESCE(e.name, '')) LIKE ${like}
-          OR LOWER(COALESCE(e.category, '')) LIKE ${like}
-          OR LOWER(COALESCE(e.city, '')) LIKE ${like}
-          OR LOWER(COALESCE(e.description, '')) LIKE ${like}
-          OR LOWER(COALESCE(e.keywords, '')) LIKE ${like}
-          OR LOWER(COALESCE(ep.caption, '')) LIKE ${like}
-          OR LOWER(COALESCE(s.name, '')) LIKE ${like}
-          OR LOWER(COALESCE(p.name, '')) LIKE ${like}
-          OR LOWER(COALESCE(p.title, '')) LIKE ${like}
-          OR LOWER(COALESCE(p.category, '')) LIKE ${like}
-          OR LOWER(COALESCE(p.description, '')) LIKE ${like}
-          OR LOWER(COALESCE(p.details, '')) LIKE ${like}
-        )
-      `);
-    }
-    const searchOrder = search
-      ? `
-        CASE
-          WHEN LOWER(COALESCE(e.name, '')) = $${values.length - 1} THEN 0
-          WHEN LOWER(COALESCE(e.category, '')) = $${values.length - 1} THEN 1
-          WHEN LOWER(COALESCE(e.keywords, '')) LIKE $${values.length} THEN 2
-          WHEN LOWER(COALESCE(e.name, '')) LIKE $${values.length - 2} THEN 3
-          WHEN LOWER(COALESCE(e.keywords, '')) LIKE $${values.length - 2} THEN 4
-          ELSE 5
-        END,
-      `
-      : "";
     let distanceOrder = "";
     if (input.latitude !== undefined && input.longitude !== undefined) {
       const latRef = addValue(input.latitude);
@@ -3825,7 +3804,7 @@ async function selectEstablishmentsRows(input: {
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
         WHERE ${whereParts.join(" AND ")}
         GROUP BY e.id
-        ORDER BY ${distanceOrder} ${searchOrder} publication_count DESC, product_count DESC, e.id DESC
+        ORDER BY ${distanceOrder} publication_count DESC, product_count DESC, e.id DESC
         LIMIT ${addValue(limit)}
       `,
       values,
@@ -3853,45 +3832,11 @@ async function selectEstablishmentsRows(input: {
     whereParts.push("LOWER(COALESCE(e.city, '')) LIKE ?");
     values.push(`%${city.toLowerCase()}%`);
   }
-  if (search) {
-    whereParts.push(`
-      (
-        LOWER(COALESCE(e.name, '')) LIKE ?
-        OR LOWER(COALESCE(e.category, '')) LIKE ?
-        OR LOWER(COALESCE(e.city, '')) LIKE ?
-        OR LOWER(COALESCE(e.description, '')) LIKE ?
-        OR LOWER(COALESCE(e.keywords, '')) LIKE ?
-        OR LOWER(COALESCE(ep.caption, '')) LIKE ?
-        OR LOWER(COALESCE(s.name, '')) LIKE ?
-        OR LOWER(COALESCE(p.name, '')) LIKE ?
-        OR LOWER(COALESCE(p.title, '')) LIKE ?
-        OR LOWER(COALESCE(p.category, '')) LIKE ?
-        OR LOWER(COALESCE(p.description, '')) LIKE ?
-        OR LOWER(COALESCE(p.details, '')) LIKE ?
-      )
-    `);
-    values.push(...Array(12).fill(`%${search}%`));
-  }
-  const sqliteSearchOrder = search
-    ? `
-        CASE
-          WHEN LOWER(COALESCE(e.name, '')) = ? THEN 0
-          WHEN LOWER(COALESCE(e.category, '')) = ? THEN 1
-          WHEN LOWER(COALESCE(e.keywords, '')) LIKE ? THEN 2
-          WHEN LOWER(COALESCE(e.name, '')) LIKE ? THEN 3
-          WHEN LOWER(COALESCE(e.keywords, '')) LIKE ? THEN 4
-          ELSE 5
-        END,
-      `
-    : "";
   const sqliteDistanceOrder = input.latitude !== undefined && input.longitude !== undefined
     ? "CASE WHEN e.latitude IS NULL OR e.longitude IS NULL THEN 1 ELSE 0 END ASC, 12742.0 * ASIN(SQRT(MIN(1.0, POWER(SIN(RADIANS(e.latitude - ?) / 2), 2) + COS(RADIANS(?)) * COS(RADIANS(e.latitude)) * POWER(SIN(RADIANS(e.longitude - ?) / 2), 2)))) ASC,"
     : "";
   if (input.latitude !== undefined && input.longitude !== undefined) {
     values.push(input.latitude, input.latitude, input.longitude);
-  }
-  if (search) {
-    values.push(search, search, `%"${normalizedSearchKey || search}"%`, `%${search}%`, `%${search}%`);
   }
   values.push(limit);
   const rows = requireSqliteDb()
@@ -3917,7 +3862,7 @@ async function selectEstablishmentsRows(input: {
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
         WHERE ${whereParts.join(" AND ")}
         GROUP BY e.id
-        ORDER BY ${sqliteDistanceOrder} ${sqliteSearchOrder} publication_count DESC, product_count DESC, e.id DESC
+        ORDER BY ${sqliteDistanceOrder} publication_count DESC, product_count DESC, e.id DESC
         LIMIT ?
       `,
     )
@@ -9939,6 +9884,9 @@ async function fetchTileFromProviders(
 
 async function bootstrap() {
   await initializeDatabase();
+  if (pgPool && !IS_DEV_REMOTE_DATABASE) {
+    void initializeCompanySearch(pgPool).catch(() => console.warn('Company search: combined search available; optional typo indexes unavailable.'));
+  }
   publicationEvolution = createPublicationEvolution(pgPool, sqliteDb);
   await publicationEvolution.initialize(IS_DEV_REMOTE_READ_ONLY);
   publicationEvolution.start();
