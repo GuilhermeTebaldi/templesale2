@@ -9,10 +9,11 @@ type Pose = { scale: number; x: number; y: number };
 const initialPose: Pose = { scale: 1, x: 0, y: 0 };
 
 export default function PublicationPhotoViewer({ publication, establishment, liked, saved, commentsCount,
-  onClose, onLike, onSave, onDiscussion, onProfile }: {
+  onClose, onLike, onSave, onDiscussion, onProfile, onNavigate }: {
   publication: PublicationDto; establishment: EstablishmentDto; liked: boolean; saved: boolean; commentsCount?: number;
   onClose: () => void; onLike: () => void; onSave: () => void;
   onDiscussion: (tab: 'comments' | 'likes') => void; onProfile: () => void;
+  onNavigate?: (direction: -1 | 1) => void;
 }) {
   const stage = React.useRef<HTMLDivElement>(null);
   const dialog = React.useRef<HTMLDivElement>(null);
@@ -24,6 +25,7 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
   const pointers = React.useRef(new Map<number, { x: number; y: number }>());
   const gesture = React.useRef({ pose: initialPose, x: 0, y: 0, distance: 0 });
   const moved = React.useRef(false);
+  const swipeStart = React.useRef<{ x: number; y: number } | null>(null);
   const lastTap = React.useRef(0);
   const close = React.useRef(onClose);
   close.current = onClose;
@@ -58,9 +60,9 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
   const pointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId);
-    if (!pointers.current.size) moved.current = false;
+    if (!pointers.current.size) { moved.current = false; swipeStart.current = { x: event.clientX, y: event.clientY }; }
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (pointers.current.size > 1) moved.current = true;
+    if (pointers.current.size > 1) { moved.current = true; swipeStart.current = null; }
     beginGesture();
   };
   const pointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -81,6 +83,17 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
   const pointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     pointers.current.delete(event.pointerId);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    const start = swipeStart.current;
+    if (!pointers.current.size) swipeStart.current = null;
+    if (event.type === 'pointerup' && !pointers.current.size && start && livePose.current.scale === 1 && onNavigate) {
+      const dx = event.clientX - start.x, dy = event.clientY - start.y;
+      if (Math.abs(dy) >= 65 && Math.abs(dy) > Math.abs(dx) * 1.25) {
+        lastTap.current = 0;
+        onNavigate(dy < 0 ? 1 : -1);
+        beginGesture();
+        return;
+      }
+    }
     if (event.type === 'pointerup' && !moved.current && !pointers.current.size) {
       const now = Date.now();
       if (now - lastTap.current < 320) { zoom(livePose.current.scale > 1 ? 1 : 2.5, { x: event.clientX, y: event.clientY }); lastTap.current = 0; }
@@ -88,6 +101,11 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
     } else lastTap.current = 0;
     beginGesture();
   };
+
+  React.useEffect(() => {
+    pointers.current.clear(); swipeStart.current = null; moved.current = false; lastTap.current = 0;
+    livePose.current = initialPose; setPose(initialPose); setMenuOpen(false); setNotice('');
+  }, [publication.id]);
 
   React.useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;

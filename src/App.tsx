@@ -378,6 +378,7 @@ export default function App() {
   const [hasMoreSelectedEstablishmentPublications, setHasMoreSelectedEstablishmentPublications] = React.useState(false);
   const [nextSelectedEstablishmentPublicationsOffset, setNextSelectedEstablishmentPublicationsOffset] = React.useState(0);
   const [selectedPublication, setSelectedPublication] = React.useState<PublicationDto | null>(null);
+  const [profileSwipeCompanyId, setProfileSwipeCompanyId] = React.useState<string | null>(null);
   const [isPublicationPhotoOpen, setIsPublicationPhotoOpen] = React.useState(false);
   const [publicationDiscussionId, setPublicationDiscussionId] = React.useState<number | null>(null);
   const [publicationInitialTab, setPublicationInitialTab] = React.useState<'comments' | 'likes'>('comments');
@@ -3060,6 +3061,7 @@ export default function App() {
       }
       const establishment = buildEstablishmentFromPublication(publication);
       setSelectedEstablishment(establishment);
+      setProfileSwipeCompanyId(null);
       setIsPublicationPhotoOpen(photo);
       setPublicationDiscussionId(photo ? null : publication.id);
       setPublicationInitialTab(tab);
@@ -3068,6 +3070,15 @@ export default function App() {
     },
     [buildEstablishmentFromPublication, publicationFeed, publicationIdFromSocialPostId, savedPublications, selectedEstablishmentPublications, likedPublications, searchPreviewPublications],
   );
+
+  const navigateProfilePublication = React.useCallback((direction: -1 | 1) => {
+    if (!selectedPublication || profileSwipeCompanyId !== selectedSocialCompany.id) return;
+    const index = selectedSocialCompanyPosts.findIndex(post => publicationIdFromSocialPostId(post.id) === selectedPublication.id);
+    const nextPost = selectedSocialCompanyPosts[index + direction];
+    if (index < 0 || !nextPost) return;
+    openSocialPost(nextPost, 'comments', isPublicationPhotoOpen);
+    setProfileSwipeCompanyId(profileSwipeCompanyId);
+  }, [selectedPublication, profileSwipeCompanyId, selectedSocialCompany.id, selectedSocialCompanyPosts, publicationIdFromSocialPostId, openSocialPost, isPublicationPhotoOpen]);
 
   const syncSocialPublication = React.useCallback((publication: PublicationDto) => {
     setSelectedPublication((current) => (current?.id === publication.id ? publication : current));
@@ -3610,7 +3621,7 @@ export default function App() {
                   selectedSocialCompanyPosts.find((post) => post.authorAvatarUrl)?.authorAvatarUrl
             }
             onBack={() => changeSocialTab("feed")}
-            onOpenPost={openSocialPost}
+            onOpenPost={post => { openSocialPost(post); setProfileSwipeCompanyId(selectedSocialCompany.id); }}
             onOpenCreatePost={handleOpenNewProduct}
             onEditCompany={() => setIsEditePerfilOpen(true)}
             onChangeCompanyPhoto={requestCompanyPhotoChange}
@@ -3736,6 +3747,7 @@ export default function App() {
             liked={likedPublicationIds.includes(socialPostIdFromPublicationId(selectedPublication.id))}
             saved={savedPublicationIds.includes(socialPostIdFromPublicationId(selectedPublication.id))}
             commentsCount={publicationCommentCounts[selectedPublication.id]}
+            onNavigate={profileSwipeCompanyId === selectedSocialCompany.id ? navigateProfilePublication : undefined}
             onLike={() => toggleLikedSocialPost(socialPostIdFromPublicationId(selectedPublication.id))}
             onSave={() => toggleSavedSocialPost(socialPostIdFromPublicationId(selectedPublication.id))}
             onDiscussion={tab => { setPublicationDiscussionId(selectedPublication.id); setPublicationInitialTab(tab); setIsPublicationPhotoOpen(false); }}
@@ -3759,6 +3771,7 @@ export default function App() {
             onSubmitComment={submitPublicationComment}
             focusCommentId={focusedPublicationCommentId}
             initialTab={focusedPublicationCommentId ? 'comments' : publicationInitialTab}
+            onNavigate={profileSwipeCompanyId === selectedSocialCompany.id ? navigateProfilePublication : undefined}
             onOpenPhoto={() => { setPublicationDiscussionId(selectedPublication.id); setIsPublicationPhotoOpen(true); }}
             onClose={() => {
               setSelectedPublication(null);
