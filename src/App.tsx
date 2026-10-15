@@ -379,6 +379,7 @@ export default function App() {
   const [nextSelectedEstablishmentPublicationsOffset, setNextSelectedEstablishmentPublicationsOffset] = React.useState(0);
   const [selectedPublication, setSelectedPublication] = React.useState<PublicationDto | null>(null);
   const [profileGalleryCompanyId, setProfileGalleryCompanyId] = React.useState<string | null>(null);
+  const pendingProfileGalleryAdvance = React.useRef<number | null>(null);
   const [isPublicationPhotoOpen, setIsPublicationPhotoOpen] = React.useState(false);
   const [publicationDiscussionId, setPublicationDiscussionId] = React.useState<number | null>(null);
   const [publicationInitialTab, setPublicationInitialTab] = React.useState<'comments' | 'likes'>('comments');
@@ -1805,6 +1806,7 @@ export default function App() {
     setHasMoreSelectedEstablishmentPublications(false);
     setNextSelectedEstablishmentPublicationsOffset(0);
     setSelectedPublication(null);
+    setProfileGalleryCompanyId(null);
     setFocusedPublicationCommentId(null);
     if (typeof window !== "undefined" && window.location.pathname.startsWith("/attivita/")) {
       window.history.replaceState({}, "", "/");
@@ -2108,6 +2110,7 @@ export default function App() {
       setSelectedProduct(null);
       setFocusedCommentId(null);
       void openEstablishmentPage(payload.establishment);
+      setProfileGalleryCompanyId(null);
       setSelectedPublication(payload.publication);
       setFocusedPublicationCommentId(commentId);
       setIsEstablishmentPageOpen(true);
@@ -3062,6 +3065,7 @@ export default function App() {
       const establishment = buildEstablishmentFromPublication(publication);
       setSelectedEstablishment(establishment);
       setProfileGalleryCompanyId(null);
+      pendingProfileGalleryAdvance.current = null;
       setIsPublicationPhotoOpen(photo);
       setPublicationDiscussionId(photo ? null : publication.id);
       setPublicationInitialTab(tab);
@@ -3082,6 +3086,13 @@ export default function App() {
       post => publicationIdFromSocialPostId(post.id) === selectedPublication.id,
     );
     const nextPost = selectedSocialCompanyPosts[index + direction];
+    if (index >= 0 && !nextPost && direction === 1 &&
+      profilePublicationsEstablishmentId === selectedPublication.establishmentId &&
+      hasMoreSelectedEstablishmentPublications && !isLoadingMoreSelectedEstablishmentPublications) {
+      pendingProfileGalleryAdvance.current = selectedPublication.id;
+      void loadMoreSelectedEstablishmentPublications();
+      return;
+    }
     if (index < 0 || !nextPost) return;
     const nextId = publicationIdFromSocialPostId(nextPost.id);
     const nextPublication = [...selectedEstablishmentPublications, ...publicationFeed, ...savedPublications, ...likedPublications, ...searchPreviewPublications]
@@ -3093,7 +3104,27 @@ export default function App() {
     setFocusedPublicationCommentId(null);
   }, [selectedPublication, profileGalleryCompanyId, selectedSocialCompany.id, selectedSocialCompanyPosts,
     publicationIdFromSocialPostId, selectedEstablishmentPublications, publicationFeed, savedPublications,
-    likedPublications, searchPreviewPublications]);
+    likedPublications, searchPreviewPublications, profilePublicationsEstablishmentId,
+    hasMoreSelectedEstablishmentPublications, isLoadingMoreSelectedEstablishmentPublications,
+    loadMoreSelectedEstablishmentPublications]);
+
+  React.useEffect(() => {
+    const pendingId = pendingProfileGalleryAdvance.current;
+    if (pendingId === null) return;
+    if (selectedPublication?.id !== pendingId || profileGalleryCompanyId !== selectedSocialCompany.id) {
+      pendingProfileGalleryAdvance.current = null;
+      return;
+    }
+    const index = selectedSocialCompanyPosts.findIndex(post => publicationIdFromSocialPostId(post.id) === pendingId);
+    if (index >= 0 && selectedSocialCompanyPosts[index + 1]) {
+      pendingProfileGalleryAdvance.current = null;
+      navigateProfileGallery(1);
+    } else if (profilePublicationsError || (!isLoadingMoreSelectedEstablishmentPublications && !hasMoreSelectedEstablishmentPublications)) {
+      pendingProfileGalleryAdvance.current = null;
+    }
+  }, [selectedPublication, profileGalleryCompanyId, selectedSocialCompany.id, selectedSocialCompanyPosts,
+    publicationIdFromSocialPostId, navigateProfileGallery, profilePublicationsError,
+    isLoadingMoreSelectedEstablishmentPublications, hasMoreSelectedEstablishmentPublications]);
 
   const syncSocialPublication = React.useCallback((publication: PublicationDto) => {
     setSelectedPublication((current) => (current?.id === publication.id ? publication : current));
@@ -3159,6 +3190,7 @@ export default function App() {
         return;
       }
       setSelectedPublication(null);
+      setProfileGalleryCompanyId(null);
       setFocusedPublicationCommentId(null);
       setEditingSocialPublication(publication);
     },
@@ -3812,6 +3844,7 @@ export default function App() {
               const deletedPublication =
                 selectedPublication?.id === publicationId ? selectedPublication : null;
               setSelectedPublication(null);
+              setProfileGalleryCompanyId(null);
               setFocusedPublicationCommentId(null);
               removePublicationFromLocalState(publicationId, deletedPublication);
               refreshEstablishments();
@@ -3985,6 +4018,7 @@ export default function App() {
               setIsSavedPublicationsOpen(false);
               window.requestAnimationFrame(() => {
                 setSelectedEstablishment(buildEstablishmentFromPublication(publication));
+                setProfileGalleryCompanyId(null);
                 setPublicationInitialTab('comments'); setSelectedPublication(publication); setFocusedPublicationCommentId(null);
               });
             }}
@@ -4009,6 +4043,7 @@ export default function App() {
               setIsCurtidasOpen(false);
               window.requestAnimationFrame(() => {
                 setSelectedEstablishment(buildEstablishmentFromPublication(publication));
+                setProfileGalleryCompanyId(null);
                 setSelectedPublication(publication);
                 setFocusedPublicationCommentId(null);
               });
