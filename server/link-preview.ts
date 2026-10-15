@@ -5,7 +5,7 @@ import { request as httpsRequest } from 'node:https';
 import type { Express } from 'express';
 import { sharedLink } from '../src/lib/shared-links';
 
-type Preview = { title: string; description: string; image?: string };
+type Preview = { title: string; description: string; image?: string; imageKind?: 'cover' | 'icon' };
 const resolver = new Resolver({ timeout: 1500, tries: 1 });
 const cache = new Map<string, { expires: number; data: Preview | null }>();
 const pending = new Map<string, Promise<Preview | null>>();
@@ -84,6 +84,14 @@ function decode(value: string, max: number) {
   }).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
+function attributes(tag: string) {
+  const attrs = new Map<string, string>();
+  for (const match of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g)) {
+    attrs.set(match[1].toLowerCase(), match[2] ?? match[3] ?? match[4]);
+  }
+  return attrs;
+}
+
 async function loadPreview(url: URL): Promise<Preview | null> {
   try {
     const signal = AbortSignal.timeout(6000);
@@ -91,24 +99,33 @@ async function loadPreview(url: URL): Promise<Preview | null> {
     const tags = new Map<string, string>();
     const head = page.html.split(/<\/head\s*>/i)[0];
     for (const tag of head.match(/<meta\s[^>]{0,8192}>/gi) ?? []) {
-      const attrs = new Map<string, string>();
-      for (const match of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g)) {
-        attrs.set(match[1].toLowerCase(), match[2] ?? match[3] ?? match[4]);
-      }
+      const attrs = attributes(tag);
       const name = (attrs.get('property') ?? attrs.get('name') ?? '').toLowerCase();
       if (name && !tags.has(name)) tags.set(name, attrs.get('content') ?? '');
     }
     const title = decode(tags.get('og:title') || tags.get('twitter:title') || head.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '', 180);
     const description = decode(tags.get('og:description') || tags.get('description') || tags.get('twitter:description') || '', 280);
     let image: string | undefined;
+    let imageKind: Preview['imageKind'];
     const rawImage = tags.get('og:image:secure_url') || tags.get('og:image') || tags.get('twitter:image');
-    if (rawImage) {
+    const icons = (head.match(/<link\s[^>]{0,8192}>/gi) ?? []).map(attributes)
+      .filter(attrs => /(?:^|\s)(?:icon|apple-touch-icon)(?:\s|$)/i.test(attrs.get('rel') ?? ''))
+      .sort((a, b) => Number((b.get('rel') ?? '').includes('apple-touch-icon')) - Number((a.get('rel') ?? '').includes('apple-touch-icon')));
+    const candidates: { raw: string; kind: 'cover' | 'icon' }[] = [
+      ...(rawImage ? [{ raw: rawImage, kind: 'cover' as const }] : []),
+      ...icons.slice(0, 3).map(attrs => ({ raw: attrs.get('href') ?? '', kind: 'icon' as const })),
+    ];
+    for (const entry of candidates) {
+      if (!entry.raw) continue;
       try {
-        const candidate = sharedLink(new URL(decode(rawImage, 2048), page.url).href);
-        if (candidate?.protocol === 'https:') { await destination(candidate); signal.throwIfAborted(); image = candidate.href; }
+        const candidate = sharedLink(new URL(decode(entry.raw, 2048), page.url).href);
+        if (candidate?.protocol === 'https:') {
+          await destination(candidate); signal.throwIfAborted();
+          image = candidate.href; imageKind = entry.kind; break;
+        }
       } catch { /* Metadata remains useful without an image. */ }
     }
-    return title || description ? { title, description, image } : null;
+    return title || description || image ? { title, description, image, imageKind } : null;
   } catch { return null; }
 }
 

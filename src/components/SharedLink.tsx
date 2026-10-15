@@ -99,14 +99,14 @@ export function LinkPreviewDialog({ href, onClose, returnFocus }: { href: string
           <button ref={closeButton} type="button" onClick={onClose} aria-label="Chiudi anteprima"><X size={23} /></button>
         </header>
         <div className="ts-link-content">
-          <div className="ts-link-hero">
+          <div className={`ts-link-hero${data?.imageKind === 'icon' ? ' ts-link-hero-icon' : ''}`}>
             {image && brokenImage !== image ? <img src={image} alt="" referrerPolicy="no-referrer" onError={() => setBrokenImage(image)} /> :
-              <div className="ts-link-placeholder">{loading ? <LoaderCircle size={36} className="animate-spin motion-reduce:animate-none" /> : <Globe size={52} strokeWidth={1.2} />}<span>{domain}</span></div>}
+              <div className={`ts-link-placeholder${loading ? '' : ' ts-link-placeholder-compact'}`}>{loading ? <LoaderCircle size={36} className="animate-spin motion-reduce:animate-none" /> : <Globe size={52} strokeWidth={1.2} />}<span>{domain}</span></div>}
           </div>
           <section className="ts-link-details">
             <div className="ts-link-domain"><ExternalLink size={14} /><span>{domain}</span></div>
             <h2 id={titleId}>{data?.title || domain}</h2>
-            <p role="status" aria-live="polite">{loading ? 'Caricamento anteprima…' : data?.description || (data ? 'Apri il sito per leggere il contenuto completo.' : 'Anteprima non disponibile. Puoi comunque aprire il sito.')}</p>
+            <p role="status" aria-live="polite">{loading ? 'Caricamento anteprima…' : data?.description || (data ? 'Questo sito non fornisce una descrizione per l’anteprima. Aprilo per vedere il contenuto completo.' : 'Anteprima non disponibile. Puoi comunque aprire il sito.')}</p>
           </section>
         </div>
         <footer className="ts-link-footer">

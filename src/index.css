@@ -371,8 +371,11 @@ body { margin: 0; background: #fff; color: #0f1419; }
 .ts-link-content { overflow-y: auto; min-height: 0; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .ts-link-hero { background: #f4f7f9; overflow: hidden; }
 .ts-link-hero img { display: block; width: 100%; max-height: min(45dvh, 420px); object-fit: contain; }
+.ts-link-hero-icon { display: grid; place-items: center; padding: 28px; background: linear-gradient(145deg, #e8f3fc, #f4f7f9 65%); }
+.ts-link-hero-icon img { width: 96px; height: 96px; object-fit: contain; border-radius: 20px; }
 .ts-link-placeholder { min-height: min(29dvh, 240px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; color: #536471; background: linear-gradient(145deg, #e8f3fc, #f4f7f9 65%); }
 .ts-link-placeholder span { max-width: 100%; overflow-wrap: anywhere; font-size: 14px; }
+.ts-link-placeholder-compact { min-height: 130px; }
 .ts-link-details { padding: 22px 22px 26px; }
 .ts-link-domain { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; color: #536471; font-size: 12px; overflow-wrap: anywhere; }
 .ts-link-domain svg { flex-shrink: 0; }
