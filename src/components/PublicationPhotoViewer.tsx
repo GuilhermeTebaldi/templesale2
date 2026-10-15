@@ -87,9 +87,9 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
     if (!pointers.current.size) swipeStart.current = null;
     if (event.type === 'pointerup' && !pointers.current.size && start && livePose.current.scale === 1 && onNavigate) {
       const dx = event.clientX - start.x, dy = event.clientY - start.y;
-      if (Math.abs(dx) >= 65 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+      if (Math.abs(dy) >= 65 && Math.abs(dy) > Math.abs(dx) * 1.25) {
         lastTap.current = 0;
-        onNavigate(dx < 0 ? 1 : -1);
+        onNavigate(dy < 0 ? 1 : -1);
         beginGesture();
         return;
       }
