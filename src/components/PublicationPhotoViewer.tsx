@@ -9,11 +9,12 @@ type Pose = { scale: number; x: number; y: number };
 const initialPose: Pose = { scale: 1, x: 0, y: 0 };
 
 export default function PublicationPhotoViewer({ publication, establishment, liked, saved, commentsCount,
-  onClose, onLike, onSave, onDiscussion, onProfile, onNavigate }: {
+  onClose, onLike, onSave, onDiscussion, onProfile, onNavigate, navigationDirection = 0 }: {
   publication: PublicationDto; establishment: EstablishmentDto; liked: boolean; saved: boolean; commentsCount?: number;
   onClose: () => void; onLike: () => void; onSave: () => void;
   onDiscussion: (tab: 'comments' | 'likes') => void; onProfile: () => void;
   onNavigate?: (direction: -1 | 1) => void;
+  navigationDirection?: -1 | 0 | 1;
 }) {
   const stage = React.useRef<HTMLDivElement>(null);
   const dialog = React.useRef<HTMLDivElement>(null);
@@ -158,7 +159,9 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
         onPointerUp={pointerUp} onPointerCancel={pointerUp} onDoubleClick={event => event.preventDefault()}
         onLoadCapture={() => applyPose(livePose.current)}>
         <div className="ts-photo-plane" style={{ transform: `translate(${pose.x}px, ${pose.y}px) scale(${pose.scale})` }}>
+          <div key={publication.id} className={`relative h-full w-full${navigationDirection ? ' ts-publication-enter' : ''}`} style={{ '--ts-publication-enter-y': `${navigationDirection * 28}px` } as React.CSSProperties}>
           <ProgressiveProductImage src={publication.imageUrl} alt={`Foto di ${establishment.name}`} loading="eager" fetchPriority="high" variant="full" className="h-full w-full object-contain pointer-events-none select-none" />
+          </div>
         </div>
       </div>
       <footer className="ts-photo-footer">

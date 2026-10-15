@@ -19,6 +19,7 @@ interface PublicationViewerProps {
   initialTab?: 'comments' | 'likes';
   onOpenPhoto?: () => void;
   onNavigate?: (direction: -1 | 1) => void;
+  navigationDirection?: -1 | 0 | 1;
   onClose: () => void;
   onOpenEstablishment?: (establishmentId: number) => void;
   onDeleted?: (publicationId: number) => void;
@@ -46,6 +47,7 @@ export default function PublicationViewer({
   initialTab = 'comments',
   onOpenPhoto,
   onNavigate,
+  navigationDirection = 0,
   onClose,
   onOpenEstablishment,
   onDeleted,
@@ -395,6 +397,7 @@ export default function PublicationViewer({
           onTouchCancel={() => { photoTouchStart.current = null; }}
           onClick={() => { if (Date.now() >= ignorePhotoClickUntil.current) onOpenPhoto?.(); }}
           onKeyDown={event => { if (onOpenPhoto && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onOpenPhoto(); } }}>
+          <div key={publication.id} className={`relative h-full w-full${navigationDirection ? ' ts-publication-enter' : ''}`} style={{ '--ts-publication-enter-y': `${navigationDirection * 28}px` } as React.CSSProperties}>
           <ProgressiveProductImage
             src={publication.imageUrl}
             alt={establishment.name}
@@ -403,6 +406,7 @@ export default function PublicationViewer({
             variant="full"
             className="relative h-full w-full object-contain"
           />
+          </div>
         </div>
         <div className="flex min-h-0 flex-1 flex-col border-l border-neutral-800 bg-neutral-900 lg:h-[92vh]">
           <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-5 py-4">
