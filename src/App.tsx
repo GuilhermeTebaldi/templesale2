@@ -3076,14 +3076,9 @@ export default function App() {
     const index = selectedSocialCompanyPosts.findIndex(post => publicationIdFromSocialPostId(post.id) === selectedPublication.id);
     const nextPost = selectedSocialCompanyPosts[index + direction];
     if (index < 0 || !nextPost) return;
-    const nextId = publicationIdFromSocialPostId(nextPost.id);
-    const next = selectedEstablishmentPublications.find(item => item.id === nextId);
-    if (!next) return;
-    setSelectedPublication(next);
-    setPublicationDiscussionId(isPublicationPhotoOpen ? null : next.id);
-    setPublicationInitialTab('comments');
-    setFocusedPublicationCommentId(null);
-  }, [selectedPublication, profileSwipeCompanyId, selectedSocialCompany.id, selectedSocialCompanyPosts, publicationIdFromSocialPostId, selectedEstablishmentPublications, isPublicationPhotoOpen]);
+    openSocialPost(nextPost, 'comments', isPublicationPhotoOpen);
+    setProfileSwipeCompanyId(profileSwipeCompanyId);
+  }, [selectedPublication, profileSwipeCompanyId, selectedSocialCompany.id, selectedSocialCompanyPosts, publicationIdFromSocialPostId, openSocialPost, isPublicationPhotoOpen]);
 
   const syncSocialPublication = React.useCallback((publication: PublicationDto) => {
     setSelectedPublication((current) => (current?.id === publication.id ? publication : current));
