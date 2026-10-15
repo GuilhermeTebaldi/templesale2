@@ -52,6 +52,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [hasObservedGlobalLoading, setHasObservedGlobalLoading] = React.useState(false);
   const [canFallbackBrandIntroStart, setCanFallbackBrandIntroStart] = React.useState(false);
   const [isMobileKeyboardOpen, setIsMobileKeyboardOpen] = React.useState(false);
+  const mobileBottomNavRef = React.useRef<HTMLElement | null>(null);
   const isGlobalLoadingVisible = React.useSyncExternalStore(
     subscribeNetworkLoading,
     getNetworkLoadingSnapshot,
@@ -122,6 +123,9 @@ export const Header: React.FC<HeaderProps> = ({
           window.innerHeight - viewport.height > 150,
       );
       setIsMobileKeyboardOpen((current) => (current === keyboardOpen ? current : keyboardOpen));
+      if (viewport && mobileBottomNavRef.current) {
+        mobileBottomNavRef.current.style.bottom = `${Math.round(window.innerHeight - viewport.height - viewport.offsetTop)}px`;
+      }
     };
 
     const scheduleKeyboardState = () => {
@@ -136,6 +140,8 @@ export const Header: React.FC<HeaderProps> = ({
 
     updateKeyboardState();
     window.visualViewport?.addEventListener('resize', scheduleKeyboardState);
+    window.visualViewport?.addEventListener('scroll', scheduleKeyboardState);
+    window.addEventListener('scroll', scheduleKeyboardState, { passive: true });
     window.addEventListener('resize', scheduleKeyboardState);
     window.addEventListener('orientationchange', scheduleKeyboardState);
     window.addEventListener('focusin', scheduleKeyboardState);
@@ -146,6 +152,8 @@ export const Header: React.FC<HeaderProps> = ({
         window.cancelAnimationFrame(frameId);
       }
       window.visualViewport?.removeEventListener('resize', scheduleKeyboardState);
+      window.visualViewport?.removeEventListener('scroll', scheduleKeyboardState);
+      window.removeEventListener('scroll', scheduleKeyboardState);
       window.removeEventListener('resize', scheduleKeyboardState);
       window.removeEventListener('orientationchange', scheduleKeyboardState);
       window.removeEventListener('focusin', scheduleKeyboardState);
@@ -514,10 +522,11 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
       <nav
+        ref={mobileBottomNavRef}
         id="mobile-bottom-nav"
-        className={`sm:hidden fixed inset-x-0 bottom-0 z-50 bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 px-2 flex items-center justify-around ${
+        className={`sm:hidden fixed inset-x-0 bottom-0 z-50 bg-neutral-900/95 border-t border-neutral-800 px-2 flex items-center justify-around ${
           hasRegisteredAccount ? 'pt-1 pb-2' : 'py-1'
-        } ${isMobileKeyboardOpen ? 'pointer-events-none translate-y-full opacity-0' : 'translate-y-0 opacity-100'} transition-[opacity,transform] duration-150`}
+        } ${isMobileKeyboardOpen ? 'pointer-events-none invisible opacity-0' : 'visible opacity-100'} transition-opacity duration-150`}
       >
         {/* Feed Tab */}
         <button
