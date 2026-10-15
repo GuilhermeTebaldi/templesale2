@@ -92,8 +92,8 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
     const distanceX = event.clientX - gesture.current.x;
     const distanceY = event.clientY - gesture.current.y;
     const swipe = event.type === 'pointerup' && singlePointer && onNavigate &&
-      gesture.current.pose.scale === 1 && Math.abs(distanceX) > 70 &&
-      Math.abs(distanceX) > Math.abs(distanceY) * 1.5;
+      gesture.current.pose.scale === 1 && Math.abs(distanceY) > 70 &&
+      Math.abs(distanceY) > Math.abs(distanceX) * 1.5;
     pointers.current.delete(event.pointerId);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     if (event.type === 'pointerup' && !moved.current && !pointers.current.size) {
@@ -102,7 +102,7 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
       else lastTap.current = now;
     } else lastTap.current = 0;
     beginGesture();
-    if (swipe) onNavigate(distanceX < 0 ? 1 : -1);
+    if (swipe) onNavigate(distanceY < 0 ? 1 : -1);
   };
 
   React.useEffect(() => {
