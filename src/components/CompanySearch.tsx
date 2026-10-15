@@ -18,7 +18,7 @@ interface CompanySearchProps {
   origin?: { lat: number; lng: number };
 }
 
-const QUICK_TAGS = ['bar', 'pizza', 'barbeiro', 'Ardea', 'birra', 'motor', 'café', 'moda'];
+const QUICK_TAGS = ['bar', 'pizza', 'barbiere', 'Ardea', 'birra', 'motori', 'caffè', 'moda'];
 
 function normalizeSearchTerm(value: string): string {
   return String(value ?? "")
