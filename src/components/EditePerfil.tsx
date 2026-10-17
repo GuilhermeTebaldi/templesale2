@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { CheckCircle2, Image as ImageIcon, Mail, MapPin, Navigation, Save, Store, User, X } from "lucide-react";
 import {
@@ -134,6 +135,12 @@ export default function EditePerfil({
   const [businessCategorySuggestions, setBusinessCategorySuggestions] = React.useState<TaxonomySuggestionDto[]>([]);
   const [keywordInput, setKeywordInput] = React.useState("");
   const [errorMessage, setErrorMessage] = React.useState("");
+  const [confirmClose, setConfirmClose] = React.useState(false);
+  const form = React.useRef<HTMLFormElement>(null);
+  const continueButton = React.useRef<HTMLButtonElement>(null);
+  const confirmation = React.useRef<HTMLDivElement>(null);
+  const saving = React.useRef(false);
+  const confirmationTitle = React.useId();
   const [formData, setFormData] = React.useState({
     name: initialData?.name || "",
     establishmentName: initialEstablishment?.name || "",
@@ -158,8 +165,14 @@ export default function EditePerfil({
         : "",
   });
 
+  const baseline = React.useRef(JSON.stringify(formData));
+  const hasChanges = JSON.stringify(formData) !== baseline.current || Boolean(keywordInput.trim());
+  const dirty = React.useRef(hasChanges);
+  dirty.current = hasChanges;
+
   React.useEffect(() => {
-    setFormData({
+    if (dirty.current || saving.current) return;
+    const next = {
       name: initialData?.name || "",
       establishmentName: initialEstablishment?.name || "",
       establishmentCategory: initialEstablishment?.category || "Altro",
@@ -181,7 +194,9 @@ export default function EditePerfil({
         typeof initialEstablishment?.longitude === "number"
           ? String(initialEstablishment.longitude)
           : "",
-    });
+    };
+    baseline.current = JSON.stringify(next);
+    setFormData(next);
     setErrorMessage(initialErrorMessage);
     setKeywordInput("");
     setLocationStatus(
@@ -197,6 +212,56 @@ export default function EditePerfil({
         : null,
     );
   }, [initialData, initialEstablishment, initialErrorMessage]);
+
+  const requestClose = React.useCallback(() => {
+    if (saving.current) return;
+    if (isMapPickerOpen) { setIsMapPickerOpen(false); return; }
+    if (hasChanges) setConfirmClose(true);
+    else onClose();
+  }, [hasChanges, isMapPickerOpen, onClose]);
+
+  React.useEffect(() => {
+    const url = window.location.href;
+    const state = window.history.state;
+    const pop = (event: PopStateEvent) => {
+      if (hasChanges || saving.current || isMapPickerOpen) {
+        event.stopImmediatePropagation();
+        window.history.pushState(state, '', url);
+      }
+      requestClose();
+    };
+    const unload = (event: BeforeUnloadEvent) => {
+      if (dirty.current || saving.current) { event.preventDefault(); event.returnValue = ''; }
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (confirmClose) setConfirmClose(false); else requestClose();
+      }
+      if (confirmClose && event.key === 'Tab') {
+        const buttons = confirmation.current?.querySelectorAll<HTMLButtonElement>('button');
+        const first = buttons?.[0], last = buttons?.[buttons.length - 1];
+        if (first && last && (event.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+          event.preventDefault(); (event.shiftKey ? last : first).focus();
+        }
+      }
+    };
+    window.addEventListener('popstate', pop, true);
+    window.addEventListener('beforeunload', unload);
+    document.addEventListener('keydown', key, true);
+    return () => {
+      window.removeEventListener('popstate', pop, true);
+      window.removeEventListener('beforeunload', unload);
+      document.removeEventListener('keydown', key, true);
+    };
+  }, [hasChanges, isMapPickerOpen, confirmClose, requestClose]);
+
+  React.useEffect(() => {
+    if (!confirmClose) return;
+    const previous = document.activeElement as HTMLElement | null;
+    continueButton.current?.focus();
+    return () => { requestAnimationFrame(() => { if (previous?.isConnected) previous.focus({ preventScroll: true }); }); };
+  }, [confirmClose]);
 
   const selectedLocation = React.useMemo(
     () => parseGeoPoint(formData.latitude, formData.longitude),
@@ -415,6 +480,7 @@ export default function EditePerfil({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving.current) return;
     setErrorMessage("");
 
     const normalizedName = formData.name.trim();
@@ -450,6 +516,7 @@ export default function EditePerfil({
       return;
     }
 
+    saving.current = true;
     setIsSaving(true);
     try {
       const pendingKeywords = String(keywordInput ?? "").trim()
@@ -487,12 +554,14 @@ export default function EditePerfil({
         whatsappNumber: profilePayload.whatsappNumber,
         phone: profilePayload.whatsappNumber,
       });
+      dirty.current = false;
       onClose();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : t("Falha ao salvar o perfil.");
       setErrorMessage(message);
     } finally {
+      saving.current = false;
       setIsSaving(false);
     }
   };
@@ -505,18 +574,19 @@ export default function EditePerfil({
       transition={{ type: "spring", damping: 30, stiffness: 300 }}
       className="ts-profile-editor fixed inset-0 z-150 bg-neutral-950 text-neutral-100 flex flex-col"
     >
+      <div className="contents" inert={confirmClose || isSaving}>
       <div className="p-5 sm:p-8 flex justify-between items-center border-b border-neutral-800 bg-neutral-900/95 backdrop-blur-md">
         <div className="flex items-center gap-4">
           <User className="w-6 h-6 text-amber-400" />
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{t("Editar perfil da empresa")}</h2>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full transition-colors">
+        <button type="button" onClick={requestClose} aria-label="Chiudi modifica profilo" className="p-2 hover:bg-neutral-800 rounded-full transition-colors">
           <X className="w-6 h-6 text-neutral-300" />
         </button>
       </div>
 
       <div className="grow overflow-y-auto overscroll-contain p-4 sm:p-8">
-        <form onSubmit={handleSubmit} className="max-w-xl mx-auto space-y-8">
+        <form ref={form} onSubmit={handleSubmit} className="max-w-xl mx-auto space-y-8">
           <div className="space-y-6">
             <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-2xl">
               <div className="flex items-start justify-between gap-4">
@@ -671,13 +741,13 @@ export default function EditePerfil({
                       {formData.establishmentKeywords.map((keyword) => (
                         <span
                           key={normalizeTaxonomyLabel(keyword)}
-                          className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-xs text-amber-100"
+                          className="ts-profile-keyword inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs"
                         >
                           {keyword}
                           <button
                             type="button"
                             onClick={() => removeKeyword(keyword)}
-                            className="text-amber-200/70 transition-colors hover:text-red-300"
+                            className="transition-colors"
                             aria-label={t("Remover palavra-chave")}
                           >
                             <X className="h-3 w-3" />
@@ -933,6 +1003,20 @@ export default function EditePerfil({
           />
         )}
       </AnimatePresence>
+      </div>
+      {confirmClose && createPortal(
+        <div className="ts-link-backdrop ts-profile-unsaved-backdrop">
+          <div ref={confirmation} role="alertdialog" aria-modal="true" aria-labelledby={confirmationTitle} className="ts-link-dialog">
+            <header className="ts-link-header"><h2 id={confirmationTitle} className="text-lg font-semibold">Salvare le modifiche?</h2></header>
+            <div className="ts-link-details"><p>Hai modifiche non salvate. Puoi salvarle prima di uscire oppure continuare a modificare il profilo.</p></div>
+            <div className="ts-link-footer ts-profile-unsaved-actions">
+              <button type="button" className="ts-link-open" onClick={() => { setConfirmClose(false); requestAnimationFrame(() => form.current?.requestSubmit()); }}>Salva ed esci</button>
+              <button type="button" className="ts-profile-discard" onClick={onClose}>Esci senza salvare</button>
+              <button ref={continueButton} type="button" onClick={() => setConfirmClose(false)}>Continua a modificare</button>
+            </div>
+          </div>
+        </div>, document.body,
+      )}
     </motion.div>
   );
 }

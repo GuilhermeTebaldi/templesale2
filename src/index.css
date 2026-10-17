@@ -417,6 +417,13 @@ body { margin: 0; background: #fff; color: #0f1419; }
  :is([class*="bg-black/"], [class~="bg-stone-900"], [class~="bg-stone-950"], [class~="bg-blue-500"], [class~="bg-blue-600"], [class~="bg-red-600"], [class~="bg-emerald-600"]):is(.text-white, .text-neutral-100, .text-neutral-200) { color: #fff; }
 .ts-profile-editor :is(input, textarea, select) { color: #0f1419; border-color: #cfd9de; }
 .ts-profile-editor label { color: #536471; }
+.ts-profile-editor .ts-profile-keyword { background: #fff7df; border-color: #e8c777; color: #694600; font-weight: 600; }
+.ts-profile-keyword button { color: #694600; }
+.ts-profile-keyword button:hover { color: #b91c1c; }
+.ts-profile-unsaved-backdrop { z-index: 100030; }
+.ts-profile-unsaved-actions { display: grid; gap: 10px; }
+.ts-profile-unsaved-actions button { min-height: 46px; cursor: pointer; }
+.ts-profile-unsaved-actions .ts-profile-discard { color: #b91c1c; border: 1px solid #e6ecf0; border-radius: 999px; }
 .ts-profile-editor :is(input, textarea)::placeholder { color: #637381; }
 .ts-profile-editor :is(input, textarea, select):focus { border-color: #1d9bf0; }
 .leaflet-container { background-color: #f3f5f7 !important; }
