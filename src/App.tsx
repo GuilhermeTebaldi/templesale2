@@ -11,6 +11,7 @@ import NewProduct from "./components/NewProduct";
 import NewPublication from "./components/NewPublication";
 import PublicationViewer from "./components/PublicationViewer";
 import PublicationPhotoViewer from './components/PublicationPhotoViewer';
+import ProfilePhotoViewer, { ProfilePhotoContext, type ProfilePhoto } from './components/ProfilePhotoViewer';
 import { LinkPreviewContext, LinkPreviewDialog } from './components/SharedLink';
 import EditPublicationModal from "./components/EditPublicationModal";
 import { Header as SocialHeader } from "./components/Header";
@@ -427,6 +428,7 @@ export default function App() {
   const [productsError, setProductsError] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [previewLink, setPreviewLink] = React.useState<string | null>(null);
+  const [profilePhoto, setProfilePhoto] = React.useState<ProfilePhoto | null>(null);
   const previewLinkOrigin = React.useRef<HTMLElement | null>(null);
   const openLinkPreview = React.useCallback((href: string) => {
     previewLinkOrigin.current = document.activeElement as HTMLElement | null;
@@ -488,6 +490,7 @@ export default function App() {
     Boolean(selectedProduct) ||
     Boolean(selectedPublication) ||
     Boolean(previewLink) ||
+    Boolean(profilePhoto) ||
     isCurtidasOpen || isSavedPublicationsOpen ||
     (hasMemberAccess &&
       ((isNewProductOpen && pendingPublicationCount === 0) ||
@@ -3460,7 +3463,8 @@ export default function App() {
 
   return (
     <LinkPreviewContext.Provider value={openLinkPreview}>
-    <div inert={Boolean(currentUser && !termsAccess) || isTermsOpen || Boolean(previewLink)} className="min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
+    <ProfilePhotoContext.Provider value={setProfilePhoto}>
+    <div inert={Boolean(currentUser && !termsAccess) || isTermsOpen || Boolean(previewLink) || Boolean(profilePhoto)} className="min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
       <TermsDialog key={currentUser?.id ?? "visitor"} user={currentUser} locale="it-IT"
         open={isTermsOpen} introComplete={!isPostAuthIntroOpen} companyName={myEstablishment?.name} onClose={() => setIsTermsOpen(false)}
         onAccess={setTermsAccess} onReject={handleLogout}
@@ -4077,6 +4081,8 @@ export default function App() {
       </AnimatePresence>
     </div>
     {previewLink && <LinkPreviewDialog href={previewLink} returnFocus={previewLinkOrigin.current} onClose={() => setPreviewLink(null)} />}
+    {profilePhoto && <ProfilePhotoViewer photo={profilePhoto} onClose={() => setProfilePhoto(null)} />}
+    </ProfilePhotoContext.Provider>
     </LinkPreviewContext.Provider>
   );
 

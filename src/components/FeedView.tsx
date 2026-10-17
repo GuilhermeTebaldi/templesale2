@@ -19,6 +19,7 @@ import { distanceMeters, isValidGeoPoint } from '../lib/discovery-location';
 import { TempleSaleLikeIcon } from './TempleSaleLikeIcon';
 import { ProgressiveProductImage } from './ProductCard';
 import { LinkedText } from './SharedLink';
+import { ProfilePhotoButton } from './ProfilePhotoViewer';
 
 interface FeedViewProps {
   isActive?: boolean;
@@ -531,7 +532,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   className="flex items-center space-x-2.5 cursor-pointer group min-w-0"
                   onClick={() => onSelectCompany(company.id)}
                 >
-                  <div className="ts-feed-avatar relative w-10 h-10 overflow-hidden rounded-full border border-neutral-700/80 transition-colors group-hover:border-neutral-400 shrink-0">
+                  <ProfilePhotoButton src={authorAvatarUrl} name={company.name} className="ts-feed-avatar relative w-10 h-10 overflow-hidden rounded-full border border-neutral-700/80 transition-colors group-hover:border-neutral-400 shrink-0">
                     <ProgressiveProductImage
                       src={authorAvatarUrl}
                       alt={company.name}
@@ -539,7 +540,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                       loading="lazy"
                       variant="thumbnail"
                     />
-                  </div>
+                  </ProfilePhotoButton>
                   <div className="min-w-0">
                     <h3 className="text-[15px] font-bold text-neutral-100 group-hover:text-white truncate">
                       {company.name}

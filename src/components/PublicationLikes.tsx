@@ -2,6 +2,7 @@ import React from 'react';
 import { Loader2 } from 'lucide-react';
 import { api, type PublicLikerDto } from '../lib/api';
 import { ProgressiveProductImage } from './ProductCard';
+import { ProfilePhotoButton } from './ProfilePhotoViewer';
 
 export default function PublicationLikes({ publicationId }: { publicationId: number }) {
   const [users, setUsers] = React.useState<PublicLikerDto[]>([]);
@@ -27,10 +28,10 @@ export default function PublicationLikes({ publicationId }: { publicationId: num
     <div className="py-3" role="tabpanel" aria-label="Mi piace">
       {users.map(user => (
         <div key={user.id} className="flex items-center gap-3 border-b border-neutral-200/70 py-3">
-          <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-stone-100">
+          <ProfilePhotoButton src={user.avatarUrl} name={user.name} className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-stone-100">
             {user.avatarUrl ? <ProgressiveProductImage src={user.avatarUrl} alt="" className="h-full w-full object-cover" variant="thumbnail" />
               : <span className="flex h-full items-center justify-center text-sm font-semibold text-stone-500">{user.name.slice(0, 1).toUpperCase()}</span>}
-          </div>
+          </ProfilePhotoButton>
           <span className="min-w-0 truncate text-sm font-semibold text-neutral-100">{user.name}</span>
         </div>
       ))}

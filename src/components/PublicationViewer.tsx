@@ -7,6 +7,7 @@ import { formatRelativeTime } from "../i18n/formatters";
 import { useI18n } from "../i18n/provider";
 import { ProgressiveProductImage } from "./ProductCard";
 import { LinkedText } from './SharedLink';
+import { ProfilePhotoButton } from './ProfilePhotoViewer';
 import PublicationLikes from './PublicationLikes';
 
 interface PublicationViewerProps {
@@ -261,7 +262,7 @@ export default function PublicationViewer({
         }`}
       >
         <div className="flex items-start gap-3">
-          <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-neutral-800">
+          <ProfilePhotoButton src={comment.authorAvatarUrl} name={comment.authorName} className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-neutral-800">
             {comment.authorAvatarUrl ? (
               <ProgressiveProductImage
                 src={comment.authorAvatarUrl}
@@ -275,7 +276,7 @@ export default function PublicationViewer({
                 {comment.authorName.slice(0, 1).toUpperCase()}
               </div>
             )}
-          </div>
+          </ProfilePhotoButton>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <p className="truncate text-sm font-semibold text-neutral-100">{comment.authorName}</p>
@@ -410,13 +411,10 @@ export default function PublicationViewer({
         </div>
         <div className="flex min-h-0 flex-1 flex-col border-l border-neutral-800 bg-neutral-900 lg:h-[92vh]">
           <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-5 py-4">
-            <button
-              type="button"
-              onClick={openEstablishmentProfile}
+            <div
               className="flex min-w-0 items-center gap-3 text-left transition-opacity hover:opacity-85"
-              title={t("Ver perfil")}
             >
-              <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-neutral-800">
+              <ProfilePhotoButton src={establishment.logoUrl} name={establishment.name} className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-neutral-800">
                 {establishment.logoUrl ? (
                   <ProgressiveProductImage
                     src={establishment.logoUrl}
@@ -430,14 +428,14 @@ export default function PublicationViewer({
                     {establishment.name.slice(0, 1).toUpperCase()}
                   </div>
                 )}
-              </div>
-              <div className="min-w-0">
+              </ProfilePhotoButton>
+              <button type="button" onClick={openEstablishmentProfile} title={t("Ver perfil")} className="min-w-0 text-left">
                 <p className="truncate text-sm font-semibold text-neutral-100">{establishment.name}</p>
                 <p className="truncate text-[11px] uppercase tracking-[0.14em] text-neutral-400">
                   {[establishment.category, establishment.city].filter(Boolean).join(" · ")}
                 </p>
-              </div>
-            </button>
+              </button>
+            </div>
             <button
               type="button"
               onClick={onClose}

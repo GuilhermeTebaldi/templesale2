@@ -4,6 +4,7 @@ import type { PublicationDto, EstablishmentDto } from '../lib/api';
 import { ProgressiveProductImage } from './ProductCard';
 import { TempleSaleLikeIcon } from './TempleSaleLikeIcon';
 import { LinkedText } from './SharedLink';
+import { ProfilePhotoButton } from './ProfilePhotoViewer';
 
 type Pose = { scale: number; x: number; y: number };
 const initialPose: Pose = { scale: 1, x: 0, y: 0 };
@@ -165,12 +166,12 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
         </div>
       </div>
       <footer className="ts-photo-footer">
-        <button type="button" className="ts-photo-author" onClick={onProfile}>
-          <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full">
+        <div className="ts-photo-author">
+          <ProfilePhotoButton src={establishment.logoUrl} name={establishment.name} className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full">
             {establishment.logoUrl ? <ProgressiveProductImage src={establishment.logoUrl} alt="" variant="thumbnail" className="h-full w-full object-cover" /> : establishment.name.slice(0, 1).toUpperCase()}
-          </span>
-          <span className="min-w-0"><strong className="block truncate">{establishment.name}</strong><span className="ts-photo-muted">{[establishment.category, establishment.city].filter(Boolean).join(' · ')}</span></span>
-        </button>
+          </ProfilePhotoButton>
+          <button type="button" onClick={onProfile} className="min-w-0 text-left"><strong className="block truncate">{establishment.name}</strong><span className="ts-photo-muted">{[establishment.category, establishment.city].filter(Boolean).join(' · ')}</span></button>
+        </div>
         {publication.caption && <p className="ts-photo-caption line-clamp-2 whitespace-pre-wrap"><LinkedText text={publication.caption} /></p>}
         <div className="ts-photo-actions">
           <button type="button" className="ts-photo-action" onClick={() => onDiscussion('comments')} aria-label="Apri commenti"><MessageCircle size={23} />{commentsCount !== undefined && <span>{commentsCount}</span>}</button>
