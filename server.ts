@@ -5,6 +5,7 @@ import { createPublicationCapacity } from './server/publication-capacity';
 import { createPublicationDirectUpload, DirectUploadBusy } from './server/publication-direct-upload';
 import { createPublicationMonitor } from './server/publication-monitor';
 import { registerLinkPreview } from './server/link-preview';
+import { normalizeWhatsappLocalNumber } from './src/lib/whatsapp';
 import { buildCompanySearch, initializeCompanySearch, searchCompanies } from './server/company-search';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { translate as translateInterface } from './src/i18n';
@@ -8828,20 +8829,10 @@ function normalizeWhatsappCountryIso(value: unknown): WhatsappCountryIso {
 }
 
 function normalizeWhatsappNumber(value: unknown, countryIso: WhatsappCountryIso): string {
-  let digits = String(value ?? "").replace(/\D/g, "");
-  if (!digits) {
+  const withoutCountryPrefix = normalizeWhatsappLocalNumber(String(value ?? ""), countryIso);
+  if (!withoutCountryPrefix) {
     return "";
   }
-
-  if (digits.startsWith("00")) {
-    digits = digits.slice(2);
-  }
-
-  const dialDigits = WHATSAPP_COUNTRIES[countryIso].dialDigits;
-  const withoutCountryPrefix =
-    digits.startsWith(dialDigits) && digits.length > dialDigits.length + 5
-      ? digits.slice(dialDigits.length)
-      : digits;
 
   if (withoutCountryPrefix.length < 6 || withoutCountryPrefix.length > 15) {
     throw new Error("Numero de WhatsApp invalido.");
