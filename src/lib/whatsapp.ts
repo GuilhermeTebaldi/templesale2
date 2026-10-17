@@ -39,12 +39,13 @@ export function normalizeWhatsappLocalNumber(rawNumber: string, countryIso?: str
     return "";
   }
 
+  const international = /^\s*\(?\s*\+/.test(rawNumber) || digits.startsWith("00");
   if (digits.startsWith("00")) {
     digits = digits.slice(2);
   }
 
   const country = getWhatsappCountry(countryIso);
-  if (digits.startsWith(country.dialDigits) && digits.length > country.dialDigits.length + 5) {
+  if (international && digits.startsWith(country.dialDigits)) {
     digits = digits.slice(country.dialDigits.length);
   }
 
