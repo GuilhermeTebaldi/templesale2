@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { ProgressiveProductImage } from './ProductCard';
 import { buildWhatsappUrl } from '../lib/whatsapp';
 import { distanceMeters } from '../lib/discovery-location';
+import { ProfilePhotoButton } from './ProfilePhotoViewer';
 
 interface CompanySearchProps {
   searchQuery: string;
@@ -328,7 +329,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
                     className="flex items-center space-x-2.5 cursor-pointer group min-w-0 flex-1"
                     title={`Apri il profilo di ${company.name}`}
                   >
-                    <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-neutral-700/80 transition-colors group-hover:border-neutral-400">
+                    <ProfilePhotoButton src={profilePhoto} name={company.name} className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-neutral-700/80 transition-colors group-hover:border-neutral-400">
                       <ProgressiveProductImage
                         src={profilePhoto}
                         alt={company.name}
@@ -336,7 +337,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
                         loading="lazy"
                         variant="thumbnail"
                       />
-                    </div>
+                    </ProfilePhotoButton>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center space-x-1.5 truncate">
                         <span className="text-sm font-bold text-neutral-100 group-hover:text-white transition-colors truncate">

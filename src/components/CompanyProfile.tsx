@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { ProfilePhotoButton } from './ProfilePhotoViewer';
 import {
   MessageSquare,
   MapPin,
@@ -156,23 +157,21 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
         <div className="flex items-center justify-between pt-1">
           {/* Avatar com a Moldura Exclusiva dos Quadradinhos do TempleSale */}
           <div className="shrink-0 mr-4 sm:mr-7">
+            <ProfilePhotoButton src={displayProfilePhoto} name={company.name} className="block">
             <TempleSaleAvatarFrame
               src={displayProfilePhoto}
               alt={company.name}
               size="lg"
               isOwner={isOwner}
             />
+            </ProfilePhotoButton>
             <div className="mt-2 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em]">
               {displayProfilePhoto && (
-                <a
-                  href={displayProfilePhoto}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <ProfilePhotoButton src={displayProfilePhoto} name={company.name}
                   className="text-neutral-400 transition-colors hover:text-white"
-                  onClick={(event) => event.stopPropagation()}
                 >
                   Vedi foto
-                </a>
+                </ProfilePhotoButton>
               )}
               {isOwner && onChangeCompanyPhoto && (
                 <button
