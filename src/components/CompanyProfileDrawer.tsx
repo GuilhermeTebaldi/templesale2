@@ -16,11 +16,18 @@ import {
   Heart,
   LogOut,
   Settings,
+  BookOpen,
 } from 'lucide-react';
 import { Company, Post, Auth0User } from '../types';
 import { TempleSaleAvatarFrame } from './TempleSaleAvatarFrame';
 import { ProgressiveProductImage } from './ProductCard';
 import BrowserTranslationHelp from './BrowserTranslationHelp';
+const HelpCenter = React.lazy(() => import('./HelpCenter').catch(() => ({ default: () =>
+  <div role="alert" className="space-y-3 p-5 text-sm text-slate-700">
+    <p>Impossibile caricare le guide. Controlla la connessione e ricarica la pagina.</p>
+    <button type="button" className="font-semibold text-sky-700 underline" onClick={() => window.location.reload()}>Ricarica la pagina</button>
+  </div>,
+})));
 
 interface CompanyProfileDrawerProps {
   isOpen: boolean;
@@ -53,7 +60,16 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
   onCloseAccount,
   onViewPublicProfile,
 }) => {
-  const [currentView, setCurrentView] = useState<'main' | 'saved' | 'settings' | 'language' | 'account'>('main');
+  const [currentView, setCurrentView] = useState<'main' | 'saved' | 'settings' | 'language' | 'account' | 'help'>('main');
+  const [helpArticleId, setHelpArticleId] = useState<string | null>(null);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const goBack = () => {
+    if (currentView === 'help' && helpArticleId) { setHelpArticleId(null); return; }
+    setCurrentView(currentView === 'account' || currentView === 'language' || currentView === 'help' ? 'settings' : 'main');
+  };
+  useEffect(() => {
+    if (currentView === 'help') contentRef.current?.scrollTo({ top: 0 });
+  }, [currentView, helpArticleId]);
 
   const [accountMode, setAccountMode] = useState<'deactivate' | 'delete'>('deactivate');
   const [accountEmail, setAccountEmail] = useState('');
@@ -75,7 +91,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
   // Reset to main view whenever drawer is closed/opened
   useEffect(() => {
     if (isOpen) {
-      setCurrentView('main'); setAccountEmail(''); setAccountError(''); setAccountMode('deactivate');
+      setCurrentView('main'); setHelpArticleId(null); setAccountEmail(''); setAccountError(''); setAccountMode('deactivate');
     }
   }, [isOpen]);
 
@@ -84,7 +100,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
         if (currentView !== 'main') {
-          setCurrentView(currentView === 'account' || currentView === 'language' ? 'settings' : 'main');
+          goBack();
         } else {
           onClose();
         }
@@ -92,7 +108,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, currentView, onClose]);
+  }, [isOpen, currentView, helpArticleId, onClose]);
 
   if (!isOpen) return null;
 
@@ -115,7 +131,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
             {currentView !== 'main' ? (
               <button
                 type="button"
-                onClick={() => setCurrentView(currentView === 'account' || currentView === 'language' ? 'settings' : 'main')}
+                onClick={goBack}
                 className="p-1 -ml-1 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
                 title="Indietro"
               >
@@ -128,6 +144,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
               {currentView === 'main' && "Menu dell’attività"}
               {currentView === 'saved' && `Pubblicazioni salvate (${savedPosts.length})`}
               {currentView === 'settings' && 'Impostazioni'}
+              {currentView === 'help' && 'Centro assistenza'}
               {currentView === 'language' && 'Traduci questa pagina'}
               {currentView === 'account' && accountText('Encerrar conta', 'Chiudi account')}
             </h2>
@@ -144,7 +161,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
         </div>
 
         {/* DRAWER CONTENT */}
-        <div className="flex-1 overflow-y-auto no-scrollbar">
+        <div ref={contentRef} className="flex-1 overflow-y-auto no-scrollbar">
           {/* VIEW: MAIN MENU */}
           {currentView === 'main' && (
             <div className="p-5 space-y-6">
@@ -279,7 +296,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                       </div>
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-neutral-200 group-hover:text-white">Impostazioni</div>
-                        <div className="text-xs text-neutral-400">Account, condizioni e traduzione</div>
+                        <div className="text-xs text-neutral-400">Aiuto, account, condizioni e traduzione</div>
                       </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-neutral-300 shrink-0" />
@@ -341,6 +358,14 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
           {currentView === 'settings' && (
             <div className="p-5 space-y-6">
               <div className="bg-neutral-950/60 border border-neutral-800/70 rounded-2xl overflow-hidden divide-y divide-neutral-800/60 shadow-sm">
+                  <button type="button" onClick={() => { setHelpArticleId(null); setCurrentView('help'); }}
+                    className="w-full flex items-center justify-between gap-3 p-3.5 text-left hover:bg-neutral-800/50">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700"><BookOpen className="h-5 w-5" /></div>
+                      <div><span className="block text-sm font-semibold text-slate-900">Centro assistenza</span>
+                        <span className="block text-xs text-slate-600">Cerca risposte e scopri come usare <span translate="no" className="notranslate">TempleSale</span></span></div>
+                    </div><ChevronRight className="h-4 w-4 shrink-0 text-neutral-500" />
+                  </button>
                   {onOpenTerms && <button type="button" onClick={onOpenTerms}
                     className="flex w-full items-center justify-between p-3.5 text-left hover:bg-neutral-800/50">
                     <div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-emerald-300" />
@@ -463,6 +488,15 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
 
           {/* VIEW: IDIOMA */}
           {currentView === 'language' && <BrowserTranslationHelp />}
+          {currentView === 'help' && <React.Suspense fallback={<p role="status" className="p-5 text-sm text-slate-600">Caricamento delle guide…</p>}>
+            <HelpCenter articleId={helpArticleId} onSelectArticle={setHelpArticleId} onAction={action => {
+              if (action === 'edit-profile') { onOpenEditCompany(); onClose(); }
+              else if (action === 'profile') { onViewPublicProfile(company.id); onClose(); }
+              else if (action === 'saved') setCurrentView('saved');
+              else if (action === 'language') setCurrentView('language');
+              else if (action === 'terms') onOpenTerms?.();
+            }} />
+          </React.Suspense>}
 
         </div>
       </div>
