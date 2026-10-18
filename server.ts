@@ -5,6 +5,7 @@ import { createPublicationCapacity } from './server/publication-capacity';
 import { createPublicationDirectUpload, DirectUploadBusy } from './server/publication-direct-upload';
 import { createPublicationMonitor } from './server/publication-monitor';
 import { registerLinkPreview } from './server/link-preview';
+import { createHomePublicationService } from './server/home-publication';
 import { normalizeWhatsappLocalNumber } from './src/lib/whatsapp';
 import { buildCompanySearch, initializeCompanySearch, searchCompanies } from './server/company-search';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
@@ -1112,6 +1113,7 @@ const SESSION_USER_SELECT_FIELDS = `
 let sqliteDb: Database.Database | null = null;
 let pgPool: Pool | null = null;
 let publicationEvolution: ReturnType<typeof createPublicationEvolution>;
+let homePublications: ReturnType<typeof createHomePublicationService>;
 
 if (!USE_SQLITE_DATABASE) {
   pgPool = new Pool({
@@ -4300,7 +4302,7 @@ async function selectPublicationsFeedRows(input: {
     const row = pgPool ? (await pgPool.query(sql)).rows[0] : requireSqliteDb().prepare(sql).get() as Record<string, unknown>;
     snapshotId = Number(row.max_id);
   }
-  const built = buildLocalFeedQuery({ ...input, limit, offset: input.cursorMode ? 0 : offset, snapshotId }, Boolean(pgPool));
+  const built = buildLocalFeedQuery({ ...input, limit, offset: input.cursorMode ? 0 : offset, snapshotId, homeSelection: homePublications?.ready }, Boolean(pgPool));
   built.sql = filterArchivedPublicSql(built.sql, accountArchives?.ready);
   let rawRows: Record<string, unknown>[];
   if (pgPool) {
@@ -9911,6 +9913,9 @@ async function bootstrap() {
     }
   }, Boolean(pgPool));
   await accountArchives.initialize(IS_DEV_REMOTE_READ_ONLY);
+  homePublications = createHomePublicationService((sql, values) => accountArchives.publicQuery(sql, values));
+  try { await homePublications.initialize(IS_DEV_REMOTE_READ_ONLY); }
+  catch { console.warn('Home photo selection unavailable; automatic latest-photo feed remains active.'); }
   if (!IS_DEV_REMOTE_DATABASE) await initializeDiscovery(discoveryQuery);
   legalService = createLegalService(discoveryQuery);
   if (legalService.enabled && IS_DEV_REMOTE_READ_ONLY) throw new Error("Aceite de termos indisponível em banco remoto somente leitura.");
@@ -9934,6 +9939,7 @@ async function bootstrap() {
   const admitCommentWrite = createWriteAdmission(toRequiredNonNegativeInteger(process.env.COMMENT_WRITE_CONCURRENCY ?? 4, 4), databaseUnderPressure, () => capacity.acquire('comments'));
   const admitMediaUpload = createWriteAdmission(toRequiredNonNegativeInteger(process.env.MEDIA_UPLOAD_CONCURRENCY ?? 2, 2), databaseUnderPressure, () => capacity.acquire('uploads'));
   const admitUploadPermit = createWriteAdmission(4,databaseUnderPressure);
+  const admitHomePhoto = createWriteAdmission(2, databaseUnderPressure);
   const admitUploadNotification=createWriteAdmission(4,databaseUnderPressure);
   const directUpload = createPublicationDirectUpload(pgPool, {
     cloud:CLOUDINARY_CLOUD_NAME,key:CLOUDINARY_API_KEY,secret:CLOUDINARY_API_SECRET,
@@ -10124,6 +10130,7 @@ async function bootstrap() {
       publicationProtection: 'observable-v5.3',
       interfaceLanguage: 'it-IT',
       contentTranslation: 'browser-only',
+      homePublicationSelectionReady: homePublications?.ready ?? false,
       directUpload:directUpload.snapshot(),
       sharedCapacity: capacity.snapshot(),
       writeCapacity: { publications: admitPublicationWrite.snapshot(), comments: admitCommentWrite.snapshot(), uploads: admitMediaUpload.snapshot() },
@@ -11940,6 +11947,8 @@ async function bootstrap() {
       res.json({ publication: row ? normalizePublicationRow(row) : null });
     } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : 'Falha ao confirmar publicação.' }); }
   });
+
+  homePublications.register(app, requireAuth, admitHomePhoto, IS_DEV_REMOTE_READ_ONLY);
 
   app.get("/api/publications", async (req, res) => {
     let location: GeoPoint | undefined;

@@ -43,7 +43,7 @@ export function parseFeedExclusions(value: unknown): number[] {
 }
 
 /** One latest publication per company, including older photos when no new one exists. */
-export function buildLocalFeedQuery(input: FeedLocation & { limit: number; offset: number; snapshotId?: number; cursor?: FeedCursor; excludeIds?: number[] }, postgres: boolean) {
+export function buildLocalFeedQuery(input: FeedLocation & { limit: number; offset: number; snapshotId?: number; cursor?: FeedCursor; excludeIds?: number[]; homeSelection?: boolean }, postgres: boolean) {
   const nearby = input.latitude !== undefined && input.longitude !== undefined;
   const values: unknown[] = [input.limit + 1, input.offset];
   if (nearby) values.push(input.latitude, input.longitude);
@@ -77,9 +77,10 @@ export function buildLocalFeedQuery(input: FeedLocation & { limit: number; offse
         COALESCE(NULLIF(e.whatsapp_number, ''), e.phone, '') AS establishment_whatsapp_number,
         (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id = ep.id) AS likes_count,
         ${distance} AS distance_km,
-        ROW_NUMBER() OVER (PARTITION BY ep.establishment_id ORDER BY ep.created_at DESC, ep.id DESC) AS company_position
+        ROW_NUMBER() OVER (PARTITION BY ep.establishment_id ORDER BY ${input.homeSelection ? 'CASE WHEN ep.id = hp.publication_id THEN 0 ELSE 1 END, ' : ''}ep.created_at DESC, ep.id DESC) AS company_position
       FROM establishment_publications ep
       INNER JOIN establishments e ON e.id = ep.establishment_id
+      ${input.homeSelection ? 'LEFT JOIN establishment_home_publications hp ON hp.establishment_id = e.id' : ''}
       LEFT JOIN users u ON u.id = ep.owner_user_id
       WHERE e.is_active = ${postgres ? 'TRUE' : '1'} ${snapshot}
         AND e.latitude IS NOT NULL AND e.longitude IS NOT NULL

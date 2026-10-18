@@ -3038,6 +3038,14 @@ export const api = {
     });
     return normalizePublicationPage(payload, limit, offset);
   },
+  async getHomePublication(establishmentId: number, signal?: AbortSignal) {
+    return request<{ publicationId: number | null }>(`/api/establishments/${establishmentId}/home-publication`, { signal, cache: 'no-store', skipGlobalLoadingOverlay: true });
+  },
+  async setHomePublication(establishmentId: number, publicationId: number | null) {
+    return request<{ publicationId: number | null }>(`/api/establishments/${establishmentId}/home-publication`, {
+      method: 'PUT', body: JSON.stringify({ publicationId }), skipGlobalLoadingOverlay: true,
+    });
+  },
   async saveEstablishment(input: Partial<EstablishmentDto>) {
     const method = input.id ? "PUT" : "POST";
     const path = input.id ? `/api/establishments/${input.id}` : "/api/establishments";
