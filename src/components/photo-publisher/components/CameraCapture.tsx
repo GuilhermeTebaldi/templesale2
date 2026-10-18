@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { readDevicePreference, writeDevicePreference } from '../../../lib/device-preferences';
 import {
   Camera,
   Image as ImageIcon,
@@ -20,28 +21,34 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isStartingCamera, setIsStartingCamera] = useState<boolean>(false);
   const [flashAnimation, setFlashAnimation] = useState<boolean>(false);
-  const shouldAutoStartCameraRef = useRef(false);
   const startingRef = useRef(false);
   const generationRef = useRef(0);
 
   // Initialize and switch camera stream
-  const startCamera = async () => {
+  const startCamera = async (desiredFacingMode: 'user' | 'environment' = facingMode) => {
     if (startingRef.current) return;
     startingRef.current = true;
     const generation = generationRef.current;
-    shouldAutoStartCameraRef.current = true;
     setIsStartingCamera(true);
     setCameraError(null);
 
-    // Stop existing stream if running
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-    }
-
     try {
+      const track = streamRef.current?.getVideoTracks()[0];
+      if (track?.readyState === 'live') {
+        try {
+          if (track.getSettings().facingMode !== desiredFacingMode) await track.applyConstraints({ facingMode: { exact: desiredFacingMode } });
+          if (generation !== generationRef.current) return;
+          if (track.getSettings().facingMode === desiredFacingMode) {
+            setFacingMode(desiredFacingMode); setIsStartingCamera(false); return;
+          }
+        } catch { /* Devices that cannot switch in-place use a new stream. */ }
+      }
+      if (generation !== generationRef.current) return;
+      streamRef.current?.getTracks().forEach(track => track.stop());
+      streamRef.current = null; setStream(null);
       const constraints: MediaStreamConstraints = {
         video: {
-          facingMode: { ideal: facingMode },
+          facingMode: { ideal: desiredFacingMode },
           width: { ideal: 1920 },
           height: { ideal: 1080 },
         },
@@ -54,6 +61,8 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
         return;
       }
       streamRef.current = newStream;
+      setFacingMode(desiredFacingMode);
+      writeDevicePreference('camera-used', 'true');
       setStream(newStream);
 
       if (videoRef.current) {
@@ -65,9 +74,12 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
       if (generation !== generationRef.current) return;
       const error = err as Error;
       console.warn('Camera stream error:', error);
-      setCameraError(
-        "Fotocamera non disponibile nel browser. Puoi scegliere una foto dalla galleria."
-      );
+      if (error.name === 'NotAllowedError') {
+        writeDevicePreference('camera-used', 'false');
+      }
+      setCameraError(error.name === 'NotAllowedError'
+        ? 'Accesso alla fotocamera non consentito. Nelle impostazioni di questo sito scegli Fotocamera → Consenti. Puoi anche usare la galleria.'
+        : 'Fotocamera non disponibile nel browser. Puoi scegliere una foto dalla galleria.');
       setIsStartingCamera(false);
     } finally {startingRef.current=false;}
   };
@@ -76,23 +88,21 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
     let cancelled = false;
 
     const maybeStartCamera = async () => {
-      if (shouldAutoStartCameraRef.current) {
-        await startCamera();
-        return;
-      }
-
       try {
         const permission = await navigator.permissions?.query({
           name: 'camera' as PermissionName,
         });
         if (!cancelled && permission?.state === 'granted') {
-          shouldAutoStartCameraRef.current = true;
           await startCamera();
           return;
         }
+        // Older browsers cannot query camera permission. A previous successful
+        // use lets us resume; getUserMedia still enforces the actual permission.
+        if (!cancelled && !permission && readDevicePreference('camera-used') === 'true') await startCamera();
       } catch {
         // An account record cannot grant this browser permission. Unsupported
-        // permission queries keep the explicit camera button available.
+        // permission queries still enforce permission through getUserMedia.
+        if (!cancelled && readDevicePreference('camera-used') === 'true') await startCamera();
       }
     };
 
@@ -106,7 +116,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
         streamRef.current = null;
       }
     };
-  }, [facingMode]);
+  }, []);
 
   const stopStream = () => {
     if (streamRef.current) {
@@ -161,7 +171,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
   };
 
   const toggleFacingMode = () => {
-    setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
+    void startCamera(facingMode === 'user' ? 'environment' : 'user');
   };
 
   return (
@@ -230,7 +240,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
             <button
               type="button"
               id="btn-retry-camera"
-              onClick={startCamera}
+              onClick={() => void startCamera()}
               className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-200 transition"
             >
               Riprova
@@ -248,7 +258,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
               Apri la fotocamera quando vuoi scattare. Puoi anche scegliere una foto dalla galleria.
             </p>
             <p className="text-xs text-neutral-500 max-w-xs leading-relaxed mb-4">
-              In Safari, scegli Fotocamera → Consenti nelle impostazioni di questo sito per ricordare il permesso.
+              Per evitare richieste ripetute in Safari: menu della pagina → Impostazioni sito web → Fotocamera → Consenti. Usa sempre lo stesso indirizzo del sito.
             </p>
             <button
               type="button"
