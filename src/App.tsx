@@ -368,6 +368,8 @@ export default function App() {
   const [establishmentListRevision, setEstablishmentListRevision] = React.useState(0);
   const refreshEstablishments = React.useCallback(() => setEstablishmentListRevision(value => value + 1), []);
   const [myEstablishment, setMyEstablishment] = React.useState<EstablishmentDto | null>(null);
+  const [homePublication, setHomePublication] = React.useState<{ establishmentId: number; publicationId: number | null } | null>(null);
+  const [homePublicationError, setHomePublicationError] = React.useState('');
   const [selectedEstablishment, setSelectedEstablishment] = React.useState<EstablishmentDto | null>(null);
   const [, setSelectedEstablishmentProducts] = React.useState<Product[]>([]);
   const [selectedEstablishmentPublications, setSelectedEstablishmentPublications] = React.useState<PublicationDto[]>([]);
@@ -3041,6 +3043,16 @@ export default function App() {
     socialPostIdFromPublicationId,
   ]);
 
+  React.useEffect(() => {
+    if (socialActiveTab !== 'profile' || !hasMemberAccess || !myEstablishment || selectedSocialCompany.id !== activeSocialCompany.id) return;
+    const controller = new AbortController();
+    setHomePublication(null); setHomePublicationError('');
+    void api.getHomePublication(myEstablishment.id, controller.signal).then(result => {
+      if (!controller.signal.aborted) setHomePublication({ establishmentId: myEstablishment.id, publicationId: result.publicationId });
+    }).catch(() => { if (!controller.signal.aborted) setHomePublicationError('Impossibile caricare la foto della Home. Riprova.'); });
+    return () => controller.abort();
+  }, [socialActiveTab, hasMemberAccess, myEstablishment?.id, selectedSocialCompany.id, activeSocialCompany.id, establishmentListRevision]);
+
   const socialUser = React.useMemo<SocialAuth0User>(
     () => ({
       isAuthenticated: hasMemberAccess,
@@ -3111,6 +3123,7 @@ export default function App() {
       setDeletedPublicationIds((current) =>
         current.includes(publicationId) ? current : [...current, publicationId],
       );
+      setHomePublication(current => current?.publicationId === publicationId ? { ...current, publicationId: null } : current);
       setPublicationFeed((current) => current.filter((item) => item.id !== publicationId));
       setSelectedEstablishmentPublications((current) =>
         current.filter((item) => item.id !== publicationId),
@@ -3633,6 +3646,20 @@ export default function App() {
             company={selectedSocialCompany}
             posts={selectedSocialCompanyPosts}
             isOwner={selectedSocialCompany.id === activeSocialCompany.id}
+            homePostId={homePublication?.establishmentId === myEstablishment?.id && homePublication?.publicationId ? socialPostIdFromPublicationId(homePublication.publicationId) : null}
+            homePostLoading={!homePublicationError && homePublication?.establishmentId !== myEstablishment?.id}
+            homePostError={homePublicationError}
+            onRetryHomePost={refreshEstablishments}
+            onHomePostChange={async postId => {
+              if (!myEstablishment || selectedSocialCompany.id !== activeSocialCompany.id) throw new Error('Attività non disponibile. Riapri il profilo e riprova.');
+              const id = postId === null ? null : publicationIdFromSocialPostId(postId);
+              if (postId !== null && !id) throw new Error('Pubblicazione non valida.');
+              const result = await api.setHomePublication(myEstablishment.id, id);
+              setHomePublication({ establishmentId: myEstablishment.id, publicationId: result.publicationId });
+              const photos = selectedEstablishmentPublications.filter(item => item.establishmentId === myEstablishment.id);
+              const target = result.publicationId ? photos.find(item => item.id === result.publicationId) : [...photos].sort((a, b) => b.createdAt - a.createdAt || b.id - a.id)[0];
+              if (target) setPublicationFeed(current => current.map(item => item.establishmentId === myEstablishment.id ? { ...item, ...target } : item));
+            }}
             profilePhotoUrl={
               selectedSocialCompany.id === activeSocialCompany.id
                 ? memberProfilePhoto

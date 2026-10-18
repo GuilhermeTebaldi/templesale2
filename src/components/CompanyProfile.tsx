@@ -17,6 +17,7 @@ import {
   X,
   Trash2,
   AlertTriangle,
+  Star,
 } from 'lucide-react';
 import { Company, Post } from '../types';
 import { api } from '../lib/api';
@@ -44,6 +45,11 @@ interface CompanyProfileProps {
   postsError?: string;
   onRetryPosts?: () => void;
   onLoadMorePosts?: () => Promise<void> | void;
+  homePostId?: string | null;
+  homePostLoading?: boolean;
+  homePostError?: string;
+  onRetryHomePost?: () => void;
+  onHomePostChange?: (postId: string | null) => Promise<void>;
 }
 
 export const CompanyProfile: React.FC<CompanyProfileProps> = ({
@@ -65,10 +71,25 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
   postsError = '',
   onRetryPosts,
   onLoadMorePosts,
+  homePostId = null, homePostLoading = false, homePostError = '', onRetryHomePost, onHomePostChange,
 }) => {
   const [activeHighlight, setActiveHighlight] = useState<string | null>(null);
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const homeWrite = useRef(false);
+  const [savingHome, setSavingHome] = useState(false);
+  const [homeNotice, setHomeNotice] = useState('');
+  const [homeError, setHomeError] = useState('');
+  const chooseHome = async (postId: string) => {
+    if (!onHomePostChange || homeWrite.current || homePostLoading || homePostError) return;
+    homeWrite.current = true; setSavingHome(true); setHomeError(''); setHomeNotice('');
+    const next = homePostId === postId ? null : postId;
+    try {
+      await onHomePostChange(next);
+      setHomeNotice(next ? 'Questa foto apparirà nella Home, anche dopo nuove pubblicazioni.' : 'Nella Home apparirà automaticamente la foto più recente.');
+    } catch (error) { setHomeError(error instanceof Error ? error.message : 'Impossibile aggiornare la foto. Riprova.'); }
+    finally { homeWrite.current = false; setSavingHome(false); }
+  };
 
   const whatsappUrl = buildWhatsappUrl(undefined, company.whatsapp, company.name, {
     kind: 'establishment',
@@ -442,6 +463,14 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
           </div>
           )
         ) : (
+          <div>
+          {isOwner && onHomePostChange && <div className="px-4 pb-3 text-xs leading-5 text-neutral-500">
+            <p>{homePostLoading ? 'Caricamento foto della Home…' : 'Tocca la stella su una foto per mostrarla nella Home. Tocca di nuovo per tornare alla foto più recente.'}</p>
+            {savingHome && <p role="status">Aggiornamento della Home…</p>}
+            {homeNotice && <p role="status" className="mt-1 text-emerald-700">{homeNotice}</p>}
+            {(homeError || homePostError) && <p role="alert" className="mt-1 text-red-600">{homeError || homePostError}</p>}
+            {homePostError && <button type="button" className="font-semibold text-sky-600" onClick={onRetryHomePost}>Riprova</button>}
+          </div>}
           <div
             id="company-posts-grid"
             className="grid grid-cols-3 gap-0.5 sm:gap-1"
@@ -496,6 +525,13 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 )}
 
                 {/* Overlay no Hover com Curtidas e Comentários */}
+                {isOwner && onHomePostChange && <button type="button" disabled={savingHome || homePostLoading || Boolean(homePostError)}
+                  onClick={event => { event.stopPropagation(); void chooseHome(post.id); }}
+                  aria-pressed={homePostId === post.id} aria-label={homePostId === post.id ? 'Rimuovi la scelta per la Home' : 'Mostra nella Home'}
+                  title={homePostId === post.id ? 'Rimuovi la scelta per la Home' : 'Mostra nella Home'}
+                  className={`ts-home-photo-star${homePostId === post.id ? ' ts-home-photo-selected' : ''}`}>
+                  <Star size={16} fill={homePostId === post.id ? 'currentColor' : 'none'} />{homePostId === post.id && <span>Home</span>}
+                </button>}
                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-2 text-white pointer-events-none">
                   <div className="flex items-center space-x-3 sm:space-x-4">
                     <span className="flex items-center space-x-1.5 text-xs font-bold">
@@ -517,6 +553,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                 </div>
               )}
             </div>
+          </div>
           </div>
         )}
         {postsError && (
