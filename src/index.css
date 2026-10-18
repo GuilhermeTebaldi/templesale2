@@ -363,6 +363,43 @@ body.ts-scroll-lock {
 
 :root { color-scheme: light; }
 body { margin: 0; background: #fff; color: #0f1419; }
+
+.ts-help { background: #fff; color: #0f1419; padding: 20px 18px max(24px, env(safe-area-inset-bottom)); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.ts-help :is(button, input) { font: inherit; }
+.ts-help button { cursor: pointer; }
+.ts-help :is(button, input):focus-visible { outline: 2px solid #0284c7; outline-offset: 3px; }
+.ts-help h3 { font-size: 22px; font-weight: 750; line-height: 1.3; letter-spacing: -.02em; }
+.ts-help-intro { padding: 4px 0 18px; }
+.ts-help-intro > p { margin-top: 10px; color: #536471; }
+.ts-help-icon { display: inline-flex; padding: 11px; margin-bottom: 14px; border-radius: 16px; color: #0369a1; background: #eff8ff; }
+.ts-help-search { position: sticky; top: 0; z-index: 1; padding: 8px 0 14px; background: #fff; }
+.ts-help-search-field { display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid #cfd9de; border-radius: 14px; color: #536471; background: #f7f9fa; }
+.ts-help-search-field:focus-within { border-color: #0284c7; box-shadow: 0 0 0 2px #e0f2fe; }
+.ts-help-search input { width: 100%; min-width: 0; height: 48px; border: 0; outline: none; background: transparent; color: #0f1419; font-size: 16px; }
+.ts-help-search input::-webkit-search-cancel-button { display: none; }
+.ts-help-search input::placeholder { color: #637381; }
+.ts-help-search button { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 40px; }
+.ts-help-eyebrow { display: block; color: #536471; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 7px; }
+.ts-help-category { margin-top: 24px; }
+.ts-help-category > h4 { margin-bottom: 9px; font-size: 15px; font-weight: 700; }
+.ts-help-popular { margin-top: 12px; }
+.ts-help-list { border: 1px solid #e6ecf0; border-radius: 15px; overflow: hidden; }
+.ts-help-result { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 14px; color: #273340; text-align: left; }
+.ts-help-result + .ts-help-result { border-top: 1px solid #e6ecf0; }
+.ts-help-result:hover { background: #f7f9fa; }
+.ts-help-summary { display: block; margin-top: 7px; color: #536471; font-size: 13px; font-weight: 400; }
+.ts-help-count { margin: 4px 0 12px; color: #536471; font-size: 12px; }
+.ts-help-empty { padding: 18px 0; color: #536471; }
+.ts-help-article-heading { padding-bottom: 22px; border-bottom: 1px solid #e6ecf0; }
+.ts-help-steps { display: grid; gap: 21px; padding-block: 24px; list-style: none; }
+.ts-help-steps li { display: flex; align-items: flex-start; gap: 12px; }
+.ts-help-step-number { display: grid; place-items: center; flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: #eff8ff; color: #0369a1; font-size: 12px; font-weight: 700; }
+.ts-help-note { padding: 14px; margin-bottom: 20px; border-left: 3px solid #7dd3fc; border-radius: 0 10px 10px 0; background: #f0f9ff; color: #334155; font-size: 13px; }
+.ts-help-action { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; width: 100%; border-radius: 999px; background: #0f1419; color: #fff; font-weight: 600; }
+.ts-help-action:hover { background: #273340; }
+.ts-help-related { margin-top: 28px; }
+.ts-help-related .ts-help-result { padding-inline: 0; }
+.ts-help-back { display: inline-block; min-height: 44px; margin-top: 14px; color: #0369a1; font-weight: 600; }
 .ts-home-photo-star { position: absolute; bottom: 6px; left: 6px; z-index: 20; display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 32px; min-height: 32px; padding: 6px 8px; border: 1px solid #cfd9de; border-radius: 999px; background: #fff; color: #536471; box-shadow: 0 2px 8px #0003; font-size: 10px; font-weight: 700; cursor: pointer; }
 .ts-home-photo-star.ts-home-photo-selected { border-color: #1d9bf0; background: #1d9bf0; color: #fff; }
 .ts-home-photo-star:disabled { opacity: .5; cursor: wait; }
