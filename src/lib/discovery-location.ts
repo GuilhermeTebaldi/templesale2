@@ -48,7 +48,7 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
   const previous = useRef<{ lat: number; lng: number; at: number } | null>(null);
   const gpsAttempt = useRef(0);
   const gpsWanted = useRef(false);
-  useEffect(() => () => { gpsAttempt.current += 1; }, []);
+  useEffect(() => () => { gpsAttempt.current += 1; autoPrompted.current = false; }, []);
   const receivePosition = useCallback((position: GeolocationPosition) => {
     writeDevicePreference('discovery-location', 'accepted'); setChoice('accepted');
     setLocating(false);
