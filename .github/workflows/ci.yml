@@ -42,6 +42,9 @@ jobs:
       - name: Type check
         run: npm run lint
 
+      - name: Startup recovery regression tests
+        run: node --test tests/startup.test.mjs
+
       - name: Notification regression tests
         run: node --experimental-sqlite --test tests/notifications.test.mjs
 

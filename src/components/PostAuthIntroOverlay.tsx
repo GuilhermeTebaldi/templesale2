@@ -6,7 +6,7 @@ interface PostAuthIntroOverlayProps {
 }
 
 const CINEMA_BRAND_FONT =
-  '"Copperplate", "Copperplate Gothic Light", fantasy';
+  '"TempleSale Brand", serif';
 
 export default function PostAuthIntroOverlay({ onComplete }: PostAuthIntroOverlayProps) {
   const onCompleteRef = React.useRef(onComplete);

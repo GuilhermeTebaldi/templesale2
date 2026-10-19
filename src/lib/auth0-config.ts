@@ -36,15 +36,19 @@ function resolveAuth0DebugLogs(): boolean {
     return false;
   }
 
-  const params = new URLSearchParams(window.location.search);
-  const debugParam = params.get("auth0_debug");
-  if (debugParam === "1") {
-    window.localStorage.setItem("templesale_auth0_debug", "1");
-  } else if (debugParam === "0") {
-    window.localStorage.removeItem("templesale_auth0_debug");
-  }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const debugParam = params.get("auth0_debug");
+    if (debugParam === "1") {
+      window.localStorage.setItem("templesale_auth0_debug", "1");
+    } else if (debugParam === "0") {
+      window.localStorage.removeItem("templesale_auth0_debug");
+    }
 
-  return window.localStorage.getItem("templesale_auth0_debug") === "1";
+    return window.localStorage.getItem("templesale_auth0_debug") === "1";
+  } catch {
+    return false;
+  }
 }
 
 export const AUTH0_DEBUG_LOGS = resolveAuth0DebugLogs();
