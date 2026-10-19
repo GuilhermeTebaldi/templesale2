@@ -8,12 +8,13 @@ import loadingLogoSrc from "../../logo-cropped-1772137553672.png";
 
 const GLOBAL_LOADING_LOGO_SRC = loadingLogoSrc;
 
-export default function GlobalLoadingOverlay() {
-  const isVisible = React.useSyncExternalStore(
+export default function GlobalLoadingOverlay({ forceVisible = false, retry = false }: { forceVisible?: boolean; retry?: boolean } = {}) {
+  const isNetworkLoading = React.useSyncExternalStore(
     subscribeNetworkLoading,
     getNetworkLoadingSnapshot,
     () => false,
   );
+  const isVisible = forceVisible || isNetworkLoading;
 
   return (
     <AnimatePresence>
@@ -24,7 +25,7 @@ export default function GlobalLoadingOverlay() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2, ease: "easeOut" }}
-          className="fixed inset-0 z-[99999] flex items-center justify-center bg-white/65 backdrop-blur-md"
+          className="fixed inset-0 z-[99999] flex flex-col gap-5 items-center justify-center bg-white/65 backdrop-blur-md"
           aria-live="polite"
           aria-busy="true"
         >
@@ -41,6 +42,7 @@ export default function GlobalLoadingOverlay() {
             }}
             draggable={false}
           />
+          {retry && <button type="button" onClick={() => window.location.reload()} className="rounded-full border border-neutral-300 bg-white px-6 py-2 text-sm text-neutral-900" translate="no">Riprova</button>}
         </motion.div>
       )}
     </AnimatePresence>

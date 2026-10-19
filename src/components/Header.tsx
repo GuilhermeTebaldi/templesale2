@@ -32,7 +32,7 @@ interface HeaderProps {
   onSearchChange: (query: string) => void;
 }
 
-const CINEMA_BRAND_FONT = '"Copperplate", "Copperplate Gothic Light", fantasy';
+const CINEMA_BRAND_FONT = '"TempleSale Brand", serif';
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,

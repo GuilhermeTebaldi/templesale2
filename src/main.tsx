@@ -1,9 +1,7 @@
-import { StrictMode } from "react";
+import { lazy, StrictMode, Suspense } from "react";
 import { Auth0Provider } from "@auth0/auth0-react";
 import { createRoot } from "react-dom/client";
-import App from "./App.tsx";
-import AdminPanelV2 from "./components/AdminPanelV2";
-import FrameStudio from "./components/FrameStudio";
+import { StartupBoundary, StartupReady } from "./components/StartupBoundary";
 import GlobalLoadingOverlay from "./components/GlobalLoadingOverlay";
 import "./index.css";
 import { I18nProvider } from "./i18n/provider";
@@ -16,6 +14,9 @@ import {
 } from "./lib/auth0-config";
 
 const VISITOR_PING_HEARTBEAT_INTERVAL_MS = 30 * 1000;
+const App = lazy(() => import('./App.tsx'));
+const AdminPanelV2 = lazy(() => import('./components/AdminPanelV2'));
+const FrameStudio = lazy(() => import('./components/FrameStudio'));
 const VISITOR_PING_RETRY_DELAY_MS = 1500;
 const VISITOR_PING_RETRYABLE_STATUSES = new Set([502, 503, 504]);
 const VISITOR_PING_API_BASE = String(import.meta.env.VITE_API_BASE_URL ?? "")
@@ -123,13 +124,17 @@ const handleAuth0RedirectCallback = (appState?: { returnTo?: string }) => {
 };
 const appTree = (
   <I18nProvider>
+    <Suspense fallback={<GlobalLoadingOverlay forceVisible />}>
     <RootComponent />
+    <StartupReady />
+    </Suspense>
     <GlobalLoadingOverlay />
   </I18nProvider>
 );
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
+    <StartupBoundary>
     {IS_AUTH0_CONFIGURED ? (
       <Auth0Provider
         domain={AUTH0_DOMAIN}
@@ -144,5 +149,6 @@ createRoot(document.getElementById("root")!).render(
     ) : (
       appTree
     )}
+    </StartupBoundary>
   </StrictMode>,
 );

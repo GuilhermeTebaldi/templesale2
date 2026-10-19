@@ -228,7 +228,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
       </form>
 
       <div role="status" aria-live="polite" className="min-h-4 text-xs text-neutral-500 flex items-center gap-1.5">
-        {showSearchFeedback && (isSearching ? <><LoaderCircle className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" />Ricerca in corso…</> : <><CheckCircle2 className="w-3.5 h-3.5" />Ricerca inviata</>)}
+        {showSearchFeedback && (isSearching ? <><LoaderCircle className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" /><span>Ricerca in corso…</span></> : <><CheckCircle2 className="w-3.5 h-3.5" /><span>Ricerca inviata</span></>)}
       </div>
 
       {/* ÁREA DE RÁPIDOS: Tags e filtros rápidos */}
