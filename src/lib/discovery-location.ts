@@ -78,7 +78,7 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
   }, []);
   useEffect(() => {
     let cancelled = false;
-    // Permission checks do not prompt. New users see the explanation before requesting GPS.
+    // Permission checks do not prompt; the GPS request below asks the browser.
     if (active && choice !== 'dismissed' && navigator.permissions) {
       void navigator.permissions.query({ name: 'geolocation' }).then(permission => {
         if (!cancelled && permission.state === 'granted') {
@@ -89,10 +89,10 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
     return () => { cancelled = true; };
   }, [active, choice]);
   useEffect(() => {
-    if (!active || choice !== 'accepted' || autoPrompted.current) return;
+    if (!active || autoPrompted.current) return;
     autoPrompted.current = true;
     useGps();
-  }, [active, choice, useGps]);
+  }, [active, useGps]);
   useEffect(() => {
     if (!enabled || !active || !visible || !navigator.geolocation) return;
     let cancelled = false;
