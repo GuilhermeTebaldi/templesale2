@@ -46,22 +46,63 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
   const [gpsRequest, setGpsRequest] = useState(0);
   useEffect(() => { onOriginChange?.(origin); }, [onOriginChange, origin]);
   const previous = useRef<{ lat: number; lng: number; at: number } | null>(null);
+  const gpsAttempt = useRef(0);
+  const gpsWanted = useRef(false);
+  useEffect(() => () => { gpsAttempt.current += 1; }, []);
+  const receivePosition = useCallback((position: GeolocationPosition) => {
+    writeDevicePreference('discovery-location', 'accepted'); setChoice('accepted');
+    setLocating(false);
+    if (!isValidGeoPoint(position.coords.latitude, position.coords.longitude) || position.coords.accuracy > 1000) { setFresh(false); setError("Posizione imprecisa. Riprova o scegli una città."); return; }
+    const next = { lat: position.coords.latitude, lng: position.coords.longitude };
+    setError(''); setFresh(true);
+    if (!shouldUpdateLocation(previous.current, next, Date.now())) return;
+    previous.current = { ...next, at: Date.now() };
+    setOrigin(next);
+    try {
+      localStorage.removeItem(CITY_KEY);
+      localStorage.setItem(LOCATION_KEY, JSON.stringify({ ...next, at: Date.now() }));
+      localStorage.setItem('templesale_map_location_prompted', 'true');
+    } catch { /* optional storage */ }
+  }, []);
+  const receiveLocationError = useCallback((failure: GeolocationPositionError) => {
+    setLocating(false); setFresh(false);
+    setError(failure.code === 1
+      ? 'Posizione bloccata dal browser.'
+      : 'Impossibile ottenere la posizione. Riprova o scegli una città.');
+    if (failure.code === 1) {
+      setEnabled(false); setChoice('dismissed');
+      previous.current = null;
+      setOrigin(current => current?.city ? current : null);
+    }
+  }, []);
   const useGps = useCallback(() => {
     if (!navigator.geolocation) { setError("Questo browser non supporta la posizione. Scegli una città."); return; }
-    writeDevicePreference('discovery-location', 'accepted'); setChoice('accepted');
     autoPrompted.current = true;
+    gpsWanted.current = true;
+    const attempt = ++gpsAttempt.current;
     previous.current = null; setGpsRequest(value => value + 1);
     try { localStorage.removeItem(CITY_KEY); } catch { /* optional storage */ }
     setFresh(false);
-    setError(''); setLocating(true); setEnabled(true);
-  }, []);
+    setError(''); setLocating(true); setEnabled(false);
+    // Start directly inside the click handler so retry retains the user gesture.
+    navigator.geolocation.getCurrentPosition(position => {
+      if (attempt !== gpsAttempt.current) return;
+      receivePosition(position); setEnabled(true);
+    }, failure => {
+      if (attempt === gpsAttempt.current) receiveLocationError(failure);
+    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
+  }, [receivePosition, receiveLocationError]);
   const dismissGps = useCallback(() => {
+    gpsWanted.current = false;
+    gpsAttempt.current += 1;
     writeDevicePreference('discovery-location', 'dismissed'); setChoice('dismissed');
     setEnabled(false); setLocating(false);
   }, []);
   const useCity = useCallback((city: string) => {
     const value = city.trim();
     if (!value) return;
+    gpsWanted.current = false;
+    gpsAttempt.current += 1;
     setEnabled(false); setLocating(false); setError(''); setOrigin({ city: value }); previous.current = null;
     writeDevicePreference('discovery-location', 'dismissed'); setChoice('dismissed'); setFresh(false);
     try { localStorage.setItem(CITY_KEY, value); } catch { /* optional storage */ }
@@ -78,16 +119,30 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
   }, []);
   useEffect(() => {
     let cancelled = false;
+    let permission: PermissionStatus | null = null;
+    const restorePermission = () => {
+      if (!cancelled && gpsWanted.current && permission?.state === 'granted') {
+        writeDevicePreference('discovery-location', 'accepted'); setChoice('accepted'); setEnabled(true);
+      }
+    };
     // Permission checks do not prompt; the GPS request below asks the browser.
-    if (active && choice !== 'dismissed' && navigator.permissions) {
-      void navigator.permissions.query({ name: 'geolocation' }).then(permission => {
-        if (!cancelled && permission.state === 'granted') {
-          writeDevicePreference('discovery-location', 'accepted'); setChoice('accepted'); setEnabled(true);
-        }
+    if (active && navigator.permissions) {
+      void navigator.permissions.query({ name: 'geolocation' }).then(status => {
+        if (cancelled) return;
+        permission = status;
+        permission.addEventListener('change', restorePermission);
+        restorePermission();
       }).catch(() => undefined);
     }
-    return () => { cancelled = true; };
-  }, [active, choice]);
+    window.addEventListener('pageshow', restorePermission);
+    document.addEventListener('visibilitychange', restorePermission);
+    return () => {
+      cancelled = true;
+      permission?.removeEventListener('change', restorePermission);
+      window.removeEventListener('pageshow', restorePermission);
+      document.removeEventListener('visibilitychange', restorePermission);
+    };
+  }, [active]);
   useEffect(() => {
     if (!active || autoPrompted.current) return;
     autoPrompted.current = true;
@@ -98,33 +153,11 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
     let cancelled = false;
     setLocating(true);
     const watch = navigator.geolocation.watchPosition(position => {
-      if (cancelled) return;
-      setLocating(false);
-      if (!isValidGeoPoint(position.coords.latitude, position.coords.longitude) || position.coords.accuracy > 1000) { setFresh(false); setError("Posizione imprecisa. Riprova o scegli una città."); return; }
-      const next = { lat: position.coords.latitude, lng: position.coords.longitude };
-      setError(''); setFresh(true);
-      if (!shouldUpdateLocation(previous.current, next, Date.now())) return;
-      previous.current = { ...next, at: Date.now() };
-      setOrigin(next);
-      try {
-        localStorage.removeItem(CITY_KEY);
-        localStorage.setItem(LOCATION_KEY, JSON.stringify({ ...next, at: Date.now() }));
-        localStorage.setItem('templesale_map_location_prompted', 'true');
-      } catch { /* optional storage */ }
+      if (!cancelled) receivePosition(position);
     }, failure => {
-      if (cancelled) return;
-      setLocating(false);
-      setFresh(false);
-      setError(failure.code === 1 ? "Posizione non autorizzata. Scegli una città o consenti l’accesso nel browser." : "Impossibile ottenere la posizione. Riprova o scegli una città.");
-      if (failure.code === 1) {
-        setEnabled(false);
-        writeDevicePreference('discovery-location', 'dismissed'); setChoice('dismissed');
-        previous.current = null;
-        setOrigin(current => current?.city ? current : null);
-      }
-      // Timeouts and temporary signal loss do not stop movement updates.
+      if (!cancelled) receiveLocationError(failure);
     }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
     return () => { cancelled = true; navigator.geolocation.clearWatch(watch); };
-  }, [active, enabled, visible, gpsRequest]);
-  return { origin, error, locating, fresh, useGps, useCity, needsConsent: choice === null, dismissGps };
+  }, [active, enabled, visible, gpsRequest, receivePosition, receiveLocationError]);
+  return { origin, error, locating, fresh, useGps, useCity, needsConsent: choice === null && !locating && !error, dismissGps };
 }

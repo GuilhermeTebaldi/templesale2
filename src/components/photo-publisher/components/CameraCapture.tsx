@@ -74,11 +74,8 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
       if (generation !== generationRef.current) return;
       const error = err as Error;
       console.warn('Camera stream error:', error);
-      if (error.name === 'NotAllowedError') {
-        writeDevicePreference('camera-used', 'false');
-      }
       setCameraError(error.name === 'NotAllowedError'
-        ? 'Accesso alla fotocamera non consentito. Nelle impostazioni di questo sito scegli Fotocamera → Consenti. Puoi anche usare la galleria.'
+        ? 'Fotocamera bloccata dal browser. Puoi usare la galleria.'
         : 'Fotocamera non disponibile nel browser. Puoi scegliere una foto dalla galleria.');
       setIsStartingCamera(false);
     } finally {startingRef.current=false;}
@@ -96,9 +93,8 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
           await startCamera();
           return;
         }
-        // Older browsers cannot query camera permission. A previous successful
-        // use lets us resume; getUserMedia still enforces the actual permission.
-        if (!cancelled && !permission && readDevicePreference('camera-used') === 'true') await startCamera();
+        // Resume prior successful use; the browser still enforces permission.
+        if (!cancelled && readDevicePreference('camera-used') === 'true') await startCamera();
       } catch {
         // An account record cannot grant this browser permission. Unsupported
         // permission queries still enforce permission through getUserMedia.
@@ -256,9 +252,6 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
             <h3 className="text-base font-semibold text-neutral-100 mb-2">Scegli la tua foto</h3>
             <p className="text-xs text-neutral-400 max-w-xs leading-relaxed mb-5">
               Apri la fotocamera quando vuoi scattare. Puoi anche scegliere una foto dalla galleria.
-            </p>
-            <p className="text-xs text-neutral-500 max-w-xs leading-relaxed mb-4">
-              Per evitare richieste ripetute in Safari: menu della pagina → Impostazioni sito web → Fotocamera → Consenti. Usa sempre lo stesso indirizzo del sito.
             </p>
             <button
               type="button"
