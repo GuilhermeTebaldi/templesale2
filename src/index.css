@@ -43,6 +43,18 @@
 
 body { font-family: var(--font-sans); }
 
+geolocation.ts-location-control {
+  color: #006da8;
+  background-color: #fff;
+  opacity: 1;
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #cfd9de;
+  border-radius: 24px;
+}
+
 
 /* PREVENÇÃO DE ZOOM AUTOMÁTICO AO DIGITAR EM DISPOSITIVOS MÓVEIS (iOS Safari / Android Chrome) */
 html {

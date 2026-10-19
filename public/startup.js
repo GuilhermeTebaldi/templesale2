@@ -14,7 +14,8 @@
     window.location.replace(url.href);
   }
   window.addEventListener('error', function (event) {
-    if (!ready && (event.target instanceof HTMLScriptElement || !document.getElementById('root').hasChildNodes())) recover();
+    var root = document.getElementById('root');
+    if (!ready && (event.target instanceof HTMLScriptElement || (event.target === window && (!root || !root.hasChildNodes() || root.querySelector('[data-startup-loading="true"]'))))) recover();
   }, true);
   window.addEventListener('vite:preloadError', function (event) {
     event.preventDefault();

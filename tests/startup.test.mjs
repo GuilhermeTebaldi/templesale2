@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 const script = readFileSync(new URL('../public/startup.js', import.meta.url), 'utf8');
-function fixture(href = 'https://www.templesale.com/') {
+function fixture(href = 'https://www.templesale.com/', prerendered = false) {
   const listeners = new Map(), navigations = [];
   let rendered = false, replaced;
   class Script {}
@@ -15,13 +15,14 @@ function fixture(href = 'https://www.templesale.com/') {
   };
   vm.runInNewContext(script, {
     window, URL, Date, HTMLScriptElement: Script,
-    document: { getElementById: () => ({ hasChildNodes: () => rendered }) },
+    document: { getElementById: () => ({ hasChildNodes: () => rendered || prerendered, querySelector: () => prerendered && !rendered ? {} : null }) },
   });
   return {
     navigations, get replaced() { return replaced; },
     ready: () => { rendered = true; listeners.get('templesale:ready')(); },
     scriptError: () => listeners.get('error')({ target: new Script() }),
     runtimeError: () => listeners.get('error')({ target: window }),
+    imageError: () => listeners.get('error')({ target: {} }),
     chunkError: () => { let prevented = false; listeners.get('vite:preloadError')({ preventDefault: () => { prevented = true; } }); return prevented; },
   };
 }
@@ -52,5 +53,12 @@ test('successful startup removes only its retry marker and preserves history sta
 test('a stale lazy chunk triggers recovery even after the initial render', () => {
   const f = fixture(); f.ready();
   assert.equal(f.chunkError(), true);
+  assert.equal(f.navigations.length, 1);
+});
+test('initial runtime failures recover while the existing logo is prerendered', () => {
+  const f = fixture('https://www.templesale.com/', true);
+  f.imageError();
+  assert.equal(f.navigations.length, 0, 'An image failure must not reload the page');
+  f.runtimeError();
   assert.equal(f.navigations.length, 1);
 });
