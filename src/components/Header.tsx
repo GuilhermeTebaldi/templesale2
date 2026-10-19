@@ -124,7 +124,7 @@ export const Header: React.FC<HeaderProps> = ({
       );
       setIsMobileKeyboardOpen((current) => (current === keyboardOpen ? current : keyboardOpen));
       if (viewport && mobileBottomNavRef.current) {
-        mobileBottomNavRef.current.style.bottom = `${Math.round(window.innerHeight - viewport.height - viewport.offsetTop)}px`;
+        mobileBottomNavRef.current.style.bottom = `${Math.min(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop))}px`;
       }
     };
 
