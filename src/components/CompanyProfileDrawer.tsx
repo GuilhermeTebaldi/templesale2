@@ -74,24 +74,26 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
   const [accountMode, setAccountMode] = useState<'deactivate' | 'delete'>('deactivate');
   const [accountEmail, setAccountEmail] = useState('');
   const [accountBusy, setAccountBusy] = useState(false);
+  const [accountConfirming, setAccountConfirming] = useState(false);
   const [accountError, setAccountError] = useState('');
   const accountText = (_pt: string, it: string) => it;
+  const accountEmailMatches = Boolean(user.email.trim()) && accountEmail.trim().toLowerCase() === user.email.trim().toLowerCase();
+  const accountConfirmationMessage = accountMode === 'delete'
+    ? accountText('Excluir definitivamente os dados da conta no TempleSale? Um novo cadastro começará vazio. Esta ação não pode ser desfeita.', 'Eliminare definitivamente i dati dell’account su TempleSale? Una nuova registrazione partirà vuota. L’operazione non è reversibile.')
+    : accountText('Desativar e ocultar sua empresa, preservando os dados para recuperação?', 'Disattivare e nascondere l’attività conservando i dati per il recupero?');
   const closeAccount = async () => {
-    if (!onCloseAccount || accountBusy || accountEmail !== user.email) return;
-    const message = accountMode === 'delete'
-      ? accountText('Excluir definitivamente os dados da conta no TempleSale? Um novo cadastro começará vazio. Esta ação não pode ser desfeita.', 'Eliminare definitivamente i dati dell’account su TempleSale? Una nuova registrazione partirà vuota. L’operazione non è reversibile.')
-      : accountText('Desativar e ocultar sua empresa, preservando os dados para recuperação?', 'Disattivare e nascondere l’attività conservando i dati per il recupero?');
-    if (!window.confirm(message)) return;
+    if (!onCloseAccount || accountBusy || !accountEmailMatches) return;
+    if (!accountConfirming) { setAccountConfirming(true); return; }
     setAccountBusy(true); setAccountError('');
-    try { await onCloseAccount(accountMode, accountEmail); }
+    try { await onCloseAccount(accountMode, user.email); }
     catch (error) { setAccountError(error instanceof Error ? error.message : accountText('Não foi possível encerrar a conta.', 'Impossibile chiudere l’account.')); }
-    finally { setAccountBusy(false); }
+    finally { setAccountBusy(false); setAccountConfirming(false); }
   };
 
   // Reset to main view whenever drawer is closed/opened
   useEffect(() => {
     if (isOpen) {
-      setCurrentView('main'); setHelpArticleId(null); setAccountEmail(''); setAccountError(''); setAccountMode('deactivate');
+      setCurrentView('main'); setHelpArticleId(null); setAccountEmail(''); setAccountError(''); setAccountMode('deactivate'); setAccountConfirming(false);
     }
   }, [isOpen]);
 
@@ -400,7 +402,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                   <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 px-1">Gestione dell’account</h3>
                   <button
                     type="button"
-                    onClick={() => setCurrentView('account')}
+                    onClick={() => { setCurrentView('account'); setAccountConfirming(false); }}
                     className="w-full flex items-center justify-between rounded-2xl border border-neutral-800/70 bg-neutral-950/60 p-3.5 text-left text-sm text-neutral-200 hover:bg-neutral-800/50 transition-colors"
                   >
                     <span>Disattiva o elimina account</span>
@@ -414,7 +416,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
           {currentView === 'account' && <div className="space-y-4 p-5">
             <h3 className="text-lg font-semibold">{accountText('O que deseja fazer?', 'Cosa vuoi fare?')}</h3>
             {(['deactivate', 'delete'] as const).map(mode => <button key={mode} type="button" disabled={accountBusy}
-              onClick={() => { setAccountMode(mode); setAccountError(''); }} aria-pressed={accountMode === mode}
+              onClick={() => { setAccountMode(mode); setAccountError(''); setAccountConfirming(false); }} aria-pressed={accountMode === mode}
               className={`w-full rounded-2xl border p-4 text-left ${accountMode === mode ? 'border-emerald-400 bg-emerald-400/5' : 'border-neutral-700'}`}>
               <strong className="block text-sm">{mode === 'deactivate' ? accountText('Desativar e preservar', 'Disattiva e conserva') : accountText('Excluir definitivamente do TempleSale', 'Elimina definitivamente da TempleSale')}</strong>
               <span className="mt-2 block text-xs leading-6 text-neutral-400">{mode === 'deactivate'
@@ -422,13 +424,18 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                 : accountText('Remove cadastro, publicações, fotos cadastradas e comprovantes do banco do TempleSale. Voltar com o mesmo e-mail cria um cadastro vazio. A identidade de acesso, arquivos externos e backups têm procedimentos de limpeza separados; solicitações pelo contato dos termos.', 'Rimuove dati dell’account, pubblicazioni, foto registrate e ricevute dal database TempleSale. Tornando con la stessa email si crea un account vuoto. Identità di accesso, file esterni e backup seguono procedure di pulizia separate; richieste al contatto delle condizioni.')}</span>
             </button>)}
             <label className="block text-sm">{accountText('Digite o e-mail da sua conta para confirmar', 'Digita l’email del tuo account per confermare')}
-              <input type="email" autoComplete="off" disabled={accountBusy} value={accountEmail} onChange={event => setAccountEmail(event.target.value)}
+              <span className="mt-1 block break-all text-xs text-neutral-400" translate="no">{user.email}</span>
+              <input type="email" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} disabled={accountBusy} value={accountEmail} onChange={event => { setAccountEmail(event.target.value); setAccountConfirming(false); }}
                 className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 p-3" />
             </label>
             {accountError && <p role="alert" className="text-sm text-red-300">{accountError}</p>}
-            <button type="button" disabled={accountBusy || accountEmail !== user.email} onClick={() => void closeAccount()}
+            {accountConfirming && <div role="alert" className="space-y-2 text-sm">
+              <p>{accountConfirmationMessage}</p>
+              <button type="button" disabled={accountBusy} onClick={() => setAccountConfirming(false)} className="text-neutral-400 underline">Annulla</button>
+            </div>}
+            <button type="button" disabled={accountBusy || !accountEmailMatches} onClick={() => void closeAccount()}
               className="w-full rounded-xl bg-red-500/15 p-3 font-semibold text-red-300 disabled:opacity-40">
-              {accountBusy ? accountText('Processando…', 'Elaborazione…') : accountMode === 'delete' ? accountText("Elimina definitivamente", 'Elimina definitivamente') : accountText("Disattiva attività", 'Disattiva attività')}
+              {accountBusy ? accountText('Processando…', 'Elaborazione…') : accountConfirming ? (accountMode === 'delete' ? 'Conferma eliminazione' : 'Conferma disattivazione') : accountMode === 'delete' ? accountText("Elimina definitivamente", 'Elimina definitivamente') : accountText("Disattiva attività", 'Disattiva attività')}
             </button>
           </div>}
 
