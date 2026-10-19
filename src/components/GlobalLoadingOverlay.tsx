@@ -4,9 +4,7 @@ import {
   getNetworkLoadingSnapshot,
   subscribeNetworkLoading,
 } from "../lib/networkActivity";
-import loadingLogoSrc from "../../logo-cropped-1772137553672.png";
-
-const GLOBAL_LOADING_LOGO_SRC = loadingLogoSrc;
+const GLOBAL_LOADING_LOGO_SRC = "/templesale-loading-logo.webp";
 
 export default function GlobalLoadingOverlay({ forceVisible = false, retry = false }: { forceVisible?: boolean; retry?: boolean } = {}) {
   const isNetworkLoading = React.useSyncExternalStore(
@@ -21,13 +19,14 @@ export default function GlobalLoadingOverlay({ forceVisible = false, retry = fal
       {isVisible && (
         <motion.div
           key="global-loading-overlay"
-          initial={{ opacity: 0 }}
+          initial={{ opacity: forceVisible ? 1 : 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2, ease: "easeOut" }}
           className="fixed inset-0 z-[99999] flex flex-col gap-5 items-center justify-center bg-white/65 backdrop-blur-md"
           aria-live="polite"
           aria-busy="true"
+          data-startup-loading={forceVisible ? 'true' : undefined}
         >
           <motion.img
             src={GLOBAL_LOADING_LOGO_SRC}

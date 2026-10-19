@@ -17,6 +17,7 @@ import EditPublicationModal from "./components/EditPublicationModal";
 import { Header as SocialHeader } from "./components/Header";
 import { FeedView as SocialFeedView } from "./components/FeedView";
 import { isValidGeoPoint, useDiscoveryLocation } from "./lib/discovery-location";
+import LocationPermissionButton from "./components/LocationPermissionButton";
 import { CompanyProfile as SocialCompanyProfile } from "./components/CompanyProfile";
 import { CompanySearch as SocialCompanySearch } from "./components/CompanySearch";
 import { CompanyProfileDrawer as SocialCompanyProfileDrawer } from "./components/CompanyProfileDrawer";
@@ -501,7 +502,8 @@ export default function App() {
         isCartOpen ||
         isEditePerfilOpen));
   const { origin: discoveryOrigin, error: discoveryLocationError, locating: locatingDiscovery,
-    fresh: freshDiscovery, useGps: enableDiscoveryGps, needsConsent: needsDiscoveryConsent, dismissGps: dismissDiscoveryGps } = useDiscoveryLocation(true);
+    fresh: freshDiscovery, useGps: enableDiscoveryGps, needsConsent: needsDiscoveryConsent, dismissGps: dismissDiscoveryGps,
+    acceptNativePosition, receiveLocationError } = useDiscoveryLocation(true);
   const isFeedActive = socialActiveTab === 'feed' && !isOverlayBlockingScroll &&
     !selectedPublication && !editingSocialPublication && !isNotificationsOpen;
   const {
@@ -3571,10 +3573,10 @@ export default function App() {
 
       <main className="flex-1 pb-24 sm:pb-16 sm:pl-[72px]">
         <div style={{ display: socialActiveTab === "feed" ? "block" : "none" }}>
-          {(needsDiscoveryConsent || discoveryLocationError || (!freshDiscovery && !locatingDiscovery)) && <div className="mx-auto max-w-xl border-b border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-600">
-            <p>{needsDiscoveryConsent ? 'Usiamo la tua posizione attuale per mostrarti attività e pubblicazioni vicine, anche quando ti sposti. Il GPS si aggiorna mentre usi il sito.' : discoveryLocationError || 'Usa la posizione attuale per scoprire le attività vicine.'}</p>
+          {(needsDiscoveryConsent || discoveryLocationError || !freshDiscovery) && <div className="mx-auto max-w-xl border-b border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-600">
+            <p>{discoveryLocationError || 'Usa la posizione per scoprire le attività vicine.'}</p>
             <div className="mt-2 flex items-center gap-4">
-              <button type="button" disabled={locatingDiscovery} onClick={enableDiscoveryGps} className="font-semibold text-sky-600 disabled:opacity-50">{locatingDiscovery ? 'Ricerca posizione…' : 'Usa la mia posizione'}</button>
+              <LocationPermissionButton locating={locatingDiscovery} onRequest={enableDiscoveryGps} onPosition={acceptNativePosition} onError={receiveLocationError} />
               {needsDiscoveryConsent && <button type="button" onClick={dismissDiscoveryGps} className="text-neutral-500">Non ora</button>}
             </div>
           </div>}

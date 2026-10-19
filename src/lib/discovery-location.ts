@@ -48,8 +48,10 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
   const previous = useRef<{ lat: number; lng: number; at: number } | null>(null);
   const gpsAttempt = useRef(0);
   const gpsWanted = useRef(false);
-  useEffect(() => () => { gpsAttempt.current += 1; autoPrompted.current = false; }, []);
+  const requestPending = useRef(false);
+  useEffect(() => () => { gpsAttempt.current += 1; autoPrompted.current = false; requestPending.current = false; }, []);
   const receivePosition = useCallback((position: GeolocationPosition) => {
+    requestPending.current = false;
     writeDevicePreference('discovery-location', 'accepted'); setChoice('accepted');
     setLocating(false);
     if (!isValidGeoPoint(position.coords.latitude, position.coords.longitude) || position.coords.accuracy > 1000) { setFresh(false); setError("Posizione imprecisa. Riprova o scegli una città."); return; }
@@ -65,6 +67,7 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
     } catch { /* optional storage */ }
   }, []);
   const receiveLocationError = useCallback((failure: GeolocationPositionError) => {
+    requestPending.current = false;
     setLocating(false); setFresh(false);
     setError(failure.code === 1
       ? 'Posizione bloccata dal browser.'
@@ -76,9 +79,11 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
     }
   }, []);
   const useGps = useCallback(() => {
+    if (requestPending.current) return;
     if (!navigator.geolocation) { setError("Questo browser non supporta la posizione. Scegli una città."); return; }
     autoPrompted.current = true;
     gpsWanted.current = true;
+    requestPending.current = true;
     const attempt = ++gpsAttempt.current;
     previous.current = null; setGpsRequest(value => value + 1);
     try { localStorage.removeItem(CITY_KEY); } catch { /* optional storage */ }
@@ -92,8 +97,14 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
       if (attempt === gpsAttempt.current) receiveLocationError(failure);
     }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
   }, [receivePosition, receiveLocationError]);
+  const acceptNativePosition = useCallback((position: GeolocationPosition) => {
+    autoPrompted.current = true; gpsWanted.current = true;
+    gpsAttempt.current += 1; previous.current = null;
+    receivePosition(position); setEnabled(true); setGpsRequest(value => value + 1);
+  }, [receivePosition]);
   const dismissGps = useCallback(() => {
     gpsWanted.current = false;
+    requestPending.current = false;
     gpsAttempt.current += 1;
     writeDevicePreference('discovery-location', 'dismissed'); setChoice('dismissed');
     setEnabled(false); setLocating(false);
@@ -102,6 +113,7 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
     const value = city.trim();
     if (!value) return;
     gpsWanted.current = false;
+    requestPending.current = false;
     gpsAttempt.current += 1;
     setEnabled(false); setLocating(false); setError(''); setOrigin({ city: value }); previous.current = null;
     writeDevicePreference('discovery-location', 'dismissed'); setChoice('dismissed'); setFresh(false);
@@ -120,29 +132,34 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
   useEffect(() => {
     let cancelled = false;
     let permission: PermissionStatus | null = null;
-    const restorePermission = () => {
-      if (!cancelled && gpsWanted.current && permission?.state === 'granted') {
+    const restorePermission = (retryPrompt = false) => {
+      if (cancelled || !gpsWanted.current || requestPending.current || document.visibilityState !== 'visible') return;
+      if (permission?.state === 'granted') {
         writeDevicePreference('discovery-location', 'accepted'); setChoice('accepted'); setEnabled(true);
+      } else if (retryPrompt && permission?.state === 'prompt') {
+        // Re-request after a session grant expires, only when the browser allows a prompt.
+        useGps();
       }
     };
+    const resume = () => restorePermission(true);
     // Permission checks do not prompt; the GPS request below asks the browser.
     if (active && navigator.permissions) {
       void navigator.permissions.query({ name: 'geolocation' }).then(status => {
         if (cancelled) return;
         permission = status;
-        permission.addEventListener('change', restorePermission);
+        permission.addEventListener('change', resume);
         restorePermission();
       }).catch(() => undefined);
     }
-    window.addEventListener('pageshow', restorePermission);
-    document.addEventListener('visibilitychange', restorePermission);
+    window.addEventListener('pageshow', resume);
+    document.addEventListener('visibilitychange', resume);
     return () => {
       cancelled = true;
-      permission?.removeEventListener('change', restorePermission);
-      window.removeEventListener('pageshow', restorePermission);
-      document.removeEventListener('visibilitychange', restorePermission);
+      permission?.removeEventListener('change', resume);
+      window.removeEventListener('pageshow', resume);
+      document.removeEventListener('visibilitychange', resume);
     };
-  }, [active]);
+  }, [active, useGps]);
   useEffect(() => {
     if (!active || autoPrompted.current) return;
     autoPrompted.current = true;
@@ -159,5 +176,5 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
     }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
     return () => { cancelled = true; navigator.geolocation.clearWatch(watch); };
   }, [active, enabled, visible, gpsRequest, receivePosition, receiveLocationError]);
-  return { origin, error, locating, fresh, useGps, useCity, needsConsent: choice === null && !locating && !error, dismissGps };
+  return { origin, error, locating, fresh, useGps, useCity, acceptNativePosition, receiveLocationError, needsConsent: choice === null && !locating && !error, dismissGps };
 }
