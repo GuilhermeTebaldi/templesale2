@@ -210,10 +210,10 @@ export const helpArticles: HelpArticle[] = [
     related: ['posizione', 'indirizzo', 'assistenza'],
   },
   {
-    id: 'lingua', category: 'Account e assistenza', title: 'Come leggo il sito in un’altra lingua?',
-    summary: 'La lingua originale è l’italiano; la traduzione è affidata al browser.',
+    id: 'lingua', category: 'Account e assistenza', title: 'Qual è la lingua del sito?',
+    summary: 'Il sito mantiene l’italiano originale, senza traduzione automatica.',
     keywords: 'lingua italiano portoghese inglese traduzione tradurre traduci browser safari chrome app installata',
-    steps: ['Apri il menu dell’account dall’immagine in alto e vai a Impostazioni → Traduci questa pagina.', 'Segui le istruzioni mostrate per il tuo browser. Il comando di traduzione e le lingue disponibili dipendono dal dispositivo.', 'Se usi l’app installata e il comando non è disponibile, apri lo stesso indirizzo nel browser.'],
+    steps: ['Apri il menu dell’account e vai a Impostazioni → Lingua del sito.', 'Il sito usa l’italiano originale. La traduzione automatica è disattivata per mantenere corretti testi e pulsanti.'],
     note: 'Il nome TempleSale rimane il nome della piattaforma e non deve essere tradotto.', related: ['iniziare'], action: 'language',
   },
   {

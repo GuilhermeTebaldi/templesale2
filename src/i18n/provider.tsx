@@ -26,7 +26,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     document.documentElement.lang = 'it';
-    document.documentElement.translate = true;
+    document.documentElement.translate = false;
     document.documentElement.dir = "ltr";
     try {window.localStorage.setItem(LOCALE_STORAGE_KEY,locale);} catch { /* Italian does not require storage. */ }
   }, [locale]);

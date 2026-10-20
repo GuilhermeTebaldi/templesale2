@@ -147,7 +147,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
               {currentView === 'saved' && `Pubblicazioni salvate (${savedPosts.length})`}
               {currentView === 'settings' && 'Impostazioni'}
               {currentView === 'help' && 'Centro assistenza'}
-              {currentView === 'language' && 'Traduci questa pagina'}
+              {currentView === 'language' && 'Lingua del sito'}
               {currentView === 'account' && accountText('Encerrar conta', 'Chiudi account')}
             </h2>
           </div>
@@ -298,7 +298,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                       </div>
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-neutral-200 group-hover:text-white">Impostazioni</div>
-                        <div className="text-xs text-neutral-400">Aiuto, account, condizioni e traduzione</div>
+                        <div className="text-xs text-neutral-400">Aiuto, account, condizioni e lingua</div>
                       </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-neutral-300 shrink-0" />
@@ -386,11 +386,11 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                       </div>
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-neutral-200 group-hover:text-white flex items-center space-x-2">
-                          <span>Traduci questa pagina</span>
+                          <span>Lingua del sito</span>
 
                         </div>
                         <div className="text-xs text-neutral-400 truncate">
-                          Usa la traduzione del browser
+                          Italiano • Traduzione automatica disattivata
                         </div>
                       </div>
                     </div>
