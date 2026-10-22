@@ -14,6 +14,9 @@ interface CameraCaptureProps {
 export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const nativeCameraRef = useRef<HTMLInputElement | null>(null);
+  const useNativeCamera = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
   const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -26,6 +29,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
 
   // Initialize and switch camera stream
   const startCamera = async (desiredFacingMode: 'user' | 'environment' = facingMode) => {
+    if (useNativeCamera) { nativeCameraRef.current?.click(); return; }
     if (startingRef.current) return;
     startingRef.current = true;
     const generation = generationRef.current;
@@ -102,7 +106,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
       }
     };
 
-    void maybeStartCamera();
+    if (!useNativeCamera) void maybeStartCamera();
 
     return () => {
       cancelled = true;
@@ -124,6 +128,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
 
   // Capture current video frame and go directly to editor (no review screen)
   const handleCapture = () => {
+    if (useNativeCamera) { void startCamera(); return; }
     if (!videoRef.current) return;
 
     setFlashAnimation(true);
@@ -155,14 +160,18 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
   // Handle image upload from file picker and go directly to editor
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.currentTarget.value = '';
     if (!file) return;
 
+    const generation = generationRef.current;
     const reader = new FileReader();
     reader.onload = (event) => {
+      if (generation !== generationRef.current) return;
       const result = event.target?.result as string;
       stopStream();
       onPhotoTaken(result);
     };
+    reader.onerror = () => { if (generation === generationRef.current) setCameraError('Impossibile leggere la foto. Riprova o scegli dalla galleria.'); };
     reader.readAsDataURL(file);
   };
 
@@ -253,20 +262,21 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
             <p className="text-xs text-neutral-400 max-w-xs leading-relaxed mb-5">
               Apri la fotocamera quando vuoi scattare. Puoi anche scegliere una foto dalla galleria.
             </p>
-            <button
+            {!useNativeCamera && <button
               type="button"
               id="btn-start-camera"
               onClick={() => void startCamera()}
               className="px-5 py-2.5 rounded-full bg-white text-xs font-bold uppercase tracking-[0.14em] text-neutral-950 transition hover:bg-neutral-200 active:scale-95"
             >
               Usa fotocamera
-            </button>
+            </button>}
           </div>
         )}
       </div>
 
       {/* Floating Bottom Controls */}
       <footer className="absolute bottom-0 inset-x-0 z-20 px-6 py-6 bg-gradient-to-t from-black/90 via-black/50 to-transparent flex items-center justify-around">
+        {useNativeCamera && <input ref={nativeCameraRef} type="file" id="native-camera-input" accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" onChange={handleFileUpload} />}
         <input
           ref={fileInputRef}
           type="file"
@@ -294,7 +304,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
           type="button"
           id="btn-capture-shutter"
           onClick={handleCapture}
-          disabled={!stream || isStartingCamera}
+          disabled={(!useNativeCamera && !stream) || isStartingCamera}
           aria-label="Scatta foto"
           className="relative w-20 h-20 rounded-full border-4 border-white p-1 flex items-center justify-center transition transform active:scale-90 hover:scale-105 shadow-2xl"
         >
@@ -304,7 +314,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
         </button>
 
         {/* Switch Camera Button */}
-        <button
+        {!useNativeCamera ? <button
           type="button"
           id="btn-switch-camera"
           onClick={toggleFacingMode}
@@ -316,7 +326,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
             <RotateCw className="w-5 h-5 text-neutral-200" />
           </div>
           <span className="text-[11px] font-medium tracking-wide">Inverti</span>
-        </button>
+        </button> : <div className="w-12" aria-hidden="true" />}
       </footer>
     </div>
   );
