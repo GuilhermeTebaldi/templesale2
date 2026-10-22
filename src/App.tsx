@@ -1,4 +1,6 @@
 import React from "react";
+import { flushSync } from "react-dom";
+import { usesSystemPhotoSourceMenu } from "./components/photo-publisher/components/CameraCapture";
 import { pendingComment, withPendingComment, reconcileCommentMutation, previewComments, type PendingComment } from "./lib/comment-delivery";
 import { usePublicationFeed } from "./lib/use-publication-feed";
 import { FeedRequestGate } from "./lib/publication-feed";
@@ -345,6 +347,7 @@ export default function App() {
   const [mapOpenWithResults, setMapOpenWithResults] = React.useState(false);
   const [mapAutoFocusPanelSearch, setMapAutoFocusPanelSearch] = React.useState(false);
   const [isNewProductOpen, setIsNewProductOpen] = React.useState(false);
+  const publicationPhotoInputRef = React.useRef<HTMLInputElement | null>(null);
   const [isMeusAnunciosOpen, setIsMeusAnunciosOpen] = React.useState(false);
   const [editingProduct, setEditingProduct] = React.useState<Product | null>(null);
   const [isCurtidasOpen, setIsCurtidasOpen] = React.useState(false);
@@ -2464,7 +2467,7 @@ export default function App() {
     avatarInputRef.current?.click();
   }, []);
 
-  const handleOpenNewProduct = () => {
+  const handleOpenNewProduct = (resumeDraft = false) => {
     if (pendingPublicationCount > 0) { setSocialActiveTab("feed"); return; }
     setIsUserOpen(false);
 
@@ -2487,7 +2490,11 @@ export default function App() {
 
     setProfileCompletionMessage("");
     setIsEditePerfilOpen(false);
-    setIsNewProductOpen(true);
+    if (usesSystemPhotoSourceMenu() && resumeDraft !== true) {
+      // Mount the input and open it in the original tap, before any draft I/O.
+      flushSync(() => setIsNewProductOpen(true));
+      publicationPhotoInputRef.current?.click();
+    } else setIsNewProductOpen(true);
   };
 
   const openMapWithSearch = React.useCallback(
@@ -3580,7 +3587,7 @@ export default function App() {
               {needsDiscoveryConsent && <button type="button" onClick={dismissDiscoveryGps} className="text-neutral-500">Non ora</button>}
             </div>
           </div>}
-          {publicationSubmitError && <div role="alert" className="mx-auto max-w-xl rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700"><p>{publicationSubmitError}</p><button type="button" className="mt-2 font-semibold underline" onClick={() => {setPublicationSubmitError('');handleOpenNewProduct();}}>Riprendi la bozza</button></div>}
+          {publicationSubmitError && <div role="alert" className="mx-auto max-w-xl rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700"><p>{publicationSubmitError}</p><button type="button" className="mt-2 font-semibold underline" onClick={() => {setPublicationSubmitError('');handleOpenNewProduct(true);}}>Riprendi la bozza</button></div>}
           {pendingPublicationCount > 0 && (
             <div className="sticky top-14 z-30 mx-auto max-w-xl px-3 pt-2 sm:top-16 sm:max-w-3xl">
               <div className="overflow-hidden rounded-full border border-neutral-200 bg-white/95 shadow-sm">
@@ -3871,6 +3878,7 @@ export default function App() {
       <AnimatePresence>
         {(hasMemberAccess && isNewProductOpen && myEstablishment) && (
           <NewPublication
+            photoInputRef={publicationPhotoInputRef}
             establishment={myEstablishment}
             onClose={() => setIsNewProductOpen(false)}
             onPublishStarted={() => {

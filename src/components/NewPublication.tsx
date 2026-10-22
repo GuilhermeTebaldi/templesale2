@@ -3,7 +3,7 @@ import { AnimatePresence } from "motion/react";
 import { ChevronLeft, Loader2, MessageSquare, Send, Sparkles, X } from "lucide-react";
 import { api, type EstablishmentDto, type PublicationDto } from "../lib/api";
 import { getCompatibleImageUrl } from "../lib/product-images";
-import { CameraCapture, usesNativePhotoCapture } from "./photo-publisher/components/CameraCapture";
+import { CameraCapture, usesNativePhotoCapture, usesSystemPhotoSourceMenu } from "./photo-publisher/components/CameraCapture";
 import GlobalLoadingOverlay from "./GlobalLoadingOverlay";
 import { FilterControls } from "./photo-publisher/components/FilterControls";
 import { OverlayToolbar } from "./photo-publisher/components/OverlayToolbar";
@@ -23,6 +23,7 @@ import { loadPublicationDraft, savePublicationDraft, clearPublicationDraft, type
 import { WriteBusyError } from '../lib/write-operation';
 
 interface NewPublicationProps {
+  photoInputRef?: React.RefObject<HTMLInputElement | null>;
   establishment: EstablishmentDto;
   onClose: () => void;
   onPublished: (publication: PublicationDto, alreadyConfirmed?: boolean) => void;
@@ -43,6 +44,7 @@ function dataUrlToFile(dataUrl: string, fileName: string): File {
 }
 
 export default function NewPublication({
+  photoInputRef,
   establishment,
   onClose,
   onPublished,
@@ -51,6 +53,20 @@ export default function NewPublication({
   onPublishFailed,
 }: NewPublicationProps) {
   const { t } = useI18n();
+  const localPhotoInputRef = React.useRef<HTMLInputElement | null>(null);
+  const nativePhotoInputRef = photoInputRef ?? localPhotoInputRef;
+  const systemSourceMenu = usesSystemPhotoSourceMenu();
+  const [pendingNativeImage, setPendingNativeImage] = React.useState<string | null>(null);
+  const [nativePickerOpened, setNativePickerOpened] = React.useState(false);
+  const [nativePickerCancelled, setNativePickerCancelled] = React.useState(false);
+  const nativeReader = React.useRef<FileReader | null>(null);
+  React.useEffect(() => () => nativeReader.current?.abort(), []);
+  React.useEffect(() => {
+    const input = nativePhotoInputRef.current;
+    const cancel = () => setNativePickerCancelled(true);
+    input?.addEventListener('cancel', cancel);
+    return () => input?.removeEventListener('cancel', cancel);
+  }, [nativePhotoInputRef]);
   const [currentImage, setCurrentImage] = React.useState<string | null>(null);
   const [photoCrop, setPhotoCrop] = React.useState<PhotoCrop>({ x: 0, y: 0, scale: 1 });
   const [containerDims, setContainerDims] = React.useState({ width: 1080, height: 1080 });
@@ -172,6 +188,44 @@ export default function NewPublication({
     resetEditor();
     setCurrentImage(imageSrc);
   };
+
+  React.useEffect(() => {
+    if (draftLoading || !pendingNativeImage) return;
+    let cancelled = false;
+    void (async () => {
+      // A new choice replaces the old draft only after reading the photo.
+      // Cancelling the native picker leaves the recovered draft untouched.
+      if (preparedRef.current) await discardDraft();
+      if (!cancelled) {
+        setDraftNotice(''); handlePhotoTaken(pendingNativeImage);
+        setPendingNativeImage(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [draftLoading, pendingNativeImage]);
+  React.useEffect(() => {
+    if (!nativePickerCancelled || draftLoading) return;
+    setNativePickerCancelled(false);
+    if (!currentImage) onClose();
+  }, [nativePickerCancelled, draftLoading, currentImage, onClose]);
+
+  const requestAnotherPhoto = () => {
+    if (systemSourceMenu) nativePhotoInputRef.current?.click();
+    else void discardDraft();
+  };
+  const nativePhotoInput = systemSourceMenu && <input
+    ref={nativePhotoInputRef} id="publication-native-photo-input" type="file" accept="image/*" className="hidden"
+    onClick={() => setNativePickerOpened(true)}
+    onChange={event => {
+      const file = event.currentTarget.files?.[0]; event.currentTarget.value = '';
+      if (!file) { setNativePickerCancelled(true); return; }
+      nativeReader.current?.abort();
+      const reader = new FileReader(); nativeReader.current = reader;
+      reader.onload = () => { if (nativeReader.current === reader) setPendingNativeImage(String(reader.result)); };
+      reader.onerror = () => { setErrorMessage('Impossibile leggere la foto. Riprova.'); };
+      reader.readAsDataURL(file);
+    }}
+  />;
 
   const handleSaveOverlay = (overlayData: Omit<OverlayItem, "id" | "x" | "y">) => {
     if (editingOverlay) {
@@ -310,10 +364,19 @@ export default function NewPublication({
   const beginPublish = () => { if (!currentImage || sendingRef.current || draftLoading) return; setBackgroundPublishing(true); void handlePublish(); };
   const closeEditor = () => { controllerRef.current?.abort(new Error("Invio interrotto. La bozza è conservata.")); onClose(); };
   if (backgroundPublishing) return null;
+  if (systemSourceMenu && !currentImage) return <>{nativePhotoInput}{draftLoading || pendingNativeImage
+    ? <GlobalLoadingOverlay forceVisible />
+    : errorMessage ? <div role="alert" className="fixed inset-0 z-[120] flex flex-col items-center justify-center gap-3 bg-white p-6 text-slate-900">
+        <p>{errorMessage}</p><button type="button" onClick={() => nativePhotoInputRef.current?.click()}>Riprova</button><button type="button" onClick={closeEditor}>Chiudi</button>
+      </div> : (!nativePickerOpened && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40" onClick={closeEditor}>
+        <button type="button" className="rounded-2xl bg-white px-6 py-4 font-semibold text-slate-900" onClick={event => { event.stopPropagation(); nativePhotoInputRef.current?.click(); }}>Scegli foto</button>
+      </div>)}</>;
   if (usesNativePhotoCapture() && !currentImage) return draftLoading
     ? <GlobalLoadingOverlay forceVisible />
     : <CameraCapture onPhotoTaken={handlePhotoTaken} onCancel={closeEditor} />;
   return (
+    <>
+    {nativePhotoInput}
     <AnimatePresence>
       <div className="fixed inset-0 z-[120] overflow-hidden overscroll-none bg-black text-neutral-100">
         <div
@@ -334,7 +397,7 @@ export default function NewPublication({
             <X className="h-4.5 w-4.5" />
           </button>}
 
-          {(draftNotice || draftLoading || discarding) && <div role="status" className="absolute top-16 inset-x-4 z-40 rounded-lg bg-white p-3 text-xs text-slate-900 shadow"><p>{draftLoading ? "Recupero della bozza..." : discarding ? "Eliminazione della bozza..." : draftNotice}</p>{currentImage && !draftLoading && <button type="button" disabled={discarding} className="mt-2 font-semibold text-red-700 underline" onClick={() => void discardDraft()}>Elimina la bozza e scegli un’altra foto</button>}</div>}
+          {(draftNotice || draftLoading || discarding) && <div role="status" className="absolute top-16 inset-x-4 z-40 rounded-lg bg-white p-3 text-xs text-slate-900 shadow"><p>{draftLoading ? "Recupero della bozza..." : discarding ? "Eliminazione della bozza..." : draftNotice}</p>{currentImage && !draftLoading && <button type="button" disabled={discarding} className="mt-2 font-semibold text-red-700 underline" onClick={requestAnotherPhoto}>Elimina la bozza e scegli un’altra foto</button>}</div>}
           {isPublishing && <div role="status" aria-label="Pubblicazione in corso" className="ts-comment-progress absolute inset-x-0 top-0 z-50" />}
           {!currentImage ? (
             <main className="h-full w-full">
@@ -354,7 +417,7 @@ export default function NewPublication({
                 <button
                   type="button"
                   id="btn-back-camera"
-                  onClick={() => void discardDraft()}
+                  onClick={requestAnotherPhoto}
                   disabled={isPublishing || draftLoading || discarding}
                   className="flex items-center gap-1 rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs font-semibold text-neutral-300 transition hover:text-white active:scale-95"
                 >
@@ -500,5 +563,6 @@ export default function NewPublication({
         )}
       </div>
     </AnimatePresence>
+    </>
   );
 }

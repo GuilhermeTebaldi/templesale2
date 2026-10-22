@@ -9,13 +9,30 @@ import { build } from 'esbuild';
 const bundle = await build({
   stdin: { resolveDir: process.cwd(), loader: 'tsx', contents: `
     import React from 'react';
+    import { flushSync } from 'react-dom';
     import { createRoot } from 'react-dom/client';
     import NewPublication from './src/components/NewPublication';
+    import { usesSystemPhotoSourceMenu } from './src/components/photo-publisher/components/CameraCapture';
+    import { savePublicationDraft } from './src/lib/publication-draft';
     import { I18nProvider } from './src/i18n/provider';
-    createRoot(document.getElementById('root')).render(<I18nProvider><NewPublication
-      establishment={{ id: 1, name: 'Camera fixture' }} onClose={() => { window.photoPickerClosed = true; }}
-      onPublished={() => { throw new Error('The test must not publish'); }}
-    /></I18nProvider>);
+    window.seedDraft = async () => {
+      const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
+      const file = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      await savePublicationDraft(1, { file, source: file, caption: 'Bozza conservata', savedAt: Date.now() });
+    };
+    function Fixture() {
+      const [open, setOpen] = React.useState(false);
+      const input = React.useRef(null);
+      return <><button id="fixture-plus" onClick={() => {
+        if (usesSystemPhotoSourceMenu()) { flushSync(() => setOpen(true)); input.current.click(); }
+        else setOpen(true);
+      }}>+</button><button id="fixture-resume" onClick={() => setOpen(true)}>Riprendi</button>{open && <NewPublication photoInputRef={input}
+        establishment={{ id: 1, name: 'Camera fixture' }}
+        onClose={() => { window.photoPickerClosed = true; setOpen(false); }}
+        onPublished={() => { throw new Error('The test must not publish'); }}
+      />}</>;
+    }
+    createRoot(document.getElementById('root')).render(<I18nProvider><Fixture /></I18nProvider>);
   ` },
   bundle: true, format: 'esm', write: false,
   define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env': '{}' },
@@ -54,6 +71,10 @@ async function fixture(t, device) {
       Object.defineProperty(navigator, 'maxTouchPoints', { value: 5 });
     }
     window.cameraRequests = 0;
+    window.photoPickerGestures = [];
+    document.addEventListener('click', event => {
+      if (event.target.id === 'publication-native-photo-input') window.photoPickerGestures.push(navigator.userActivation.isActive);
+    }, true);
     Object.defineProperty(navigator, 'permissions', { value: { query: async () => ({ state: 'prompt' }) } });
     Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: async () => {
       window.cameraRequests++; throw Object.assign(new Error('Fixture permission denied'), { name: 'NotAllowedError' });
@@ -63,7 +84,11 @@ async function fixture(t, device) {
   page.on('pageerror', error => errors.push(error.message));
   t.after(() => assert.deepEqual(errors, []));
   await page.goto('http://127.0.0.1:' + server.address().port);
-  await page.locator(device ? '#native-photo-options' : '#camera-capture-container').waitFor();
+  await page.locator('#fixture-plus').waitFor();
+  if (device !== 'iPhone' && device !== 'iPad') {
+    await page.locator('#fixture-plus').click();
+    await page.locator(device ? '#native-photo-options' : '#camera-capture-container').waitFor();
+  }
   return page;
 }
 async function choosePhoto(page, selector) {
@@ -78,7 +103,7 @@ async function choosePhoto(page, selector) {
   await chooser.setFiles({ name: 'scatto.png', mimeType: 'image/png', buffer: Buffer.from(photo, 'base64') });
   await page.locator('#post-caption-textarea').waitFor({ state: 'visible' });
 }
-for (const device of Object.keys(devices)) {
+for (const device of ['Android']) {
   test(`${device}: native capture returns to the existing photo editor and caption without a video permission request`, async t => {
     const page = await fixture(t, device);
     assert.equal(await page.locator('#camera-capture-container').count(), 0, 'The intermediate camera screen is not mounted');
@@ -98,8 +123,55 @@ for (const device of Object.keys(devices)) {
     assert.equal(await page.evaluate(() => window.cameraRequests), 0, 'Repeated photos do not reacquire a video stream');
   });
 }
-test('mobile gallery still opens the same editor without requesting a video stream', async t => {
+for (const device of ['iPhone', 'iPad']) {
+  test(`${device}: + opens the system source menu directly, then the existing editor`, async t => {
+    const page = await fixture(t, device);
+    await choosePhoto(page, '#fixture-plus');
+    assert.equal(await page.locator('#native-photo-options').count(), 0);
+    assert.equal(await page.locator('#camera-capture-container').count(), 0);
+    assert.equal(await page.locator('#publication-native-photo-input').getAttribute('capture'), null);
+    assert.equal(await page.locator('#publication-native-photo-input').getAttribute('accept'), 'image/*');
+    await page.locator('#post-caption-textarea').fill('Foto dal selettore del telefono');
+    assert.equal(await page.locator('#post-caption-textarea').inputValue(), 'Foto dal selettore del telefono');
+    const cancelled = page.waitForEvent('filechooser');
+    await page.locator('#btn-back-camera').click(); await cancelled;
+    await page.locator('#publication-native-photo-input').dispatchEvent('cancel');
+    assert.equal(await page.locator('#post-caption-textarea').inputValue(), 'Foto dal selettore del telefono');
+    // The replacement action opens the same native menu from its own tap.
+    await choosePhoto(page, '#btn-back-camera');
+    await page.waitForFunction(() => document.querySelector('#post-caption-textarea')?.value === '');
+    assert.deepEqual(await page.evaluate(() => window.photoPickerGestures), [true, true, true], 'Both pickers open inside an active user gesture');
+    assert.equal(await page.evaluate(() => window.cameraRequests), 0);
+  });
+  test(`${device}: cancelling the source picker returns to the feed without a custom menu`, async t => {
+    const page = await fixture(t, device);
+    const pending = page.waitForEvent('filechooser');
+    await page.locator('#fixture-plus').click(); await pending;
+    await page.locator('#publication-native-photo-input').dispatchEvent('cancel');
+    await page.waitForFunction(() => window.photoPickerClosed);
+    assert.equal(await page.locator('#native-photo-options').count(), 0);
+    assert.equal(await page.locator('#post-caption-textarea').count(), 0);
+  });
+}
+test('cancelling the system picker preserves and restores an existing draft', async t => {
   const page = await fixture(t, 'iPhone');
+  await page.evaluate(() => window.seedDraft());
+  const pending = page.waitForEvent('filechooser');
+  await page.locator('#fixture-plus').click(); await pending;
+  await page.locator('#publication-native-photo-input').dispatchEvent('cancel');
+  await page.locator('#post-caption-textarea').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#post-caption-textarea').inputValue(), 'Bozza conservata');
+  assert.equal(await page.evaluate(() => Boolean(window.photoPickerClosed)), false);
+});
+test('choosing a new system photo replaces a recovered draft without stale caption or upload state', async t => {
+  const page = await fixture(t, 'iPhone');
+  await page.evaluate(() => window.seedDraft());
+  await choosePhoto(page, '#fixture-plus');
+  await page.waitForFunction(() => document.querySelector('#post-caption-textarea')?.value === '');
+  assert.equal(await page.getByText('Bozza recuperata. Puoi riprendere la pubblicazione.').count(), 0);
+});
+test('mobile gallery still opens the same editor without requesting a video stream', async t => {
+  const page = await fixture(t, 'Android');
   assert.equal(await page.locator('#gallery-file-input').getAttribute('capture'), null);
   await choosePhoto(page, '#btn-open-gallery');
   assert.equal(await page.evaluate(() => window.cameraRequests), 0);
@@ -122,4 +194,12 @@ test('desktop retains its existing video-camera request and retry behavior', asy
   assert.equal(await page.evaluate(() => window.cameraRequests), 1);
   await page.locator('#btn-retry-camera').click();
   assert.equal(await page.evaluate(() => window.cameraRequests), 2);
+});
+
+test('missing draft recovery offers one native picker action instead of leaving an invisible modal', async t => {
+  const page = await fixture(t, 'iPhone');
+  await page.locator('#fixture-resume').click();
+  await choosePhoto(page, 'button:text-is("Scegli foto")');
+  assert.equal(await page.locator('#native-photo-options').count(), 0);
+  assert.equal(await page.evaluate(() => window.cameraRequests), 0);
 });

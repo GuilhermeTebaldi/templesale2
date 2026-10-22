@@ -28,7 +28,7 @@ Estas são preferências explícitas de Guilherme para este projeto. Leia-as ant
 
 ## Lições concretas deste projeto
 
-- Foto no celular: a câmera nativa e a galeria usam seletores de arquivos separados e levam ao editor existente. Não substitua esse fluxo por uma câmera de vídeo com `getUserMedia` sem necessidade demonstrada.
+- Foto no celular: no iPhone/iPad, abra diretamente o seletor nativo sem `capture`, que já oferece câmera e biblioteca. No Android, preserve atalhos separados de câmera e galeria onde o seletor não oferece ambos. As fotos seguem para o editor existente. Não substitua esse fluxo por uma câmera de vídeo com `getUserMedia` sem necessidade demonstrada.
 - Localização: use um único `watchPosition` para obter a primeira posição e as atualizações. Não duplique com `getCurrentPosition` nem reinicie pedidos em cada troca de tela ou retorno ao app.
 - Reaproveite a autorização válida do navegador. Preferências salvas pelo site não são permissões do sistema; não apague a escolha do usuário a cada publicação e não finja uma autorização permanente.
 - Respeite recusa e revogação. Mantenha a recuperação por ação do usuário e evite ciclos de pedidos automáticos. Acompanhar a posição durante o uso não implica rastrear com o aplicativo fechado.
