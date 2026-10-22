@@ -13,9 +13,13 @@ interface CameraCaptureProps {
   onCancel?: () => void;
 }
 
-export function usesNativePhotoCapture() {
-  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+export function usesSystemPhotoSourceMenu() {
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent)
     || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+export function usesNativePhotoCapture() {
+  return /Android/i.test(navigator.userAgent) || usesSystemPhotoSourceMenu();
 }
 
 export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken, onCancel }) => {
