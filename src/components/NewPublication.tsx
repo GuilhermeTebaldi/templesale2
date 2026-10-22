@@ -57,6 +57,7 @@ export default function NewPublication({
   const nativePhotoInputRef = photoInputRef ?? localPhotoInputRef;
   const systemSourceMenu = usesSystemPhotoSourceMenu();
   const [pendingNativeImage, setPendingNativeImage] = React.useState<string | null>(null);
+  const [nativePickerOpened, setNativePickerOpened] = React.useState(false);
   const [nativePickerCancelled, setNativePickerCancelled] = React.useState(false);
   const nativeReader = React.useRef<FileReader | null>(null);
   React.useEffect(() => () => nativeReader.current?.abort(), []);
@@ -214,6 +215,7 @@ export default function NewPublication({
   };
   const nativePhotoInput = systemSourceMenu && <input
     ref={nativePhotoInputRef} id="publication-native-photo-input" type="file" accept="image/*" className="hidden"
+    onClick={() => setNativePickerOpened(true)}
     onChange={event => {
       const file = event.currentTarget.files?.[0]; event.currentTarget.value = '';
       if (!file) { setNativePickerCancelled(true); return; }
@@ -364,9 +366,11 @@ export default function NewPublication({
   if (backgroundPublishing) return null;
   if (systemSourceMenu && !currentImage) return <>{nativePhotoInput}{draftLoading || pendingNativeImage
     ? <GlobalLoadingOverlay forceVisible />
-    : errorMessage && <div role="alert" className="fixed inset-0 z-[120] flex flex-col items-center justify-center gap-3 bg-white p-6 text-slate-900">
+    : errorMessage ? <div role="alert" className="fixed inset-0 z-[120] flex flex-col items-center justify-center gap-3 bg-white p-6 text-slate-900">
         <p>{errorMessage}</p><button type="button" onClick={() => nativePhotoInputRef.current?.click()}>Riprova</button><button type="button" onClick={closeEditor}>Chiudi</button>
-      </div>}</>;
+      </div> : (!nativePickerOpened && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40" onClick={closeEditor}>
+        <button type="button" className="rounded-2xl bg-white px-6 py-4 font-semibold text-slate-900" onClick={event => { event.stopPropagation(); nativePhotoInputRef.current?.click(); }}>Scegli foto</button>
+      </div>)}</>;
   if (usesNativePhotoCapture() && !currentImage) return draftLoading
     ? <GlobalLoadingOverlay forceVisible />
     : <CameraCapture onPhotoTaken={handlePhotoTaken} onCancel={closeEditor} />;

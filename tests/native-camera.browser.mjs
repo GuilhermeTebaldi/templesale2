@@ -26,7 +26,7 @@ const bundle = await build({
       return <><button id="fixture-plus" onClick={() => {
         if (usesSystemPhotoSourceMenu()) { flushSync(() => setOpen(true)); input.current.click(); }
         else setOpen(true);
-      }}>+</button>{open && <NewPublication photoInputRef={input}
+      }}>+</button><button id="fixture-resume" onClick={() => setOpen(true)}>Riprendi</button>{open && <NewPublication photoInputRef={input}
         establishment={{ id: 1, name: 'Camera fixture' }}
         onClose={() => { window.photoPickerClosed = true; setOpen(false); }}
         onPublished={() => { throw new Error('The test must not publish'); }}
@@ -194,4 +194,12 @@ test('desktop retains its existing video-camera request and retry behavior', asy
   assert.equal(await page.evaluate(() => window.cameraRequests), 1);
   await page.locator('#btn-retry-camera').click();
   assert.equal(await page.evaluate(() => window.cameraRequests), 2);
+});
+
+test('missing draft recovery offers one native picker action instead of leaving an invisible modal', async t => {
+  const page = await fixture(t, 'iPhone');
+  await page.locator('#fixture-resume').click();
+  await choosePhoto(page, 'button:text-is("Scegli foto")');
+  assert.equal(await page.locator('#native-photo-options').count(), 0);
+  assert.equal(await page.evaluate(() => window.cameraRequests), 0);
 });
