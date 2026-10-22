@@ -21,16 +21,20 @@ async function fixture(t, { native = false, saved = null, scripts = true } = {})
     else delete window.HTMLGeolocationElement;
     const permission = new EventTarget();
     permission.state = 'prompt';
-    const requests = [], watches = [];
+    const requests = [], watches = [], cleared = [];
     Object.defineProperty(navigator, 'permissions', { value: { query: async () => permission } });
     Object.defineProperty(navigator, 'geolocation', { value: {
       getCurrentPosition: (success, error) => requests.push({ success, error }),
       watchPosition: (success, error) => { watches.push({ success, error }); return watches.length; },
-      clearWatch() {},
+      clearWatch(id) { cleared.push(id); },
     } });
-    window.locationFixture = { requests, watches, permission,
-      deny() { requests.at(-1).error({ code: 1 }); },
-      succeed() { requests.at(-1).success({ coords: { latitude: 41.6, longitude: 12.5, accuracy: 10 } }); },
+    window.locationFixture = { requests, watches, cleared, permission,
+      deny(index = watches.length - 1) { watches[index].error({ code: 1 }); },
+      succeed(latitude = 41.6, longitude = 12.5) { watches.at(-1).success({ coords: { latitude, longitude, accuracy: 10 } }); },
+      setVisible(visible) {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, value: visible ? 'visible' : 'hidden' });
+        document.dispatchEvent(new Event('visibilitychange'));
+      },
       permissionChange(value) { permission.state = value; permission.dispatchEvent(new Event('change')); },
     };
   }, { native, saved });
@@ -53,7 +57,7 @@ async function fixture(t, { native = false, saved = null, scripts = true } = {})
   await page.goto(baseURL);
   return page;
 }
-const requests = page => page.evaluate(() => window.locationFixture.requests.length);
+const requests = page => page.evaluate(() => window.locationFixture.watches.length);
 const deny = page => page.evaluate(() => window.locationFixture.deny());
 
 test('the existing logo is visible even when all application scripts fail', async t => {
@@ -67,7 +71,7 @@ test('the existing logo is visible even when all application scripts fail', asyn
 
 test('a denied retry keeps the same button visible while pending and does not loop', async t => {
   const page = await fixture(t, { saved: 'accepted' });
-  await page.waitForFunction(() => window.locationFixture.requests.length === 1);
+  await page.waitForFunction(() => window.locationFixture.watches.length === 1);
   await deny(page);
   const retry = page.getByRole('button', { name: 'Usa la mia posizione', exact: true });
   await retry.waitFor({ state: 'visible' });
@@ -85,7 +89,7 @@ test('a denied retry keeps the same button visible while pending and does not lo
   assert.equal(await requests(page), 2, 'No automatic retry after a denied response');
   assert.equal(await page.evaluate(() => localStorage.getItem('templesale_discovery-location')), 'accepted');
   await page.reload();
-  await page.waitForFunction(() => window.locationFixture.requests.length === 1);
+  await page.waitForFunction(() => window.locationFixture.watches.length === 1);
 });
 
 test('the native control feeds the existing location/watch flow and cancels stale failures', async t => {
@@ -97,24 +101,65 @@ test('the native control feeds the existing location/watch flow and cancels stal
     element.position = { coords: { latitude: 41.6, longitude: 12.5, accuracy: 10 } };
     element.dispatchEvent(new Event('location'));
   });
-  await page.waitForFunction(() => window.locationFixture.watches.length === 1);
-  await deny(page);
+  await page.waitForFunction(() => window.locationFixture.watches.length === 2);
+  await page.evaluate(() => window.locationFixture.deny(0));
   assert.equal(await page.evaluate(() => localStorage.getItem('templesale_discovery-location')), 'accepted');
   assert.equal(await page.getByText('Posizione bloccata dal browser.', { exact: true }).count(), 0);
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('templesale_map_user_location')).lat), 41.6);
 });
 
-test('expired session permissions retry on return; blocked permissions do not repeatedly request', async t => {
-  const page = await fixture(t);
-  await page.waitForFunction(() => window.locationFixture.requests.length === 1);
-  await deny(page);
-  await page.getByRole('button', { name: 'Usa la mia posizione', exact: true }).waitFor({ state: 'visible' });
-  await page.evaluate(() => { window.locationFixture.permission.state = 'denied'; window.dispatchEvent(new Event('pageshow')); });
-  assert.equal(await requests(page), 1);
-  await page.evaluate(() => { window.locationFixture.permission.state = 'prompt'; window.dispatchEvent(new Event('pageshow')); window.dispatchEvent(new Event('pageshow')); });
-  assert.equal(await requests(page), 2, 'One request, even with duplicate lifecycle events');
-  await page.evaluate(() => window.locationFixture.succeed());
+test('one continuous watch survives repeated app switches and keeps the current position updated', async t => {
+  const page = await fixture(t, { saved: 'accepted' });
   await page.waitForFunction(() => window.locationFixture.watches.length === 1);
+  await page.evaluate(() => {
+    window.locationFixture.succeed();
+    // Some Safari versions report prompt even after a successful position.
+    window.dispatchEvent(new Event('pageshow'));
+    window.locationFixture.setVisible(false);
+    window.locationFixture.setVisible(true);
+    window.dispatchEvent(new Event('pageshow'));
+  });
+  assert.equal(await requests(page), 1);
+  assert.deepEqual(await page.evaluate(() => window.locationFixture.cleared), []);
+  assert.equal(await page.evaluate(() => window.locationFixture.requests.length), 0, 'No separate getCurrentPosition followed by another watch');
+  await page.evaluate(() => {
+    const now = Date.now(); Date.now = () => now + 31000;
+    window.locationFixture.succeed(41.61, 12.51);
+  });
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('templesale_map_user_location')).lat === 41.61);
+  assert.equal(await requests(page), 1, 'Movement reuses the same subscription');
   await page.evaluate(() => window.locationFixture.permissionChange('granted'));
-  assert.equal(await requests(page), 2, 'An active grant resumes without another initial request');
+  assert.equal(await requests(page), 1, 'A valid permission does not trigger another request');
+});
+
+test('revoked and expired grants do not prompt on every return; an explicit retry still works', async t => {
+  const page = await fixture(t);
+  await page.waitForFunction(() => window.locationFixture.watches.length === 1);
+  await page.evaluate(() => { window.locationFixture.succeed(); window.locationFixture.permissionChange('denied'); });
+  await page.getByRole('button', { name: 'Usa la mia posizione', exact: true }).waitFor({ state: 'visible' });
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('pageshow'));
+    window.locationFixture.permissionChange('prompt');
+    window.dispatchEvent(new Event('pageshow'));
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  assert.equal(await requests(page), 1, 'No repeated automatic consent requests');
+  await page.getByRole('button', { name: 'Usa la mia posizione', exact: true }).click();
+  assert.equal(await requests(page), 2);
+  await page.evaluate(() => { window.locationFixture.succeed(); window.locationFixture.permissionChange('prompt'); });
+  assert.equal(await requests(page), 2);
+  assert.equal(await page.evaluate(() => localStorage.getItem('templesale_discovery-location')), 'accepted');
+  await page.evaluate(() => window.locationFixture.permissionChange('granted'));
+  await page.waitForFunction(() => window.locationFixture.watches.length === 3);
+});
+
+test('a temporary GPS timeout keeps the watch alive and recovers without another permission request', async t => {
+  const page = await fixture(t);
+  await page.waitForFunction(() => window.locationFixture.watches.length === 1);
+  await page.evaluate(() => window.locationFixture.watches[0].error({ code: 3 }));
+  await page.getByRole('button', { name: 'Usa la mia posizione', exact: true }).waitFor({ state: 'visible' });
+  await page.evaluate(() => window.locationFixture.succeed());
+  await page.waitForFunction(() => localStorage.getItem('templesale_discovery-location') === 'accepted');
+  assert.equal(await requests(page), 1);
+  assert.deepEqual(await page.evaluate(() => window.locationFixture.cleared), []);
 });

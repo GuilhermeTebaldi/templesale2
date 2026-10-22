@@ -32,8 +32,6 @@ export function shouldUpdateLocation(previous: { lat: number; lng: number; at: n
 
 export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: DiscoveryOrigin | null) => void) {
   const [origin, setOrigin] = useState<DiscoveryOrigin | null>(readDiscoveryOrigin);
-  const [enabled, setEnabled] = useState(false);
-  const [visible, setVisible] = useState(() => document.visibilityState === 'visible');
   const [error, setError] = useState('');
   const [locating, setLocating] = useState(false);
   const [fresh, setFresh] = useState(false);
@@ -43,13 +41,18 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
     try { return localStorage.getItem('templesale_map_location_prompted') === 'true' ? 'accepted' : null; } catch { return null; }
   });
   const autoPrompted = useRef(false);
-  const [gpsRequest, setGpsRequest] = useState(0);
   useEffect(() => { onOriginChange?.(origin); }, [onOriginChange, origin]);
   const previous = useRef<{ lat: number; lng: number; at: number } | null>(null);
   const gpsAttempt = useRef(0);
   const gpsWanted = useRef(false);
   const requestPending = useRef(false);
-  useEffect(() => () => { gpsAttempt.current += 1; autoPrompted.current = false; requestPending.current = false; }, []);
+  const watchId = useRef<number | null>(null);
+  const stopTracking = useCallback(() => {
+    gpsAttempt.current += 1;
+    requestPending.current = false;
+    if (watchId.current !== null) navigator.geolocation?.clearWatch(watchId.current);
+    watchId.current = null;
+  }, []);
   const receivePosition = useCallback((position: GeolocationPosition) => {
     requestPending.current = false;
     writeDevicePreference('discovery-location', 'accepted'); setChoice('accepted');
@@ -73,108 +76,99 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
       ? 'Posizione bloccata dal browser.'
       : 'Impossibile ottenere la posizione. Riprova o scegli una città.');
     if (failure.code === 1) {
-      setEnabled(false); setChoice('dismissed');
+      stopTracking(); setChoice('dismissed');
       previous.current = null;
       setOrigin(current => current?.city ? current : null);
     }
-  }, []);
-  const useGps = useCallback(() => {
-    if (requestPending.current) return;
+  }, [stopTracking]);
+  // One watch obtains the first fix and all subsequent updates. Keep it alive
+  // across visibility changes: the browser pauses/resumes delivery itself.
+  const startTracking = useCallback(() => {
+    if (watchId.current !== null || !active) return;
     if (!navigator.geolocation) { setError("Questo browser non supporta la posizione. Scegli una città."); return; }
-    autoPrompted.current = true;
-    gpsWanted.current = true;
     requestPending.current = true;
     const attempt = ++gpsAttempt.current;
-    previous.current = null; setGpsRequest(value => value + 1);
-    try { localStorage.removeItem(CITY_KEY); } catch { /* optional storage */ }
-    setFresh(false);
-    setError(''); setLocating(true); setEnabled(false);
-    // Start directly inside the click handler so retry retains the user gesture.
-    navigator.geolocation.getCurrentPosition(position => {
-      if (attempt !== gpsAttempt.current) return;
-      receivePosition(position); setEnabled(true);
+    setError(''); setLocating(true);
+    watchId.current = navigator.geolocation.watchPosition(position => {
+      if (attempt === gpsAttempt.current) receivePosition(position);
     }, failure => {
       if (attempt === gpsAttempt.current) receiveLocationError(failure);
     }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
-  }, [receivePosition, receiveLocationError]);
+  }, [active, receivePosition, receiveLocationError]);
+  const useGps = useCallback(() => {
+    if (requestPending.current) return;
+    autoPrompted.current = true; gpsWanted.current = true;
+    stopTracking(); previous.current = null;
+    try { localStorage.removeItem(CITY_KEY); } catch { /* optional storage */ }
+    setFresh(false);
+    // A retry starts synchronously inside the tap, preserving the user gesture.
+    startTracking();
+  }, [startTracking, stopTracking]);
   const acceptNativePosition = useCallback((position: GeolocationPosition) => {
     autoPrompted.current = true; gpsWanted.current = true;
-    gpsAttempt.current += 1; previous.current = null;
-    receivePosition(position); setEnabled(true); setGpsRequest(value => value + 1);
-  }, [receivePosition]);
+    // Invalidate a pending script request before accepting the native control.
+    stopTracking(); previous.current = null;
+    receivePosition(position); startTracking();
+  }, [receivePosition, startTracking, stopTracking]);
   const dismissGps = useCallback(() => {
     gpsWanted.current = false;
-    requestPending.current = false;
-    gpsAttempt.current += 1;
+    stopTracking();
     writeDevicePreference('discovery-location', 'dismissed'); setChoice('dismissed');
-    setEnabled(false); setLocating(false);
-  }, []);
+    setLocating(false);
+  }, [stopTracking]);
   const useCity = useCallback((city: string) => {
     const value = city.trim();
     if (!value) return;
     gpsWanted.current = false;
-    requestPending.current = false;
-    gpsAttempt.current += 1;
-    setEnabled(false); setLocating(false); setError(''); setOrigin({ city: value }); previous.current = null;
+    stopTracking();
+    setLocating(false); setError(''); setOrigin({ city: value }); previous.current = null;
     writeDevicePreference('discovery-location', 'dismissed'); setChoice('dismissed'); setFresh(false);
     try { localStorage.setItem(CITY_KEY, value); } catch { /* optional storage */ }
-  }, []);
-  useEffect(() => {
-    const update = () => {
-      setVisible(document.visibilityState === 'visible');
-      setFresh(false); previous.current = null;
-      if (document.visibilityState === 'visible') setGpsRequest(value => value + 1);
-    };
-    document.addEventListener('visibilitychange', update);
-    window.addEventListener('pageshow', update);
-    return () => { document.removeEventListener('visibilitychange', update); window.removeEventListener('pageshow', update); };
-  }, []);
+  }, [stopTracking]);
   useEffect(() => {
     let cancelled = false;
     let permission: PermissionStatus | null = null;
-    const restorePermission = (retryPrompt = false) => {
+    const restorePermission = (changed = false) => {
       if (cancelled || !gpsWanted.current || requestPending.current || document.visibilityState !== 'visible') return;
       if (permission?.state === 'granted') {
-        writeDevicePreference('discovery-location', 'accepted'); setChoice('accepted'); setEnabled(true);
-      } else if (retryPrompt && permission?.state === 'prompt') {
-        // Re-request after a session grant expires, only when the browser allows a prompt.
-        useGps();
+        writeDevicePreference('discovery-location', 'accepted'); setChoice('accepted');
+        startTracking();
+      } else if (permission?.state === 'denied') {
+        receiveLocationError({ code: 1 } as GeolocationPositionError);
+      } else if (changed && permission?.state === 'prompt') {
+        // An expired/session grant is not a new consent. Leave the retry button
+        // available rather than causing another prompt on every app switch.
+        stopTracking(); setLocating(false); setFresh(false);
       }
     };
-    const resume = () => restorePermission(true);
+    const resume = () => restorePermission();
+    const changed = () => restorePermission(true);
     // Permission checks do not prompt; the GPS request below asks the browser.
     if (active && navigator.permissions) {
       void navigator.permissions.query({ name: 'geolocation' }).then(status => {
         if (cancelled) return;
         permission = status;
-        permission.addEventListener('change', resume);
-        restorePermission();
+        permission.addEventListener('change', changed);
+        if (permission.state === 'granted' || permission.state === 'denied') restorePermission();
       }).catch(() => undefined);
     }
     window.addEventListener('pageshow', resume);
     document.addEventListener('visibilitychange', resume);
     return () => {
       cancelled = true;
-      permission?.removeEventListener('change', resume);
+      permission?.removeEventListener('change', changed);
       window.removeEventListener('pageshow', resume);
       document.removeEventListener('visibilitychange', resume);
     };
-  }, [active, useGps]);
+  }, [active, startTracking, stopTracking, receiveLocationError]);
   useEffect(() => {
-    if (!active || autoPrompted.current) return;
-    autoPrompted.current = true;
-    useGps();
-  }, [active, useGps]);
-  useEffect(() => {
-    if (!enabled || !active || !visible || !navigator.geolocation) return;
-    let cancelled = false;
-    setLocating(true);
-    const watch = navigator.geolocation.watchPosition(position => {
-      if (!cancelled) receivePosition(position);
-    }, failure => {
-      if (!cancelled) receiveLocationError(failure);
-    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
-    return () => { cancelled = true; navigator.geolocation.clearWatch(watch); };
-  }, [active, enabled, visible, gpsRequest, receivePosition, receiveLocationError]);
+    if (active && !autoPrompted.current) {
+      autoPrompted.current = true;
+      useGps();
+    }
+    return () => {
+      stopTracking(); autoPrompted.current = false;
+    };
+  }, [active, useGps, stopTracking]);
   return { origin, error, locating, fresh, useGps, useCity, acceptNativePosition, receiveLocationError, needsConsent: choice === null && !locating && !error, dismissGps };
 }
