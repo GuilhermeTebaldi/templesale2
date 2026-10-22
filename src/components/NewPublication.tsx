@@ -3,7 +3,8 @@ import { AnimatePresence } from "motion/react";
 import { ChevronLeft, Loader2, MessageSquare, Send, Sparkles, X } from "lucide-react";
 import { api, type EstablishmentDto, type PublicationDto } from "../lib/api";
 import { getCompatibleImageUrl } from "../lib/product-images";
-import { CameraCapture } from "./photo-publisher/components/CameraCapture";
+import { CameraCapture, usesNativePhotoCapture } from "./photo-publisher/components/CameraCapture";
+import GlobalLoadingOverlay from "./GlobalLoadingOverlay";
 import { FilterControls } from "./photo-publisher/components/FilterControls";
 import { OverlayToolbar } from "./photo-publisher/components/OverlayToolbar";
 import { PhotoEditorCanvas } from "./photo-publisher/components/PhotoEditorCanvas";
@@ -309,6 +310,9 @@ export default function NewPublication({
   const beginPublish = () => { if (!currentImage || sendingRef.current || draftLoading) return; setBackgroundPublishing(true); void handlePublish(); };
   const closeEditor = () => { controllerRef.current?.abort(new Error("Invio interrotto. La bozza è conservata.")); onClose(); };
   if (backgroundPublishing) return null;
+  if (usesNativePhotoCapture() && !currentImage) return draftLoading
+    ? <GlobalLoadingOverlay forceVisible />
+    : <CameraCapture onPhotoTaken={handlePhotoTaken} onCancel={closeEditor} />;
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-[120] overflow-hidden overscroll-none bg-black text-neutral-100">
