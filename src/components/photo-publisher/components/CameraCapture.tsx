@@ -5,18 +5,24 @@ import {
   Image as ImageIcon,
   RotateCw,
   AlertCircle,
+  X,
 } from 'lucide-react';
 
 interface CameraCaptureProps {
   onPhotoTaken: (imageSrc: string) => void;
+  onCancel?: () => void;
 }
 
-export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) => {
+export function usesNativePhotoCapture() {
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken, onCancel }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const nativeCameraRef = useRef<HTMLInputElement | null>(null);
-  const useNativeCamera = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const useNativeCamera = usesNativePhotoCapture();
 
   const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -179,6 +185,25 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
     void startCamera(facingMode === 'user' ? 'environment' : 'user');
   };
 
+  const fileInputs = <>
+    {useNativeCamera && <input ref={nativeCameraRef} type="file" id="native-camera-input" accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" onChange={handleFileUpload} />}
+    <input ref={fileInputRef} type="file" id="gallery-file-input" accept="image/*" className="hidden" onChange={handleFileUpload} />
+  </>;
+
+  if (useNativeCamera) return <div id="native-photo-options" className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40" onClick={onCancel}>
+    <section role="dialog" aria-modal="true" aria-label="Scegli foto" className="relative isolate w-full max-w-lg overflow-hidden rounded-t-3xl bg-stone-800 p-5 text-white shadow-xl" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }} onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') onCancel?.(); }}>
+      <img src="/photo-picker-background.webp" alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 -z-20 h-full w-full scale-105 object-cover blur-[2px]" />
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10" style={{ background: 'linear-gradient(rgba(0,0,0,.4), rgba(0,0,0,.65))' }} />
+      {fileInputs}
+      <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold" style={{ color: '#fff' }}>Foto</h2><button type="button" onClick={onCancel} aria-label="Chiudi" autoFocus className="rounded-full text-white bg-black/25 p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"><X className="h-5 w-5" /></button></div>
+      <div className="grid grid-cols-2 gap-3">
+        <button type="button" id="btn-capture-shutter" onClick={handleCapture} className="flex min-h-28 flex-col items-center justify-center gap-3 rounded-2xl border border-white/70 bg-white/95 p-5 font-semibold text-slate-900 shadow-lg transition active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"><Camera className="h-7 w-7" />Scatta foto</button>
+        <button type="button" id="btn-open-gallery" onClick={() => fileInputRef.current?.click()} className="flex min-h-28 flex-col items-center justify-center gap-3 rounded-2xl border border-white/70 bg-white/95 p-5 font-semibold text-slate-900 shadow-lg transition active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"><ImageIcon className="h-7 w-7" />Galleria</button>
+      </div>
+      {cameraError && <p role="alert" className="mt-3 rounded-xl bg-white p-3 text-sm text-red-700">{cameraError}</p>}
+    </section>
+  </div>;
+
   return (
     <div
       id="camera-capture-container"
@@ -262,29 +287,21 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
             <p className="text-xs text-neutral-400 max-w-xs leading-relaxed mb-5">
               Apri la fotocamera quando vuoi scattare. Puoi anche scegliere una foto dalla galleria.
             </p>
-            {!useNativeCamera && <button
+            <button
               type="button"
               id="btn-start-camera"
               onClick={() => void startCamera()}
               className="px-5 py-2.5 rounded-full bg-white text-xs font-bold uppercase tracking-[0.14em] text-neutral-950 transition hover:bg-neutral-200 active:scale-95"
             >
               Usa fotocamera
-            </button>}
+            </button>
           </div>
         )}
       </div>
 
       {/* Floating Bottom Controls */}
       <footer className="absolute bottom-0 inset-x-0 z-20 px-6 py-6 bg-gradient-to-t from-black/90 via-black/50 to-transparent flex items-center justify-around">
-        {useNativeCamera && <input ref={nativeCameraRef} type="file" id="native-camera-input" accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" onChange={handleFileUpload} />}
-        <input
-          ref={fileInputRef}
-          type="file"
-          id="gallery-file-input"
-          accept="image/*"
-          className="hidden"
-          onChange={handleFileUpload}
-        />
+        {fileInputs}
 
         {/* Gallery Button */}
         <button
@@ -304,7 +321,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
           type="button"
           id="btn-capture-shutter"
           onClick={handleCapture}
-          disabled={(!useNativeCamera && !stream) || isStartingCamera}
+          disabled={!stream || isStartingCamera}
           aria-label="Scatta foto"
           className="relative w-20 h-20 rounded-full border-4 border-white p-1 flex items-center justify-center transition transform active:scale-90 hover:scale-105 shadow-2xl"
         >
@@ -314,7 +331,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
         </button>
 
         {/* Switch Camera Button */}
-        {!useNativeCamera ? <button
+        <button
           type="button"
           id="btn-switch-camera"
           onClick={toggleFacingMode}
@@ -326,7 +343,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoTaken }) =>
             <RotateCw className="w-5 h-5 text-neutral-200" />
           </div>
           <span className="text-[11px] font-medium tracking-wide">Inverti</span>
-        </button> : <div className="w-12" aria-hidden="true" />}
+        </button>
       </footer>
     </div>
   );

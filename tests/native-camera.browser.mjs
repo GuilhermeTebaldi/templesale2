@@ -13,7 +13,7 @@ const bundle = await build({
     import NewPublication from './src/components/NewPublication';
     import { I18nProvider } from './src/i18n/provider';
     createRoot(document.getElementById('root')).render(<I18nProvider><NewPublication
-      establishment={{ id: 1, name: 'Camera fixture' }} onClose={() => {}}
+      establishment={{ id: 1, name: 'Camera fixture' }} onClose={() => { window.photoPickerClosed = true; }}
       onPublished={() => { throw new Error('The test must not publish'); }}
     /></I18nProvider>);
   ` },
@@ -26,6 +26,8 @@ const server = createServer((request, response) => {
     response.setHeader('Content-Type', 'text/javascript'); response.end(bundle.outputFiles[0].text);
   } else if (request.url === '/fixture.css') {
     response.setHeader('Content-Type', 'text/css'); response.end(stylesheet);
+  } else if (request.url === '/photo-picker-background.webp') {
+    response.setHeader('Content-Type', 'image/webp'); response.end(readFileSync('public/photo-picker-background.webp'));
   } else if (request.url === '/') {
     response.setHeader('Content-Type', 'text/html');
     response.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"><div id="root"></div><script type="module" src="/fixture.js"></script>');
@@ -61,7 +63,7 @@ async function fixture(t, device) {
   page.on('pageerror', error => errors.push(error.message));
   t.after(() => assert.deepEqual(errors, []));
   await page.goto('http://127.0.0.1:' + server.address().port);
-  await page.locator('#camera-capture-container').waitFor();
+  await page.locator(device ? '#native-photo-options' : '#camera-capture-container').waitFor();
   return page;
 }
 async function choosePhoto(page, selector) {
@@ -79,17 +81,19 @@ async function choosePhoto(page, selector) {
 for (const device of Object.keys(devices)) {
   test(`${device}: native capture returns to the existing photo editor and caption without a video permission request`, async t => {
     const page = await fixture(t, device);
+    assert.equal(await page.locator('#camera-capture-container').count(), 0, 'The intermediate camera screen is not mounted');
+    assert.equal(await page.getByRole('button', { name: 'Galleria', exact: true }).isVisible(), true);
     assert.equal(await page.locator('#native-camera-input').getAttribute('capture'), 'environment');
     assert.equal(await page.evaluate(() => window.cameraRequests), 0);
     await choosePhoto(page, '#btn-capture-shutter');
     await page.locator('#post-caption-textarea').fill('Didascalia dopo la foto');
     assert.equal(await page.locator('#post-caption-textarea').inputValue(), 'Didascalia dopo la foto');
     await page.locator('#btn-back-camera').click();
-    await page.locator('#camera-capture-container').waitFor();
+    await page.locator('#native-photo-options').waitFor();
     const pending = page.waitForEvent('filechooser');
     await page.locator('#btn-capture-shutter').click();
     await (await pending).setFiles([]);
-    assert.equal(await page.locator('#camera-capture-container').count(), 1, 'Cancellation keeps the camera chooser available');
+    assert.equal(await page.locator('#native-photo-options').count(), 1, 'Cancellation keeps camera and gallery options available');
     await choosePhoto(page, '#btn-capture-shutter');
     assert.equal(await page.evaluate(() => window.cameraRequests), 0, 'Repeated photos do not reacquire a video stream');
   });
@@ -98,6 +102,17 @@ test('mobile gallery still opens the same editor without requesting a video stre
   const page = await fixture(t, 'iPhone');
   assert.equal(await page.locator('#gallery-file-input').getAttribute('capture'), null);
   await choosePhoto(page, '#btn-open-gallery');
+  assert.equal(await page.evaluate(() => window.cameraRequests), 0);
+});
+test('mobile photo choices show the decorative background and can be closed', async t => {
+  const page = await fixture(t, 'Android');
+  const image = page.locator('#native-photo-options img');
+  await image.evaluate(element => element.decode());
+  assert.equal(await image.getAttribute('alt'), '');
+  assert.equal(await image.evaluate(element => element.naturalWidth > 0), true);
+  if (process.env.PHOTO_PICKER_SCREENSHOT) await page.screenshot({ path: process.env.PHOTO_PICKER_SCREENSHOT });
+  await page.getByRole('button', { name: 'Chiudi', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.photoPickerClosed), true);
   assert.equal(await page.evaluate(() => window.cameraRequests), 0);
 });
 test('desktop retains its existing video-camera request and retry behavior', async t => {
