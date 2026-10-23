@@ -52,7 +52,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [hasObservedGlobalLoading, setHasObservedGlobalLoading] = React.useState(false);
   const [canFallbackBrandIntroStart, setCanFallbackBrandIntroStart] = React.useState(false);
   const [isMobileKeyboardOpen, setIsMobileKeyboardOpen] = React.useState(false);
-  const mobileBottomNavRef = React.useRef<HTMLElement | null>(null);
+  const mobileNavigationViewportRef = React.useRef<HTMLElement | null>(null);
   const isGlobalLoadingVisible = React.useSyncExternalStore(
     subscribeNetworkLoading,
     getNetworkLoadingSnapshot,
@@ -109,22 +109,33 @@ export const Header: React.FC<HeaderProps> = ({
     if (typeof window === 'undefined') return;
 
     let frameId = 0;
+    let referenceHeight = window.innerHeight;
+    let referenceWidth = window.innerWidth;
+    let keyboardWasOpen = false;
     const updateKeyboardState = () => {
       const viewport = window.visualViewport;
       const activeElement = document.activeElement;
       const isTextInputFocused =
-        activeElement instanceof HTMLInputElement ||
+        (activeElement instanceof HTMLInputElement && !['button', 'submit', 'reset', 'checkbox', 'radio', 'range', 'color', 'file', 'hidden', 'image'].includes(activeElement.type)) ||
         activeElement instanceof HTMLTextAreaElement ||
         activeElement instanceof HTMLSelectElement ||
-        Boolean(activeElement?.getAttribute('contenteditable'));
-      const keyboardOpen = Boolean(
-        viewport &&
-          isTextInputFocused &&
-          window.innerHeight - viewport.height > 150,
-      );
+        (activeElement instanceof HTMLElement && activeElement.isContentEditable);
+      if (referenceWidth !== window.innerWidth) {
+        referenceWidth = window.innerWidth;
+        referenceHeight = window.innerHeight;
+        keyboardWasOpen = false;
+      }
+      const visibleHeight = viewport?.height ?? window.innerHeight;
+      const keyboardOpen = Math.max(referenceHeight, window.innerHeight) - visibleHeight > 150
+        && (isTextInputFocused || keyboardWasOpen);
+      keyboardWasOpen = keyboardOpen;
+      if (!keyboardOpen && !isTextInputFocused) referenceHeight = window.innerHeight;
       setIsMobileKeyboardOpen((current) => (current === keyboardOpen ? current : keyboardOpen));
-      if (viewport && mobileBottomNavRef.current) {
-        mobileBottomNavRef.current.style.bottom = `${Math.min(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop))}px`;
+      if (mobileNavigationViewportRef.current) {
+        // A top-anchored frame avoids WebKit's independent bottom-fixed offset.
+        // Negative offsets are rubber-band overscroll, not a smaller screen.
+        const visibleBottom = visibleHeight + Math.max(0, viewport?.offsetTop ?? 0);
+        mobileNavigationViewportRef.current.style.height = `${Math.round(visibleBottom)}px`;
       }
     };
 
@@ -144,6 +155,8 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener('scroll', scheduleKeyboardState, { passive: true });
     window.addEventListener('resize', scheduleKeyboardState);
     window.addEventListener('orientationchange', scheduleKeyboardState);
+    window.addEventListener('pageshow', scheduleKeyboardState);
+    document.addEventListener('visibilitychange', scheduleKeyboardState);
     window.addEventListener('focusin', scheduleKeyboardState);
     window.addEventListener('focusout', scheduleKeyboardState);
 
@@ -156,6 +169,8 @@ export const Header: React.FC<HeaderProps> = ({
       window.removeEventListener('scroll', scheduleKeyboardState);
       window.removeEventListener('resize', scheduleKeyboardState);
       window.removeEventListener('orientationchange', scheduleKeyboardState);
+      window.removeEventListener('pageshow', scheduleKeyboardState);
+      document.removeEventListener('visibilitychange', scheduleKeyboardState);
       window.removeEventListener('focusin', scheduleKeyboardState);
       window.removeEventListener('focusout', scheduleKeyboardState);
     };
@@ -521,10 +536,12 @@ export const Header: React.FC<HeaderProps> = ({
       </aside>
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
+      <div ref={mobileNavigationViewportRef} id="mobile-navigation-viewport" className="ts-mobile-navigation-viewport sm:hidden">
       <nav
-        ref={mobileBottomNavRef}
         id="mobile-bottom-nav"
-        className={`sm:hidden fixed inset-x-0 bottom-0 z-50 bg-neutral-900/95 border-t border-neutral-800 px-2 flex items-center justify-around ${
+        aria-label="Navigazione principale"
+        style={{ paddingBottom: `max(${hasRegisteredAccount ? '0.5rem' : '0.25rem'}, env(safe-area-inset-bottom, 0px))` }}
+        className={`pointer-events-auto absolute inset-x-0 bottom-0 bg-white border-t border-neutral-800 px-2 flex items-center justify-around ${
           hasRegisteredAccount ? 'pt-1 pb-2' : 'py-1'
         } ${isMobileKeyboardOpen ? 'pointer-events-none invisible opacity-0' : 'visible opacity-100'} transition-opacity duration-150`}
       >
@@ -591,6 +608,7 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="text-[10px] font-medium mt-0.5">Attività</span>
         </button>
       </nav>
+      </div>
     </>
   );
 };
