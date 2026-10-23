@@ -431,17 +431,13 @@ export default function NewPublication({
 
                 <button
                   type="button"
-                  id="btn-header-publish"
-                  onClick={beginPublish}
+                  id="btn-header-close"
+                  onClick={closeEditor}
                   disabled={isPublishing || draftLoading || discarding}
-                  className="flex items-center gap-1.5 rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white shadow-md transition hover:bg-blue-500 disabled:opacity-50 active:scale-95"
+                  aria-label="Chiudi editor"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900 text-neutral-300 transition hover:text-white disabled:opacity-50 active:scale-95"
                 >
-                  {isPublishing ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Send className="h-3.5 w-3.5" />
-                  )}
-                  <span>{isPublishing ? "Pubblicazione..." : "Pubblica"}</span>
+                  <X className="h-5 w-5" />
                 </button>
               </header>
 
@@ -465,11 +461,6 @@ export default function NewPublication({
                 onDimensionsChange={handleDimensionsChange}
                 enableTextOverlays={false}
               />
-              <button type="button" onClick={closeEditor} disabled={draftLoading}
-                className="absolute right-3 top-3 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/70 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-neutral-900"
-                aria-label={t("Fechar")}>
-                <X className="h-4.5 w-4.5" />
-              </button>
               </div>
               </div>
 

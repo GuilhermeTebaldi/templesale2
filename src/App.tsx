@@ -3880,7 +3880,11 @@ export default function App() {
           <NewPublication
             photoInputRef={publicationPhotoInputRef}
             establishment={myEstablishment}
-            onClose={() => setIsNewProductOpen(false)}
+            onClose={() => {
+              setIsNewProductOpen(false);
+              setSocialActiveTab("feed");
+              scrollWindowToTop();
+            }}
             onPublishStarted={() => {
               setPublicationSubmitError("");
               setPendingPublicationCount((current) => current + 1);
