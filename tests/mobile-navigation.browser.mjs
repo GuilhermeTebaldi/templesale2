@@ -11,9 +11,27 @@ const bundle = await build({
     import React from 'react';
     import { createRoot } from 'react-dom/client';
     import { Header } from './src/components/Header';
+    import NewPublication from './src/components/NewPublication';
+    import { api } from './src/lib/api';
+    import { savePublicationDraft } from './src/lib/publication-draft';
+    api.createPublication = () => new Promise(resolve => {
+      window.completePublication = () => resolve({ id: 77, establishmentId: 1, imageUrl: '/fixture-photo.png', caption: 'Test', createdAt: Date.now() });
+    });
+    async function seedPublication() {
+      const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
+      const file = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      await savePublicationDraft(1, { file, source: file, uploadedUrl: '/fixture-photo.png', caption: 'Bozza', savedAt: Date.now() });
+    }
     import { I18nProvider } from './src/i18n/provider';
     function Fixture() {
       const [tab, setTab] = React.useState('profile');
+      const [editorOpen, setEditorOpen] = React.useState(false);
+      const [publishing, setPublishing] = React.useState(false);
+      React.useEffect(() => {
+        if (editorOpen && !publishing) { document.body.classList.add('ts-scroll-lock'); document.body.style.top = '-600px'; }
+        else { document.body.classList.remove('ts-scroll-lock'); document.body.style.top = ''; }
+        return () => { document.body.classList.remove('ts-scroll-lock'); document.body.style.top = ''; };
+      }, [editorOpen, publishing]);
       const registered = !new URLSearchParams(location.search).has('guest');
       return <div id="application-root"><Header activeTab={tab} setActiveTab={setTab}
         unreadNotificationsCount={0} onToggleNotifications={() => {}}
@@ -21,9 +39,18 @@ const bundle = await build({
         onOpenCompanyModal={() => {}} searchQuery="" onSearchChange={() => {}}
         user={{ isAuthenticated: registered, name: 'Fixture', picture: '' }}
         activeCompany={{ name: 'Fixture', logo: '' }} />
-        <main style={{ minHeight: 4000, paddingBottom: 96 }}><input id="keyboard-input" aria-label="Testo" />
+        <main style={{ minHeight: 4000, paddingBottom: 96 }}><button id="open-publication" onClick={async () => { await seedPublication(); setEditorOpen(true); }}>Editor</button><input id="keyboard-input" aria-label="Testo" />
           <div id="profile-grid" style={{ height: 3900, background: 'repeating-linear-gradient(#d8eee7 0 160px, #e8dce9 160px 320px)' }}>Profilo</div>
-        </main></div>;
+        </main>{editorOpen && <NewPublication establishment={{ id: 1, name: 'Fixture' }}
+          onPublishStarted={() => {
+            window.focusAtPublishStart = document.activeElement?.id;
+            setPublishing(true); setTab('feed'); window.publicationStarted = true;
+          }}
+          onPublished={() => { window.publicationConfirmed = true; }}
+          onPublishFailed={error => { window.publicationFailure = error.message; }}
+          onPublishFinished={() => setPublishing(false)}
+          onClose={() => { window.focusAtClose = document.activeElement?.id; setEditorOpen(false); setTab('feed'); window.editorClosed = true; }}
+        />}</div>;
     }
     createRoot(document.getElementById('root')).render(<I18nProvider><Fixture /></I18nProvider>);
   ` }, bundle: true, format: 'esm', write: false,
@@ -69,6 +96,7 @@ async function fixture(t, { standalone = false, guest = false } = {}) {
   return page;
 }
 async function viewport(page, state) {
+  if (state.cssHeight) await page.setViewportSize({ width: page.viewportSize().width, height: state.cssHeight });
   await page.evaluate(state => window.viewportFixture.set(state), state);
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
@@ -90,16 +118,16 @@ for (const standalone of [false, true]) {
   test(`${standalone ? 'installed app' : 'browser'}: scrolling and changing browser chrome never leave the dock anchored to a stale window bottom`, async t => {
     const page = await fixture(t, { standalone });
     const sizes = [
-      { height: 844 }, { height: 730, innerHeight: 844 },
-      { height: 812, innerHeight: 730 }, // Resize events can arrive out of order.
-      { height: 780, offsetTop: 24 },
-      { height: 844, offsetTop: -60 }, // Elastic top overscroll is not an upward offset.
-      { height: 844 }, { height: 730 }, { height: 844 },
+      { height: 844, cssHeight: 844 }, { height: 730, innerHeight: 844, cssHeight: 730 },
+      { height: 812, innerHeight: 730, cssHeight: 812 }, // Resize events can arrive out of order.
+      { height: 780, offsetTop: 24, cssHeight: 844 },
+      { height: 844, offsetTop: -60, cssHeight: 844 }, // Elastic top overscroll is not an upward offset.
+      { height: 844, cssHeight: 844 }, { height: 730, cssHeight: 730 }, { height: 844, cssHeight: 844 },
     ];
     for (const [index, state] of sizes.entries()) {
       await page.evaluate(y => window.scrollTo(0, y), index % 2 ? 850 : 40);
       await viewport(page, state);
-      await bottomIs(page, state.height + Math.max(0, state.offsetTop || 0));
+      await bottomIs(page, state.cssHeight);
     }
     const isCovered = await page.evaluate(() => document.querySelector('#mobile-bottom-nav').contains(document.elementFromPoint(10, 842)));
     assert.equal(isCovered, true, 'Profile tiles cannot appear below the dock');
@@ -116,15 +144,16 @@ for (const standalone of [false, true]) {
     assert.equal(await page.locator('#mobile-bottom-nav').isVisible(), false);
     await page.locator('#keyboard-input').evaluate(input => input.blur());
     await viewport(page, { height: 500, innerHeight: 500 });
-    assert.equal(await page.locator('#mobile-bottom-nav').isVisible(), false, 'Keep it hidden during keyboard dismissal');
+    assert.equal(await page.locator('#mobile-bottom-nav').isVisible(), true);
+    await bottomIs(page, 844); // Blur cannot leave it sized to the keyboard.
     await viewport(page, { height: 844 });
     await page.locator('#mobile-bottom-nav').waitFor({ state: 'visible' });
     await bottomIs(page, 844);
     for (let index = 0; index < 3; index++) {
       await page.evaluate(() => window.scrollTo(0, 900));
-      await viewport(page, { height: 812, innerHeight: 730, event: 'scroll' });
+      await viewport(page, { height: 812, innerHeight: 730, cssHeight: 812, event: 'scroll' });
       await bottomIs(page, 812);
-      await viewport(page, { height: 844, event: 'pageshow' });
+      await viewport(page, { height: 844, cssHeight: 844, event: 'pageshow' });
       await bottomIs(page, 844);
     }
   });
@@ -136,7 +165,7 @@ test('body scroll locks, return from overlays, orientation and inert dialogs ret
   });
   await viewport(page, { height: 844 }); await bottomIs(page, 844);
   await page.evaluate(() => { document.body.classList.remove('ts-scroll-lock'); document.body.style.top = ''; window.scrollTo(0, 600); });
-  await viewport(page, { height: 844, event: 'pageshow' }); await bottomIs(page, 844);
+  await viewport(page, { height: 844, cssHeight: 844, event: 'pageshow' }); await bottomIs(page, 844);
   await page.setViewportSize({ width: 844, height: 390 });
   await viewport(page, { height: 390, innerHeight: 390 });
   assert.equal(await page.locator('#mobile-bottom-nav').isVisible(), false);
@@ -148,7 +177,46 @@ test('body scroll locks, return from overlays, orientation and inert dialogs ret
 });
 test('guest navigation has the same opaque bottom coverage and safe-area padding', async t => {
   const page = await fixture(t, { guest: true });
-  await viewport(page, { height: 812, innerHeight: 730 }); await bottomIs(page, 812);
+  await viewport(page, { height: 812, innerHeight: 730, cssHeight: 812 }); await bottomIs(page, 812);
   assert.equal(await page.locator('#mobile-tab-btn-map').isVisible(), true);
   assert.equal(await page.locator('#mobile-bottom-nav').evaluate(nav => parseFloat(getComputedStyle(nav).paddingBottom) >= 4), true);
 });
+
+for (const publish of [true, false]) {
+  test(`${publish ? 'publishing' : 'closing'} the real editor with a focused caption cannot leave navigation at a frozen keyboard height`, async t => {
+    const page = await fixture(t, { standalone: true });
+    await page.locator('#open-publication').click();
+    const caption = page.locator('#post-caption-textarea');
+    await caption.waitFor({ state: 'visible' });
+    await caption.fill('Foto con didascalia'); await caption.focus();
+    await viewport(page, { height: 420, offsetTop: 80 });
+    assert.equal(await page.locator('#mobile-bottom-nav').isVisible(), false);
+    assert.equal(await page.evaluate(() => document.body.classList.contains('ts-scroll-lock')), true);
+    // Safari buttons do not necessarily take focus; a DOM click deliberately
+    // leaves the caption focused until the real publication handler blurs it.
+    await page.locator(publish ? '#btn-caption-publish' : '#btn-header-close').evaluate(button => button.click());
+    await page.waitForFunction(publish => publish ? window.publicationStarted : window.editorClosed, publish);
+    assert.notEqual(await page.evaluate(publish => publish ? window.focusAtPublishStart : window.focusAtClose, publish), 'post-caption-textarea');
+    // The keyboard is gone, but Safari can retain these short measurements.
+    // Deliberately never restore them, including during subsequent scrolling.
+    await viewport(page, { height: 724, innerHeight: 724 });
+    await page.locator('#mobile-bottom-nav').waitFor({ state: 'visible' });
+    await bottomIs(page, 844);
+    assert.equal(await page.evaluate(() => document.body.classList.contains('ts-scroll-lock')), false);
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--ts-publication-vh')), '', 'The hidden publisher releases viewport effects before the upload finishes');
+    assert.equal(await page.locator('#mobile-navigation-viewport').evaluate(frame => frame.style.height), '', 'No frozen pixel height remains on the frame');
+    if (publish) {
+      await page.waitForFunction(() => typeof window.completePublication === 'function');
+      await page.evaluate(() => window.completePublication());
+      await page.waitForFunction(() => window.publicationConfirmed && window.editorClosed);
+      assert.equal(await page.evaluate(() => window.publicationFailure), undefined);
+    }
+    for (const y of [900, 40, 1200, 0]) {
+      await page.evaluate(y => window.scrollTo(0, y), y);
+      await viewport(page, { height: 724, innerHeight: 724, event: 'scroll' });
+      await bottomIs(page, 844);
+    }
+    await page.locator('#mobile-bottom-nav').getByRole('button', { name: 'Attività', exact: true }).click();
+    await bottomIs(page, 844);
+  });
+}

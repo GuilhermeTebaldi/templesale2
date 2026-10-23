@@ -32,6 +32,11 @@ interface NewPublicationProps {
   onPublishFailed?: (error: Error) => void;
 }
 
+function dismissEditorKeyboard() {
+  const focused = document.activeElement;
+  if (focused instanceof HTMLElement && focused.closest('#editor-main-layout')) focused.blur();
+}
+
 function dataUrlToFile(dataUrl: string, fileName: string): File {
   const [header = "", data = ""] = dataUrl.split(",");
   const mime = header.match(/data:(.*?);base64/)?.[1] || "image/jpeg";
@@ -123,7 +128,7 @@ export default function NewPublication({
   },[photoCrop,containerDims,settings,selectedFilter,adjustments,overlays]);
 
   React.useEffect(() => {
-    if (typeof window === "undefined") {
+    if (typeof window === "undefined" || backgroundPublishing) {
       return;
     }
 
@@ -150,7 +155,7 @@ export default function NewPublication({
       document.documentElement.style.removeProperty("--ts-publication-vh");
       document.documentElement.style.removeProperty("--ts-publication-vv-top");
     };
-  }, []);
+  }, [backgroundPublishing]);
 
   const discardDraft = async () => {
     if (sendingRef.current || draftLoading || discarding) return;
@@ -361,8 +366,8 @@ export default function NewPublication({
     }
   };
 
-  const beginPublish = () => { if (!currentImage || sendingRef.current || draftLoading) return; setBackgroundPublishing(true); void handlePublish(); };
-  const closeEditor = () => { controllerRef.current?.abort(new Error("Invio interrotto. La bozza è conservata.")); onClose(); };
+  const beginPublish = () => { if (!currentImage || sendingRef.current || draftLoading) return; dismissEditorKeyboard(); setBackgroundPublishing(true); void handlePublish(); };
+  const closeEditor = () => { dismissEditorKeyboard(); controllerRef.current?.abort(new Error("Invio interrotto. La bozza è conservata.")); onClose(); };
   if (backgroundPublishing) return null;
   if (systemSourceMenu && !currentImage) return <>{nativePhotoInput}{draftLoading || pendingNativeImage
     ? <GlobalLoadingOverlay forceVisible />

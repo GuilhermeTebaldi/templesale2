@@ -66,6 +66,7 @@ html {
 .ts-mobile-navigation-viewport {
   position: fixed;
   inset: 0 0 auto;
+  height: 100vh;
   height: 100dvh;
   z-index: 50;
   pointer-events: none;

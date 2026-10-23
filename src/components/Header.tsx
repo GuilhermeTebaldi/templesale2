@@ -111,7 +111,6 @@ export const Header: React.FC<HeaderProps> = ({
     let frameId = 0;
     let referenceHeight = window.innerHeight;
     let referenceWidth = window.innerWidth;
-    let keyboardWasOpen = false;
     const updateKeyboardState = () => {
       const viewport = window.visualViewport;
       const activeElement = document.activeElement;
@@ -123,20 +122,14 @@ export const Header: React.FC<HeaderProps> = ({
       if (referenceWidth !== window.innerWidth) {
         referenceWidth = window.innerWidth;
         referenceHeight = window.innerHeight;
-        keyboardWasOpen = false;
       }
       const visibleHeight = viewport?.height ?? window.innerHeight;
-      const keyboardOpen = Math.max(referenceHeight, window.innerHeight) - visibleHeight > 150
-        && (isTextInputFocused || keyboardWasOpen);
-      keyboardWasOpen = keyboardOpen;
-      if (!keyboardOpen && !isTextInputFocused) referenceHeight = window.innerHeight;
+      const layoutHeight = mobileNavigationViewportRef.current?.clientHeight ?? window.innerHeight;
+      referenceHeight = Math.max(referenceHeight, window.innerHeight, layoutHeight);
+      const keyboardOpen = isTextInputFocused && referenceHeight - visibleHeight > 150;
       setIsMobileKeyboardOpen((current) => (current === keyboardOpen ? current : keyboardOpen));
-      if (mobileNavigationViewportRef.current) {
-        // A top-anchored frame avoids WebKit's independent bottom-fixed offset.
-        // Negative offsets are rubber-band overscroll, not a smaller screen.
-        const visibleBottom = visibleHeight + Math.max(0, viewport?.offsetTop ?? 0);
-        mobileNavigationViewportRef.current.style.height = `${Math.round(visibleBottom)}px`;
-      }
+      // The frame is sized by CSS dvh. A stale VisualViewport reading after
+      // dismissing the publication keyboard must never become a stored height.
     };
 
     const scheduleKeyboardState = () => {
@@ -149,6 +142,8 @@ export const Header: React.FC<HeaderProps> = ({
       });
     };
 
+    const bodyObserver = new MutationObserver(scheduleKeyboardState);
+    bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
     updateKeyboardState();
     window.visualViewport?.addEventListener('resize', scheduleKeyboardState);
     window.visualViewport?.addEventListener('scroll', scheduleKeyboardState);
@@ -161,6 +156,7 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener('focusout', scheduleKeyboardState);
 
     return () => {
+      bodyObserver.disconnect();
       if (frameId) {
         window.cancelAnimationFrame(frameId);
       }
