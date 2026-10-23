@@ -142,6 +142,17 @@ for (const device of ['iPhone', 'iPad']) {
     await page.waitForFunction(() => document.querySelector('#post-caption-textarea')?.value === '');
     assert.deepEqual(await page.evaluate(() => window.photoPickerGestures), [true, true, true], 'Both pickers open inside an active user gesture');
     assert.equal(await page.evaluate(() => window.cameraRequests), 0);
+    assert.equal(await page.getByRole('button', { name: 'Pubblica', exact: true }).count(), 1, 'Only the bottom action publishes');
+    assert.equal(await page.locator('#btn-caption-publish').isVisible(), true);
+    assert.equal(await page.locator('#editor-main-layout button').filter({ has: page.locator('svg.lucide-x') }).count(), 1, 'Only one close action, in the header');
+    await page.locator('#tab-dock-filters').click();
+    assert.equal(await page.locator('#btn-caption-publish').isVisible(), true, 'Publishing stays available in filters');
+    if (process.env.PHOTO_EDITOR_SCREENSHOT && device === 'iPhone') await page.screenshot({ path: process.env.PHOTO_EDITOR_SCREENSHOT });
+    await page.getByRole('button', { name: 'Chiudi editor', exact: true }).click();
+    await page.waitForFunction(() => window.photoPickerClosed);
+    assert.equal(await page.locator('#editor-main-layout').count(), 0, 'The header X closes the full editor');
+    assert.equal(await page.locator('#fixture-plus').isVisible(), true);
+
   });
   test(`${device}: cancelling the source picker returns to the feed without a custom menu`, async t => {
     const page = await fixture(t, device);
