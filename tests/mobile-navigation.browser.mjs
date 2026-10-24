@@ -12,6 +12,11 @@ const bundle = await build({
     import { createRoot } from 'react-dom/client';
     import { Header } from './src/components/Header';
     import NewPublication from './src/components/NewPublication';
+    import ProductMap from './src/components/ProductMap';
+    import { AnimatePresence } from 'motion/react';
+    import { notifyOverlayViewportRestored } from './src/lib/overlay-viewport';
+    api.getEstablishments = async () => [];
+    api.getDiscovery = async () => ({ items: [] });
     import { api } from './src/lib/api';
     import { savePublicationDraft } from './src/lib/publication-draft';
     api.createPublication = () => new Promise(resolve => {
@@ -26,12 +31,13 @@ const bundle = await build({
     function Fixture() {
       const [tab, setTab] = React.useState('profile');
       const [editorOpen, setEditorOpen] = React.useState(false);
+      const [mapOpen, setMapOpen] = React.useState(false);
       const [publishing, setPublishing] = React.useState(false);
       React.useEffect(() => {
-        if (editorOpen && !publishing) { document.body.classList.add('ts-scroll-lock'); document.body.style.top = '-600px'; }
+        if (mapOpen || (editorOpen && !publishing)) { document.body.classList.add('ts-scroll-lock'); document.body.style.top = '-600px'; }
         else { document.body.classList.remove('ts-scroll-lock'); document.body.style.top = ''; }
         return () => { document.body.classList.remove('ts-scroll-lock'); document.body.style.top = ''; };
-      }, [editorOpen, publishing]);
+      }, [editorOpen, publishing, mapOpen]);
       const registered = !new URLSearchParams(location.search).has('guest');
       return <div id="application-root"><Header activeTab={tab} setActiveTab={setTab}
         unreadNotificationsCount={0} onToggleNotifications={() => {}}
@@ -39,7 +45,7 @@ const bundle = await build({
         onOpenCompanyModal={() => {}} searchQuery="" onSearchChange={() => {}}
         user={{ isAuthenticated: registered, name: 'Fixture', picture: '' }}
         activeCompany={{ name: 'Fixture', logo: '' }} />
-        <main style={{ minHeight: 4000, paddingBottom: 96 }}><button id="open-publication" onClick={async () => { await seedPublication(); setEditorOpen(true); }}>Editor</button><input id="keyboard-input" aria-label="Testo" />
+        <main style={{ minHeight: 4000, paddingBottom: 96 }}><button id="open-map" onClick={() => setMapOpen(true)}>Mappa</button><button id="open-publication" onClick={async () => { await seedPublication(); setEditorOpen(true); }}>Editor</button><input id="keyboard-input" aria-label="Testo" />
           <div id="profile-grid" style={{ height: 3900, background: 'repeating-linear-gradient(#d8eee7 0 160px, #e8dce9 160px 320px)' }}>Profilo</div>
         </main>{editorOpen && <NewPublication establishment={{ id: 1, name: 'Fixture' }}
           onPublishStarted={() => {
@@ -50,7 +56,11 @@ const bundle = await build({
           onPublishFailed={error => { window.publicationFailure = error.message; }}
           onPublishFinished={() => setPublishing(false)}
           onClose={() => { window.focusAtClose = document.activeElement?.id; setEditorOpen(false); setTab('feed'); window.editorClosed = true; }}
-        />}</div>;
+        />}<AnimatePresence onExitComplete={() => {
+          window.dockBeforeMapExitComplete = document.querySelector('#mobile-navigation-viewport');
+          notifyOverlayViewportRestored(); window.mapExitComplete = true;
+        }}>{mapOpen && <ProductMap products={[]} initialCategory="Fixture" autoFocusPanelSearch
+          onClose={() => setMapOpen(false)} />}</AnimatePresence></div>;
     }
     createRoot(document.getElementById('root')).render(<I18nProvider><Fixture /></I18nProvider>);
   ` }, bundle: true, format: 'esm', write: false,
@@ -89,6 +99,8 @@ async function fixture(t, { standalone = false, guest = false } = {}) {
     };
   }, { standalone });
   const page = await context.newPage(), errors = [];
+  // No map service or real API is needed to exercise the overlay lifecycle.
+  await page.route('https://**/*', route => route.abort());
   page.on('pageerror', error => errors.push(error.message));
   t.after(() => assert.deepEqual(errors, []));
   await page.goto('http://127.0.0.1:' + server.address().port + (guest ? '/?guest' : '/'));
@@ -220,3 +232,48 @@ for (const publish of [true, false]) {
     await bottomIs(page, 844);
   });
 }
+
+for (const standalone of [false, true]) {
+  test(`${standalone ? 'installed app' : 'browser'}: leaving the real map releases search focus and refreshes the dock after its exit animation`, async t => {
+    const page = await fixture(t, { standalone });
+    for (const focused of [true, false]) {
+      await page.evaluate(() => {
+        window.scrollTo(0, 600);
+        window.mapExitComplete = false;
+        window.dockBeforeMap = document.querySelector('#mobile-navigation-viewport');
+        document.querySelector('#open-map').click();
+      });
+      const close = page.locator('button[title="Chiudi mappa"]');
+      await close.waitFor({ state: 'visible' });
+      await page.waitForFunction(() => document.activeElement instanceof HTMLInputElement);
+      if (!focused) await page.evaluate(() => document.activeElement.blur());
+      await viewport(page, focused ? { height: 420, offsetTop: 80 } : { height: 844 });
+      // A DOM click leaves the map search focused, as Safari touch buttons can.
+      await close.evaluate(button => button.click());
+      await page.waitForFunction(() => !document.body.classList.contains('ts-scroll-lock'));
+      assert.equal(await page.evaluate(() => document.activeElement instanceof HTMLInputElement), false, 'Search is blurred when exit starts, before the animated map unmounts');
+      await page.waitForFunction(() => window.mapExitComplete);
+      await close.waitFor({ state: 'detached' });
+      await viewport(page, { height: 724, innerHeight: 724 });
+      await bottomIs(page, 844);
+      assert.equal(await page.evaluate(() => window.dockBeforeMapExitComplete !== document.querySelector('#mobile-navigation-viewport')), true, 'The dock is refreshed after the exit animation, not only when the body unlocks');
+      assert.equal(await page.evaluate(() => window.dockBeforeMap !== document.querySelector('#mobile-navigation-viewport')), true, 'The fixed layer is renewed rather than retaining its old viewport origin');
+      assert.equal(await page.locator('#mobile-navigation-viewport').evaluate(frame => frame.style.height), '');
+      for (const y of [600, 1100, 40]) {
+        await page.evaluate(y => window.scrollTo(0, y), y);
+        await viewport(page, { height: 724, innerHeight: 724, event: 'scroll' });
+        await bottomIs(page, 844);
+      }
+      await page.locator('#mobile-bottom-nav').getByRole('button', { name: 'Attività', exact: true }).click();
+    }
+  });
+}
+
+test('closing the map immediately cancels its delayed search autofocus', async t => {
+  const page = await fixture(t, { standalone: true });
+  await page.evaluate(() => document.querySelector('#open-map').click());
+  await page.locator('button[title="Chiudi mappa"]').evaluate(button => button.click());
+  await page.waitForFunction(() => window.mapExitComplete);
+  assert.equal(await page.evaluate(() => document.activeElement instanceof HTMLInputElement), false);
+  await bottomIs(page, 844);
+});

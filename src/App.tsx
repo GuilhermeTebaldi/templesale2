@@ -31,6 +31,7 @@ import Auth, { type AuthMode, type AuthSubmitPayload } from "./components/Auth";
 import MeusAnuncios from "./components/MeusAnuncios";
 import EditePerfil from "./components/EditePerfil";
 import ProductMap from "./components/ProductMap";
+import { notifyOverlayViewportRestored } from "./lib/overlay-viewport";
 import Curtidas from "./components/Curtidas";
 import Carrinho, { type CartItem } from "./components/Carrinho";
 import Vendedores from "./components/Vendedores";
@@ -3518,7 +3519,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
+      <AnimatePresence onExitComplete={notifyOverlayViewportRestored}>
         {isMapOpen && (
           <ProductMap
             products={products}
