@@ -24,6 +24,7 @@ import { Company, Post } from '../types';
 import { api } from '../lib/api';
 import { TempleSaleLikeIcon } from './TempleSaleLikeIcon';
 import { TempleSaleAvatarFrame } from './TempleSaleAvatarFrame';
+import { TempleSaleMark } from './TempleSaleMark';
 import { ProgressiveProductImage } from './ProductCard';
 import { buildWhatsappUrl } from '../lib/whatsapp';
 
@@ -130,7 +131,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
     <div id="company-profile-view" className="mx-auto max-w-xl px-0 py-0 sm:max-w-3xl sm:px-4 sm:py-4 space-y-4">
       {/* 1. TOP BAR DO PERFIL */}
       <div className="sticky top-14 sm:top-16 z-40 bg-neutral-950/95 backdrop-blur-md border-b border-neutral-800/80 px-4 py-2.5 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
+        <div className="flex min-w-0 flex-1 items-center space-x-3">
           {onBack && (
             <button
               type="button"
@@ -141,15 +142,15 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
               <ArrowLeft className="w-5 h-5" />
             </button>
           )}
-          <div className="flex items-center space-x-1.5">
-            <span className="font-bold text-sm sm:text-base text-neutral-100">
+          <div className="flex min-w-0 items-center space-x-1.5">
+            <span className="truncate font-bold text-sm sm:text-base text-neutral-100">
               {companyHandle}
             </span>
             <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex shrink-0 items-center space-x-2">
           {whatsappUrl && (
             <a
               href={whatsappUrl}
@@ -216,8 +217,11 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
 
         {/* 3. BIO / DADOS DA EMPRESA */}
         <div className="space-y-1.5 text-xs sm:text-sm">
-          <div className="font-bold text-neutral-100 text-sm sm:text-base leading-tight">
-            {company.name}
+          <div id="company-profile-name" className="relative isolate w-fit max-w-full text-sm font-bold leading-tight text-neutral-100 sm:text-base">
+            <span aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 select-none opacity-25 blur-[2px]">
+              <TempleSaleMark />
+            </span>
+            <span className="relative block [overflow-wrap:anywhere]">{company.name}</span>
           </div>
 
           <div className="text-neutral-400 text-xs font-medium">
