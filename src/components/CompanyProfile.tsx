@@ -185,6 +185,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
               alt={company.name}
               size="lg"
               isOwner={isOwner}
+              showBrandBadge={false}
             />
             </ProfilePhotoButton>
             <div className="mt-2 flex justify-center text-[10px] font-medium leading-5 sm:text-[11px]">
@@ -218,7 +219,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
         {/* 3. BIO / DADOS DA EMPRESA */}
         <div className="space-y-1.5 text-xs sm:text-sm">
           <div id="company-profile-name" className="relative isolate w-fit max-w-full text-sm font-bold leading-tight text-neutral-100 sm:text-base">
-            <span aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 select-none opacity-25 blur-[2px]">
+            <span aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 select-none opacity-15">
               <TempleSaleMark />
             </span>
             <span className="relative block [overflow-wrap:anywhere]">{company.name}</span>
