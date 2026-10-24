@@ -17,6 +17,7 @@ import {
   LogOut,
   Settings,
   BookOpen,
+  Trash2,
 } from 'lucide-react';
 import { Company, Post, Auth0User } from '../types';
 import { TempleSaleAvatarFrame } from './TempleSaleAvatarFrame';
@@ -39,6 +40,7 @@ interface CompanyProfileDrawerProps {
   onToggleSavePost: (postId: string) => void;
   onOpenEditCompany: () => void;
   onOpenFavorites?: () => void;
+  onOpenDeleted?: () => void;
   onLogout?: () => void;
   onOpenTerms?: () => void;
   onCloseAccount?: (mode: "deactivate" | "delete", confirmation: string) => Promise<void>;
@@ -55,6 +57,7 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
   onToggleSavePost,
   onOpenEditCompany,
   onOpenFavorites,
+  onOpenDeleted,
   onLogout,
   onOpenTerms,
   onCloseAccount,
@@ -286,6 +289,18 @@ export const CompanyProfileDrawer: React.FC<CompanyProfileDrawerProps> = ({
                     </div>
                     <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-neutral-300 shrink-0" />
                   </button>
+
+                  {onOpenDeleted && <button type="button" onClick={() => { onClose(); onOpenDeleted(); }}
+                    className="w-full flex items-center justify-between p-3.5 hover:bg-neutral-800/50 transition-colors text-left group cursor-pointer">
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-neutral-800 flex items-center justify-center text-neutral-400 shrink-0"><Trash2 className="w-4.5 h-4.5" /></div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-neutral-200 group-hover:text-white">Eliminati</div>
+                        <div className="text-xs text-neutral-400 truncate">Modifica, ripristina o elimina le foto</div>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-neutral-500 shrink-0" />
+                  </button>}
 
                   <button
                     type="button"

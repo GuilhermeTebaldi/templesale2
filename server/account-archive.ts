@@ -14,18 +14,23 @@ type Query = (sql: string, values?: unknown[]) => Promise<Row[]>;
 type Statement = { sql: string; values: unknown[] };
 type Transaction = (statements: Statement[]) => Promise<void>;
 const owners = { users: 'id', products: 'user_id', establishments: 'owner_user_id', establishment_publications: 'owner_user_id' } as const;
-export function publicAccountRows(table: keyof typeof owners, ready = false): string {
-  return ready ? `(SELECT * FROM ${table} WHERE NOT EXISTS (SELECT 1 FROM account_archives aa WHERE aa.user_id = ${table}.${owners[table]}))` : table;
+export function publicAccountRows(table: keyof typeof owners, ready = false, trashReady = false): string {
+  const filters = [
+    ...(ready ? [`NOT EXISTS (SELECT 1 FROM account_archives aa WHERE aa.user_id = ${table}.${owners[table]})`] : []),
+    ...(trashReady && table === 'establishment_publications' ? [`NOT EXISTS (SELECT 1 FROM publication_trash pt WHERE pt.publication_id = ${table}.id AND pt.hidden = 1)`] : []),
+  ];
+  return filters.length ? `(SELECT * FROM ${table} WHERE ${filters.join(' AND ')})` : table;
 }
-export function filterArchivedPublicSql(sql: string, ready = true): string {
+export function filterArchivedPublicSql(sql: string, ready = true, trashReady = false): string {
   return sql.replace(/\b(FROM|JOIN) (users|products|establishments|establishment_publications)\b/g,
     (_, clause, table: keyof typeof owners, offset: number) => {
       const rest = sql.slice(offset + _.length);
       const hasAlias = /^\s+[a-z][a-z_]*\b/.test(rest);
-      return `${clause} ${publicAccountRows(table, ready)}${ready && !hasAlias ? ` AS ${table}` : ""}`;
+      const rows = publicAccountRows(table, ready, trashReady);
+      return `${clause} ${rows}${rows !== table && !hasAlias ? ` AS ${table}` : ""}`;
     });
 }
-export function createAccountArchiveService(query: Query, transaction: Transaction, postgres: boolean) {
+export function createAccountArchiveService(query: Query, transaction: Transaction, postgres: boolean, trashReady = () => false) {
   let ready = false;
   return {
     get ready() { return ready; },
@@ -104,6 +109,6 @@ export function createAccountArchiveService(query: Query, transaction: Transacti
       })));
       return true;
     },
-    publicQuery(sql: string, values: unknown[] = []) { return query(filterArchivedPublicSql(sql, ready), values); },
+    publicQuery(sql: string, values: unknown[] = []) { return query(filterArchivedPublicSql(sql, ready, trashReady()), values); },
   };
 }

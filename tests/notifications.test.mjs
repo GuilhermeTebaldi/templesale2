@@ -2,14 +2,16 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { publicAccountRows } from '../server/account-archive.ts';
 
 const server = readFileSync(new URL('../server.ts', import.meta.url), 'utf8');
 const section = server.slice(server.indexOf('async function selectNotificationsByOwnerRows'), server.indexOf('async function createProductRecord'));
-const queries = [...section.matchAll(/`([\s\S]*?)`/g)].map(match => match[1]);
+const queries = [...section.matchAll(/`([\s\S]*?)`/g)].map(match => match[1].replaceAll('${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)}', publicAccountRows('establishment_publications', false, true)));
 const sql = queries[1];
 function fixture() {
   const db = new DatabaseSync(':memory:');
   db.exec(`
+    CREATE TABLE publication_trash(publication_id INTEGER PRIMARY KEY, hidden INTEGER);
     CREATE TABLE users (id INTEGER, name TEXT, avatar_url TEXT, city TEXT, country TEXT, preferred_locale TEXT, created_at INTEGER);
     CREATE TABLE products (id INTEGER, user_id INTEGER, name TEXT, image TEXT, image_url TEXT);
     CREATE TABLE establishments (id INTEGER, name TEXT, logo_url TEXT, cover_url TEXT);
@@ -76,3 +78,11 @@ test('popover owns outside click; internal actions are not whole-row links', () 
   assert.ok(!popover.includes("document.body.style.touchAction = 'none'"));
 });
 
+
+test('hidden photos do not leak through notification activity joins', () => {
+  const db = fixture();
+  try {
+    db.exec('INSERT INTO publication_trash VALUES(30,1)');
+    assert.ok(list(db,1).every(row=>row.type !== 'publication_like' && row.type !== 'publication_comment'));
+  } finally { db.close(); }
+});

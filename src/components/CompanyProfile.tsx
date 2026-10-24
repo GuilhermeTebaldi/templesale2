@@ -570,7 +570,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                   Eliminare la pubblicazione?
                 </h3>
                 <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                  Vuoi eliminare questa pubblicazione? La foto sarà rimossa definitivamente dal feed e dal profilo dell’attività.
+                  La foto sarà spostata in Eliminati. Potrai modificarla o ripristinarla.
                 </p>
               </div>
             </div>

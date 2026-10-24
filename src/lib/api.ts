@@ -307,6 +307,7 @@ export interface EstablishmentDto {
 }
 
 export interface PublicationDto {
+  isTrashed?: boolean;
   id: number;
   establishmentId: number;
   ownerId: number;
@@ -1473,6 +1474,7 @@ function normalizePublicationItem(value: unknown): PublicationDto | null {
     createdAt: toNonNegativeInteger(firstDefined(parsed, ["createdAt", "created_at"])) ?? 0,
     updatedAt: toNonNegativeInteger(firstDefined(parsed, ["updatedAt", "updated_at"])) ?? 0,
     likesCount: toNonNegativeInteger(firstDefined(parsed, ["likesCount", "likes_count"])) ?? 0,
+    ...(typeof parsed.isTrashed === "boolean" ? { isTrashed: parsed.isTrashed } : {}),
     legacyProductId: toOptionalNumber(firstDefined(parsed, ["legacyProductId", "legacy_product_id"])),
     establishmentLatitude: toOptionalNumber(parsed.establishmentLatitude),
     establishmentLongitude: toOptionalNumber(parsed.establishmentLongitude),
@@ -3113,6 +3115,21 @@ export const api = {
       method: "DELETE",
     });
     return true;
+  },
+  async getDeletedPublications(offset = 0, signal?: AbortSignal) {
+    const payload = await request<{ publications: unknown[]; hasMore: boolean; nextOffset: number }>(`/api/publication-trash?offset=${offset}`, {
+      signal, cache: 'no-store', skipGlobalLoadingOverlay: true,
+    });
+    return { publications: normalizePublicationList(payload.publications), hasMore: payload.hasMore, nextOffset: payload.nextOffset };
+  },
+  async restorePublication(id: number) {
+    const payload = await request<{ publication: unknown }>(`/api/publications/${id}/restore`, { method: 'POST', skipGlobalLoadingOverlay: true });
+    const publication = normalizePublicationItem(payload.publication);
+    if (!publication) throw new Error('Risposta di ripristino non valida.');
+    return publication;
+  },
+  async permanentlyDeletePublication(id: number) {
+    await request(`/api/publication-trash/${id}`, { method: 'DELETE', body: JSON.stringify({ confirm: true }), skipGlobalLoadingOverlay: true });
   },
   async getSavedPublications() {
     const payload = await request<unknown>("/api/publication-saves");

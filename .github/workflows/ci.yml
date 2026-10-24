@@ -46,7 +46,7 @@ jobs:
         run: node --test tests/startup.test.mjs
 
       - name: Notification regression tests
-        run: node --experimental-sqlite --test tests/notifications.test.mjs
+        run: node --experimental-sqlite --import tsx --test tests/notifications.test.mjs
 
       - name: Local discovery regression tests
         run: node --import tsx --test tests/discovery.test.mjs tests/publication-feed.test.mjs tests/admin-session.test.mjs
@@ -59,6 +59,9 @@ jobs:
 
       - name: Comment delivery and write admission tests
         run: node --import tsx --test tests/comment-delivery.test.ts tests/write-admission.test.ts tests/write-operation.test.ts
+
+      - name: Publication trash and ownership tests
+        run: node --import tsx --test tests/publication-trash.test.mjs
 
       - name: Build
         run: npm run build

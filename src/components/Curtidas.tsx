@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "motion/react";
-import { X, Heart, Bookmark, ExternalLink, Trash2, Image as ImageIcon } from "lucide-react";
+import { X, Heart, Bookmark, ExternalLink, Trash2, Image as ImageIcon, RotateCcw, Pencil } from "lucide-react";
 import { ProgressiveProductImage, type Product } from "./ProductCard";
 import { type PublicationDto } from "../lib/api";
 import { useI18n } from "../i18n/provider";
@@ -8,7 +8,11 @@ import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 
 interface CurtidasProps {
-  kind?: 'likes' | 'saved';
+  kind?: 'likes' | 'saved' | 'deleted';
+  isLoading?: boolean;
+  status?: React.ReactNode;
+  footer?: React.ReactNode;
+  onRestorePublication?: (id: number) => Promise<void>;
   products: Product[];
   publications?: PublicationDto[];
   onClose: () => void;
@@ -20,6 +24,7 @@ interface CurtidasProps {
 
 export default function Curtidas({
   kind = 'likes',
+  isLoading = false, status, footer, onRestorePublication,
   products,
   publications = [],
   onClose,
@@ -31,6 +36,7 @@ export default function Curtidas({
   const { t, locale } = useI18n();
   const [removingProductId, setRemovingProductId] = React.useState<number | null>(null);
   const [removingPublicationId, setRemovingPublicationId] = React.useState<number | null>(null);
+  const [restoringId, setRestoringId] = React.useState<number | null>(null);
   const [removeError, setRemoveError] = React.useState('');
   const [isDesktopDrawer, setIsDesktopDrawer] = React.useState(false);
   const hasItems = products.length > 0 || publications.length > 0;
@@ -75,34 +81,43 @@ export default function Curtidas({
     }
   };
 
+  const handleRestore = async (id: number) => {
+    if (!onRestorePublication || restoringId !== null) return;
+    setRestoringId(id); setRemoveError('');
+    try { await onRestorePublication(id); }
+    catch { setRemoveError('Impossibile ripristinare la foto. Riprova.'); }
+    finally { setRestoringId(null); }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, x: isDesktopDrawer ? -420 : "100%" }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: isDesktopDrawer ? -420 : "100%" }}
       transition={{ type: "spring", damping: 30, stiffness: 300 }}
-      className="fixed inset-0 z-150 flex flex-col bg-neutral-950 text-neutral-100 shadow-2xl shadow-black/50 sm:inset-y-16 sm:left-[72px] sm:right-auto sm:w-[390px] sm:border-r sm:border-neutral-800"
+      className={`fixed inset-0 ${kind === 'deleted' ? 'z-[130]' : 'z-150'} flex flex-col bg-neutral-950 text-neutral-100 shadow-2xl shadow-black/50 sm:inset-y-16 sm:left-[72px] sm:right-auto sm:w-[390px] sm:border-r sm:border-neutral-800`}
     >
       <div className="flex items-center justify-between border-b border-neutral-800 bg-neutral-900/95 p-5 backdrop-blur-md sm:px-5 sm:py-4">
         <div className="flex items-center gap-4">
-          {kind === 'saved' ? <Bookmark className="h-6 w-6 text-sky-600" /> : <Heart className="h-6 w-6 text-red-300" />}
-          <h2 className="text-xl font-bold tracking-tight">{kind === 'saved' ? 'Salvati' : t("Preferiti")}</h2>
+          {kind === 'deleted' ? <Trash2 className="h-6 w-6 text-neutral-400" /> : kind === 'saved' ? <Bookmark className="h-6 w-6 text-sky-600" /> : <Heart className="h-6 w-6 text-red-300" />}
+          <h2 className="text-xl font-bold tracking-tight">{kind === 'deleted' ? 'Eliminati' : kind === 'saved' ? 'Salvati' : t("Preferiti")}</h2>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full transition-colors">
+        <button aria-label="Chiudi raccolta" onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full transition-colors">
           <X className="w-6 h-6 text-neutral-300" />
         </button>
       </div>
 
       <div className="grow overflow-y-auto overscroll-contain p-4 sm:p-4">
+        {status}
         {removeError && <p role="alert" className="mb-4 text-sm text-red-600">{removeError}</p>}
         <div className="mx-auto max-w-4xl sm:max-w-none">
-          {!hasItems ? (
+          {!hasItems && !isLoading && !status ? (
             <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-10 text-center shadow-2xl">
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-neutral-800 bg-neutral-950">
                 <Heart className="w-7 h-7 text-neutral-500" />
               </div>
               <p className="text-neutral-400 uppercase tracking-[0.18em] text-xs">
-                {kind === 'saved' ? 'Non hai ancora salvato pubblicazioni.' : t("Non hai ancora salvato prodotti o attività.")}
+                {kind === 'deleted' ? 'Nessuna foto eliminata.' : kind === 'saved' ? 'Non hai ancora salvato pubblicazioni.' : t("Non hai ancora salvato prodotti o attività.")}
               </p>
             </div>
           ) : (
@@ -111,11 +126,11 @@ export default function Curtidas({
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 px-1 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500">
                     <ImageIcon className="h-3.5 w-3.5" />
-                    <span>{kind === 'saved' ? 'Pubblicazioni salvate' : 'Pubblicazioni che ti piacciono'}</span>
+                    <span>{kind === 'deleted' ? 'Foto eliminate' : kind === 'saved' ? 'Pubblicazioni salvate' : 'Pubblicazioni che ti piacciono'}</span>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
                     {publications.map((publication) => {
-                      const isRemoving = removingPublicationId === publication.id;
+                      const isRemoving = kind === 'deleted' ? removingPublicationId !== null || restoringId !== null : removingPublicationId === publication.id;
                       const title = publication.establishmentName || publication.caption || "Publicação";
 
                       return (
@@ -126,9 +141,11 @@ export default function Curtidas({
                         >
                           <button
                             type="button"
+                            disabled={kind === 'deleted' && isRemoving}
                             onClick={() => onOpenPublication?.(publication)}
-                            className="h-full w-full cursor-pointer"
-                            title={title}
+                            className="relative isolate h-full w-full cursor-pointer"
+                            title={kind === 'deleted' ? 'Modifica foto' : title}
+                            aria-label={kind === 'deleted' ? `Modifica foto: ${title}` : undefined}
                           >
                             <ProgressiveProductImage
                               src={publication.imageUrl}
@@ -137,12 +154,21 @@ export default function Curtidas({
                               loading="lazy"
                               variant="thumbnail"
                             />
-                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-2 text-left">
+                            <div className={`absolute inset-x-0 bottom-0 ${kind === 'deleted' ? 'hidden' : ''} bg-gradient-to-t from-black/75 to-transparent p-2 text-left`}>
                               <p className="line-clamp-1 text-[10px] font-bold text-white">
                                 {publication.establishmentName || "TempleSale"}
                               </p>
                             </div>
                           </button>
+                          {kind === 'deleted' && <>
+                            <span className="pointer-events-none absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-neutral-950/85 text-white"><Pencil className="h-3.5 w-3.5" /></span>
+                            <div className="absolute inset-x-0 bottom-0 bg-black/70 p-1.5 text-center">
+                              {publication.isTrashed === false ? <span className="text-[10px] font-semibold text-white">Nel profilo</span> :
+                                <button type="button" disabled={isRemoving} onClick={() => void handleRestore(publication.id)}
+                                  className="flex min-h-8 w-full items-center justify-center gap-1 rounded-lg bg-white px-1 text-[11px] font-semibold text-neutral-900 disabled:opacity-50"
+                                  aria-label={`Ripristina foto: ${title}`}><RotateCcw className="h-3.5 w-3.5" />{restoringId === publication.id ? 'Ripristino…' : 'Ripristina'}</button>}
+                            </div>
+                          </>}
                           {onRemovePublication && (
                             <button
                               type="button"
@@ -151,7 +177,8 @@ export default function Curtidas({
                                 void handleRemovePublication(publication.id);
                               }}
                               className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border border-neutral-700/80 bg-neutral-950/85 text-neutral-300 transition-colors hover:border-red-500 hover:bg-red-600 hover:text-white disabled:opacity-50"
-                              title={kind === 'saved' ? 'Rimuovi dai salvati' : 'Rimuovi preferito'}
+                              aria-label={kind === 'deleted' ? `Elimina definitivamente: ${title}` : undefined}
+                              title={kind === 'deleted' ? 'Elimina definitivamente' : kind === 'saved' ? 'Rimuovi dai salvati' : 'Rimuovi preferito'}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -224,6 +251,7 @@ export default function Curtidas({
             </div>
           )}
         </div>
+        {footer}
       </div>
     </motion.div>
   );
