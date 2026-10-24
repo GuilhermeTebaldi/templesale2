@@ -9,6 +9,7 @@ import {
   Plus,
   MessageCircle,
   Grid3X3,
+  ChevronRight,
   CheckCircle2,
   ArrowLeft,
   Share2,
@@ -95,7 +96,6 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
     kind: 'establishment',
   });
 
-  const totalLikes = posts.reduce((sum, p) => sum + (p.likesCount || 0), 0);
   const totalPublications = company.publicationCount ?? posts.length;
   const displayProfilePhoto =
     String(profilePhotoUrl ?? "").trim() ||
@@ -206,34 +206,25 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
             </div>
           </div>
 
-          {/* Estatísticas (publicações, curtidas, local) */}
-          <div className="flex-1 flex items-center justify-around text-center">
-            <div className="cursor-default">
-              <div className="text-base sm:text-lg font-bold text-neutral-100">
-                {totalPublications}
-              </div>
-              <div className="text-[11px] sm:text-xs text-neutral-400">
-                pubblicazioni
-              </div>
-            </div>
-
-            <div className="cursor-default">
-              <div className="text-base sm:text-lg font-bold text-neutral-100">
-                {totalLikes}
-              </div>
-              <div className="text-[11px] sm:text-xs text-neutral-400">
-                Mi piace
+          {/* Informações da atividade: publicações e localização */}
+          <div id="company-profile-summary" className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-[minmax(110px,0.8fr)_minmax(0,1.4fr)]">
+            <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
+              <Grid3X3 className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+              <div className="min-w-0">
+                <div id="company-publication-count" className="text-xl font-bold leading-tight text-slate-900 sm:text-2xl">{totalPublications}</div>
+                <div className="text-[10px] font-medium text-slate-500 sm:text-[11px]">Pubblicazioni</div>
               </div>
             </div>
-
-            <div className="cursor-default">
-              <div className="text-xs sm:text-sm font-bold text-emerald-400 truncate max-w-[95px] sm:max-w-none">
-                {company.city}
-              </div>
-              <div className="text-[11px] sm:text-xs text-neutral-400">
-                città
-              </div>
-            </div>
+            <button type="button" id="company-location-card" onClick={() => onOpenMap?.(company)} disabled={!onOpenMap}
+              aria-label={`Posizione dell’attività: ${company.city || 'Mappa'}`}
+              className="flex min-w-0 items-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-3 text-left transition-colors hover:bg-sky-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600 disabled:cursor-default">
+              <MapPin className="h-5 w-5 shrink-0 text-sky-700" aria-hidden="true" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[10px] font-medium text-sky-700 sm:text-[11px]">Dove siamo</span>
+                <span className="block text-sm font-bold leading-snug text-slate-900 [overflow-wrap:anywhere] sm:text-base">{company.city || 'Vedi sulla mappa'}</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-sky-700" aria-hidden="true" />
+            </button>
           </div>
         </div>
 
