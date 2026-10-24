@@ -1,4 +1,5 @@
 import React from 'react';
+import { OVERLAY_VIEWPORT_RESTORED } from '../lib/overlay-viewport';
 import {
   Bell,
   Search,
@@ -52,6 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [hasObservedGlobalLoading, setHasObservedGlobalLoading] = React.useState(false);
   const [canFallbackBrandIntroStart, setCanFallbackBrandIntroStart] = React.useState(false);
   const [isMobileKeyboardOpen, setIsMobileKeyboardOpen] = React.useState(false);
+  const [navigationLayerVersion, setNavigationLayerVersion] = React.useState(0);
   const mobileNavigationViewportRef = React.useRef<HTMLElement | null>(null);
   const isGlobalLoadingVisible = React.useSyncExternalStore(
     subscribeNetworkLoading,
@@ -142,7 +144,21 @@ export const Header: React.FC<HeaderProps> = ({
       });
     };
 
-    const bodyObserver = new MutationObserver(scheduleKeyboardState);
+    let bodyWasLocked = document.body.classList.contains('ts-scroll-lock');
+    const restoreNavigationLayer = () => {
+      if (document.body.classList.contains('ts-scroll-lock')) return;
+      // A fresh fixed/composited layer avoids retaining the overlay keyboard's
+      // viewport origin in WebKit. CSS still owns its height; preserve scroll.
+      setNavigationLayerVersion(version => version + 1);
+      scheduleKeyboardState();
+    };
+    const bodyObserver = new MutationObserver(() => {
+      const bodyIsLocked = document.body.classList.contains('ts-scroll-lock');
+      if (bodyWasLocked && !bodyIsLocked) restoreNavigationLayer();
+      bodyWasLocked = bodyIsLocked;
+      scheduleKeyboardState();
+    });
+    window.addEventListener(OVERLAY_VIEWPORT_RESTORED, restoreNavigationLayer);
     bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
     updateKeyboardState();
     window.visualViewport?.addEventListener('resize', scheduleKeyboardState);
@@ -157,6 +173,7 @@ export const Header: React.FC<HeaderProps> = ({
 
     return () => {
       bodyObserver.disconnect();
+      window.removeEventListener(OVERLAY_VIEWPORT_RESTORED, restoreNavigationLayer);
       if (frameId) {
         window.cancelAnimationFrame(frameId);
       }
@@ -532,7 +549,7 @@ export const Header: React.FC<HeaderProps> = ({
       </aside>
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
-      <div ref={mobileNavigationViewportRef} id="mobile-navigation-viewport" className="ts-mobile-navigation-viewport sm:hidden">
+      <div key={navigationLayerVersion} ref={mobileNavigationViewportRef} id="mobile-navigation-viewport" className="ts-mobile-navigation-viewport sm:hidden">
       <nav
         id="mobile-bottom-nav"
         aria-label="Navigazione principale"

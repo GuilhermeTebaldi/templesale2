@@ -1,5 +1,5 @@
 import React from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence, useIsPresent } from "motion/react";
 import { MapPin, MessageSquare, Search, Store, X } from "lucide-react";
 import { type Product } from "./ProductCard";
 import { useI18n } from "../i18n/provider";
@@ -720,6 +720,7 @@ export default function ProductMap({
   onOpenEstablishment,
 }: ProductMapProps) {
   const { t, locale } = useI18n();
+  const isPresent = useIsPresent();
   const [mapSearchPoint, setMapSearchPoint] = React.useState<LeafletLatLng | null>(initialSearchPoint ?? null);
   const searchOrigin = mapSearchPoint ?? visitorLocation ?? null;
   const [mapSearchLoading, setMapSearchLoading] = React.useState(false);
@@ -1008,8 +1009,16 @@ export default function ProductMap({
     setIsTopSearchResultsOpen(Boolean(openResultsByDefault));
   }, [initialCategory, openResultsByDefault]);
 
+  React.useLayoutEffect(() => {
+    if (isPresent) return;
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && overlayRef.current?.contains(activeElement)) {
+      activeElement.blur();
+    }
+  }, [isPresent]);
+
   React.useEffect(() => {
-    if (!autoFocusPanelSearch) {
+    if (!isPresent || !autoFocusPanelSearch) {
       return;
     }
 
@@ -1021,7 +1030,7 @@ export default function ProductMap({
     }, 180);
 
     return () => window.clearTimeout(focusTimer);
-  }, [autoFocusPanelSearch, searchQuery]);
+  }, [isPresent, autoFocusPanelSearch, searchQuery]);
 
   React.useEffect(() => {
     if (!isTopSearchResultsOpen) {
