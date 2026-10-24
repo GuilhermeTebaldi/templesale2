@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, Bookmark, MoreHorizontal, MessageCircle, Share2, Minus, Plus } from 'lucide-react';
+import { ArrowLeft, Bookmark, MoreHorizontal, MessageCircle, Share2 } from 'lucide-react';
 import type { PublicationDto, EstablishmentDto } from '../lib/api';
 import { ProgressiveProductImage } from './ProductCard';
 import { TempleSaleLikeIcon } from './TempleSaleLikeIcon';
@@ -142,11 +142,6 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
     <div ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Foto della pubblicazione" className="ts-photo-viewer">
       <header className="ts-photo-header">
         <button type="button" className="ts-photo-round" onClick={onClose} aria-label="Chiudi foto"><ArrowLeft size={24} /></button>
-        <div className="ts-photo-zoom" aria-label="Zoom foto">
-          <button type="button" disabled={pose.scale <= 1} onClick={() => zoom(pose.scale - 0.5)} aria-label="Riduci zoom"><Minus size={18} /></button>
-          <button type="button" onClick={() => zoom(1)} aria-label="Ripristina zoom">{Math.round(pose.scale * 100)}%</button>
-          <button type="button" disabled={pose.scale >= 4} onClick={() => zoom(pose.scale + 0.5)} aria-label="Aumenta zoom"><Plus size={18} /></button>
-        </div>
         <div ref={menu} className="relative">
           <button type="button" className="ts-photo-round" aria-label="Opzioni foto" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><MoreHorizontal size={24} /></button>
           {menuOpen && <div className="ts-photo-menu">
