@@ -3157,11 +3157,13 @@ export default function App() {
         delete next[publicationId];
         return next;
       });
-      setMyEstablishment((current) =>
+      const decrementPublicationCount = (current: EstablishmentDto | null) =>
         current && publication && current.id === publication.establishmentId
           ? { ...current, publicationCount: Math.max(0, (current.publicationCount ?? 1) - 1) }
-          : current,
-      );
+          : current;
+      setMyEstablishment(decrementPublicationCount);
+      setSelectedEstablishment(decrementPublicationCount);
+      setEstablishments(current => current.map(decrementPublicationCount));
     },
     [socialPostIdFromPublicationId],
   );
