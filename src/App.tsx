@@ -4042,8 +4042,11 @@ export default function App() {
           updatedPublication={updatedDeletedPublication}
           onRestored={publication => {
             setDeletedPublicationIds(current => current.filter(id => id !== publication.id));
-            setMyEstablishment(current => current?.id === publication.establishmentId
-              ? { ...current, publicationCount: (current.publicationCount ?? 0) + 1 } : current);
+            const incrementPublicationCount = (current: EstablishmentDto | null) => current?.id === publication.establishmentId
+              ? { ...current, publicationCount: (current.publicationCount ?? 0) + 1 } : current;
+            setMyEstablishment(incrementPublicationCount);
+            setSelectedEstablishment(incrementPublicationCount);
+            setEstablishments(current => current.map(incrementPublicationCount));
             if (profilePublicationsEstablishmentId === publication.establishmentId) {
               setSelectedEstablishmentPublications(current => [...current.filter(item => item.id !== publication.id), publication]
                 .sort((a, b) => b.createdAt - a.createdAt || b.id - a.id));
