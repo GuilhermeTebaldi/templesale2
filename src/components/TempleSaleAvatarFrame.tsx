@@ -7,6 +7,7 @@ interface TempleSaleAvatarFrameProps {
   alt: string;
   size?: 'sm' | 'md' | 'lg';
   isOwner?: boolean;
+  showBrandBadge?: boolean;
   className?: string;
 }
 
@@ -21,6 +22,7 @@ export const TempleSaleAvatarFrame: React.FC<TempleSaleAvatarFrameProps> = ({
   alt,
   size = 'lg',
   isOwner = false,
+  showBrandBadge = true,
   className = '',
 }) => {
   // Configurações de tamanho proporcionais
@@ -92,12 +94,12 @@ export const TempleSaleAvatarFrame: React.FC<TempleSaleAvatarFrameProps> = ({
       </div>
 
       {/* 2. OS QUADRADINHOS BRILHANTES VETORIAIS DO TEMPLESALE (Emblema acoplado no canto superior da moldura) */}
-      <div
+      {showBrandBadge && <div
         id="templesale-avatar-badge"
         className={`absolute ${config.badgeOffset} ${config.badgeSize} pointer-events-none z-10 filter drop-shadow-[0_3px_6px_rgba(0,0,0,0.85)]`}
       >
         <TempleSaleMark />
-      </div>
+      </div>}
 
       {/* 3. ETIQUETA "SUA" (Se for a empresa do proprietário logado) */}
       {isOwner && (
