@@ -6,6 +6,7 @@ import { createPublicationDirectUpload, DirectUploadBusy } from './server/public
 import { createPublicationMonitor } from './server/publication-monitor';
 import { registerLinkPreview } from './server/link-preview';
 import { createHomePublicationService } from './server/home-publication';
+import { createPublicationTrashService, initializePublicationLegacyRemovals, registerPublicationTrashRoutes } from './server/publication-trash';
 import { normalizeWhatsappLocalNumber } from './src/lib/whatsapp';
 import { buildCompanySearch, initializeCompanySearch, searchCompanies } from './server/company-search';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
@@ -1113,6 +1114,7 @@ const SESSION_USER_SELECT_FIELDS = `
 let sqliteDb: Database.Database | null = null;
 let pgPool: Pool | null = null;
 let publicationEvolution: ReturnType<typeof createPublicationEvolution>;
+let publicationTrash: ReturnType<typeof createPublicationTrashService>;
 let homePublications: ReturnType<typeof createHomePublicationService>;
 
 if (!USE_SQLITE_DATABASE) {
@@ -3700,7 +3702,7 @@ async function selectEstablishmentByIdOrSlugRow(idOrSlug: string): Promise<Estab
           e.*,
           NULLIF(BTRIM(u.avatar_url), '') AS owner_avatar_url,
           (SELECT COUNT(*)::INT FROM ${publicAccountRows("products", accountArchives?.ready)} pc WHERE pc.establishment_id = e.id) AS product_count,
-          (SELECT COUNT(*)::INT FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} epc WHERE epc.establishment_id = e.id) AS publication_count
+          (SELECT COUNT(*)::INT FROM ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} epc WHERE epc.establishment_id = e.id) AS publication_count
         FROM ${publicAccountRows("establishments", accountArchives?.ready)} e
         LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = e.owner_user_id
         WHERE ${where}
@@ -3719,7 +3721,7 @@ async function selectEstablishmentByIdOrSlugRow(idOrSlug: string): Promise<Estab
           e.*,
           NULLIF(TRIM(u.avatar_url), '') AS owner_avatar_url,
           (SELECT COUNT(*) FROM ${publicAccountRows("products", accountArchives?.ready)} pc WHERE pc.establishment_id = e.id) AS product_count,
-          (SELECT COUNT(*) FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} epc WHERE epc.establishment_id = e.id) AS publication_count
+          (SELECT COUNT(*) FROM ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} epc WHERE epc.establishment_id = e.id) AS publication_count
         FROM ${publicAccountRows("establishments", accountArchives?.ready)} e
         LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = e.owner_user_id
         WHERE ${sqliteWhere}
@@ -3747,7 +3749,7 @@ async function selectEstablishmentsRows(input: {
 
   if (search) {
     const built = buildCompanySearch({ ...input, search, limit }, Boolean(pgPool), {
-      publications: publicAccountRows('establishment_publications', accountArchives?.ready),
+      publications: publicAccountRows('establishment_publications', accountArchives?.ready, publicationTrash?.ready),
       products: publicAccountRows('products', accountArchives?.ready),
       users: publicAccountRows('users', accountArchives?.ready),
       archived: Boolean(accountArchives?.ready),
@@ -3792,7 +3794,7 @@ async function selectEstablishmentsRows(input: {
           MAX(NULLIF(BTRIM(u.avatar_url), '')) AS owner_avatar_url,
           (
             SELECT COUNT(*)::INT
-            FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} epc
+            FROM ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} epc
             WHERE epc.establishment_id = e.id
           ) AS publication_count,
           (
@@ -3803,7 +3805,7 @@ async function selectEstablishmentsRows(input: {
         FROM establishments e
         LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = e.owner_user_id
         LEFT JOIN ${publicAccountRows("products", accountArchives?.ready)} p ON p.establishment_id = e.id
-        LEFT JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.establishment_id = e.id
+        LEFT JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.establishment_id = e.id
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
         WHERE ${whereParts.join(" AND ")}
         GROUP BY e.id
@@ -3850,7 +3852,7 @@ async function selectEstablishmentsRows(input: {
           MAX(NULLIF(TRIM(u.avatar_url), '')) AS owner_avatar_url,
           (
             SELECT COUNT(*)
-            FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} epc
+            FROM ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} epc
             WHERE epc.establishment_id = e.id
           ) AS publication_count,
           (
@@ -3861,7 +3863,7 @@ async function selectEstablishmentsRows(input: {
         FROM establishments e
         LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = e.owner_user_id
         LEFT JOIN ${publicAccountRows("products", accountArchives?.ready)} p ON p.establishment_id = e.id
-        LEFT JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.establishment_id = e.id
+        LEFT JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.establishment_id = e.id
         LEFT JOIN storefront_sections s ON s.establishment_id = e.id
         WHERE ${whereParts.join(" AND ")}
         GROUP BY e.id
@@ -4217,7 +4219,7 @@ async function selectPublicationsByEstablishmentRows(
         SELECT
           ep.*,
           (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
-        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
+        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep
         WHERE ep.establishment_id = $1
         ORDER BY created_at DESC, id DESC
         LIMIT $2
@@ -4232,7 +4234,7 @@ async function selectPublicationsByEstablishmentRows(
         SELECT
           ep.*,
           (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
-        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
+        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep
         WHERE ep.establishment_id = ?
         ORDER BY created_at DESC, id DESC
         LIMIT ?
@@ -4257,7 +4259,7 @@ async function selectPublicationsByEstablishmentPageRows(input: {
         SELECT
           ep.*,
           (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
-        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
+        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep
         WHERE ep.establishment_id = $1
         ORDER BY ep.created_at DESC, ep.id DESC
         LIMIT $2 OFFSET $3
@@ -4274,7 +4276,7 @@ async function selectPublicationsByEstablishmentPageRows(input: {
         SELECT
           ep.*,
           (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
-        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
+        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep
         WHERE ep.establishment_id = ?
         ORDER BY ep.created_at DESC, ep.id DESC
         LIMIT ? OFFSET ?
@@ -4303,7 +4305,7 @@ async function selectPublicationsFeedRows(input: {
     snapshotId = Number(row.max_id);
   }
   const built = buildLocalFeedQuery({ ...input, limit, offset: input.cursorMode ? 0 : offset, snapshotId, homeSelection: homePublications?.ready }, Boolean(pgPool));
-  built.sql = filterArchivedPublicSql(built.sql, accountArchives?.ready);
+  built.sql = filterArchivedPublicSql(built.sql, accountArchives?.ready, publicationTrash?.ready);
   let rawRows: Record<string, unknown>[];
   if (pgPool) {
     rawRows = (await pgPool.query(built.sql, built.values)).rows;
@@ -4404,7 +4406,7 @@ async function selectSavedPublicationsByUserRows(userId: number): Promise<Establ
           u.avatar_url AS owner_avatar_url,
           (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM publication_saves ps
-        INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.id = ps.publication_id
+        INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.id = ps.publication_id
         INNER JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = ep.establishment_id
         LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = ep.owner_user_id
         WHERE ps.user_id = $1
@@ -4429,7 +4431,7 @@ async function selectSavedPublicationsByUserRows(userId: number): Promise<Establ
           u.avatar_url AS owner_avatar_url,
           (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM publication_saves ps
-        INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.id = ps.publication_id
+        INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.id = ps.publication_id
         INNER JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = ep.establishment_id
         LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = ep.owner_user_id
         WHERE ps.user_id = ?
@@ -4490,7 +4492,7 @@ async function selectLikedPublicationsByUserRows(userId: number): Promise<Establ
           u.avatar_url AS owner_avatar_url,
           (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM publication_likes current_like
-        INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.id = current_like.publication_id
+        INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.id = current_like.publication_id
         INNER JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = ep.establishment_id
         LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = ep.owner_user_id
         WHERE current_like.user_id = $1
@@ -4515,7 +4517,7 @@ async function selectLikedPublicationsByUserRows(userId: number): Promise<Establ
           u.avatar_url AS owner_avatar_url,
           (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
         FROM publication_likes current_like
-        INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep ON ep.id = current_like.publication_id
+        INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.id = current_like.publication_id
         INNER JOIN ${publicAccountRows("establishments", accountArchives?.ready)} e ON e.id = ep.establishment_id
         LEFT JOIN ${publicAccountRows("users", accountArchives?.ready)} u ON u.id = ep.owner_user_id
         WHERE current_like.user_id = ?
@@ -4601,7 +4603,7 @@ async function selectPublicationByIdRecord(publicationId: number): Promise<Estab
         SELECT
           ep.*,
           (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
-        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
+        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep
         WHERE ep.id = $1
         LIMIT 1
       `,
@@ -4615,7 +4617,7 @@ async function selectPublicationByIdRecord(publicationId: number): Promise<Estab
         SELECT
           ep.*,
           (SELECT COUNT(*) FROM publication_likes pl WHERE pl.publication_id=ep.id) AS likes_count
-        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready)} ep
+        FROM ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep
         WHERE ep.id = ?
         LIMIT 1
       `,
@@ -4689,20 +4691,14 @@ async function updatePublicationRecord(
 }
 
 async function deletePublicationRecord(publicationId: number, ownerId: number): Promise<boolean> {
-  if (pgPool) {
-    const result = await pgPool.query(
-      "DELETE FROM establishment_publications WHERE id = $1 AND owner_user_id = $2",
-      [publicationId, ownerId],
-    );
-    return (result.rowCount ?? 0) > 0;
-  }
-  const result = requireSqliteDb()
-    .prepare("DELETE FROM establishment_publications WHERE id = ? AND owner_user_id = ?")
-    .run(publicationId, ownerId);
-  return result.changes > 0;
+  return publicationTrash.remove(publicationId, ownerId);
 }
 
 async function backfillPublicationsFromProducts(): Promise<void> {
+  await initializePublicationLegacyRemovals(async sql => {
+    if (pgPool) return (await pgPool.query(sql)).rows;
+    requireSqliteDb().exec(sql); return [];
+  });
   if (pgPool) {
     await pgPool.query(`
       INSERT INTO establishment_publications (
@@ -4721,6 +4717,7 @@ async function backfillPublicationsFromProducts(): Promise<void> {
       INNER JOIN establishments e ON e.id = p.establishment_id
       WHERE p.establishment_id IS NOT NULL
         AND COALESCE(NULLIF(p.image_url, ''), NULLIF(p.image, ''), '') <> ''
+        AND NOT EXISTS (SELECT 1 FROM publication_legacy_removals pr WHERE pr.legacy_product_id = p.id)
         AND NOT EXISTS (
           SELECT 1 FROM establishment_publications ep WHERE ep.legacy_product_id = p.id
         )
@@ -4744,6 +4741,7 @@ async function backfillPublicationsFromProducts(): Promise<void> {
     INNER JOIN establishments e ON e.id = p.establishment_id
     WHERE p.establishment_id IS NOT NULL
       AND COALESCE(NULLIF(p.image_url, ''), NULLIF(p.image, ''), '') <> ''
+        AND NOT EXISTS (SELECT 1 FROM publication_legacy_removals pr WHERE pr.legacy_product_id = p.id)
       AND NOT EXISTS (
         SELECT 1 FROM establishment_publications ep WHERE ep.legacy_product_id = p.id
       )
@@ -6418,7 +6416,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL::TEXT AS message_translations,
             NULL::TEXT AS recipient_locale
           FROM publication_likes l
-          INNER JOIN establishment_publications ep ON ep.id = l.publication_id
+          INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.id = l.publication_id
           INNER JOIN establishments e ON e.id = ep.establishment_id
           LEFT JOIN users lu ON lu.id = l.user_id
           WHERE ep.owner_user_id = $1 AND l.user_id <> $2
@@ -6536,7 +6534,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL::TEXT AS message_translations,
             NULL::TEXT AS recipient_locale
           FROM product_comments c
-          INNER JOIN establishment_publications ep ON ep.id = c.publication_id
+          INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.id = c.publication_id
           INNER JOIN establishments e ON e.id = ep.establishment_id
           LEFT JOIN users cu ON cu.id = c.user_id
           WHERE ep.owner_user_id = $1
@@ -6567,7 +6565,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL::TEXT AS recipient_locale
           FROM product_comments c
           INNER JOIN product_comments parent_comment ON parent_comment.id = c.parent_comment_id
-          INNER JOIN establishment_publications ep ON ep.id = c.publication_id
+          INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.id = c.publication_id
           INNER JOIN establishments e ON e.id = ep.establishment_id
           LEFT JOIN users cu ON cu.id = c.user_id
           WHERE parent_comment.user_id = $1
@@ -6599,7 +6597,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             recipient.preferred_locale AS recipient_locale
           FROM admin_broadcast_notifications b
           LEFT JOIN products p ON p.id = b.product_id
-          LEFT JOIN establishment_publications ep ON ep.id = b.publication_id
+          LEFT JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.id = b.publication_id
           LEFT JOIN establishments e ON e.id = ep.establishment_id
           INNER JOIN users recipient ON recipient.id = $4
           WHERE (b.recipient_user_id IS NULL OR b.recipient_user_id = $5)
@@ -6677,7 +6675,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL AS message_translations,
             NULL AS recipient_locale
           FROM publication_likes l
-          INNER JOIN establishment_publications ep ON ep.id = l.publication_id
+          INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.id = l.publication_id
           INNER JOIN establishments e ON e.id = ep.establishment_id
           LEFT JOIN users lu ON lu.id = l.user_id
           WHERE ep.owner_user_id = ? AND l.user_id <> ?
@@ -6783,7 +6781,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL AS message_translations,
             NULL AS recipient_locale
           FROM product_comments c
-          INNER JOIN establishment_publications ep ON ep.id = c.publication_id
+          INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.id = c.publication_id
           INNER JOIN establishments e ON e.id = ep.establishment_id
           LEFT JOIN users cu ON cu.id = c.user_id
           WHERE ep.owner_user_id = ?
@@ -6811,7 +6809,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             NULL AS recipient_locale
           FROM product_comments c
           INNER JOIN product_comments parent_comment ON parent_comment.id = c.parent_comment_id
-          INNER JOIN establishment_publications ep ON ep.id = c.publication_id
+          INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.id = c.publication_id
           INNER JOIN establishments e ON e.id = ep.establishment_id
           LEFT JOIN users cu ON cu.id = c.user_id
           WHERE parent_comment.user_id = ?
@@ -6840,7 +6838,7 @@ async function selectNotificationsByOwnerRows(ownerId: number): Promise<Notifica
             recipient.preferred_locale AS recipient_locale
           FROM admin_broadcast_notifications b
           LEFT JOIN products p ON p.id = b.product_id
-          LEFT JOIN establishment_publications ep ON ep.id = b.publication_id
+          LEFT JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} ep ON ep.id = b.publication_id
           LEFT JOIN establishments e ON e.id = ep.establishment_id
           INNER JOIN users recipient ON recipient.id = ?
           WHERE (b.recipient_user_id IS NULL OR b.recipient_user_id = ?)
@@ -9892,7 +9890,7 @@ async function bootstrap() {
     statement.run(...bound.values);
     return [];
   };
-  accountArchives = createAccountArchiveService(discoveryQuery, async statements => {
+  const databaseTransaction = async (statements: { sql: string; values: unknown[] }[]) => {
     if (IS_DEV_REMOTE_READ_ONLY) throw new Error("Banco remoto somente leitura.");
     if (pgPool) {
       const client = await pgPool.connect();
@@ -9911,7 +9909,10 @@ async function bootstrap() {
         }
       })();
     }
-  }, Boolean(pgPool));
+  };
+  publicationTrash = createPublicationTrashService(discoveryQuery, databaseTransaction, () => Boolean(homePublications?.ready));
+  await publicationTrash.initialize(IS_DEV_REMOTE_READ_ONLY);
+  accountArchives = createAccountArchiveService(discoveryQuery, databaseTransaction, Boolean(pgPool), () => publicationTrash.ready);
   await accountArchives.initialize(IS_DEV_REMOTE_READ_ONLY);
   homePublications = createHomePublicationService((sql, values) => accountArchives.publicQuery(sql, values));
   try { await homePublications.initialize(IS_DEV_REMOTE_READ_ONLY); }
@@ -11939,7 +11940,7 @@ async function bootstrap() {
       const id = Number(req.params.id);
       const key = requestKey(req.params.key);
       if (!Number.isSafeInteger(id) || id <= 0 || !key) { res.status(400).json({ error: 'Identificação inválida.' }); return; }
-      const sql = `SELECT p.* FROM publication_write_operations op INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready)} p ON p.id=op.resource_id
+      const sql = `SELECT p.* FROM publication_write_operations op INNER JOIN ${publicAccountRows("establishment_publications", accountArchives?.ready, publicationTrash?.ready)} p ON p.id=op.resource_id
         WHERE op.user_id=$1 AND op.operation_key=$2 AND op.kind='publication' AND p.establishment_id=$3 AND p.owner_user_id=$1`;
       const bound = sqliteBindings(sql, [user.id,key,id]);
       const row = pgPool ? (await pgPool.query(sql, [user.id,key,id])).rows[0]
@@ -11994,6 +11995,8 @@ async function bootstrap() {
       res.status(500).json({ error: message });
     }
   });
+
+  registerPublicationTrashRoutes(app, { publicationTrash, requireAuth, normalizePublicationRow, selectPublicationByIdRecord });
 
   app.get("/api/publications/:id", async (req, res) => {
     const id = Number(req.params.id);
@@ -12801,7 +12804,7 @@ async function bootstrap() {
       res.status(400).json({ error: 'ID o cursore non valido.' }); return;
     }
     try {
-      const sql = `SELECT id FROM ${publicAccountRows('establishment_publications', accountArchives?.ready)} ep WHERE ep.id = ${pgPool ? '$1' : '?'}`;
+      const sql = `SELECT id FROM ${publicAccountRows('establishment_publications', accountArchives?.ready, publicationTrash?.ready)} ep WHERE ep.id = ${pgPool ? '$1' : '?'}`;
       const exists = pgPool ? (await pgPool.query(sql, [id])).rows.length > 0 : Boolean(requireSqliteDb().prepare(sql).get(id));
       if (!exists) { res.status(404).json({ error: 'Pubblicazione non trovata.' }); return; }
       res.json(await selectPublicationLikerPage(id, cursor));

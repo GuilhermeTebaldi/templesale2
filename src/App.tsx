@@ -33,6 +33,7 @@ import EditePerfil from "./components/EditePerfil";
 import ProductMap from "./components/ProductMap";
 import { notifyOverlayViewportRestored } from "./lib/overlay-viewport";
 import Curtidas from "./components/Curtidas";
+import DeletedPublications from "./components/DeletedPublications";
 import Carrinho, { type CartItem } from "./components/Carrinho";
 import Vendedores from "./components/Vendedores";
 import ElegantProductFilter from "./components/ElegantProductFilter";
@@ -352,6 +353,8 @@ export default function App() {
   const [isMeusAnunciosOpen, setIsMeusAnunciosOpen] = React.useState(false);
   const [editingProduct, setEditingProduct] = React.useState<Product | null>(null);
   const [isCurtidasOpen, setIsCurtidasOpen] = React.useState(false);
+  const [isDeletedPublicationsOpen, setIsDeletedPublicationsOpen] = React.useState(false);
+  const [updatedDeletedPublication, setUpdatedDeletedPublication] = React.useState<PublicationDto | null>(null);
   const [isSavedPublicationsOpen, setIsSavedPublicationsOpen] = React.useState(false);
   const [isCartOpen, setIsCartOpen] = React.useState(false);
   const [isEditePerfilOpen, setIsEditePerfilOpen] = React.useState(false);
@@ -498,7 +501,7 @@ export default function App() {
     Boolean(selectedPublication) ||
     Boolean(previewLink) ||
     Boolean(profilePhoto) ||
-    isCurtidasOpen || isSavedPublicationsOpen ||
+    isCurtidasOpen || isSavedPublicationsOpen || (hasMemberAccess && isDeletedPublicationsOpen) ||
     (hasMemberAccess &&
       ((isNewProductOpen && pendingPublicationCount === 0) ||
         Boolean(editingProduct) ||
@@ -1382,6 +1385,8 @@ export default function App() {
     setIsMenuOpen(false);
     setIsMapOpen(false);
     setIsCurtidasOpen(false);
+    setIsDeletedPublicationsOpen(false);
+    setUpdatedDeletedPublication(null);
     setProfileCompletionMessage("");
     setIsAvatarPickerOpen(false);
     setIsAvatarUploading(false);
@@ -3774,6 +3779,7 @@ export default function App() {
         onOpenFavorites={() => {
           setIsCurtidasOpen(true);
         }}
+        onOpenDeleted={hasMemberAccess ? () => { setUpdatedDeletedPublication(null); setIsDeletedPublicationsOpen(true); } : undefined}
         onLogout={() => {
           void handleLogout();
         }}
@@ -3871,7 +3877,10 @@ export default function App() {
             publication={editingSocialPublication}
             establishment={buildEstablishmentFromPublication(editingSocialPublication)}
             onClose={() => setEditingSocialPublication(null)}
-            onUpdated={syncSocialPublication}
+            onUpdated={publication => {
+              syncSocialPublication(publication);
+              if (isDeletedPublicationsOpen) setUpdatedDeletedPublication(publication);
+            }}
           />
         )}
       </AnimatePresence>
@@ -4022,6 +4031,31 @@ export default function App() {
             }}
           />
         )}
+      </AnimatePresence>
+
+      <AnimatePresence onExitComplete={notifyOverlayViewportRestored}>
+        {hasMemberAccess && isDeletedPublicationsOpen && <DeletedPublications key={currentUser.id}
+          onClose={() => setIsDeletedPublicationsOpen(false)}
+          onEdit={publication => setEditingSocialPublication(publication)}
+          updatedPublication={updatedDeletedPublication}
+          onRestored={publication => {
+            setDeletedPublicationIds(current => current.filter(id => id !== publication.id));
+            setMyEstablishment(current => current?.id === publication.establishmentId
+              ? { ...current, publicationCount: (current.publicationCount ?? 0) + 1 } : current);
+            if (profilePublicationsEstablishmentId === publication.establishmentId) {
+              setSelectedEstablishmentPublications(current => [...current.filter(item => item.id !== publication.id), publication]
+                .sort((a, b) => b.createdAt - a.createdAt || b.id - a.id));
+            }
+            refreshEstablishments();
+            void api.getMyEstablishment().then(establishment => setMyEstablishment(current =>
+              current?.id === establishment?.id ? establishment : current)).catch(() => null);
+          }}
+          onPermanentlyDeleted={publication => {
+            removePublicationFromLocalState(publication.id, publication.isTrashed === false ? publication : null);
+            refreshEstablishments();
+            void api.getMyEstablishment().then(establishment => setMyEstablishment(current =>
+              current?.id === establishment?.id ? establishment : current)).catch(() => null);
+          }} />}
       </AnimatePresence>
 
       <AnimatePresence>
