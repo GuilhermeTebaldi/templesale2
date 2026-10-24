@@ -175,9 +175,9 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
 
       <div className="px-4 space-y-4">
         {/* 2. CABEÇALHO DO PERFIL (Avatar com Moldura Oficial TempleSale + Estatísticas) */}
-        <div className="flex items-center justify-between pt-1">
+        <div className="flex items-start gap-5 pt-2 sm:gap-8">
           {/* Avatar com a Moldura Exclusiva dos Quadradinhos do TempleSale */}
-          <div className="shrink-0 mr-4 sm:mr-7">
+          <div className="w-24 shrink-0 sm:w-28">
             <ProfilePhotoButton src={displayProfilePhoto} name={company.name} className="block">
             <TempleSaleAvatarFrame
               src={displayProfilePhoto}
@@ -186,44 +186,30 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
               isOwner={isOwner}
             />
             </ProfilePhotoButton>
-            <div className="mt-2 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em]">
-              {displayProfilePhoto && (
-                <ProfilePhotoButton src={displayProfilePhoto} name={company.name}
-                  className="text-neutral-400 transition-colors hover:text-white"
-                >
-                  Vedi foto
-                </ProfilePhotoButton>
-              )}
-              {isOwner && onChangeCompanyPhoto && (
-                <button
-                  type="button"
-                  onClick={onChangeCompanyPhoto}
-                  className="text-amber-300 transition-colors hover:text-amber-200"
-                >
-                  Cambia foto
-                </button>
-              )}
+            <div className="mt-2 flex justify-center text-[10px] font-medium leading-5 sm:text-[11px]">
+              {isOwner && onChangeCompanyPhoto ? (
+                <button type="button" onClick={onChangeCompanyPhoto} className="text-slate-500 transition-colors hover:text-slate-900">Cambia foto</button>
+              ) : displayProfilePhoto ? (
+                <ProfilePhotoButton src={displayProfilePhoto} name={company.name} className="text-slate-500 transition-colors hover:text-slate-900">Vedi foto</ProfilePhotoButton>
+              ) : null}
             </div>
           </div>
 
           {/* Informações da atividade: publicações e localização */}
-          <div id="company-profile-summary" className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-[minmax(110px,0.8fr)_minmax(0,1.4fr)]">
-            <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
-              <Grid3X3 className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
-              <div className="min-w-0">
-                <div id="company-publication-count" className="text-xl font-bold leading-tight text-slate-900 sm:text-2xl">{totalPublications}</div>
-                <div className="text-[10px] font-medium text-slate-500 sm:text-[11px]">Pubblicazioni</div>
-              </div>
+          <div id="company-profile-summary" className="min-w-0 max-w-sm flex-1 py-0.5 sm:py-1">
+            <div className="flex min-w-0 items-baseline gap-2.5">
+              <span id="company-publication-count" className="text-2xl font-semibold leading-none tracking-tight text-slate-900 sm:text-[28px]">{totalPublications}</span>
+              <span className="text-[11px] font-medium text-slate-500 sm:text-xs">Pubblicazioni</span>
             </div>
             <button type="button" id="company-location-card" onClick={() => onOpenMap?.(company)} disabled={!onOpenMap}
               aria-label={`Posizione dell’attività: ${company.city || 'Mappa'}`}
-              className="flex min-w-0 items-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-3 text-left transition-colors hover:bg-sky-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600 disabled:cursor-default">
-              <MapPin className="h-5 w-5 shrink-0 text-sky-700" aria-hidden="true" />
+              className="mt-3 flex w-full min-w-0 items-center gap-2.5 border-t border-slate-200/70 pt-3 text-left transition-opacity hover:opacity-70 focus-visible:rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-600 disabled:cursor-default sm:mt-4 sm:pt-4">
+              <MapPin className="h-[18px] w-[18px] shrink-0 text-sky-700" aria-hidden="true" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[10px] font-medium text-sky-700 sm:text-[11px]">Dove siamo</span>
-                <span className="block text-sm font-bold leading-snug text-slate-900 [overflow-wrap:anywhere] sm:text-base">{company.city || 'Vedi sulla mappa'}</span>
+                <span className="block text-[10px] font-medium leading-4 text-slate-500 sm:text-[11px]">Dove siamo</span>
+                <span className="block text-[15px] font-semibold leading-snug text-slate-900 [overflow-wrap:anywhere] sm:text-base">{company.city || 'Vedi sulla mappa'}</span>
               </span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-sky-700" aria-hidden="true" />
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
             </button>
           </div>
         </div>
