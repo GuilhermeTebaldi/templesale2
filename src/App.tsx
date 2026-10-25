@@ -3174,7 +3174,8 @@ export default function App() {
       const publication = publicationId
         ? publicationFeed.find((item) => item.id === publicationId) ??
           selectedEstablishmentPublications.find((item) => item.id === publicationId) ??
-          savedPublications.find((item) => item.id === publicationId)
+          savedPublications.find((item) => item.id === publicationId) ??
+          (selectedPublication?.id === publicationId ? selectedPublication : null)
         : null;
       if (!publication) {
         return;
@@ -3194,6 +3195,7 @@ export default function App() {
       publicationFeed,
       publicationIdFromSocialPostId,
       savedPublications,
+      selectedPublication,
       selectedEstablishmentPublications,
     ],
   );
@@ -3811,6 +3813,10 @@ export default function App() {
             liked={likedPublicationIds.includes(socialPostIdFromPublicationId(selectedPublication.id))}
             saved={savedPublicationIds.includes(socialPostIdFromPublicationId(selectedPublication.id))}
             commentsCount={publicationCommentCounts[selectedPublication.id]}
+            onEdit={hasMemberAccess && currentUser?.id === selectedPublication.ownerId ? () => {
+              setIsPublicationPhotoOpen(false);
+              openSocialPublicationEditor(socialPostIdFromPublicationId(selectedPublication.id));
+            } : undefined}
             navigationDirection={publicationNavigationDirection}
             onNavigate={profileSwipeCompanyId === selectedSocialCompany.id ? navigateProfilePublication : undefined}
             onLike={() => toggleLikedSocialPost(socialPostIdFromPublicationId(selectedPublication.id))}
