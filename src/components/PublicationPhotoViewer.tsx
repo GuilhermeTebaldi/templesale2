@@ -35,7 +35,7 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
 
   const applyPose = React.useCallback((next: Pose) => {
     const bounds = stage.current?.getBoundingClientRect();
-    const image = stage.current?.querySelector('img');
+    const image = stage.current?.querySelector<HTMLImageElement>('img:not([aria-hidden])');
     const scale = Math.min(4, Math.max(1, next.scale));
     const width = bounds?.width ?? 0, height = bounds?.height ?? 0;
     const ratio = image?.naturalWidth && image.naturalHeight ? image.naturalWidth / image.naturalHeight : width / Math.max(1, height);

@@ -1,3 +1,4 @@
+import { preloadAdjacentImages } from "./lib/image-memory";
 import React from "react";
 import { flushSync } from "react-dom";
 import { usesSystemPhotoSourceMenu } from "./components/photo-publisher/components/CameraCapture";
@@ -3108,6 +3109,13 @@ export default function App() {
     },
     [buildEstablishmentFromPublication, publicationFeed, publicationIdFromSocialPostId, savedPublications, selectedEstablishmentPublications, likedPublications, searchPreviewPublications],
   );
+
+  React.useEffect(() => {
+    if (!selectedPublication || profileSwipeCompanyId !== selectedSocialCompany.id) return;
+    const index = selectedSocialCompanyPosts.findIndex(post => publicationIdFromSocialPostId(post.id) === selectedPublication.id);
+    if (index < 0) return;
+    return preloadAdjacentImages([selectedSocialCompanyPosts[index + 1]?.imageUrl, selectedSocialCompanyPosts[index - 1]?.imageUrl]);
+  }, [selectedPublication?.id, profileSwipeCompanyId, selectedSocialCompany.id, selectedSocialCompanyPosts, publicationIdFromSocialPostId]);
 
   const navigateProfilePublication = React.useCallback((direction: -1 | 1) => {
     if (!selectedPublication || profileSwipeCompanyId !== selectedSocialCompany.id) return;
