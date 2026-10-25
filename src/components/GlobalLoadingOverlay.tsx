@@ -4,7 +4,7 @@ import {
   getNetworkLoadingSnapshot,
   subscribeNetworkLoading,
 } from "../lib/networkActivity";
-const GLOBAL_LOADING_LOGO_SRC = "/templesale-loading-logo.webp";
+const GLOBAL_LOADING_LOGO_SRC = "/templesale-loading-logo.webp?v=monochrome-2";
 
 export default function GlobalLoadingOverlay({ forceVisible = false, retry = false }: { forceVisible?: boolean; retry?: boolean } = {}) {
   const isNetworkLoading = React.useSyncExternalStore(
