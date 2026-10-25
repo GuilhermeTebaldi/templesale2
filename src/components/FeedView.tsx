@@ -12,6 +12,7 @@ import {
   ArrowDown,
   RefreshCw,
   CheckCircle,
+  Pencil,
 } from 'lucide-react';
 import { Company, Post } from '../types';
 import { api } from '../lib/api';
@@ -29,6 +30,7 @@ interface FeedViewProps {
   companies: Company[];
   onOpenPost: (post: Post, tab?: 'comments' | 'likes') => void;
   onOpenPhoto?: (post: Post) => void;
+  onEditPost?: (postId: string) => void;
   onSelectCompany: (companyId: string) => void;
   onAddComment: (postId: string, text: string) => Promise<void>;
   onOpenCreatePost: () => void;
@@ -86,6 +88,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
   companies,
   onOpenPost,
   onOpenPhoto,
+  onEditPost,
   onSelectCompany,
   onAddComment,
   onOpenCreatePost,
@@ -554,6 +557,14 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   </div>
                 </div>
 
+                <div className="flex shrink-0 items-center gap-2">
+                {company.isOwner && onEditPost && <button
+                  type="button"
+                  onClick={() => onEditPost(post.id)}
+                  aria-label="Modifica foto"
+                  title="Modifica foto"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+                ><Pencil className="h-4 w-4" /></button>}
                 {/* Botão de WhatsApp direto da empresa */}
                 <a
                   href={whatsappUrl}
@@ -566,6 +577,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
                   <span className="hidden sm:inline text-[11px]">WhatsApp</span>
                 </a>
+                </div>
               </div>
 
                 {/* Legenda */}

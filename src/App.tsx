@@ -3619,6 +3619,7 @@ export default function App() {
             companies={socialCompanies}
             onOpenPost={openSocialPost}
             onOpenPhoto={post => openSocialPost(post, 'comments', true)}
+            onEditPost={hasMemberAccess ? openSocialPublicationEditor : undefined}
             onSelectCompany={selectSocialCompany}
             onAddComment={addSocialComment}
             onOpenCreatePost={handleOpenNewProduct}
