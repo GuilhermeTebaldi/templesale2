@@ -352,3 +352,15 @@ test('central recovery covers nested portal dialogs and ignores ordinary feed up
   assert.equal(await page.evaluate(() => window.originalDock !== document.querySelector('#mobile-navigation-viewport')), true);
   await bottomIs(page, 844);
 });
+
+test('desktop member navigation exposes existing map, profile, notification and publish controls with labels', async t => {
+  const page = await fixture(t);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  for (const id of ['map','profile','notifications','publish']) {
+    await page.locator('#desktop-rail-'+id).waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#desktop-rail-'+id+' .ts-desktop-nav-label').isVisible(), true);
+  }
+  await page.locator('#desktop-rail-publish').click();
+  assert.equal(await page.evaluate(() => window.publishClicks), 1);
+  assert.equal(await page.locator('#mobile-bottom-nav').isVisible(), false);
+});

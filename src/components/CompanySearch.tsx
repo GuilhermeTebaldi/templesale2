@@ -57,6 +57,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
   // Auto-foco suave no campo de busca quando a tela Buscar é aberta
   useEffect(() => {
     const timer = setTimeout(() => {
+      if (window.matchMedia("(min-width: 1180px)").matches && inputRef.current?.closest(".ts-desktop-search:not(.is-active)")) return;
       inputRef.current?.focus();
     }, 120);
     return () => clearTimeout(timer);
@@ -321,7 +322,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
               <div
                 key={company.id}
                 id={`search-card-${company.id}`}
-                className="bg-neutral-900 border border-neutral-800/80 hover:border-neutral-700/80 rounded-2xl p-3 sm:p-3.5 shadow-sm space-y-2.5 transition-colors"
+                className="ts-search-card bg-neutral-900 border border-neutral-800/80 hover:border-neutral-700/80 rounded-2xl p-3 sm:p-3.5 shadow-sm space-y-2.5 transition-colors"
               >
                 {/* Cabeçalho da Empresa + WhatsApp (Clicar no nome/avatar entra direto no perfil) */}
                 <div className="flex items-center justify-between gap-2.5">
@@ -367,7 +368,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex shrink-0 items-center gap-1.5">
+                  <div className="ts-search-card-actions flex shrink-0 items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => onOpenMap?.(company)}

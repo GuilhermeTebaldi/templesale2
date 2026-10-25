@@ -212,7 +212,7 @@ export const Header: React.FC<HeaderProps> = ({
         className="fixed inset-x-0 top-0 z-50 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800"
       >
         <div className="relative max-w-6xl mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-end gap-2 sm:justify-between sm:gap-4">
-          <div className={`absolute inset-y-0 left-3 ${!hasRegisteredAccount && onOpenSaved ? 'right-40' : 'right-32'} flex items-center justify-center sm:left-1/2 sm:right-auto sm:-translate-x-1/2`}>
+          <div className={`ts-header-brand absolute inset-y-0 left-3 ${!hasRegisteredAccount && onOpenSaved ? 'right-40' : 'right-32'} flex items-center justify-center sm:left-1/2 sm:right-auto sm:-translate-x-1/2`}>
             <button
               id="brand-text-btn"
               onClick={() => {
@@ -456,7 +456,7 @@ export const Header: React.FC<HeaderProps> = ({
             title="Home"
             aria-label="Home"
           >
-            <Home className="h-6 w-6" />
+            <Home className="h-6 w-6" /><span className="ts-desktop-nav-label" aria-hidden="true">Home</span>
           </button>
 
           <button
@@ -466,36 +466,36 @@ export const Header: React.FC<HeaderProps> = ({
             title="Cerca"
             aria-label="Cerca"
           >
-            <Search className="h-6 w-6" />
+            <Search className="h-6 w-6" /><span className="ts-desktop-nav-label" aria-hidden="true">Cerca</span>
           </button>
 
           <button
             id="desktop-rail-map"
             onClick={() => setActiveTab('map')}
-            hidden={hasRegisteredAccount}
+            data-desktop-extra={hasRegisteredAccount || undefined}
             className={desktopRailButtonClass(activeTab === 'map')}
             title="Mappa"
             aria-label="Mappa"
           >
-            <MapPin className="h-6 w-6" />
+            <MapPin className="h-6 w-6" /><span className="ts-desktop-nav-label" aria-hidden="true">Mappa</span>
           </button>
 
           {onOpenFavorites && (
             <button
               id="desktop-rail-favorites"
               onClick={onOpenFavorites}
-              hidden={hasRegisteredAccount}
+              data-desktop-extra={hasRegisteredAccount || undefined}
               className={desktopRailButtonClass(false)}
               title="Preferiti"
               aria-label="Preferiti"
             >
-              <TempleSaleLikeIcon liked={false} className="h-6 w-6" />
+              <TempleSaleLikeIcon liked={false} className="h-6 w-6" /><span className="ts-desktop-nav-label" aria-hidden="true">Preferiti</span>
             </button>
           )}
 
-          {!hasRegisteredAccount && onOpenSaved && <button type="button" id="desktop-rail-saved" onClick={onOpenSaved}
+          {onOpenSaved && <button data-desktop-extra={hasRegisteredAccount || undefined} type="button" id="desktop-rail-saved" onClick={onOpenSaved}
             className={desktopRailButtonClass(false)} title="Salvati" aria-label="Pubblicazioni salvate">
-            <Bookmark className="h-6 w-6" />
+            <Bookmark className="h-6 w-6" /><span className="ts-desktop-nav-label" aria-hidden="true">Salvati</span>
           </button>}
           <button
             id="desktop-rail-profile"
@@ -505,7 +505,7 @@ export const Header: React.FC<HeaderProps> = ({
             title="Attività"
             aria-label="Attività"
           >
-            <Building2 className="h-6 w-6" />
+            <Building2 className="h-6 w-6" /><span className="ts-desktop-nav-label" aria-hidden="true">La mia attività</span>
           </button>
 
           <button
@@ -516,7 +516,7 @@ export const Header: React.FC<HeaderProps> = ({
             title="Pubblica"
             aria-label="Pubblica"
           >
-            <Plus className="h-7 w-7 stroke-[2.8]" />
+            <Plus className="h-7 w-7 stroke-[2.8]" /><span className="ts-desktop-nav-label" aria-hidden="true">Pubblica</span>
           </button>
 
           <button
@@ -527,7 +527,7 @@ export const Header: React.FC<HeaderProps> = ({
             title="Notifiche"
             aria-label="Notifiche"
           >
-            <Bell className="h-6 w-6" />
+            <Bell className="h-6 w-6" /><span className="ts-desktop-nav-label" aria-hidden="true">Notifiche</span>
             {unreadNotificationsCount > 0 && (
               <span
                 id="desktop-rail-unread-badge"
@@ -560,6 +560,7 @@ export const Header: React.FC<HeaderProps> = ({
           ) : (
             <Menu className="h-6 w-6" />
           )}
+          <span className="ts-desktop-nav-label ts-desktop-account" aria-hidden="true"><strong>{hasRegisteredAccount ? profileLabel : "Accedi"}</strong><small>{hasRegisteredAccount ? "Gestisci attività" : "La tua attività su TempleSale"}</small></span>
         </button>
       </aside>
 
