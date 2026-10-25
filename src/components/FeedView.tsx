@@ -496,10 +496,10 @@ export const FeedView: React.FC<FeedViewProps> = ({
 
           const cleanWhatsApp = company.whatsapp.replace(/\D/g, '');
           const whatsappUrl = `https://wa.me/${cleanWhatsApp}?text=${encodeURIComponent(
-            `Ciao! Ho visto la tua foto su TempleSale e vorrei maggiori dettagli: "${post.caption.slice(
+            `Ciao! Ho visto la tua foto su TempleSale e vorrei maggiori dettagli: "${Array.from(post.caption).slice(
               0,
               40
-            )}..."`
+            ).join('')}..."`
           )}`;
 
           return (
