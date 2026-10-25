@@ -1,6 +1,7 @@
 import React from "react";
 import { translate as translateInterface } from "../i18n";
 import AdminPublicationHealth from './AdminPublicationHealth';
+import AdminTaxonomy from './AdminTaxonomy';
 import {
   LoaderCircle,
   Shield,
@@ -113,7 +114,7 @@ type AdminSessionV2 = {
   token: string;
 };
 
-type AdminViewV2 = "overview" | "products" | "users" | "notifications" | "visitors" | "security";
+type AdminViewV2 = "overview" | "products" | "users" | "notifications" | "visitors" | "security" | "taxonomy";
 
 type SecurityEventFilter = "all" | SecurityCheckStatus;
 
@@ -189,7 +190,6 @@ class HttpError extends Error {
   }
 }
 
-const ADMIN_DEFAULT_EMAIL = "templesale@admin.com";
 const ADMIN_TOKEN_STORAGE_KEY = "templesale_admin_token_v2";
 const ADMIN_EMAIL_STORAGE_KEY = "templesale_admin_email_v2";
 const ADMIN_REMEMBER_PASSWORD_STORAGE_KEY = "templesale_admin_remember_password_v2";
@@ -226,33 +226,6 @@ function readStoredEmail(): string {
   return String(window.localStorage.getItem(ADMIN_EMAIL_STORAGE_KEY) ?? "")
     .trim()
     .toLowerCase();
-}
-
-function readRememberAdminPassword(): boolean {
-  if (!canUseStorage()) {
-    return false;
-  }
-  return window.localStorage.getItem(ADMIN_REMEMBER_PASSWORD_STORAGE_KEY) === "true";
-}
-
-function readStoredAdminPassword(): string {
-  if (!canUseStorage() || !readRememberAdminPassword()) {
-    return "";
-  }
-  return String(window.localStorage.getItem(ADMIN_PASSWORD_STORAGE_KEY) ?? "");
-}
-
-function persistRememberedAdminPassword(password: string, shouldRemember: boolean) {
-  if (!canUseStorage()) {
-    return;
-  }
-  if (shouldRemember) {
-    window.localStorage.setItem(ADMIN_REMEMBER_PASSWORD_STORAGE_KEY, "true");
-    window.localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, password);
-    return;
-  }
-  window.localStorage.removeItem(ADMIN_REMEMBER_PASSWORD_STORAGE_KEY);
-  window.localStorage.removeItem(ADMIN_PASSWORD_STORAGE_KEY);
 }
 
 function persistSession(session: AdminSessionV2) {
@@ -1363,7 +1336,7 @@ async function adminLogin(email: string, password: string): Promise<AdminSession
         }
         routeHandledByServer = true;
         if (isUnauthorizedApiError(error)) {
-          continue;
+          throw error;
         }
         throw error;
       }
@@ -1668,12 +1641,12 @@ async function adminClearSecurityEvents(token: string): Promise<void> {
 export default function AdminPanelV2() {
   const [isBootstrapping, setIsBootstrapping] = React.useState(true);
   const [activeView, setActiveView] = React.useState<AdminViewV2>("overview");
+  const [taxonomyVersion, setTaxonomyVersion] = React.useState(0);
   const [sessionEmail, setSessionEmail] = React.useState<string | null>(null);
   const [authToken, setAuthToken] = React.useState("");
-  const [email, setEmail] = React.useState(ADMIN_DEFAULT_EMAIL);
-  const [password, setPassword] = React.useState(() => readStoredAdminPassword());
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
-  const [rememberPassword, setRememberPassword] = React.useState(() => readRememberAdminPassword());
   const [authError, setAuthError] = React.useState("");
   const [isAuthSubmitting, setIsAuthSubmitting] = React.useState(false);
   const [users, setUsers] = React.useState<AdminUserV2[]>([]);
@@ -1900,13 +1873,15 @@ export default function AdminPanelV2() {
 
     const restoreSession = async () => {
       try {
+        window.localStorage.removeItem(ADMIN_REMEMBER_PASSWORD_STORAGE_KEY);
+        window.localStorage.removeItem(ADMIN_PASSWORD_STORAGE_KEY);
         const storedToken = readStoredToken();
         const storedEmail = readStoredEmail();
         if (!storedToken) {
           return;
         }
 
-        const currentEmail = (await adminGetCurrent(storedToken)) || storedEmail || ADMIN_DEFAULT_EMAIL;
+        const currentEmail = (await adminGetCurrent(storedToken)) || storedEmail;
         if (cancelled) {
           return;
         }
@@ -1977,7 +1952,6 @@ export default function AdminPanelV2() {
       setAuthToken(session.token);
       setSessionEmail(session.email);
       setEmail(session.email);
-      persistRememberedAdminPassword(normalizedPassword, rememberPassword);
       persistSession(session);
       await loadUsers(session.token);
       await loadProducts(session.token);
@@ -2041,7 +2015,8 @@ export default function AdminPanelV2() {
       setUsersError("");
       setAuthError("");
       setQuery("");
-      setPassword(rememberPassword ? readStoredAdminPassword() : "");
+      setPassword("");
+      setEmail("");
       setSelectedUser(null);
       setSelectedUserProducts([]);
       setSelectedUserError("");
@@ -2151,6 +2126,7 @@ export default function AdminPanelV2() {
 	    if (!sessionEmail) {
 	      return;
 	    }
+        if (activeView === "taxonomy") { setTaxonomyVersion(value => value + 1); return; }
 	    if (activeView === "overview") {
 	      await Promise.all([
 	        loadUsers(authToken, query),
@@ -2592,7 +2568,7 @@ export default function AdminPanelV2() {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 className="w-full border border-stone-300 px-3 py-2.5 text-sm outline-none focus:border-stone-900"
-                placeholder={ADMIN_DEFAULT_EMAIL}
+                placeholder="Email amministratore"
                 autoComplete="username"
               />
             </div>
@@ -2625,24 +2601,6 @@ export default function AdminPanelV2() {
                 </button>
               </div>
             </div>
-            <label className="flex items-center gap-2 text-xs text-stone-600">
-              <input
-                type="checkbox"
-                checked={rememberPassword}
-                onChange={(event) => {
-                  const shouldRemember = event.target.checked;
-                  setRememberPassword(shouldRemember);
-                  if (!shouldRemember) {
-                    persistRememberedAdminPassword("", false);
-                  }
-                }}
-                className="h-4 w-4 accent-stone-900"
-              />
-              Salva la password in questo browser
-            </label>
-            <p className="text-[11px] leading-relaxed text-stone-400">
-              Usalo soltanto sul tuo computer personale.
-            </p>
             {authError && <p className="text-sm text-red-600">{authError}</p>}
             <button
               type="submit"
@@ -2766,10 +2724,12 @@ export default function AdminPanelV2() {
               <ShieldAlert className="w-3.5 h-3.5" />
               Area di test
             </button>
+            <button type="button" onClick={() => setActiveView("taxonomy")}
+              className={`inline-flex items-center gap-2 border px-3 py-2 text-xs uppercase tracking-[0.14em] transition-colors ${activeView === "taxonomy" ? "border-stone-900 bg-stone-900 text-white" : "border-stone-300 text-stone-700 hover:border-stone-800"}`}>Categorie</button>
           </div>
         </div>
 
-	        {activeView === "overview" ? (
+	        {activeView === "taxonomy" ? <AdminTaxonomy key={taxonomyVersion} /> : activeView === "overview" ? (
 	          <section className="space-y-4">
                 <AdminPublicationHealth token={authToken} request={adminRequest} />
 	            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

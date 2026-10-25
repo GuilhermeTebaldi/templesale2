@@ -348,6 +348,7 @@ export interface TaxonomySuggestionDto {
   key: string;
   usageCount: number;
   source: "system" | "user";
+  keywords?: string[];
 }
 
 export interface UpdateProfileInput {
@@ -1399,7 +1400,7 @@ function normalizeStorefrontSectionList(value: unknown): StorefrontSectionDto[] 
     .filter((item): item is StorefrontSectionDto => item !== null);
 }
 
-function normalizeKeywordList(value: unknown): string[] {
+function normalizeKeywordList(value: unknown, limit = 24): string[] {
   const rawItems = Array.isArray(value)
     ? value
     : typeof value === "string" && value.trim().startsWith("[")
@@ -1427,7 +1428,7 @@ function normalizeKeywordList(value: unknown): string[] {
       continue;
     }
     byKey.set(key, label);
-    if (byKey.size >= 24) {
+    if (byKey.size >= limit) {
       break;
     }
   }
@@ -1522,7 +1523,7 @@ function normalizePublicationList(value: unknown): PublicationDto[] {
 
 function normalizeTaxonomySuggestionList(value: unknown): TaxonomySuggestionDto[] {
   return extractArrayPayload(value, ["suggestions", "data", "items", "rows", "results"])
-    .map((item) => {
+    .map((item): TaxonomySuggestionDto | null => {
       const parsed = parseJsonIfNeeded(item);
       if (!isRecord(parsed)) {
         return null;
@@ -1537,6 +1538,7 @@ function normalizeTaxonomySuggestionList(value: unknown): TaxonomySuggestionDto[
         usageCount:
           toNonNegativeInteger(firstDefined(parsed, ["usageCount", "usage_count", "count"])) ?? 0,
         source: firstDefined(parsed, ["source"]) === "system" ? "system" : "user",
+        keywords: normalizeKeywordList(parsed.keywords, Number.MAX_SAFE_INTEGER),
       } satisfies TaxonomySuggestionDto;
     })
     .filter((item): item is TaxonomySuggestionDto => item !== null);
@@ -3311,7 +3313,7 @@ export const api = {
     if (search.trim()) {
       params.set("search", search.trim());
     }
-    const payload = await request<unknown>(`/api/taxonomy/business-categories?${params.toString()}`);
+    const payload = await request<unknown>(`/api/taxonomy/business-categories?${params.toString()}`, { cache: 'no-store', skipGlobalLoadingOverlay: true });
     return normalizeTaxonomySuggestionList(payload);
   },
   async getProductCategorySuggestions(input: { businessCategory?: string; search?: string } = {}) {
