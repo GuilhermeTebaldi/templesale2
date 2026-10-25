@@ -3591,7 +3591,7 @@ export default function App() {
         onSearchChange={setSearchQuery}
       />
 
-      <main className="flex-1 pb-24 sm:pb-16 sm:pl-[72px]">
+      <main className="ts-desktop-main flex-1 pb-24 sm:pb-16 sm:pl-[72px]">
         <div style={{ display: socialActiveTab === "feed" ? "block" : "none" }}>
           {(needsDiscoveryConsent || discoveryLocationError || !freshDiscovery) && <div className="mx-auto max-w-xl border-b border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-600">
             <p>{discoveryLocationError || 'Usa la posizione per scoprire le attività vicine.'}</p>
@@ -3718,7 +3718,8 @@ export default function App() {
           />
         )}
 
-        <div style={{ display: socialActiveTab === "search" ? "block" : "none" }}>
+        <div className={`ts-desktop-search ${socialActiveTab === "search" ? "is-active" : ""}`} style={{ display: socialActiveTab === "search" ? "block" : "none" }}>
+          <div className="ts-desktop-search-heading"><h2>Scopri le attività</h2><p>Servizi e negozi vicino a te</p></div>
           <SocialCompanySearch
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
@@ -3746,7 +3747,7 @@ export default function App() {
         </div>
       </main>
 
-      <footer className="border-t border-neutral-900 py-6 mb-16 text-center text-xs text-neutral-400 sm:mb-0 sm:pl-[72px]">
+      <footer className="ts-desktop-footer border-t border-neutral-900 py-6 mb-16 text-center text-xs text-neutral-400 sm:mb-0 sm:pl-[72px]">
         <div className="max-w-4xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center space-x-2">
             <SocialTempleSaleLogo className="w-5 h-5" />
