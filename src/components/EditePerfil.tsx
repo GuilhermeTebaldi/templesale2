@@ -16,6 +16,7 @@ import {
 } from "../lib/whatsapp";
 import { useI18n } from "../i18n/provider";
 import LeafletMapPicker from "./LeafletMapPicker";
+import BusinessCategoryInput from "./BusinessCategoryInput";
 
 interface EditePerfilProps {
   onClose: () => void;
@@ -62,6 +63,18 @@ const KEYWORD_SUGGESTIONS = [
   "elettronica",
   "Ardea",
   "Roma",
+];
+
+const CATEGORY_KEYWORD_EXAMPLES: [RegExp, string[]][] = [
+  [/^bar$/, ['caffè', 'colazione', 'aperitivo']],
+  [/ristorant|cucin/, ['pranzo', 'cena', 'prenotazione']],
+  [/pizzer/, ['pizza', 'asporto', 'consegna']],
+  [/mago|magia|illusion/, ['magia', 'eventi', 'feste', 'illusionismo']],
+  [/pulizi/, ['pulizie domestiche', 'appartamenti', 'uffici', 'pulizie approfondite']],
+  [/barbier|parrucch/, ['taglio capelli', 'barba', 'appuntamento']],
+  [/officin/, ['riparazioni auto', 'tagliando', 'pneumatici']],
+  [/palestr/, ['fitness', 'corsi', 'allenamento']],
+  [/hotel|allogg/, ['camere', 'soggiorno', 'prenotazione']],
 ];
 
 function parseGeoPoint(latitude: string, longitude: string): GeoPoint | null {
@@ -133,6 +146,8 @@ export default function EditePerfil({
   const [isMapPickerOpen, setIsMapPickerOpen] = React.useState(false);
   const [locationStatus, setLocationStatus] = React.useState<"success" | "error" | null>(null);
   const [businessCategorySuggestions, setBusinessCategorySuggestions] = React.useState<TaxonomySuggestionDto[]>([]);
+  const [categoryLoadFailed, setCategoryLoadFailed] = React.useState(false);
+  const [categoryLoadVersion, setCategoryLoadVersion] = React.useState(0);
   const [keywordInput, setKeywordInput] = React.useState("");
   const [errorMessage, setErrorMessage] = React.useState("");
   const [confirmClose, setConfirmClose] = React.useState(false);
@@ -235,6 +250,7 @@ export default function EditePerfil({
     };
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if ((event.target as HTMLElement)?.matches('[role="combobox"][aria-expanded="true"]')) return;
         event.preventDefault(); event.stopImmediatePropagation();
         if (confirmClose) setConfirmClose(false); else requestClose();
       }
@@ -305,9 +321,10 @@ export default function EditePerfil({
   const keywordSuggestions = React.useMemo(() => {
     const selectedKeys = new Set(formData.establishmentKeywords.map(normalizeTaxonomyLabel));
     return normalizeKeywordList([
+      ...(businessCategorySuggestions.find(suggestion => suggestion.key === normalizeTaxonomyLabel(formData.establishmentCategory))?.keywords ?? []),
+      ...(CATEGORY_KEYWORD_EXAMPLES.find(([pattern]) => pattern.test(normalizeTaxonomyLabel(formData.establishmentCategory)))?.[1] ?? []),
       formData.establishmentCategory,
       formData.city,
-      ...businessCategorySuggestions.map((suggestion) => suggestion.label),
       ...KEYWORD_SUGGESTIONS,
     ])
       .filter((keyword) => !selectedKeys.has(normalizeTaxonomyLabel(keyword)))
@@ -321,22 +338,24 @@ export default function EditePerfil({
 
   React.useEffect(() => {
     let cancelled = false;
+    setCategoryLoadFailed(false);
     void api
-      .getBusinessCategorySuggestions(formData.establishmentCategory)
+      .getBusinessCategorySuggestions()
       .then((suggestions) => {
         if (!cancelled) {
-          setBusinessCategorySuggestions(suggestions.slice(0, 10));
+          setBusinessCategorySuggestions(suggestions);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setBusinessCategorySuggestions([]);
+          setCategoryLoadFailed(true);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [formData.establishmentCategory]);
+  }, [categoryLoadVersion]);
 
   const applyLocationPoint = React.useCallback(
     async (point: GeoPoint, fallback?: Partial<typeof formData>) => {
@@ -688,21 +707,12 @@ export default function EditePerfil({
                   <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
                     {t("Categoria da empresa")}
                   </label>
-                  <input
-                    required
-                    className="w-full bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-neutral-100"
+                  <BusinessCategoryInput
                     value={formData.establishmentCategory}
-                    onChange={(e) =>
-                      setFormData({ ...formData, establishmentCategory: e.target.value })
-                    }
-                    list="business-category-suggestions"
-                    placeholder={t("Ex: Bar, Ristorante, Enoteca")}
+                    suggestions={businessCategorySuggestions}
+                    onChange={value => setFormData(current => ({ ...current, establishmentCategory: value }))}
                   />
-                  <datalist id="business-category-suggestions">
-                    {businessCategorySuggestions.map((category) => (
-                      <option key={category.key} value={category.label} />
-                    ))}
-                  </datalist>
+                  {categoryLoadFailed && <button type="button" className="text-xs text-sky-700 underline" onClick={() => setCategoryLoadVersion(version => version + 1)}>Categorie non disponibili. Riprova</button>}
                   {formData.establishmentCategory.trim() && (
                     <p className="text-[11px] text-neutral-500">
                       {businessCategorySuggestions.some(
@@ -767,7 +777,8 @@ export default function EditePerfil({
                           addKeyword(keywordInput);
                         }
                       }}
-                      placeholder={t("Ex: aperitivo, cucina romana, consegna")}
+                      aria-label="Parole chiave"
+                      placeholder={`Es: ${keywordSuggestions.slice(0, 3).join(', ')}`}
                       className="min-w-0 flex-1 bg-transparent border-b border-neutral-700 py-3 outline-none focus:border-amber-400 transition-colors text-neutral-100"
                     />
                     <button

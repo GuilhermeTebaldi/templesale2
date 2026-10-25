@@ -3880,6 +3880,7 @@ type TaxonomySuggestionRecord = {
   key: string;
   usageCount: number;
   source: "system" | "user";
+  keywords?: string[];
 };
 
 const SYSTEM_BUSINESS_CATEGORIES = [
@@ -3914,20 +3915,20 @@ async function selectBusinessCategorySuggestions(searchValue: string): Promise<T
     ? (
         await pgPool.query<Record<string, unknown>>(
           `
-            SELECT category AS label, COUNT(*)::INT AS usage_count
+            SELECT category AS label, keywords, COUNT(*)::INT AS usage_count
             FROM establishments
             WHERE COALESCE(NULLIF(BTRIM(category), ''), '') <> ''
-            GROUP BY category
+            GROUP BY category, keywords
           `,
         )
       ).rows
     : (requireSqliteDb()
         .prepare(
           `
-            SELECT category AS label, COUNT(*) AS usage_count
+            SELECT category AS label, keywords, COUNT(*) AS usage_count
             FROM establishments
             WHERE COALESCE(NULLIF(TRIM(category), ''), '') <> ''
-            GROUP BY category
+            GROUP BY category, keywords
           `,
         )
         .all() as Array<Record<string, unknown>>);
@@ -3943,8 +3944,9 @@ async function selectBusinessCategorySuggestions(searchValue: string): Promise<T
     suggestions.set(key, {
       label: current?.source === "system" ? current.label : label,
       key,
-      usageCount: Math.max(current?.usageCount ?? 0, usageCount),
+      usageCount: (current?.usageCount ?? 0) + usageCount,
       source: current?.source ?? "user",
+      keywords: normalizeKeywordList([...(current?.keywords ?? []), ...normalizeKeywordList(row.keywords)], Number.MAX_SAFE_INTEGER),
     });
   }
 
@@ -11247,6 +11249,7 @@ async function bootstrap() {
     try {
       const search = normalizeTextField(req.query.search ?? req.query.q ?? "", "Busca", 120);
       const suggestions = await selectBusinessCategorySuggestions(search);
+      res.setHeader('Cache-Control', 'no-store');
       res.json({ suggestions });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao carregar categorias.";
