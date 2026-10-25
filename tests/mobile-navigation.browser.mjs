@@ -13,8 +13,10 @@ const bundle = await build({
     import { Header } from './src/components/Header';
     import NewPublication from './src/components/NewPublication';
     import ProductMap from './src/components/ProductMap';
-    import { AnimatePresence } from 'motion/react';
+    import EditePerfil from './src/components/EditePerfil';
+    import { AnimatePresence, motion } from 'motion/react';
     import { notifyOverlayViewportRestored } from './src/lib/overlay-viewport';
+    api.getBusinessCategorySuggestions = async () => ['Altro','Bar','Mago'].map(label => ({label,key:label.toLowerCase(),keywords:[]}));
     api.getEstablishments = async () => [];
     api.getDiscovery = async () => ({ items: [] });
     import { api } from './src/lib/api';
@@ -32,12 +34,14 @@ const bundle = await build({
       const [tab, setTab] = React.useState('profile');
       const [editorOpen, setEditorOpen] = React.useState(false);
       const [mapOpen, setMapOpen] = React.useState(false);
+      const [profileOpen, setProfileOpen] = React.useState(false);
+      const [futureOpen, setFutureOpen] = React.useState(false);
       const [publishing, setPublishing] = React.useState(false);
       React.useEffect(() => {
-        if (mapOpen || (editorOpen && !publishing)) { document.body.classList.add('ts-scroll-lock'); document.body.style.top = '-600px'; }
+        if (profileOpen || futureOpen || mapOpen || (editorOpen && !publishing)) { document.body.classList.add('ts-scroll-lock'); document.body.style.top = '-600px'; }
         else { document.body.classList.remove('ts-scroll-lock'); document.body.style.top = ''; }
         return () => { document.body.classList.remove('ts-scroll-lock'); document.body.style.top = ''; };
-      }, [editorOpen, publishing, mapOpen]);
+      }, [editorOpen, publishing, mapOpen, profileOpen, futureOpen]);
       const registered = !new URLSearchParams(location.search).has('guest');
       return <div id="application-root"><Header activeTab={tab} setActiveTab={setTab}
         unreadNotificationsCount={0} onToggleNotifications={() => {}}
@@ -45,7 +49,7 @@ const bundle = await build({
         onOpenCompanyModal={() => {}} searchQuery="" onSearchChange={() => {}}
         user={{ isAuthenticated: registered, name: 'Fixture', picture: '' }}
         activeCompany={{ name: 'Fixture', logo: '' }} />
-        <main style={{ minHeight: 4000, paddingBottom: 96 }}><button id="open-map" onClick={() => setMapOpen(true)}>Mappa</button><button id="open-publication" onClick={async () => { await seedPublication(); setEditorOpen(true); }}>Editor</button><input id="keyboard-input" aria-label="Testo" />
+        <main style={{ minHeight: 4000, paddingBottom: 96 }}><button id="open-profile" onClick={()=>setProfileOpen(true)}>Profilo</button><button id="open-future" onClick={()=>setFutureOpen(true)}>Nuova pagina</button><button id="open-map" onClick={() => setMapOpen(true)}>Mappa</button><button id="open-publication" onClick={async () => { await seedPublication(); setEditorOpen(true); }}>Editor</button><input id="keyboard-input" aria-label="Testo" />
           <div id="profile-grid" style={{ height: 3900, background: 'repeating-linear-gradient(#d8eee7 0 160px, #e8dce9 160px 320px)' }}>Profilo</div>
         </main>{editorOpen && <NewPublication establishment={{ id: 1, name: 'Fixture' }}
           onPublishStarted={() => {
@@ -60,7 +64,17 @@ const bundle = await build({
           window.dockBeforeMapExitComplete = document.querySelector('#mobile-navigation-viewport');
           notifyOverlayViewportRestored(); window.mapExitComplete = true;
         }}>{mapOpen && <ProductMap products={[]} initialCategory="Fixture" autoFocusPanelSearch
-          onClose={() => setMapOpen(false)} />}</AnimatePresence></div>;
+          onClose={() => setMapOpen(false)} />}</AnimatePresence>
+        <AnimatePresence onExitComplete={()=>{window.dockAtProfileExit=document.querySelector('#mobile-navigation-viewport');window.profileExitComplete=true;}}>
+          {profileOpen&&<EditePerfil initialData={{id:1,name:'Proprietario',email:'owner@example.test',whatsappNumber:'3331234567',city:'Ardea'}}
+            initialEstablishment={{id:7,ownerId:1,name:'Attività',category:'Altro',city:'Ardea',latitude:41.6,longitude:12.5,keywords:[]}}
+            onClose={()=>setProfileOpen(false)} onSave={async(_,data)=>{window.profileSaved=data;}}/>}
+        </AnimatePresence>
+        <AnimatePresence onExitComplete={()=>{window.dockAtFutureExit=document.querySelector('#mobile-navigation-viewport');window.futureExitComplete=true;}}>
+          {futureOpen&&<motion.section className="fixed inset-0 z-150 bg-white" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.2}}>
+            <input aria-label="Campo nuova pagina"/><button onClick={()=>setFutureOpen(false)}>Chiudi nuova pagina</button>
+          </motion.section>}
+        </AnimatePresence></div>;
     }
     createRoot(document.getElementById('root')).render(<I18nProvider><Fixture /></I18nProvider>);
   ` }, bundle: true, format: 'esm', write: false,
@@ -275,5 +289,66 @@ test('closing the map immediately cancels its delayed search autofocus', async t
   await page.locator('button[title="Chiudi mappa"]').evaluate(button => button.click());
   await page.waitForFunction(() => window.mapExitComplete);
   assert.equal(await page.evaluate(() => document.activeElement instanceof HTMLInputElement), false);
+  await bottomIs(page, 844);
+});
+
+for (const standalone of [false, true]) {
+  for (const action of ['cancel', 'save', 'discard']) test(`${standalone ? 'installed app' : 'browser'}: category ${action} restores navigation after the real profile exit without a per-page recovery callback`, async t => {
+    const page = await fixture(t, { standalone });
+    await page.locator('#open-profile').click();
+    const category = page.getByRole('combobox', { name: 'Categoria dell’attività', exact: true });
+    await category.click();
+    await page.getByRole('option', { name: 'Bar', exact: true }).waitFor();
+    await viewport(page, { height: 420, offsetTop: 80, innerHeight: 420 });
+    if (action === 'cancel') await page.getByRole('option', { name: 'Altro', exact: true }).click();
+    if (action === 'save') {
+      await page.getByRole('option', { name: 'Bar', exact: true }).click();
+      await page.getByRole('button', { name: /Salva/ }).evaluate(button => button.click());
+    } else {
+      if (action === 'discard') await category.fill('Nuova categoria');
+      await page.getByRole('button', { name: 'Chiudi modifica profilo' }).evaluate(button => button.click());
+      if (action === 'discard') await page.getByRole('button', { name: 'Esci senza salvare' }).evaluate(button => button.click());
+    }
+    await page.waitForFunction(() => window.profileExitComplete);
+    await page.locator('.ts-profile-editor').waitFor({ state: 'detached' });
+    await viewport(page, { height: 724, innerHeight: 724 });
+    assert.equal(await page.evaluate(() => window.dockAtProfileExit !== document.querySelector('#mobile-navigation-viewport')), true, 'Refresh follows the actual profile removal, including its animation');
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('role') === 'combobox'), false);
+    assert.equal(await page.evaluate(() => document.body.classList.contains('ts-scroll-lock')), false);
+    if (action === 'save') assert.equal(await page.evaluate(() => window.profileSaved.category), 'Bar');
+    else assert.equal(await page.evaluate(() => window.profileSaved), undefined);
+    for (const y of [900, 40, 1200, 0]) { await page.evaluate(y => window.scrollTo(0,y),y); await bottomIs(page,844); }
+  });
+  test(`${standalone ? 'installed app' : 'browser'}: a new animated page inherits navigation recovery without importing a helper`, async t => {
+    const page = await fixture(t, { standalone });
+    await page.locator('#open-future').click();
+    await page.getByRole('textbox', { name: 'Campo nuova pagina' }).focus();
+    await viewport(page, { height: 420, offsetTop: 80, innerHeight: 420 });
+    await page.getByRole('button', { name: 'Chiudi nuova pagina' }).evaluate(button => button.click());
+    await page.waitForFunction(() => window.futureExitComplete);
+    await viewport(page, { height: 724, innerHeight: 724 });
+    assert.equal(await page.evaluate(() => window.dockAtFutureExit !== document.querySelector('#mobile-navigation-viewport')), true, 'No manual viewport-restored event is required');
+    await bottomIs(page,844);
+  });
+}
+
+test('central recovery covers nested portal dialogs and ignores ordinary feed updates', async t => {
+  const page = await fixture(t);
+  await page.evaluate(() => {
+    window.originalDock = document.querySelector('#mobile-navigation-viewport');
+    const caption = document.createElement('p'); caption.textContent = 'Aggiornamento';
+    document.querySelector('#profile-grid').append(caption); caption.style.opacity = '0.9'; caption.remove();
+  });
+  await viewport(page, { height: 844 });
+  assert.equal(await page.evaluate(() => window.originalDock === document.querySelector('#mobile-navigation-viewport')), true);
+  await page.evaluate(() => {
+    const portal = document.createElement('div'); portal.id = 'future-portal';
+    portal.innerHTML = '<section role="dialog" style="position:fixed;inset:0">Dialogo futuro</section>';
+    document.body.append(portal);
+  });
+  await page.locator('#future-portal').waitFor({ state: 'attached' });
+  await page.evaluate(() => document.querySelector('#future-portal').remove());
+  await viewport(page, { height: 844 });
+  assert.equal(await page.evaluate(() => window.originalDock !== document.querySelector('#mobile-navigation-viewport')), true);
   await bottomIs(page, 844);
 });
