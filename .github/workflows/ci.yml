@@ -46,7 +46,7 @@ jobs:
         run: node --test tests/startup.test.mjs
 
       - name: Notification regression tests
-        run: node --experimental-sqlite --import tsx --test tests/notifications.test.mjs tests/business-taxonomy.test.mjs
+        run: node --experimental-sqlite --import tsx --test tests/notifications.test.mjs tests/business-taxonomy.test.mjs tests/admin-establishment.test.mjs
 
       - name: Local discovery regression tests
         run: node --import tsx --test tests/discovery.test.mjs tests/publication-feed.test.mjs tests/admin-session.test.mjs
