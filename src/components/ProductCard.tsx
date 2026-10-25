@@ -1,4 +1,5 @@
 import React from "react";
+import { loadedImages, imageRank } from "../lib/image-memory";
 import { motion } from "motion/react";
 import { ShoppingBag, Heart, ChevronLeft, ChevronRight, Eye, MapPin } from "lucide-react";
 import { useI18n } from "../i18n/provider";
@@ -6,6 +7,7 @@ import { formatCompactPriceFromUnknown } from "../lib/currency";
 import { getCategoryLabel } from "../i18n/categories";
 import {
   getImageRetryUrls,
+  getCompatibleImageUrl,
   getLowQualityImageUrl,
   resolveProductImages,
   type ProductImageVariant,
@@ -61,84 +63,45 @@ interface ProgressiveProductImageProps {
   variant?: ProductImageVariant;
 }
 
-export function ProgressiveProductImage({
-  src,
-  alt,
-  className,
-  loading = "lazy",
-  fetchPriority = "auto",
-  variant = "full",
-}: ProgressiveProductImageProps) {
+export function ProgressiveProductImage(props: ProgressiveProductImageProps) {
+  return <React.Fragment key={`${props.src}:${props.variant ?? 'full'}`}><ProductImage {...props} /></React.Fragment>;
+}
+
+function ProductImage({ src, alt, className, loading = "lazy", fetchPriority = "auto", variant = "full" }: ProgressiveProductImageProps) {
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [sourceIndex, setSourceIndex] = React.useState(0);
   const imageRef = React.useRef<HTMLImageElement | null>(null);
   const sources = React.useMemo(() => getImageRetryUrls(src, variant), [src, variant]);
-  const lowQualitySrc = React.useMemo(() => getLowQualityImageUrl(src), [src]);
   const activeSrc = sources[sourceIndex] ?? "";
+  const cacheKey = getCompatibleImageUrl(src, 'full');
+  const [previewSrc] = React.useState(() => loadedImages.get(cacheKey)?.url ?? '');
+  const lowQualitySrc = previewSrc ? '' : getLowQualityImageUrl(src);
+  const markLoaded = React.useCallback(() => {
+    setIsLoaded(true);
+    const previous = loadedImages.get(cacheKey);
+    loadedImages.delete(cacheKey);
+    loadedImages.set(cacheKey, previous && previous.rank > imageRank[variant]
+      ? previous : { url: activeSrc, rank: imageRank[variant] });
+    if (loadedImages.size > 160) loadedImages.delete(loadedImages.keys().next().value!);
+  }, [cacheKey, activeSrc, variant]);
 
   React.useEffect(() => {
-    setIsLoaded(false);
-    setSourceIndex(0);
-  }, [src]);
+    if (imageRef.current?.complete && imageRef.current.naturalWidth > 0) markLoaded();
+  }, [activeSrc, markLoaded]);
 
-  React.useEffect(() => {
-    const image = imageRef.current;
-    if (!image || !activeSrc) {
-      return;
-    }
-
-    if (image.complete && image.naturalWidth > 0) {
-      setIsLoaded(true);
-      return;
-    }
-
-    const timeoutId = globalThis.setTimeout(() => {
-      setSourceIndex((current) => (current + 1 < sources.length ? current + 1 : current));
-    }, 3500);
-
-    return () => {
-      globalThis.clearTimeout(timeoutId);
-    };
-  }, [activeSrc, sources.length]);
-
-  const handleImageError = React.useCallback(() => {
-    setIsLoaded(false);
-    setSourceIndex((current) => (current + 1 < sources.length ? current + 1 : current));
-  }, [sources.length]);
-
-  return (
-    <>
-      <div
-        aria-hidden="true"
-        className={`pointer-events-none absolute inset-0 z-0 bg-linear-to-br from-stone-100 via-white to-stone-200 bg-cover bg-center transition-opacity duration-500 ${
-          isLoaded ? "opacity-0" : "opacity-100"
-        }`}
-        style={
-          lowQualitySrc
-            ? {
-                backgroundImage: `linear-gradient(rgba(250,250,249,0.14), rgba(250,250,249,0.14)), url(${JSON.stringify(lowQualitySrc)})`,
-                filter: "blur(14px)",
-                transform: "scale(1.06)",
-              }
-            : undefined
-        }
-      />
-      {activeSrc && (
-        <img
-          ref={imageRef}
-          src={activeSrc}
-          alt={alt}
-          loading={loading}
-          fetchPriority={fetchPriority}
-          decoding="async"
-          onLoad={() => setIsLoaded(true)}
-          onError={handleImageError}
-          className={`${className} relative z-10 transition-transform duration-500`}
-          referrerPolicy="no-referrer"
-        />
-      )}
-    </>
-  );
+  return <>
+    {!isLoaded && (previewSrc ?
+      <img aria-hidden="true" src={previewSrc} alt="" decoding="async" referrerPolicy="no-referrer"
+        className={`${className} inset-0 z-0 pointer-events-none`} style={{ position: "absolute" }} /> :
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 bg-linear-to-br from-stone-100 via-white to-stone-200 bg-cover bg-center"
+        style={lowQualitySrc ? { backgroundImage: `url(${JSON.stringify(lowQualitySrc)})`, filter: 'blur(14px)', transform: 'scale(1.06)' } : undefined} />)}
+    {activeSrc && <img ref={imageRef} src={activeSrc} alt={alt} loading={loading} fetchPriority={fetchPriority}
+      decoding="async" onLoad={markLoaded} onError={() => {
+        setIsLoaded(false);
+        setSourceIndex(current => current + 1 < sources.length ? current + 1 : current);
+      }} className={`${className} relative z-10 transition-transform duration-500`}
+      style={{ opacity: isLoaded ? 1 : 0 }} referrerPolicy="no-referrer" />}
+  </>;
 }
 
 export default function ProductCard({
