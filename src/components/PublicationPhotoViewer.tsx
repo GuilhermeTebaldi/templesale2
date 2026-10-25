@@ -10,10 +10,11 @@ type Pose = { scale: number; x: number; y: number };
 const initialPose: Pose = { scale: 1, x: 0, y: 0 };
 
 export default function PublicationPhotoViewer({ publication, establishment, liked, saved, commentsCount,
-  onClose, onLike, onSave, onDiscussion, onProfile, onNavigate, navigationDirection = 0 }: {
+  onClose, onLike, onSave, onDiscussion, onProfile, onEdit, onNavigate, navigationDirection = 0 }: {
   publication: PublicationDto; establishment: EstablishmentDto; liked: boolean; saved: boolean; commentsCount?: number;
   onClose: () => void; onLike: () => void; onSave: () => void;
   onDiscussion: (tab: 'comments' | 'likes') => void; onProfile: () => void;
+  onEdit?: () => void;
   onNavigate?: (direction: -1 | 1) => void;
   navigationDirection?: -1 | 0 | 1;
 }) {
@@ -145,6 +146,7 @@ export default function PublicationPhotoViewer({ publication, establishment, lik
         <div ref={menu} className="relative">
           <button type="button" className="ts-photo-round" aria-label="Opzioni foto" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><MoreHorizontal size={24} /></button>
           {menuOpen && <div className="ts-photo-menu">
+            {onEdit && <button type="button" onClick={() => { setMenuOpen(false); onEdit(); }}>Modifica foto</button>}
             <button type="button" onClick={() => { zoom(1); setMenuOpen(false); }}>Ripristina zoom</button>
             <button type="button" onClick={() => onDiscussion('comments')}>Didascalia e commenti</button>
             <a href={publication.imageUrl} target="_blank" rel="noopener noreferrer">Apri foto originale</a>
