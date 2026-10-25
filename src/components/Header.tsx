@@ -111,16 +111,18 @@ export const Header: React.FC<HeaderProps> = ({
     if (typeof window === 'undefined') return;
 
     let frameId = 0;
+    let navigationRecoveryPending = false;
     let referenceHeight = window.innerHeight;
     let referenceWidth = window.innerWidth;
-    const updateKeyboardState = () => {
-      const viewport = window.visualViewport;
-      const activeElement = document.activeElement;
-      const isTextInputFocused =
+    const isTextInputFocused = (activeElement: EventTarget | null = document.activeElement) => {
+      return (
         (activeElement instanceof HTMLInputElement && !['button', 'submit', 'reset', 'checkbox', 'radio', 'range', 'color', 'file', 'hidden', 'image'].includes(activeElement.type)) ||
         activeElement instanceof HTMLTextAreaElement ||
         activeElement instanceof HTMLSelectElement ||
-        (activeElement instanceof HTMLElement && activeElement.isContentEditable);
+        (activeElement instanceof HTMLElement && activeElement.isContentEditable));
+    };
+    const updateKeyboardState = () => {
+      const viewport = window.visualViewport;
       if (referenceWidth !== window.innerWidth) {
         referenceWidth = window.innerWidth;
         referenceHeight = window.innerHeight;
@@ -128,7 +130,7 @@ export const Header: React.FC<HeaderProps> = ({
       const visibleHeight = viewport?.height ?? window.innerHeight;
       const layoutHeight = mobileNavigationViewportRef.current?.clientHeight ?? window.innerHeight;
       referenceHeight = Math.max(referenceHeight, window.innerHeight, layoutHeight);
-      const keyboardOpen = isTextInputFocused && referenceHeight - visibleHeight > 150;
+      const keyboardOpen = isTextInputFocused() && referenceHeight - visibleHeight > 150;
       setIsMobileKeyboardOpen((current) => (current === keyboardOpen ? current : keyboardOpen));
       // The frame is sized by CSS dvh. A stale VisualViewport reading after
       // dismissing the publication keyboard must never become a stored height.
@@ -141,25 +143,38 @@ export const Header: React.FC<HeaderProps> = ({
       frameId = window.requestAnimationFrame(() => {
         frameId = 0;
         updateKeyboardState();
+        if (navigationRecoveryPending && !document.body.classList.contains('ts-scroll-lock') && !isTextInputFocused()) {
+          navigationRecoveryPending = false;
+          setNavigationLayerVersion(version => version + 1);
+        }
       });
     };
 
     let bodyWasLocked = document.body.classList.contains('ts-scroll-lock');
     const restoreNavigationLayer = () => {
-      if (document.body.classList.contains('ts-scroll-lock')) return;
       // A fresh fixed/composited layer avoids retaining the overlay keyboard's
-      // viewport origin in WebKit. CSS still owns its height; preserve scroll.
-      setNavigationLayerVersion(version => version + 1);
+      // viewport origin. Defer until scroll and keyboard focus are released.
+      navigationRecoveryPending = true;
       scheduleKeyboardState();
     };
-    const bodyObserver = new MutationObserver(() => {
+    const handleFocusOut = (event: FocusEvent) => {
+      if (isTextInputFocused(event.target)) restoreNavigationLayer();
+      else scheduleKeyboardState();
+    };
+    const overlaySelector = '.fixed, [role="dialog"], [role="alertdialog"], [aria-modal="true"]';
+    const bodyObserver = new MutationObserver(records => {
       const bodyIsLocked = document.body.classList.contains('ts-scroll-lock');
-      if (bodyWasLocked && !bodyIsLocked) restoreNavigationLayer();
+      // Observe actual removal, after any exit animation, including nested and
+      // future overlays that do not dispatch a page-specific recovery event.
+      const overlayRemoved = records.some(record => Array.from(record.removedNodes).some(node =>
+        node instanceof HTMLElement && !node.isConnected &&
+        (node.matches(overlaySelector) || node.querySelector(overlaySelector))));
+      if ((bodyWasLocked && !bodyIsLocked) || overlayRemoved) restoreNavigationLayer();
       bodyWasLocked = bodyIsLocked;
-      scheduleKeyboardState();
+      if (records.some(record => record.target === document.body)) scheduleKeyboardState();
     });
     window.addEventListener(OVERLAY_VIEWPORT_RESTORED, restoreNavigationLayer);
-    bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+    bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'], childList: true, subtree: true });
     updateKeyboardState();
     window.visualViewport?.addEventListener('resize', scheduleKeyboardState);
     window.visualViewport?.addEventListener('scroll', scheduleKeyboardState);
@@ -169,7 +184,7 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener('pageshow', scheduleKeyboardState);
     document.addEventListener('visibilitychange', scheduleKeyboardState);
     window.addEventListener('focusin', scheduleKeyboardState);
-    window.addEventListener('focusout', scheduleKeyboardState);
+    window.addEventListener('focusout', handleFocusOut);
 
     return () => {
       bodyObserver.disconnect();
@@ -185,7 +200,7 @@ export const Header: React.FC<HeaderProps> = ({
       window.removeEventListener('pageshow', scheduleKeyboardState);
       document.removeEventListener('visibilitychange', scheduleKeyboardState);
       window.removeEventListener('focusin', scheduleKeyboardState);
-      window.removeEventListener('focusout', scheduleKeyboardState);
+      window.removeEventListener('focusout', handleFocusOut);
     };
   }, []);
 
