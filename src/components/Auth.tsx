@@ -81,6 +81,7 @@ export default function Auth({
       console.info("[auth0-login] calling loginWithRedirect");
       await loginWithRedirect({
         authorizationParams: {
+          connection: 'google-oauth2',
           redirect_uri: window.location.origin,
           ...(AUTH0_AUDIENCE ? { audience: AUTH0_AUDIENCE } : {}),
         },

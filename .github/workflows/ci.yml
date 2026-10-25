@@ -70,4 +70,4 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/templesale-browser-check" --no-save --package-lock=false playwright@1.51.1
           "$RUNNER_TEMP/templesale-browser-check/node_modules/.bin/playwright" install --with-deps --only-shell chromium
-          PLAYWRIGHT_MODULE="$RUNNER_TEMP/templesale-browser-check/node_modules/playwright/index.mjs" node --test --test-concurrency=1 tests/mobile-navigation.browser.mjs tests/desktop-layout.browser.mjs
+          PLAYWRIGHT_MODULE="$RUNNER_TEMP/templesale-browser-check/node_modules/playwright/index.mjs" node --test --test-concurrency=1 tests/mobile-navigation.browser.mjs tests/desktop-layout.browser.mjs tests/auth0-google.browser.mjs
