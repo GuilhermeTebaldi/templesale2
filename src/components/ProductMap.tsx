@@ -1,3 +1,4 @@
+import { WhatsappContactLink } from './WhatsappContact';
 import React from "react";
 import { motion, AnimatePresence, useIsPresent } from "motion/react";
 import { MapPin, MessageSquare, Search, Store, X } from "lucide-react";
@@ -1937,12 +1938,11 @@ export default function ProductMap({
             </button>
 
             {whatsappUrl && (
-              <a
+              <WhatsappContactLink companyId={product.establishmentId} companyName={product.establishmentName || product.sellerName || product.name}
                 href={whatsappUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={(event) => {
-                  event.stopPropagation();
+                onConfirm={() => {
                   if (product.establishmentId) void api.trackDiscovery('whatsapp', product.establishmentId);
                 }}
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-emerald-500/40 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-emerald-300 transition-colors hover:bg-emerald-500 hover:text-neutral-950"
@@ -1951,7 +1951,7 @@ export default function ProductMap({
               >
                 <MessageSquare className="h-3 w-3" />
                 WhatsApp
-              </a>
+              </WhatsappContactLink>
             )}
           </div>
         </div>

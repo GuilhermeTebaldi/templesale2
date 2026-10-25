@@ -1,3 +1,4 @@
+import { WhatsappContactLink } from './WhatsappContact';
 import React, { useEffect, useRef, useState } from 'react';
 import { MapPin, MessageSquare, X, CheckCircle2, Sparkles, Search, LoaderCircle } from 'lucide-react';
 import { Company, Post } from '../types';
@@ -378,9 +379,9 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
                     </button>
 
                     {whatsappUrl && (
-                      <a
+                      <WhatsappContactLink companyId={company.id} companyName={company.name}
                         href={whatsappUrl}
-                onClick={() => void api.trackDiscovery('whatsapp', company.id)}
+                onConfirm={() => void api.trackDiscovery('whatsapp', company.id)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs active:scale-95 transition-all cursor-pointer"
@@ -388,7 +389,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
                         <span className="hidden sm:inline">WhatsApp</span>
-                      </a>
+                      </WhatsappContactLink>
                     )}
                   </div>
                 </div>

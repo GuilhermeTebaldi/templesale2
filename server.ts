@@ -11862,6 +11862,15 @@ async function bootstrap() {
         res.status(404).json({ error: "Attivita non trovata." });
         return;
       }
+      if (req.query.contact === '1') {
+        const owner = await selectUserByIdRow(establishment.ownerId);
+        if (!owner || owner.is_banned) { res.status(404).json({ error: 'Contatto non disponibile.' }); return; }
+        const ownerName = String(owner.name ?? '').trim();
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ ownerName: ownerName.includes('@') ? '' : ownerName, companyName: establishment.name,
+          photoUrl: String(owner.avatar_url ?? '').trim() || establishment.logoUrl || '' });
+        return;
+      }
       const includeProducts =
         String(req.query.includeProducts ?? req.query.include_products ?? "")
           .trim()

@@ -2990,6 +2990,12 @@ export const api = {
     }
     return establishment;
   },
+  async getEstablishmentContact(id: number, signal?: AbortSignal) {
+    const payload = await request<{ ownerName?: string; companyName?: string; photoUrl?: string }>(`/api/establishments/${id}?contact=1`, {
+      skipAuthToken: true, signal, cache: 'no-store', skipGlobalLoadingOverlay: true,
+    });
+    return { ownerName: toStringValue(payload.ownerName), companyName: toStringValue(payload.companyName), photoUrl: toStringValue(payload.photoUrl) };
+  },
   async getEstablishment(idOrSlug: number | string, input: { publicationsLimit?: number } = {}) {
     const publicationsLimit = Math.min(Math.max(Math.floor(Number(input.publicationsLimit ?? 21)), 1), 60);
     const query = new URLSearchParams({

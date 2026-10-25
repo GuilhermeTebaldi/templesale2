@@ -1,3 +1,4 @@
+import { WhatsappContactLink } from './WhatsappContact';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   MessageCircle,
@@ -565,10 +566,10 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   title="Modifica foto"
                   className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
                 ><Pencil className="h-4 w-4" /></button>}
-                {/* Botão de WhatsApp direto da empresa */}
-                <a
+                {/* Contato WhatsApp da empresa */}
+                <WhatsappContactLink companyId={company.id} companyName={company.name}
                   href={whatsappUrl}
-                  onClick={() => void api.trackDiscovery('whatsapp', company.id)}
+                  onConfirm={() => void api.trackDiscovery('whatsapp', company.id)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-800/60 text-emerald-300 text-xs font-medium transition-colors shrink-0"
@@ -576,7 +577,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 >
                   <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
                   <span className="hidden sm:inline text-[11px]">WhatsApp</span>
-                </a>
+                </WhatsappContactLink>
                 </div>
               </div>
 
@@ -654,16 +655,16 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     </button>
 
                     {/* Compartilhar WhatsApp */}
-                    <a
+                    <WhatsappContactLink companyId={company.id} companyName={company.name}
                       href={whatsappUrl}
-                  onClick={() => void api.trackDiscovery('whatsapp', company.id)}
+                  onConfirm={() => void api.trackDiscovery('whatsapp', company.id)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-neutral-200 hover:text-white transition-transform active:scale-125"
                       title="Condividi su WhatsApp"
                     >
                       <Share2 className="w-5 h-5 stroke-neutral-200 hover:stroke-white" />
-                    </a>
+                    </WhatsappContactLink>
                   </div>
 
                   {/* Salvar Publicação */}

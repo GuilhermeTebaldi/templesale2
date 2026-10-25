@@ -568,6 +568,21 @@ body { margin: 0; background: #fff; color: #0f1419; }
   .bg-red-800, .bg-red-900\/60, .bg-red-950\/70, .bg-red-950\/95, .hover\:bg-red-800:hover { background-color: #fef2f2; }
 }
 
+/* Contatto WhatsApp: responsabile e attività prima del collegamento esterno. */
+.ts-whatsapp-contact { position: fixed; inset: 0; z-index: 100100; display: flex; align-items: flex-end; justify-content: center; background: #0f172a66; }
+.ts-whatsapp-contact-sheet { position: relative; width: 100%; max-width: 460px; max-height: calc(100dvh - 20px); overflow-y: auto; overscroll-behavior: contain; border-radius: 28px 28px 0 0; padding: 12px 24px max(24px, env(safe-area-inset-bottom)); background: #fff; color: #0f172a; text-align: center; box-shadow: 0 -8px 48px #0f172a20; }
+.ts-whatsapp-contact-handle { width: 36px; height: 4px; margin: 0 auto 24px; border-radius: 8px; background: #dbe1e8; }
+.ts-whatsapp-contact-close { position: absolute; top: 18px; right: 18px; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: #f1f5f9; color: #536471; }
+.ts-whatsapp-contact-avatar { position: relative; display: grid; place-items: center; overflow: hidden; width: 76px; height: 76px; margin: 0 auto 18px; border-radius: 50%; background: #ecfdf5; color: #128c62; }
+.ts-whatsapp-contact-label { margin-bottom: 6px; color: #64748b; font-size: 13px; }
+.ts-whatsapp-contact-sheet h2 { font-size: 26px; font-weight: 650; line-height: 1.2; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.ts-whatsapp-contact-company { margin-top: 8px; font-size: 14px; color: #64748b; overflow-wrap: anywhere; }
+.ts-whatsapp-contact-continue, .ts-whatsapp-contact-pending { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; margin-top: 26px; border-radius: 16px; }
+.ts-whatsapp-contact-continue { background: #128c62; color: #fff; font-size: 15px; font-weight: 600; }
+.ts-whatsapp-contact-continue:hover { background: #087c54; }
+.ts-whatsapp-contact :is(button, a):focus-visible { outline: 2px solid #128c62; outline-offset: 4px; }
+@media (min-width: 640px) { .ts-whatsapp-contact-sheet { margin: 0 20px 24px; border-radius: 28px; } }
+
 /* Indicador local, sem bloquear a publicação ou o restante da página. */
 .ts-comment-progress { height: 2px; overflow: hidden; background: #e6ecf0; border-radius: 2px; }
 .ts-comment-progress::after { content: ""; display: block; width: 35%; height: 100%; background: #1d9bf0; animation: ts-comment-send 1.2s ease-in-out infinite; }
