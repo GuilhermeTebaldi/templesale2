@@ -7,6 +7,7 @@ import { createPublicationMonitor } from './server/publication-monitor';
 import { registerLinkPreview } from './server/link-preview';
 import { createHomePublicationService } from './server/home-publication';
 import { createPublicationTrashService, initializePublicationLegacyRemovals, registerPublicationTrashRoutes } from './server/publication-trash';
+import { registerAdminEstablishmentRoutes } from './server/admin-establishment';
 import { normalizeWhatsappLocalNumber } from './src/lib/whatsapp';
 import { buildCompanySearch, initializeCompanySearch, searchCompanies } from './server/company-search';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
@@ -10090,6 +10091,11 @@ async function bootstrap() {
 
     return { email: ADMIN_EMAIL };
   };
+
+  registerAdminEstablishmentRoutes(app, {
+    requireAdmin, getUser: selectUserByIdRow, getCompany: selectMyEstablishmentRow,
+    updateCompany: updateEstablishmentRecord, normalizeText: normalizeTextField, normalizeKeywords: normalizeKeywordList,
+  });
 
   registerLegalRoutes(app, legalService, {
     session: getSessionUser,
