@@ -1,3 +1,4 @@
+import { WhatsappContactLink } from './WhatsappContact';
 import React, { useEffect, useRef, useState } from 'react';
 import { ProfilePhotoButton } from './ProfilePhotoViewer';
 import {
@@ -152,16 +153,16 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
 
         <div className="flex shrink-0 items-center space-x-2">
           {whatsappUrl && (
-            <a
+            <WhatsappContactLink companyId={company.id} companyName={company.name}
               href={whatsappUrl}
-                onClick={() => void api.trackDiscovery('whatsapp', company.id)}
+                onConfirm={() => void api.trackDiscovery('whatsapp', company.id)}
               target="_blank"
               rel="noopener noreferrer"
               className="p-1.5 text-neutral-300 hover:text-emerald-400 transition-colors"
               title="WhatsApp"
             >
               <MessageSquare className="w-5 h-5" />
-            </a>
+            </WhatsappContactLink>
           )}
           <button
             type="button"
@@ -307,9 +308,9 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
 
             {/* Destaque Contato */}
             {whatsappUrl && (
-              <a
+              <WhatsappContactLink companyId={company.id} companyName={company.name}
                 href={whatsappUrl}
-                onClick={() => void api.trackDiscovery('whatsapp', company.id)}
+                onConfirm={() => void api.trackDiscovery('whatsapp', company.id)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex flex-col items-center space-y-1 shrink-0 group"
@@ -318,7 +319,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
                   <MessageSquare className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
                 </div>
                 <span className="text-[11px] text-neutral-300 font-medium">WhatsApp</span>
-              </a>
+              </WhatsappContactLink>
             )}
 
             {/* Destaque Palavras-chave */}

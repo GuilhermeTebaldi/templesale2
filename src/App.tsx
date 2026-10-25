@@ -13,6 +13,7 @@ import NewProduct from "./components/NewProduct";
 import NewPublication from "./components/NewPublication";
 import PublicationViewer from "./components/PublicationViewer";
 import PublicationPhotoViewer from './components/PublicationPhotoViewer';
+import WhatsappContact, { WhatsappContactContext, type WhatsappContactTarget } from './components/WhatsappContact';
 import ProfilePhotoViewer, { ProfilePhotoContext, type ProfilePhoto } from './components/ProfilePhotoViewer';
 import { LinkPreviewContext, LinkPreviewDialog } from './components/SharedLink';
 import EditPublicationModal from "./components/EditPublicationModal";
@@ -389,6 +390,7 @@ export default function App() {
   const [hasMoreSelectedEstablishmentPublications, setHasMoreSelectedEstablishmentPublications] = React.useState(false);
   const [nextSelectedEstablishmentPublicationsOffset, setNextSelectedEstablishmentPublicationsOffset] = React.useState(0);
   const [selectedPublication, setSelectedPublication] = React.useState<PublicationDto | null>(null);
+  const [whatsappContact, setWhatsappContact] = React.useState<WhatsappContactTarget | null>(null);
   const [profileSwipeCompanyId, setProfileSwipeCompanyId] = React.useState<string | null>(null);
   const [isPublicationPhotoOpen, setIsPublicationPhotoOpen] = React.useState(false);
   const [publicationPhotoFirst, setPublicationPhotoFirst] = React.useState(false);
@@ -500,7 +502,7 @@ export default function App() {
     Boolean(selectedProduct) ||
     Boolean(selectedPublication) ||
     Boolean(previewLink) ||
-    Boolean(profilePhoto) ||
+    Boolean(profilePhoto) || Boolean(whatsappContact) ||
     isCurtidasOpen || isSavedPublicationsOpen || (hasMemberAccess && isDeletedPublicationsOpen) ||
     (hasMemberAccess &&
       ((isNewProductOpen && pendingPublicationCount === 0) ||
@@ -3497,7 +3499,8 @@ export default function App() {
   return (
     <LinkPreviewContext.Provider value={openLinkPreview}>
     <ProfilePhotoContext.Provider value={setProfilePhoto}>
-    <div inert={Boolean(currentUser && !termsAccess) || isTermsOpen || Boolean(previewLink) || Boolean(profilePhoto)} className="min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
+    <WhatsappContactContext.Provider value={setWhatsappContact}>
+    <div inert={Boolean(currentUser && !termsAccess) || isTermsOpen || Boolean(previewLink) || Boolean(profilePhoto) || Boolean(whatsappContact)} className="min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
       <TermsDialog key={currentUser?.id ?? "visitor"} user={currentUser} locale="it-IT"
         open={isTermsOpen} introComplete={!isPostAuthIntroOpen} companyName={myEstablishment?.name} onClose={() => setIsTermsOpen(false)}
         onAccess={setTermsAccess} onReject={handleLogout}
@@ -4178,6 +4181,10 @@ export default function App() {
     </div>
     {previewLink && <LinkPreviewDialog href={previewLink} returnFocus={previewLinkOrigin.current} onClose={() => setPreviewLink(null)} />}
     {profilePhoto && <ProfilePhotoViewer photo={profilePhoto} onClose={() => setProfilePhoto(null)} />}
+    <AnimatePresence onExitComplete={notifyOverlayViewportRestored}>
+      {whatsappContact && <WhatsappContact key={`${whatsappContact.companyId}:${whatsappContact.href}`} contact={whatsappContact} onClose={() => setWhatsappContact(null)} />}
+    </AnimatePresence>
+    </WhatsappContactContext.Provider>
     </ProfilePhotoContext.Provider>
     </LinkPreviewContext.Provider>
   );

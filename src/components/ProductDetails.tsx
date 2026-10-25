@@ -1,3 +1,4 @@
+import { WhatsappContactLink } from './WhatsappContact';
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -1017,7 +1018,7 @@ export default function ProductDetails({
                 {/* Actions */}
                 <div className="flex flex-col sm:flex-row gap-4">
                   {hasSellerWhatsapp ? (
-                    <a
+                    <WhatsappContactLink companyId={product.establishmentId} companyName={publicSellerName || product.name}
                       href={whatsappUrl ?? undefined}
                       target="_blank"
                       rel="noreferrer"
@@ -1030,7 +1031,7 @@ export default function ProductDetails({
                           {whatsappDisplay}
                         </span>
                       </span>
-                    </a>
+                    </WhatsappContactLink>
                   ) : (
                     <button
                       disabled

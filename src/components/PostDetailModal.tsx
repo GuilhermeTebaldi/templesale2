@@ -1,3 +1,4 @@
+import { WhatsappContactLink } from './WhatsappContact';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
@@ -321,7 +322,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                 <Trash2 className="w-4 h-4" />
               </button>
             )}
-            <a
+            <WhatsappContactLink companyId={company.id} companyName={company.name}
               href={whatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
@@ -329,7 +330,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
               title="WhatsApp"
             >
               <MessageSquare className="w-4 h-4" />
-            </a>
+            </WhatsappContactLink>
             <button
               id="btn-close-modal-mobile"
               type="button"
@@ -427,7 +428,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                   <Trash2 className="w-4 h-4" />
                 </button>
               )}
-              <a
+              <WhatsappContactLink companyId={company.id} companyName={company.name}
                 href={whatsappUrl}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -435,7 +436,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                 title="Contatta su WhatsApp"
               >
                 <MessageSquare className="w-4 h-4" />
-              </a>
+              </WhatsappContactLink>
             </div>
           </div>
 
@@ -523,7 +524,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                   <MessageCircle className="w-5 h-5 stroke-neutral-200" />
                 </button>
 
-                <a
+                <WhatsappContactLink companyId={company.id} companyName={company.name}
                   href={whatsappUrl}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -531,7 +532,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                   title="WhatsApp"
                 >
                   <Share2 className="w-4 h-4 stroke-neutral-200" />
-                </a>
+                </WhatsappContactLink>
               </div>
 
               <button
