@@ -102,9 +102,6 @@ html {
   pointer-events: none;
   transform: translateZ(0);
 }
-/* Installed apps have no collapsing browser toolbar. Keep their dock on the
-   full app viewport when WebKit temporarily retains a shortened dynamic height. */
-.ts-mobile-navigation-standalone { height: 100vh; }
 #mobile-bottom-nav {
   padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
   padding-right: max(0.5rem, env(safe-area-inset-right, 0px));

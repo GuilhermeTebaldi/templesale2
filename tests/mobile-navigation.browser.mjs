@@ -81,7 +81,7 @@ const bundle = await build({
   define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env': '{}' },
 });
 const stylesheet = readFileSync('dist/assets/' + readdirSync('dist/assets').find(name => /^index-.*\.css$/.test(name)), 'utf8')
-  .replace(/(\.ts-mobile-navigation-viewport\{[^}]*height:)100dvh/, '$1var(--test-dynamic-height,100dvh)');
+  .replaceAll('height:100vh', 'height:var(--test-large-height,100vh)');
 const server = createServer((request, response) => {
   const path = request.url.split('?')[0];
   if (path === '/fixture.js') { response.setHeader('Content-Type', 'text/javascript'); response.end(bundle.outputFiles[0].text); }
@@ -366,19 +366,20 @@ test('desktop member navigation exposes existing map, profile, notification and 
   assert.equal(await page.locator('#mobile-bottom-nav').isVisible(), false);
 });
 
-for (const guest of [false,true]) test(`${guest?'guest':'member'} installed app: repeated map returns resist a stale dynamic height and late viewport events`, async t => {
+for (const guest of [false,true]) test(`${guest?'guest':'member'} installed app: repeated map returns keep all buttons visible with oversized legacy vh and late viewport events`, async t => {
   const page=await fixture(t,{standalone:true,guest});
   for(let attempt=0;attempt<2;attempt++) {
     await page.evaluate(()=>{window.mapExitComplete=false;document.querySelector('#open-map').click();});
     const close=page.locator('button[title="Chiudi mappa"]');await close.waitFor();
     await page.waitForFunction(()=>document.activeElement instanceof HTMLInputElement);
     await viewport(page,{height:420,offsetTop:80});
-    await page.evaluate(()=>document.documentElement.style.setProperty('--test-dynamic-height','724px'));
+    await page.evaluate(()=>document.documentElement.style.setProperty('--test-large-height','928px'));
     await close.evaluate(button=>button.click());
     await page.waitForFunction(()=>window.mapExitComplete);await close.waitFor({state:'detached'});
     await page.waitForTimeout(450);
     await page.evaluate(()=>{window.dockAfterExit=document.querySelector('#mobile-navigation-viewport');});
     await viewport(page,{height:724,innerHeight:724,offsetTop:80});
+    await bottomIs(page,844);
     await page.waitForFunction(()=>window.dockAfterExit!==document.querySelector('#mobile-navigation-viewport'), null, {timeout:5000});
     await bottomIs(page,844);
     assert.equal(await page.locator('#mobile-navigation-viewport').evaluate(el=>el.style.height),'');

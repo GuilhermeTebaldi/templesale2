@@ -60,7 +60,6 @@ export const Header: React.FC<HeaderProps> = ({
     getNetworkLoadingSnapshot,
     () => false,
   );
-  const standaloneNavigation = typeof window !== 'undefined' && ((navigator as Navigator & { standalone?: boolean }).standalone || window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches);
   const profileImage = user.picture || activeCompany.logo;
   const profileLabel = user.name || activeCompany.name;
   const hasRegisteredAccount = user.isAuthenticated;
@@ -584,7 +583,7 @@ export const Header: React.FC<HeaderProps> = ({
       </aside>
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
-      <div key={navigationLayerVersion} ref={mobileNavigationViewportRef} id="mobile-navigation-viewport" className={`ts-mobile-navigation-viewport sm:hidden${standaloneNavigation ? ' ts-mobile-navigation-standalone' : ''}`}>
+      <div key={navigationLayerVersion} ref={mobileNavigationViewportRef} id="mobile-navigation-viewport" className="ts-mobile-navigation-viewport sm:hidden">
       <nav
         id="mobile-bottom-nav"
         aria-label="Navigazione principale"
