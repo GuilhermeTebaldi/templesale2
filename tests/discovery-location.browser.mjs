@@ -11,10 +11,11 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH });
 after(() => browser.close());
 
-async function fixture(t, { native = false, saved = null, scripts = true } = {}) {
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+async function fixture(t, { native = false, saved = null, scripts = true, positionAge = null, width = 390 } = {}) {
+  const context = await browser.newContext({ viewport: { width, height: 844 } });
   t.after(() => context.close());
-  await context.addInitScript(({ native, saved }) => {
+  await context.addInitScript(({ native, saved, positionAge }) => {
+    if (positionAge !== null) localStorage.setItem('templesale_map_user_location', JSON.stringify({lat:41.6,lng:12.5,at:Date.now()-positionAge}));
     if (saved) localStorage.setItem('templesale_discovery-location', saved);
     window.EventSource = class { addEventListener() {} close() {} };
     if (native) window.HTMLGeolocationElement = function () {};
@@ -37,7 +38,7 @@ async function fixture(t, { native = false, saved = null, scripts = true } = {})
       },
       permissionChange(value) { permission.state = value; permission.dispatchEvent(new Event('change')); },
     };
-  }, { native, saved });
+  }, { native, saved, positionAge });
   await context.route('**/*', route => {
     const url = new URL(route.request().url());
     if (url.origin !== new URL(baseURL).origin) return route.abort();
@@ -95,6 +96,8 @@ test('a denied retry keeps the same button visible while pending and does not lo
 test('the native control feeds the existing location/watch flow and cancels stale failures', async t => {
   const page = await fixture(t, { native: true });
   const native = page.locator('geolocation');
+  await page.waitForFunction(() => window.locationFixture.watches.length === 1);
+  await page.evaluate(() => window.locationFixture.deny());
   await native.waitFor({ state: 'attached' });
   assert.equal(await page.getByRole('button', { name: 'Usa la mia posizione', exact: true }).count(), 0);
   await native.evaluate(element => {
@@ -162,4 +165,52 @@ test('a temporary GPS timeout keeps the watch alive and recovers without another
   await page.waitForFunction(() => localStorage.getItem('templesale_discovery-location') === 'accepted');
   assert.equal(await requests(page), 1);
   assert.deepEqual(await page.evaluate(() => window.locationFixture.cleared), []);
+});
+
+test('a recent saved position survives a temporary sensor failure without showing another permission request', async t => {
+  const page = await fixture(t, { positionAge: 60000, saved: 'accepted' });
+  await page.waitForFunction(() => window.locationFixture.watches.length === 1);
+  await page.evaluate(() => window.locationFixture.watches[0].error({ code: 2 }));
+  assert.equal(await page.locator('.ts-location-notice').count(), 0);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('templesale_map_user_location')).lat), 41.6);
+  assert.equal(await requests(page), 1);
+  await page.evaluate(() => window.locationFixture.succeed(41.61,12.51));
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('templesale_map_user_location')).lat === 41.61);
+});
+
+test('a valid live fix survives transient errors and poor accuracy, but an expired fix or revoked permission shows recovery', async t => {
+  const page = await fixture(t);
+  await page.waitForFunction(() => window.locationFixture.watches.length === 1);
+  assert.equal(await page.locator('.ts-location-notice').count(), 0, 'No redundant permission button during initial GPS acquisition');
+  await page.evaluate(() => {
+    window.locationFixture.succeed();
+    window.locationFixture.watches[0].error({code:3});
+    window.locationFixture.watches[0].success({coords:{latitude:41.7,longitude:12.6,accuracy:3000}});
+  });
+  assert.equal(await page.locator('.ts-location-notice').count(), 0);
+  assert.equal(await requests(page), 1);
+  await page.evaluate(() => {const now=Date.now();Date.now=()=>now+31*60*1000;window.locationFixture.watches[0].error({code:3});});
+  await page.getByRole('button',{name:'Usa la mia posizione',exact:true}).waitFor({state:'visible'});
+  await page.evaluate(() => window.locationFixture.succeed());
+  await page.locator('.ts-location-notice').waitFor({state:'detached'});
+  await deny(page);
+  await page.getByText('Posizione bloccata dal browser.',{exact:true}).waitFor({state:'visible'});
+});
+
+test('an expired saved position does not hide the recovery button after a GPS error', async t => {
+  const page=await fixture(t,{positionAge:31*60*1000});
+  await page.waitForFunction(()=>window.locationFixture.watches.length===1);
+  await page.evaluate(()=>window.locationFixture.watches[0].error({code:2}));
+  await page.getByRole('button',{name:'Usa la mia posizione',exact:true}).waitFor({state:'visible'});
+});
+
+for(const width of [320,390,768,1440]) test(`${width}px: location recovery is compact, readable and contained`, async t => {
+  const page=await fixture(t,{width});
+  await page.waitForFunction(()=>window.locationFixture.watches.length===1);await deny(page);
+  const button=page.getByRole('button',{name:'Usa la mia posizione',exact:true});await button.waitFor({state:'visible'});
+  const bounds=await button.boundingBox();assert.ok(bounds.height>=44&&bounds.height<=46, JSON.stringify(bounds));
+  const notice=await page.locator('.ts-location-notice').boundingBox();assert.ok(notice.height<150);
+  assert.ok(bounds.x>=notice.x&&bounds.x+bounds.width<=notice.x+notice.width);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  if (width === 390) await page.screenshot({path:'/tmp/templesale-location-390.png'});
 });

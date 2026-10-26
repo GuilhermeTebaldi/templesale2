@@ -60,6 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
     getNetworkLoadingSnapshot,
     () => false,
   );
+  const standaloneNavigation = typeof window !== 'undefined' && ((navigator as Navigator & { standalone?: boolean }).standalone || window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches);
   const profileImage = user.picture || activeCompany.logo;
   const profileLabel = user.name || activeCompany.name;
   const hasRegisteredAccount = user.isAuthenticated;
@@ -112,6 +113,8 @@ export const Header: React.FC<HeaderProps> = ({
 
     let frameId = 0;
     let navigationRecoveryPending = false;
+    let recoveryTimer = 0;
+    let recoveryUntil = 0;
     let referenceHeight = window.innerHeight;
     let referenceWidth = window.innerWidth;
     const isTextInputFocused = (activeElement: EventTarget | null = document.activeElement) => {
@@ -155,7 +158,22 @@ export const Header: React.FC<HeaderProps> = ({
       // A fresh fixed/composited layer avoids retaining the overlay keyboard's
       // viewport origin. Defer until scroll and keyboard focus are released.
       navigationRecoveryPending = true;
+      recoveryUntil = Date.now() + 1500;
       scheduleKeyboardState();
+      settleNavigationLayer();
+    };
+    const settleNavigationLayer = () => {
+      window.clearTimeout(recoveryTimer);
+      // WebKit can finish keyboard/viewport restoration after overlay exit.
+      // Refresh once it settles; never save a transient viewport pixel height.
+      recoveryTimer = window.setTimeout(() => {
+        navigationRecoveryPending = true;
+        scheduleKeyboardState();
+      }, 350);
+    };
+    const handleViewportChange = () => {
+      scheduleKeyboardState();
+      if (Date.now() < recoveryUntil) settleNavigationLayer();
     };
     const handleFocusOut = (event: FocusEvent) => {
       if (isTextInputFocused(event.target)) restoreNavigationLayer();
@@ -176,8 +194,8 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener(OVERLAY_VIEWPORT_RESTORED, restoreNavigationLayer);
     bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'], childList: true, subtree: true });
     updateKeyboardState();
-    window.visualViewport?.addEventListener('resize', scheduleKeyboardState);
-    window.visualViewport?.addEventListener('scroll', scheduleKeyboardState);
+    window.visualViewport?.addEventListener('resize', handleViewportChange);
+    window.visualViewport?.addEventListener('scroll', handleViewportChange);
     window.addEventListener('scroll', scheduleKeyboardState, { passive: true });
     window.addEventListener('resize', scheduleKeyboardState);
     window.addEventListener('orientationchange', scheduleKeyboardState);
@@ -188,12 +206,13 @@ export const Header: React.FC<HeaderProps> = ({
 
     return () => {
       bodyObserver.disconnect();
+      window.clearTimeout(recoveryTimer);
       window.removeEventListener(OVERLAY_VIEWPORT_RESTORED, restoreNavigationLayer);
       if (frameId) {
         window.cancelAnimationFrame(frameId);
       }
-      window.visualViewport?.removeEventListener('resize', scheduleKeyboardState);
-      window.visualViewport?.removeEventListener('scroll', scheduleKeyboardState);
+      window.visualViewport?.removeEventListener('resize', handleViewportChange);
+      window.visualViewport?.removeEventListener('scroll', handleViewportChange);
       window.removeEventListener('scroll', scheduleKeyboardState);
       window.removeEventListener('resize', scheduleKeyboardState);
       window.removeEventListener('orientationchange', scheduleKeyboardState);
@@ -565,7 +584,7 @@ export const Header: React.FC<HeaderProps> = ({
       </aside>
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
-      <div key={navigationLayerVersion} ref={mobileNavigationViewportRef} id="mobile-navigation-viewport" className="ts-mobile-navigation-viewport sm:hidden">
+      <div key={navigationLayerVersion} ref={mobileNavigationViewportRef} id="mobile-navigation-viewport" className={`ts-mobile-navigation-viewport sm:hidden${standaloneNavigation ? ' ts-mobile-navigation-standalone' : ''}`}>
       <nav
         id="mobile-bottom-nav"
         aria-label="Navigazione principale"

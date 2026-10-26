@@ -80,7 +80,8 @@ const bundle = await build({
   ` }, bundle: true, format: 'esm', write: false,
   define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env': '{}' },
 });
-const stylesheet = readFileSync('dist/assets/' + readdirSync('dist/assets').find(name => /^index-.*\.css$/.test(name)));
+const stylesheet = readFileSync('dist/assets/' + readdirSync('dist/assets').find(name => /^index-.*\.css$/.test(name)), 'utf8')
+  .replace(/(\.ts-mobile-navigation-viewport\{[^}]*height:)100dvh/, '$1var(--test-dynamic-height,100dvh)');
 const server = createServer((request, response) => {
   const path = request.url.split('?')[0];
   if (path === '/fixture.js') { response.setHeader('Content-Type', 'text/javascript'); response.end(bundle.outputFiles[0].text); }
@@ -363,4 +364,29 @@ test('desktop member navigation exposes existing map, profile, notification and 
   await page.locator('#desktop-rail-publish').click();
   assert.equal(await page.evaluate(() => window.publishClicks), 1);
   assert.equal(await page.locator('#mobile-bottom-nav').isVisible(), false);
+});
+
+for (const guest of [false,true]) test(`${guest?'guest':'member'} installed app: repeated map returns resist a stale dynamic height and late viewport events`, async t => {
+  const page=await fixture(t,{standalone:true,guest});
+  for(let attempt=0;attempt<2;attempt++) {
+    await page.evaluate(()=>{window.mapExitComplete=false;document.querySelector('#open-map').click();});
+    const close=page.locator('button[title="Chiudi mappa"]');await close.waitFor();
+    await page.waitForFunction(()=>document.activeElement instanceof HTMLInputElement);
+    await viewport(page,{height:420,offsetTop:80});
+    await page.evaluate(()=>document.documentElement.style.setProperty('--test-dynamic-height','724px'));
+    await close.evaluate(button=>button.click());
+    await page.waitForFunction(()=>window.mapExitComplete);await close.waitFor({state:'detached'});
+    await page.waitForTimeout(450);
+    await page.evaluate(()=>{window.dockAfterExit=document.querySelector('#mobile-navigation-viewport');});
+    await viewport(page,{height:724,innerHeight:724,offsetTop:80});
+    await page.waitForFunction(()=>window.dockAfterExit!==document.querySelector('#mobile-navigation-viewport'), null, {timeout:5000});
+    await bottomIs(page,844);
+    assert.equal(await page.locator('#mobile-navigation-viewport').evaluate(el=>el.style.height),'');
+    for(const y of [40,900,600]) {await page.evaluate(y=>window.scrollTo(0,y),y);await bottomIs(page,844);}
+    assert.equal(await page.evaluate(()=>document.querySelector('#mobile-bottom-nav').contains(document.elementFromPoint(10,842))),true);
+    await page.waitForTimeout(1550);
+    await page.evaluate(()=>{window.settledDock=document.querySelector('#mobile-navigation-viewport');});
+    await viewport(page,{height:724,event:'scroll'});await page.waitForTimeout(400);
+    assert.equal(await page.evaluate(()=>window.settledDock===document.querySelector('#mobile-navigation-viewport')),true,'Ordinary later scrolling must not keep remounting the dock');
+  }
 });
