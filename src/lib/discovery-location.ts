@@ -4,6 +4,16 @@ import { readDevicePreference, writeDevicePreference } from './device-preference
 export type DiscoveryOrigin = { lat: number; lng: number; city?: never } | { city: string; lat?: never; lng?: never };
 const CITY_KEY = 'templesale_discovery_city';
 const LOCATION_KEY = 'templesale_map_user_location';
+const LOCATION_MAX_AGE = 30 * 60 * 1000;
+
+function readSavedPosition() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LOCATION_KEY) || 'null');
+    if (saved && isValidGeoPoint(saved.lat, saved.lng) && typeof saved.at === 'number'
+      && saved.at <= Date.now() && Date.now() - saved.at < LOCATION_MAX_AGE) return saved as { lat: number; lng: number; at: number };
+  } catch { /* Storage is optional. */ }
+  return null;
+}
 
 export function isValidGeoPoint(latitude: unknown, longitude: unknown): boolean {
   return typeof latitude === 'number' && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
@@ -14,8 +24,8 @@ export function readDiscoveryOrigin(): DiscoveryOrigin | null {
   try {
     const city = localStorage.getItem(CITY_KEY)?.trim();
     if (city) return { city };
-    const saved = JSON.parse(localStorage.getItem(LOCATION_KEY) || 'null');
-    if (saved && isValidGeoPoint(saved.lat, saved.lng) && typeof saved.at === 'number' && Date.now() - saved.at < 30 * 60 * 1000) return { lat: saved.lat, lng: saved.lng };
+    const saved = readSavedPosition();
+    if (saved) return { lat: saved.lat, lng: saved.lng };
   } catch { /* Browsing without storage remains supported. */ }
   return null;
 }
@@ -34,7 +44,10 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
   const [origin, setOrigin] = useState<DiscoveryOrigin | null>(readDiscoveryOrigin);
   const [error, setError] = useState('');
   const [locating, setLocating] = useState(false);
-  const [fresh, setFresh] = useState(false);
+  const [initialRequest, setInitialRequest] = useState(true);
+  const [fresh, setFresh] = useState(() => isValidGeoPoint(origin?.lat, origin?.lng));
+  const lastFixAt = useRef<number | null>(null);
+  if (lastFixAt.current === null) lastFixAt.current = origin && 'lat' in origin ? readSavedPosition()?.at ?? 0 : 0;
   const [choice, setChoice] = useState(() => {
     const saved = readDevicePreference('discovery-location');
     if (saved === 'accepted' || saved === 'dismissed') return saved;
@@ -54,11 +67,14 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
     watchId.current = null;
   }, []);
   const receivePosition = useCallback((position: GeolocationPosition) => {
-    requestPending.current = false;
+    requestPending.current = false; setInitialRequest(false);
     writeDevicePreference('discovery-location', 'accepted'); setChoice('accepted');
     setLocating(false);
-    if (!isValidGeoPoint(position.coords.latitude, position.coords.longitude) || position.coords.accuracy > 1000) { setFresh(false); setError("Posizione imprecisa. Riprova o scegli una città."); return; }
+    if (!isValidGeoPoint(position.coords.latitude, position.coords.longitude) || position.coords.accuracy > 1000) {
+      if (lastFixAt.current && Date.now() - lastFixAt.current < LOCATION_MAX_AGE) { setFresh(true); setError(''); return; }
+      setFresh(false); setError("Posizione imprecisa. Riprova o scegli una città."); return; }
     const next = { lat: position.coords.latitude, lng: position.coords.longitude };
+    lastFixAt.current = Date.now();
     setError(''); setFresh(true);
     if (!shouldUpdateLocation(previous.current, next, Date.now())) return;
     previous.current = { ...next, at: Date.now() };
@@ -70,13 +86,19 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
     } catch { /* optional storage */ }
   }, []);
   const receiveLocationError = useCallback((failure: GeolocationPositionError) => {
-    requestPending.current = false;
-    setLocating(false); setFresh(false);
+    requestPending.current = false; setInitialRequest(false);
+    setLocating(false);
+    // A timeout/unavailable sensor is not a permission denial. Retain the same
+    // recent position already used by feed/map, without restarting the watch.
+    if (failure.code !== 1 && lastFixAt.current && Date.now() - lastFixAt.current < LOCATION_MAX_AGE) {
+      setFresh(true); setError(''); return;
+    }
+    setFresh(false);
     setError(failure.code === 1
       ? 'Posizione bloccata dal browser.'
       : 'Impossibile ottenere la posizione. Riprova o scegli una città.');
     if (failure.code === 1) {
-      stopTracking(); setChoice('dismissed');
+      stopTracking(); setChoice('dismissed'); lastFixAt.current = 0;
       previous.current = null;
       setOrigin(current => current?.city ? current : null);
     }
@@ -85,7 +107,7 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
   // across visibility changes: the browser pauses/resumes delivery itself.
   const startTracking = useCallback(() => {
     if (watchId.current !== null || !active) return;
-    if (!navigator.geolocation) { setError("Questo browser non supporta la posizione. Scegli una città."); return; }
+    if (!navigator.geolocation) { setInitialRequest(false); setError("Questo browser non supporta la posizione. Scegli una città."); return; }
     requestPending.current = true;
     const attempt = ++gpsAttempt.current;
     setError(''); setLocating(true);
@@ -121,7 +143,7 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
     if (!value) return;
     gpsWanted.current = false;
     stopTracking();
-    setLocating(false); setError(''); setOrigin({ city: value }); previous.current = null;
+    setLocating(false); setError(''); setOrigin({ city: value }); previous.current = null; lastFixAt.current = 0;
     writeDevicePreference('discovery-location', 'dismissed'); setChoice('dismissed'); setFresh(false);
     try { localStorage.setItem(CITY_KEY, value); } catch { /* optional storage */ }
   }, [stopTracking]);
@@ -170,5 +192,5 @@ export function useDiscoveryLocation(active: boolean, onOriginChange?: (origin: 
       stopTracking(); autoPrompted.current = false;
     };
   }, [active, useGps, stopTracking]);
-  return { origin, error, locating, fresh, useGps, useCity, acceptNativePosition, receiveLocationError, needsConsent: choice === null && !locating && !error, dismissGps };
+  return { origin, error, locating, initializing: active && initialRequest, fresh, useGps, useCity, acceptNativePosition, receiveLocationError, needsConsent: choice === null && !locating && !error, dismissGps };
 }

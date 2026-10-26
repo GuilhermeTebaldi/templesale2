@@ -43,16 +43,46 @@
 
 body { font-family: var(--font-sans); }
 
-geolocation.ts-location-control {
+.ts-location-control {
   color: #006da8;
   background-color: #fff;
   opacity: 1;
   font-size: 14px;
   font-weight: 600;
-  min-height: 44px;
+  /* Native geolocation uses content-box: 26 + 16 + 2 = 44px. */
+  min-height: 26px;
   padding: 8px 12px;
   border: 1px solid #cfd9de;
-  border-radius: 24px;
+  border-radius: 12px;
+}
+
+.ts-location-fallback {
+  box-sizing: content-box;
+  line-height: 26px;
+  cursor: pointer;
+}
+.ts-location-fallback:disabled { cursor: wait; }
+.ts-location-notice {
+  max-width: 36rem;
+  margin-inline: auto;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e5e5;
+  background: #fff;
+  color: #52616d;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ts-location-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 8px;
+}
+@media (min-width: 640px) {
+  .ts-location-notice { display: flex; align-items: center; gap: 16px; }
+  .ts-location-notice p { flex: 1; min-width: 0; }
+  .ts-location-notice-actions { flex-shrink: 0; margin-top: 0; }
 }
 
 
@@ -72,6 +102,9 @@ html {
   pointer-events: none;
   transform: translateZ(0);
 }
+/* Installed apps have no collapsing browser toolbar. Keep their dock on the
+   full app viewport when WebKit temporarily retains a shortened dynamic height. */
+.ts-mobile-navigation-standalone { height: 100vh; }
 #mobile-bottom-nav {
   padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
   padding-right: max(0.5rem, env(safe-area-inset-right, 0px));

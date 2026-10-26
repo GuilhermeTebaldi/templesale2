@@ -29,7 +29,7 @@ export default function LocationPermissionButton({ locating, onRequest, onPositi
     ref: control, accuracymode: 'precise', lang: 'it', className: 'ts-location-control',
   });
 
-  return <button type="button" disabled={locating} onClick={onRequest} className="font-semibold text-sky-600 disabled:opacity-50">
+  return <button type="button" disabled={locating} onClick={onRequest} className="ts-location-control ts-location-fallback">
     <span>{locating ? 'Ricerca posizione…' : 'Usa la mia posizione'}</span>
   </button>;
 }

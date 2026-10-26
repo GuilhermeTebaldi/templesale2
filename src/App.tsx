@@ -512,7 +512,7 @@ export default function App() {
         isCartOpen ||
         isEditePerfilOpen));
   const { origin: discoveryOrigin, error: discoveryLocationError, locating: locatingDiscovery,
-    fresh: freshDiscovery, useGps: enableDiscoveryGps, needsConsent: needsDiscoveryConsent, dismissGps: dismissDiscoveryGps,
+    initializing: initializingDiscovery, fresh: freshDiscovery, useGps: enableDiscoveryGps, needsConsent: needsDiscoveryConsent, dismissGps: dismissDiscoveryGps,
     acceptNativePosition, receiveLocationError } = useDiscoveryLocation(true);
   const isFeedActive = socialActiveTab === 'feed' && !isOverlayBlockingScroll &&
     !selectedPublication && !editingSocialPublication && !isNotificationsOpen;
@@ -3601,9 +3601,9 @@ export default function App() {
 
       <main className="ts-desktop-main flex-1 pb-24 sm:pb-16 sm:pl-[72px]">
         <div style={{ display: socialActiveTab === "feed" ? "block" : "none" }}>
-          {(needsDiscoveryConsent || discoveryLocationError || !freshDiscovery) && <div className="mx-auto max-w-xl border-b border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-600">
+          {!initializingDiscovery && (needsDiscoveryConsent || discoveryLocationError || !freshDiscovery) && <div className="ts-location-notice">
             <p>{discoveryLocationError || 'Usa la posizione per scoprire le attività vicine.'}</p>
-            <div className="mt-2 flex items-center gap-4">
+            <div className="ts-location-notice-actions">
               <LocationPermissionButton locating={locatingDiscovery} onRequest={enableDiscoveryGps} onPosition={acceptNativePosition} onError={receiveLocationError} />
               {needsDiscoveryConsent && <button type="button" onClick={dismissDiscoveryGps} className="text-neutral-500">Non ora</button>}
             </div>
