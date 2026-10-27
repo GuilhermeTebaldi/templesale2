@@ -1,3 +1,4 @@
+import { appScrollRegion } from "../lib/app-scroll";
 import { WhatsappContactLink } from './WhatsappContact';
 import React, { useEffect, useRef, useState } from 'react';
 import { ProfilePhotoButton } from './ProfilePhotoViewer';
@@ -121,7 +122,7 @@ export const CompanyProfile: React.FC<CompanyProfileProps> = ({
           void onLoadMorePosts();
         }
       },
-      { root: null, rootMargin: '700px 0px', threshold: 0 },
+      { root: appScrollRegion(), rootMargin: '700px 0px', threshold: 0 },
     );
 
     observer.observe(sentinel);

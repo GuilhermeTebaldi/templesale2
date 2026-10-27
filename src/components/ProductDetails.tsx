@@ -1,3 +1,4 @@
+import { scrollAppTo } from "../lib/app-scroll";
 import { WhatsappContactLink } from './WhatsappContact';
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -273,7 +274,7 @@ export default function ProductDetails({
     }
 
     if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior });
+      scrollAppTo({ top: 0, behavior });
     }
   }, []);
 

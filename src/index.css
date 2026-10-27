@@ -92,15 +92,27 @@ html {
   text-size-adjust: 100%;
 }
 
-/* Keep the mobile dock out of bottom-fixed viewport compensation. */
-.ts-mobile-navigation-viewport {
-  position: fixed;
-  inset: 0 0 auto;
-  height: 100vh;
-  height: 100dvh;
-  z-index: 50;
-  pointer-events: none;
-  transform: translateZ(0);
+/* The mobile shell gives header, scroll content and dock separate flex rows. */
+.ts-app-scroll-region { display: contents; }
+.ts-mobile-navigation-viewport { z-index: 50; pointer-events: none; }
+@media (max-width: 639px) {
+  html:has(.ts-app-shell), body:has(.ts-app-shell) {
+    height: 100%; overflow: hidden; overscroll-behavior: none;
+  }
+  .ts-app-shell { display: flex; flex-direction: column; height: 100dvh; min-height: 0; overflow: hidden; }
+  .ts-app-shell > #main-header { position: relative; flex: 0 0 auto; order: 0; }
+  .ts-app-shell > .ts-header-spacer { display: none; }
+  .ts-app-scroll-region {
+    display: block; flex: 1 1 0%; min-height: 0; order: 1;
+    overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch;
+  }
+  .ts-app-scroll-region .ts-desktop-main { padding-bottom: 12px; }
+  .ts-app-scroll-region .ts-desktop-footer { margin-bottom: 0; }
+  .ts-app-scroll-region #company-profile-view > .sticky { top: 0; }
+  .ts-mobile-navigation-viewport { position: relative; flex: 0 0 auto; order: 2; }
+  .ts-mobile-navigation-viewport #mobile-bottom-nav { position: relative; bottom: auto; }
+  body.ts-scroll-lock:has(.ts-app-shell) { position: static; touch-action: auto; }
+  .ts-scroll-lock .ts-app-scroll-region { overflow: hidden; touch-action: none; }
 }
 #mobile-bottom-nav {
   padding-left: max(0.5rem, env(safe-area-inset-left, 0px));

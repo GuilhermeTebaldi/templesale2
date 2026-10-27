@@ -61,3 +61,29 @@ for(const width of [390,768])test(`${width}px: desktop styles do not change mobi
  await (width<640?page.locator('#mobile-bottom-nav').getByRole('button',{name:'Cerca',exact:true}):page.locator('#desktop-rail-search')).click();await page.locator('#company-search-input').waitFor();
  assert.equal(await page.locator('.ts-desktop-search-heading').isVisible(),false);
 });
+
+test('real mobile App keeps footer outside scrolling and preserves map/profile return positions',async t=>{
+ const page=await fixture(t,390);const region=page.locator('#app-scroll-region');
+ await region.evaluate(el=>el.scrollTo(0,600));
+ const footer=await page.locator('#mobile-bottom-nav').boundingBox();assert.equal(Math.round(footer.y+footer.height),1000);
+ assert.equal(await page.evaluate(()=>window.scrollY),0);
+ await page.locator('#mobile-tab-btn-map').click();
+ const close=page.locator('button[title="Chiudi mappa"]');await close.waitFor();
+ assert.equal(await page.evaluate(()=>getComputedStyle(document.body).position),'static');
+ await close.click();await close.waitFor({state:'detached'});
+ await page.waitForFunction(()=>!document.body.classList.contains('ts-scroll-lock'));
+ assert.equal(await region.evaluate(el=>el.scrollTop),600);
+ const heading=page.locator('.ts-feed-header').getByRole('heading',{name:'Caffè Centrale',exact:true});await heading.scrollIntoViewIfNeeded();
+ const saved=await region.evaluate(el=>el.scrollTop);await heading.click();await page.locator('#company-profile-view').waitFor();
+ await page.waitForFunction(()=>document.getElementById('app-scroll-region').scrollTop===0);
+ await page.getByRole('button',{name:'Torna al feed',exact:true}).click();
+ await page.waitForFunction(y=>Math.abs(document.getElementById('app-scroll-region').scrollTop-y)<2,saved);
+ await region.evaluate(el=>el.scrollTo(0,600));
+ let refreshes=0;page.on('request',req=>{if(new URL(req.url()).pathname==='/api/publications')refreshes++});
+ const feed=page.locator('#feed-view');
+ const pull=async()=>{await feed.dispatchEvent('touchstart',{touches:[{identifier:1,clientX:100,clientY:300}]});await feed.dispatchEvent('touchmove',{touches:[{identifier:1,clientX:100,clientY:480}]});await feed.dispatchEvent('touchend',{touches:[]});};
+ await pull();await page.waitForTimeout(250);assert.equal(refreshes,0,'Pull-to-refresh is disabled away from the scroll owner’s top');
+ await region.evaluate(el=>el.scrollTo(0,0));await pull();await page.waitForFunction(()=>document.querySelector('#pull-to-refresh-indicator')?.textContent.includes('Aggiornamento')||document.getElementById('app-scroll-region').scrollTop===0);
+ await page.waitForTimeout(250);assert.ok(refreshes>0,'Pull-to-refresh still uses the original feed request');
+ await page.screenshot({path:'/tmp/templesale-mobile-shell.png',animations:'disabled'});
+});

@@ -1,3 +1,4 @@
+import { appScrollRegion, appScrollTop, scrollAppTo } from "./lib/app-scroll";
 import { preloadAdjacentImages } from "./lib/image-memory";
 import React from "react";
 import { flushSync } from "react-dom";
@@ -326,7 +327,7 @@ function scrollWindowToTop(behavior: ScrollBehavior = "auto"): void {
     return;
   }
   window.requestAnimationFrame(() => {
-    window.scrollTo({ top: 0, left: 0, behavior });
+    scrollAppTo({ top: 0, left: 0, behavior });
   });
 }
 
@@ -593,7 +594,7 @@ export default function App() {
       body.style.right = "";
       body.style.width = "";
       delete body.dataset.tsScrollLockY;
-      window.scrollTo(0, Number.isFinite(restoreY) ? restoreY : 0);
+      scrollAppTo({ top: Number.isFinite(restoreY) ? restoreY : 0, behavior: "auto" });
     };
 
     if (!isOverlayBlockingScroll) {
@@ -602,10 +603,10 @@ export default function App() {
     }
 
     if (!body.classList.contains("ts-scroll-lock")) {
-      const currentY = window.scrollY || window.pageYOffset || 0;
+      const currentY = appScrollTop();
       body.dataset.tsScrollLockY = String(currentY);
       body.classList.add("ts-scroll-lock");
-      body.style.top = `-${currentY}px`;
+      body.style.top = appScrollRegion() ? "" : `-${currentY}px`;
       body.style.left = "0";
       body.style.right = "0";
       body.style.width = "100%";
@@ -2563,9 +2564,9 @@ export default function App() {
 
     const applyScrollTop = () => {
       try {
-        window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+        scrollAppTo({ top: 0, left: 0, behavior: "auto" });
       } catch {
-        window.scrollTo(0, 0);
+        scrollAppTo({ top: 0, behavior: "auto" });
       }
 
       document.documentElement.scrollTop = 0;
@@ -3213,7 +3214,7 @@ export default function App() {
   const selectSocialCompany = React.useCallback(
     (companyId: string) => {
     if (socialActiveTab === "feed") {
-  feedScrollPositionRef.current = window.scrollY || window.pageYOffset || 0;
+  feedScrollPositionRef.current = appScrollTop();
 }
       setSocialSelectedCompanyId(companyId);
       setSocialActiveTab("profile");
@@ -3269,7 +3270,7 @@ export default function App() {
     if (tab === "map") {
       if (socialActiveTab === "feed") {
         feedScrollPositionRef.current =
-          window.scrollY || window.pageYOffset || 0;
+          appScrollTop();
       }
 
       openMapDefault();
@@ -3286,13 +3287,13 @@ export default function App() {
 
     if (tab === "feed" && socialActiveTab === "feed") {
       void loadPublicationFeedPage({ append: false });
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollAppTo({ top: 0, behavior: "smooth" });
       return;
     }
 
     if (socialActiveTab === "feed") {
       feedScrollPositionRef.current =
-        window.scrollY || window.pageYOffset || 0;
+        appScrollTop();
     }
 
     if (tab === "profile") {
@@ -3308,7 +3309,7 @@ export default function App() {
 
     if (tab === "feed") {
       window.requestAnimationFrame(() => {
-        window.scrollTo({
+        scrollAppTo({
           top: feedScrollPositionRef.current,
           behavior: "auto",
         });
@@ -3508,7 +3509,7 @@ export default function App() {
     <LinkPreviewContext.Provider value={openLinkPreview}>
     <ProfilePhotoContext.Provider value={setProfilePhoto}>
     <WhatsappContactContext.Provider value={setWhatsappContact}>
-    <div inert={Boolean(currentUser && !termsAccess) || isTermsOpen || Boolean(previewLink) || Boolean(profilePhoto) || Boolean(whatsappContact)} className="min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
+    <div inert={Boolean(currentUser && !termsAccess) || isTermsOpen || Boolean(previewLink) || Boolean(profilePhoto) || Boolean(whatsappContact)} className="ts-app-shell min-h-screen bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-neutral-800 selection:text-white flex flex-col">
       <TermsDialog key={currentUser?.id ?? "visitor"} user={currentUser} locale="it-IT"
         open={isTermsOpen} introComplete={!isPostAuthIntroOpen} companyName={myEstablishment?.name} onClose={() => setIsTermsOpen(false)}
         onAccess={setTermsAccess} onReject={handleLogout}
@@ -3599,6 +3600,7 @@ export default function App() {
         onSearchChange={setSearchQuery}
       />
 
+      <div id="app-scroll-region" className="ts-app-scroll-region">
       <main className="ts-desktop-main flex-1 pb-24 sm:pb-16 sm:pl-[72px]">
         <div style={{ display: socialActiveTab === "feed" ? "block" : "none" }}>
           {!initializingDiscovery && (needsDiscoveryConsent || discoveryLocationError || !freshDiscovery) && <div className="ts-location-notice">
@@ -3770,6 +3772,7 @@ export default function App() {
           <button onClick={() => setIsTermsOpen(true)} className="text-[11px] text-neutral-400 underline">{t("Termos e privacidade")}</button>
         </div>
       </footer>
+      </div>
 
       <SocialCompanyProfileDrawer
         onOpenTerms={() => { setIsUserOpen(false); setIsTermsOpen(true); }}
