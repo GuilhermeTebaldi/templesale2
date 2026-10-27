@@ -25,9 +25,15 @@ const bundle = await build({
       window.completePublication = () => resolve({ id: 77, establishmentId: 1, imageUrl: '/fixture-photo.png', caption: 'Test', createdAt: Date.now() });
     });
     async function seedPublication() {
+      window.navigationSeedPhase='drawing';
       const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
-      const file = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-      await savePublicationDraft(1, { file, source: file, uploadedUrl: '/fixture-photo.png', caption: 'Bozza', savedAt: Date.now() });
+      const context = canvas.getContext('2d'); context.fillStyle = '#e3ede9'; context.fillRect(0, 0, 64, 64);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw Error('The test image could not be encoded');
+      window.navigationSeedPhase='encoded:'+blob.size;
+      const file = new File([blob], 'fixture.png', {type:'image/png'});
+      const saved=await savePublicationDraft(1, { file, source: file, uploadedUrl: '/fixture-photo.png', caption: 'Bozza', savedAt: Date.now() });
+      window.navigationSeedPhase='saved:'+saved;
     }
     import { I18nProvider } from './src/i18n/provider';
     function Fixture() {
@@ -102,6 +108,9 @@ async function fixture(t, { standalone = false, guest = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   t.after(() => context.close());
   await context.addInitScript(({ standalone }) => {
+    // Navigation tests use the real draft module's session fallback, independent
+    // of headless WebKit's Blob/IndexedDB persistence implementation.
+    Object.defineProperty(window, 'indexedDB', {value:{open(){throw new Error('Session-only draft fixture');}},configurable:true});
     Object.defineProperty(navigator, 'standalone', { value: standalone });
     const viewport = new EventTarget();
     Object.assign(viewport, { height: 844, offsetTop: 0, scale: 1 });
@@ -217,7 +226,7 @@ for (const publish of [true, false]) {
     const page = await fixture(t, { standalone: true });
     await page.locator('#open-publication').click();
     const caption = page.locator('#post-caption-textarea');
-    await caption.waitFor({ state: 'visible' });
+    await caption.waitFor({ state: 'visible',timeout:8000 }).catch(async error=>{console.log(await page.evaluate(()=>({seed:window.navigationSeedPhase,text:document.body.innerText.slice(0,1500)})));throw error;});
     await caption.fill('Foto con didascalia'); await caption.focus();
     await viewport(page, { height: 420, offsetTop: 80 });
     assert.equal(await page.locator('#mobile-bottom-nav').isVisible(), false);
