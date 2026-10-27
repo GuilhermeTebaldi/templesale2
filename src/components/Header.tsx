@@ -1,5 +1,5 @@
 import React from 'react';
-import { OVERLAY_VIEWPORT_RESTORED } from '../lib/overlay-viewport';
+import MobileNavigation from './MobileNavigation';
 import {
   Bell,
   Search,
@@ -52,9 +52,6 @@ export const Header: React.FC<HeaderProps> = ({
   const [hasBrandIntroStarted, setHasBrandIntroStarted] = React.useState(false);
   const [hasObservedGlobalLoading, setHasObservedGlobalLoading] = React.useState(false);
   const [canFallbackBrandIntroStart, setCanFallbackBrandIntroStart] = React.useState(false);
-  const [isMobileKeyboardOpen, setIsMobileKeyboardOpen] = React.useState(false);
-  const [navigationLayerVersion, setNavigationLayerVersion] = React.useState(0);
-  const mobileNavigationViewportRef = React.useRef<HTMLElement | null>(null);
   const isGlobalLoadingVisible = React.useSyncExternalStore(
     subscribeNetworkLoading,
     getNetworkLoadingSnapshot,
@@ -107,145 +104,7 @@ export const Header: React.FC<HeaderProps> = ({
     isGlobalLoadingVisible,
   ]);
 
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
 
-    let frameId = 0;
-    let navigationRecoveryPending = false;
-    let recoveryTimer = 0;
-    let recoveryUntil = 0;
-    let referenceHeight = window.innerHeight;
-    let referenceWidth = window.innerWidth;
-    const isTextInputFocused = (activeElement: EventTarget | null = document.activeElement) => {
-      return (
-        (activeElement instanceof HTMLInputElement && !['button', 'submit', 'reset', 'checkbox', 'radio', 'range', 'color', 'file', 'hidden', 'image'].includes(activeElement.type)) ||
-        activeElement instanceof HTMLTextAreaElement ||
-        activeElement instanceof HTMLSelectElement ||
-        (activeElement instanceof HTMLElement && activeElement.isContentEditable));
-    };
-    const updateKeyboardState = () => {
-      const viewport = window.visualViewport;
-      if (referenceWidth !== window.innerWidth) {
-        referenceWidth = window.innerWidth;
-        referenceHeight = window.innerHeight;
-      }
-      const visibleHeight = viewport?.height ?? window.innerHeight;
-      const layoutHeight = mobileNavigationViewportRef.current?.clientHeight ?? window.innerHeight;
-      referenceHeight = Math.max(referenceHeight, window.innerHeight, layoutHeight);
-      const keyboardOpen = isTextInputFocused() && referenceHeight - visibleHeight > 150;
-      setIsMobileKeyboardOpen((current) => (current === keyboardOpen ? current : keyboardOpen));
-      // The frame is sized by CSS dvh. A stale VisualViewport reading after
-      // dismissing the publication keyboard must never become a stored height.
-    };
-
-    const scheduleKeyboardState = () => {
-      if (frameId) {
-        return;
-      }
-      frameId = window.requestAnimationFrame(() => {
-        frameId = 0;
-        updateKeyboardState();
-        if (navigationRecoveryPending && document.visibilityState === 'visible' && !document.body.classList.contains('ts-scroll-lock') && !isTextInputFocused()) {
-          navigationRecoveryPending = false;
-          setNavigationLayerVersion(version => version + 1);
-        }
-      });
-    };
-
-    let bodyWasLocked = document.body.classList.contains('ts-scroll-lock');
-    const restoreNavigationLayer = () => {
-      // A fresh fixed/composited layer avoids retaining the overlay keyboard's
-      // viewport origin. Defer until scroll and keyboard focus are released.
-      navigationRecoveryPending = true;
-      recoveryUntil = Date.now() + 1500;
-      scheduleKeyboardState();
-      settleNavigationLayer();
-    };
-    const settleNavigationLayer = () => {
-      window.clearTimeout(recoveryTimer);
-      // WebKit can finish keyboard/viewport restoration after overlay exit.
-      // Refresh once it settles; never save a transient viewport pixel height.
-      recoveryTimer = window.setTimeout(() => {
-        navigationRecoveryPending = true;
-        scheduleKeyboardState();
-      }, 350);
-    };
-    const handleViewportChange = () => {
-      scheduleKeyboardState();
-      if (Date.now() < recoveryUntil) settleNavigationLayer();
-    };
-    let wasHidden = document.visibilityState === 'hidden';
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        wasHidden = true;
-        window.clearTimeout(recoveryTimer);
-        recoveryUntil = 0;
-      } else if (wasHidden) {
-        wasHidden = false;
-        restoreNavigationLayer();
-      } else scheduleKeyboardState();
-    };
-    const handlePageShow = (event: PageTransitionEvent) => {
-      if (event.persisted || wasHidden) handleResume();
-      else scheduleKeyboardState();
-    };
-    const handleResume = () => {
-      if (document.visibilityState !== 'visible') return;
-      wasHidden = false;
-      restoreNavigationLayer();
-    };
-    const handleWindowFocus = (event: FocusEvent) => {
-      if (event.target === window) handleResume();
-    };
-    const handleFocusOut = (event: FocusEvent) => {
-      if (isTextInputFocused(event.target)) restoreNavigationLayer();
-      else scheduleKeyboardState();
-    };
-    const overlaySelector = '.fixed, [role="dialog"], [role="alertdialog"], [aria-modal="true"]';
-    const bodyObserver = new MutationObserver(records => {
-      const bodyIsLocked = document.body.classList.contains('ts-scroll-lock');
-      // Observe actual removal, after any exit animation, including nested and
-      // future overlays that do not dispatch a page-specific recovery event.
-      const overlayRemoved = records.some(record => Array.from(record.removedNodes).some(node =>
-        node instanceof HTMLElement && !node.isConnected &&
-        (node.matches(overlaySelector) || node.querySelector(overlaySelector))));
-      if ((bodyWasLocked && !bodyIsLocked) || overlayRemoved) restoreNavigationLayer();
-      bodyWasLocked = bodyIsLocked;
-      if (records.some(record => record.target === document.body)) scheduleKeyboardState();
-    });
-    window.addEventListener(OVERLAY_VIEWPORT_RESTORED, restoreNavigationLayer);
-    bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'], childList: true, subtree: true });
-    updateKeyboardState();
-    window.visualViewport?.addEventListener('resize', handleViewportChange);
-    window.visualViewport?.addEventListener('scroll', handleViewportChange);
-    window.addEventListener('scroll', scheduleKeyboardState, { passive: true });
-    window.addEventListener('resize', scheduleKeyboardState);
-    window.addEventListener('orientationchange', scheduleKeyboardState);
-    window.addEventListener('pageshow', handlePageShow);
-    window.addEventListener('focus', handleWindowFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focusin', scheduleKeyboardState);
-    window.addEventListener('focusout', handleFocusOut);
-
-    return () => {
-      bodyObserver.disconnect();
-      window.clearTimeout(recoveryTimer);
-      window.removeEventListener(OVERLAY_VIEWPORT_RESTORED, restoreNavigationLayer);
-      if (frameId) {
-        window.cancelAnimationFrame(frameId);
-      }
-      window.visualViewport?.removeEventListener('resize', handleViewportChange);
-      window.visualViewport?.removeEventListener('scroll', handleViewportChange);
-      window.removeEventListener('scroll', scheduleKeyboardState);
-      window.removeEventListener('resize', scheduleKeyboardState);
-      window.removeEventListener('orientationchange', scheduleKeyboardState);
-      window.removeEventListener('pageshow', handlePageShow);
-      window.removeEventListener('focus', handleWindowFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focusin', scheduleKeyboardState);
-      window.removeEventListener('focusout', handleFocusOut);
-    };
-  }, []);
 
   return (
     <>
@@ -484,7 +343,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       </header>
-      <div aria-hidden="true" className="h-14 shrink-0 sm:h-16" />
+      <div aria-hidden="true" className="ts-header-spacer h-14 shrink-0 sm:h-16" />
 
       {/* DESKTOP LEFT RAIL */}
       <aside
@@ -608,79 +467,8 @@ export const Header: React.FC<HeaderProps> = ({
       </aside>
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
-      <div key={navigationLayerVersion} ref={mobileNavigationViewportRef} id="mobile-navigation-viewport" className="ts-mobile-navigation-viewport sm:hidden">
-      <nav
-        id="mobile-bottom-nav"
-        aria-label="Navigazione principale"
-        style={{ paddingBottom: `max(${hasRegisteredAccount ? '0.5rem' : '0.25rem'}, env(safe-area-inset-bottom, 0px))` }}
-        className={`pointer-events-auto absolute inset-x-0 bottom-0 bg-white border-t border-neutral-800 px-2 flex items-center justify-around ${
-          hasRegisteredAccount ? 'pt-1 pb-2' : 'py-1'
-        } ${isMobileKeyboardOpen ? 'pointer-events-none invisible opacity-0' : 'visible opacity-100'} transition-opacity duration-150`}
-      >
-        {/* Feed Tab */}
-        <button
-          onClick={() => setActiveTab('feed')}
-          className={`flex h-12 min-w-16 flex-col items-center justify-end rounded-lg px-2.5 pb-1 transition-colors ${
-            activeTab === 'feed' ? 'text-white' : 'text-neutral-400'
-          }`}
-        >
-          <Home className="w-4.5 h-4.5" />
-          <span className="text-[10px] font-medium mt-0.5">Home</span>
-        </button>
-
-        {/* Search Tab */}
-        <button
-          onClick={() => setActiveTab('search')}
-          hidden={hasRegisteredAccount}
-          className={`flex h-12 min-w-16 flex-col items-center justify-end rounded-lg px-2.5 pb-1 transition-colors ${
-            activeTab === 'search' ? 'text-white' : 'text-neutral-400'
-          }`}
-        >
-          <Search className="w-4.5 h-4.5" />
-          <span className="text-[10px] font-medium mt-0.5">Cerca</span>
-        </button>
-
-        {/* + Publicar Central Highlight Button */}
-        {hasRegisteredAccount && (
-          <button
-            onClick={onOpenCreatePost}
-            className="group flex h-12 min-w-16 flex-col items-center justify-end rounded-lg px-2.5 pb-1 cursor-pointer"
-            title="+ Pubblica foto"
-          >
-            <div className="mb-0.5 flex h-14 w-14 -translate-y-3 items-center justify-center rounded-full border-4 border-neutral-900 bg-neutral-100 text-neutral-950 shadow-2xl transition-transform group-active:-translate-y-3 group-active:scale-95">
-              <Plus className="w-6 h-6 stroke-[2.8]" />
-            </div>
-            <span className="-mt-3 text-[10px] font-bold leading-none text-neutral-100">Pubblica</span>
-          </button>
-        )}
-
-        {/* Mapa Tab */}
-        <button
-          id="mobile-tab-btn-map"
-          onClick={() => setActiveTab('map')}
-          hidden={hasRegisteredAccount}
-          className={`flex h-12 min-w-16 flex-col items-center justify-end rounded-lg px-2.5 pb-1 transition-colors cursor-pointer ${
-            activeTab === 'map' ? 'text-white' : 'text-neutral-400'
-          }`}
-          title="Mappa delle attività"
-        >
-          <MapPin className="w-4.5 h-4.5" />
-          <span className="text-[10px] font-medium mt-0.5">Mappa</span>
-        </button>
-
-        {/* Minha Empresa Tab */}
-        <button
-          onClick={() => setActiveTab('profile')}
-          hidden={!hasRegisteredAccount}
-          className={`flex h-12 min-w-16 flex-col items-center justify-end rounded-lg px-2.5 pb-1 transition-colors ${
-            activeTab === 'profile' ? 'text-white' : 'text-neutral-400'
-          }`}
-        >
-          <Building2 className="w-4.5 h-4.5" />
-          <span className="text-[10px] font-medium mt-0.5">Attività</span>
-        </button>
-      </nav>
-      </div>
+      <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab}
+        onOpenCreatePost={onOpenCreatePost} hasRegisteredAccount={hasRegisteredAccount} />
     </>
   );
 };

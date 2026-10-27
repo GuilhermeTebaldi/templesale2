@@ -43,15 +43,15 @@ const bundle = await build({
         return () => { document.body.classList.remove('ts-scroll-lock'); document.body.style.top = ''; };
       }, [editorOpen, publishing, mapOpen, profileOpen, futureOpen]);
       const registered = !new URLSearchParams(location.search).has('guest');
-      return <div id="application-root"><Header activeTab={tab} setActiveTab={setTab}
+      return <div id="application-root" className="ts-app-shell"><Header activeTab={tab} setActiveTab={setTab}
         unreadNotificationsCount={0} onToggleNotifications={() => {}}
         onOpenCreatePost={() => { window.publishClicks = (window.publishClicks || 0) + 1; }}
         onOpenCompanyModal={() => {}} searchQuery="" onSearchChange={() => {}}
         user={{ isAuthenticated: registered, name: 'Fixture', picture: '' }}
         activeCompany={{ name: 'Fixture', logo: '' }} />
-        <main style={{ minHeight: 4000, paddingBottom: 96 }}><button id="open-profile" onClick={()=>setProfileOpen(true)}>Profilo</button><button id="open-future" onClick={()=>setFutureOpen(true)}>Nuova pagina</button><button id="open-map" onClick={() => setMapOpen(true)}>Mappa</button><button id="open-publication" onClick={async () => { await seedPublication(); setEditorOpen(true); }}>Editor</button><input id="keyboard-input" aria-label="Testo" />
+        <div id="app-scroll-region" className="ts-app-scroll-region"><main style={{ minHeight: 4000, paddingBottom: 96 }}><button id="open-profile" onClick={()=>setProfileOpen(true)}>Profilo</button><button id="open-future" onClick={()=>setFutureOpen(true)}>Nuova pagina</button><button id="open-map" onClick={() => setMapOpen(true)}>Mappa</button><button id="open-publication" onClick={async () => { await seedPublication(); setEditorOpen(true); }}>Editor</button><input id="keyboard-input" aria-label="Testo" />
           <div id="profile-grid" style={{ height: 3900, background: 'repeating-linear-gradient(#d8eee7 0 160px, #e8dce9 160px 320px)' }}>Profilo</div>
-        </main>{editorOpen && <NewPublication establishment={{ id: 1, name: 'Fixture' }}
+        </main></div>{editorOpen && <NewPublication establishment={{ id: 1, name: 'Fixture' }}
           onPublishStarted={() => {
             window.focusAtPublishStart = document.activeElement?.id;
             setPublishing(true); setTab('feed'); window.publicationStarted = true;
@@ -76,6 +76,8 @@ const bundle = await build({
           </motion.section>}
         </AnimatePresence></div>;
     }
+    window.navigationFixtureScrollTo = (...args) => document.getElementById('app-scroll-region').scrollTo(...args);
+    window.navigationFixtureScrollY = () => document.getElementById('app-scroll-region').scrollTop;
     createRoot(document.getElementById('root')).render(<I18nProvider><Fixture /></I18nProvider>);
   ` }, bundle: true, format: 'esm', write: false,
   define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env': '{}' },
@@ -128,6 +130,7 @@ async function viewport(page, state) {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 async function bottomIs(page, expected) {
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
   const result = await page.locator('#mobile-bottom-nav').evaluate(nav => ({
     bottom: nav.getBoundingClientRect().bottom,
     navPosition: getComputedStyle(nav).position,
@@ -136,8 +139,8 @@ async function bottomIs(page, expected) {
     frameBlocksContent: getComputedStyle(nav.parentElement).pointerEvents,
   }));
   assert.ok(Math.abs(result.bottom - expected) <= 1, JSON.stringify(result));
-  assert.equal(result.frameTop, 0);
-  assert.equal(result.navPosition, 'absolute');
+  assert.ok(result.frameTop >= 0 && result.frameTop < expected, JSON.stringify(result));
+  assert.equal(result.navPosition, 'relative');
   assert.equal(result.background, 'rgb(255, 255, 255)');
   assert.equal(result.frameBlocksContent, 'none');
 }
@@ -152,7 +155,7 @@ for (const standalone of [false, true]) {
       { height: 844, cssHeight: 844 }, { height: 730, cssHeight: 730 }, { height: 844, cssHeight: 844 },
     ];
     for (const [index, state] of sizes.entries()) {
-      await page.evaluate(y => window.scrollTo(0, y), index % 2 ? 850 : 40);
+      await page.evaluate(y => window.navigationFixtureScrollTo(0, y), index % 2 ? 850 : 40);
       await viewport(page, state);
       await bottomIs(page, state.cssHeight);
     }
@@ -177,7 +180,7 @@ for (const standalone of [false, true]) {
     await page.locator('#mobile-bottom-nav').waitFor({ state: 'visible' });
     await bottomIs(page, 844);
     for (let index = 0; index < 3; index++) {
-      await page.evaluate(() => window.scrollTo(0, 900));
+      await page.evaluate(() => window.navigationFixtureScrollTo(0, 900));
       await viewport(page, { height: 812, innerHeight: 730, cssHeight: 812, event: 'scroll' });
       await bottomIs(page, 812);
       await viewport(page, { height: 844, cssHeight: 844, event: 'pageshow' });
@@ -188,10 +191,10 @@ for (const standalone of [false, true]) {
 test('body scroll locks, return from overlays, orientation and inert dialogs retain the same dock geometry', async t => {
   const page = await fixture(t, { standalone: true });
   await page.evaluate(() => {
-    window.scrollTo(0, 600); document.body.classList.add('ts-scroll-lock'); document.body.style.top = '-600px';
+    window.navigationFixtureScrollTo(0, 600); document.body.classList.add('ts-scroll-lock'); document.body.style.top = '-600px';
   });
   await viewport(page, { height: 844 }); await bottomIs(page, 844);
-  await page.evaluate(() => { document.body.classList.remove('ts-scroll-lock'); document.body.style.top = ''; window.scrollTo(0, 600); });
+  await page.evaluate(() => { document.body.classList.remove('ts-scroll-lock'); document.body.style.top = ''; window.navigationFixtureScrollTo(0, 600); });
   await viewport(page, { height: 844, cssHeight: 844, event: 'pageshow' }); await bottomIs(page, 844);
   await page.setViewportSize({ width: 844, height: 390 });
   await viewport(page, { height: 390, innerHeight: 390 });
@@ -239,7 +242,7 @@ for (const publish of [true, false]) {
       assert.equal(await page.evaluate(() => window.publicationFailure), undefined);
     }
     for (const y of [900, 40, 1200, 0]) {
-      await page.evaluate(y => window.scrollTo(0, y), y);
+      await page.evaluate(y => window.navigationFixtureScrollTo(0, y), y);
       await viewport(page, { height: 724, innerHeight: 724, event: 'scroll' });
       await bottomIs(page, 844);
     }
@@ -249,11 +252,11 @@ for (const publish of [true, false]) {
 }
 
 for (const standalone of [false, true]) {
-  test(`${standalone ? 'installed app' : 'browser'}: leaving the real map releases search focus and refreshes the dock after its exit animation`, async t => {
+  test(`${standalone ? 'installed app' : 'browser'}: leaving the real map releases search focus and preserves the footer layout row`, async t => {
     const page = await fixture(t, { standalone });
     for (const focused of [true, false]) {
       await page.evaluate(() => {
-        window.scrollTo(0, 600);
+        window.navigationFixtureScrollTo(0, 600);
         window.mapExitComplete = false;
         window.dockBeforeMap = document.querySelector('#mobile-navigation-viewport');
         document.querySelector('#open-map').click();
@@ -271,11 +274,11 @@ for (const standalone of [false, true]) {
       await close.waitFor({ state: 'detached' });
       await viewport(page, { height: 724, innerHeight: 724 });
       await bottomIs(page, 844);
-      assert.equal(await page.evaluate(() => window.dockBeforeMapExitComplete !== document.querySelector('#mobile-navigation-viewport')), true, 'The dock is refreshed after the exit animation, not only when the body unlocks');
-      assert.equal(await page.evaluate(() => window.dockBeforeMap !== document.querySelector('#mobile-navigation-viewport')), true, 'The fixed layer is renewed rather than retaining its old viewport origin');
+      assert.equal(await page.evaluate(() => window.dockBeforeMapExitComplete === document.querySelector('#mobile-navigation-viewport')), true, 'The dock remains a stable layout row after overlay exit');
+      assert.equal(await page.evaluate(() => window.dockBeforeMap === document.querySelector('#mobile-navigation-viewport')), true, 'The same footer stays mounted across the map lifecycle');
       assert.equal(await page.locator('#mobile-navigation-viewport').evaluate(frame => frame.style.height), '');
       for (const y of [600, 1100, 40]) {
-        await page.evaluate(y => window.scrollTo(0, y), y);
+        await page.evaluate(y => window.navigationFixtureScrollTo(0, y), y);
         await viewport(page, { height: 724, innerHeight: 724, event: 'scroll' });
         await bottomIs(page, 844);
       }
@@ -313,12 +316,12 @@ for (const standalone of [false, true]) {
     await page.waitForFunction(() => window.profileExitComplete);
     await page.locator('.ts-profile-editor').waitFor({ state: 'detached' });
     await viewport(page, { height: 724, innerHeight: 724 });
-    assert.equal(await page.evaluate(() => window.dockAtProfileExit !== document.querySelector('#mobile-navigation-viewport')), true, 'Refresh follows the actual profile removal, including its animation');
+    assert.equal(await page.evaluate(() => window.dockAtProfileExit === document.querySelector('#mobile-navigation-viewport')), true, 'Refresh follows the actual profile removal, including its animation');
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('role') === 'combobox'), false);
     assert.equal(await page.evaluate(() => document.body.classList.contains('ts-scroll-lock')), false);
     if (action === 'save') assert.equal(await page.evaluate(() => window.profileSaved.category), 'Bar');
     else assert.equal(await page.evaluate(() => window.profileSaved), undefined);
-    for (const y of [900, 40, 1200, 0]) { await page.evaluate(y => window.scrollTo(0,y),y); await bottomIs(page,844); }
+    for (const y of [900, 40, 1200, 0]) { await page.evaluate(y => window.navigationFixtureScrollTo(0,y),y); await bottomIs(page,844); }
   });
   test(`${standalone ? 'installed app' : 'browser'}: a new animated page inherits navigation recovery without importing a helper`, async t => {
     const page = await fixture(t, { standalone });
@@ -328,12 +331,12 @@ for (const standalone of [false, true]) {
     await page.getByRole('button', { name: 'Chiudi nuova pagina' }).evaluate(button => button.click());
     await page.waitForFunction(() => window.futureExitComplete);
     await viewport(page, { height: 724, innerHeight: 724 });
-    assert.equal(await page.evaluate(() => window.dockAtFutureExit !== document.querySelector('#mobile-navigation-viewport')), true, 'No manual viewport-restored event is required');
+    assert.equal(await page.evaluate(() => window.dockAtFutureExit === document.querySelector('#mobile-navigation-viewport')), true, 'No manual viewport-restored event is required');
     await bottomIs(page,844);
   });
 }
 
-test('central recovery covers nested portal dialogs and ignores ordinary feed updates', async t => {
+test('the static footer survives nested portal dialogs and ordinary feed updates', async t => {
   const page = await fixture(t);
   await page.evaluate(() => {
     window.originalDock = document.querySelector('#mobile-navigation-viewport');
@@ -350,7 +353,7 @@ test('central recovery covers nested portal dialogs and ignores ordinary feed up
   await page.locator('#future-portal').waitFor({ state: 'attached' });
   await page.evaluate(() => document.querySelector('#future-portal').remove());
   await viewport(page, { height: 844 });
-  assert.equal(await page.evaluate(() => window.originalDock !== document.querySelector('#mobile-navigation-viewport')), true);
+  assert.equal(await page.evaluate(() => window.originalDock === document.querySelector('#mobile-navigation-viewport')), true);
   await bottomIs(page, 844);
 });
 
@@ -380,10 +383,10 @@ for (const guest of [false,true]) test(`${guest?'guest':'member'} installed app:
     await page.evaluate(()=>{window.dockAfterExit=document.querySelector('#mobile-navigation-viewport');});
     await viewport(page,{height:724,innerHeight:724,offsetTop:80});
     await bottomIs(page,844);
-    await page.waitForFunction(()=>window.dockAfterExit!==document.querySelector('#mobile-navigation-viewport'), null, {timeout:5000});
+    await page.waitForFunction(()=>window.dockAfterExit===document.querySelector('#mobile-navigation-viewport'), null, {timeout:5000});
     await bottomIs(page,844);
     assert.equal(await page.locator('#mobile-navigation-viewport').evaluate(el=>el.style.height),'');
-    for(const y of [40,900,600]) {await page.evaluate(y=>window.scrollTo(0,y),y);await bottomIs(page,844);}
+    for(const y of [40,900,600]) {await page.evaluate(y=>window.navigationFixtureScrollTo(0,y),y);await bottomIs(page,844);}
     assert.equal(await page.evaluate(()=>document.querySelector('#mobile-bottom-nav').contains(document.elementFromPoint(10,842))),true);
     await page.waitForTimeout(1550);
     await page.evaluate(()=>{window.settledDock=document.querySelector('#mobile-navigation-viewport');});
@@ -392,11 +395,11 @@ for (const guest of [false,true]) test(`${guest?'guest':'member'} installed app:
   }
 });
 
-for (const standalone of [false, true]) test(`${standalone ? 'installed app' : 'browser'}: resuming from background renews the dock and waits for late viewport updates`, async t => {
+for (const standalone of [false, true]) test(`${standalone ? 'installed app' : 'browser'}: resuming from background preserves the footer through late viewport updates`, async t => {
   const page = await fixture(t, { standalone });
   for (let attempt = 0; attempt < 2; attempt++) {
     await page.evaluate(() => {
-      window.scrollTo(0, 900);
+      window.navigationFixtureScrollTo(0, 900);
       window.dockBeforeResume = document.querySelector('#mobile-navigation-viewport');
       Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
       document.dispatchEvent(new Event('visibilitychange'));
@@ -407,14 +410,14 @@ for (const standalone of [false, true]) test(`${standalone ? 'installed app' : '
       Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
       document.dispatchEvent(new Event('visibilitychange'));
     });
-    await page.waitForFunction(() => window.dockBeforeResume !== document.querySelector('#mobile-navigation-viewport'), null, {timeout:3000});
+    await page.waitForFunction(() => window.dockBeforeResume === document.querySelector('#mobile-navigation-viewport'), null, {timeout:3000});
     await page.waitForTimeout(450);
     await page.evaluate(() => { window.dockBeforeLateResume = document.querySelector('#mobile-navigation-viewport'); });
     await viewport(page, { height: 724, innerHeight: 724, offsetTop: 80 });
-    await page.waitForFunction(() => window.dockBeforeLateResume !== document.querySelector('#mobile-navigation-viewport'), null, {timeout:3000});
+    await page.waitForFunction(() => window.dockBeforeLateResume === document.querySelector('#mobile-navigation-viewport'), null, {timeout:3000});
     await bottomIs(page, 844);
     assert.equal(await page.locator('#mobile-navigation-viewport').evaluate(frame => frame.style.height), '');
-    assert.equal(await page.evaluate(() => window.scrollY), 900);
+    assert.equal(await page.evaluate(() => window.navigationFixtureScrollY()), 900);
     await page.waitForTimeout(1600);
   }
 });
@@ -434,7 +437,7 @@ test('BFCache and window-focus resumes recover centrally without discarding a fo
   assert.equal(await page.evaluate(() => window.focusedDock === document.querySelector('#mobile-navigation-viewport')), true);
   await input.blur();
   await viewport(page, { height: 844, innerHeight: 844 });
-  await page.waitForFunction(() => window.focusedDock !== document.querySelector('#mobile-navigation-viewport'));
+  await page.waitForFunction(() => window.focusedDock === document.querySelector('#mobile-navigation-viewport'));
   await bottomIs(page, 844);
   await page.waitForTimeout(1700);
   for (const event of ['pageshow','focus']) {
@@ -442,7 +445,24 @@ test('BFCache and window-focus resumes recover centrally without discarding a fo
       window.resumeDock = document.querySelector('#mobile-navigation-viewport');
       window.dispatchEvent(event === 'pageshow' ? new PageTransitionEvent('pageshow', {persisted:true}) : new Event('focus'));
     }, event);
-    await page.waitForFunction(() => window.resumeDock !== document.querySelector('#mobile-navigation-viewport'), null, {timeout:3000});
+    await page.waitForFunction(() => window.resumeDock === document.querySelector('#mobile-navigation-viewport'), null, {timeout:3000});
     await bottomIs(page, 844);
   }
+});
+
+
+test('static shell and idle watchdog repair drift without remounting, reloading or growing the page', async t => {
+  const page=await fixture(t,{standalone:true});
+  await page.evaluate(()=>window.navigationFixtureScrollTo(0,900)); await bottomIs(page,844);
+  assert.equal(await page.evaluate(()=>window.scrollY),0,'The document does not scroll behind the footer');
+  const height=await page.evaluate(()=>document.getElementById('app-scroll-region').scrollHeight);
+  await page.evaluate(()=>{window.watchdogDock=document.querySelector('#mobile-navigation-viewport');window.watchdogDock.style.transform='translateY(-120px)';});
+  await page.waitForFunction(()=>document.querySelector('#mobile-navigation-viewport').style.transform==='',null,{timeout:2500});
+  await bottomIs(page,844);assert.equal(await page.evaluate(()=>window.watchdogDock===document.querySelector('#mobile-navigation-viewport')),true);
+  assert.equal(await page.evaluate(()=>window.navigationFixtureScrollY()),900);
+  await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));window.watchdogDock.style.transform='translateY(-120px)';});
+  await page.waitForTimeout(1200);assert.notEqual(await page.locator('#mobile-navigation-viewport').evaluate(el=>el.style.transform),'');
+  await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));});
+  await page.waitForFunction(()=>document.querySelector('#mobile-navigation-viewport').style.transform==='');
+  for(let n=0;n<5;n++){await page.evaluate(()=>window.navigationFixtureScrollTo(0,1e6));await bottomIs(page,844);assert.equal(await page.evaluate(()=>document.getElementById('app-scroll-region').scrollHeight),height);}
 });

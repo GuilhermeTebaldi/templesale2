@@ -1,3 +1,4 @@
+import { appScrollRegion, appScrollTop } from "../lib/app-scroll";
 import { WhatsappContactLink } from './WhatsappContact';
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -133,7 +134,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
           void onLoadMorePosts();
         }
       },
-      { root: null, rootMargin: '900px 0px', threshold: 0 },
+      { root: appScrollRegion(), rootMargin: '900px 0px', threshold: 0 },
     );
 
     observer.observe(sentinel);
@@ -146,7 +147,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
       for (const entry of entries) {
         if (entry.isIntersecting) onPostSeen(entry.target.id.replace('feed-post-', ''));
       }
-    }, { rootMargin: '0px 0px 240px 0px', threshold: 0 });
+    }, { root: appScrollRegion(), rootMargin: '0px 0px 240px 0px', threshold: 0 });
     for (const post of posts) {
       const element = document.getElementById('feed-post-' + post.id);
       if (element) observer.observe(element);
@@ -156,7 +157,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
 
   // Pull-to-refresh touch handlers
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (window.scrollY <= 3 && refreshState === 'idle') {
+    if (appScrollTop() <= 3 && refreshState === 'idle') {
       touchStartY.current = e.touches[0].clientY;
       isPullingRef.current = true;
     }
@@ -165,7 +166,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!isPullingRef.current || refreshState === 'refreshing') return;
 
-    if (window.scrollY > 3) {
+    if (appScrollTop() > 3) {
       isPullingRef.current = false;
       setPullDistance(0);
       setRefreshState('idle');
