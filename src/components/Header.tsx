@@ -145,7 +145,7 @@ export const Header: React.FC<HeaderProps> = ({
       frameId = window.requestAnimationFrame(() => {
         frameId = 0;
         updateKeyboardState();
-        if (navigationRecoveryPending && !document.body.classList.contains('ts-scroll-lock') && !isTextInputFocused()) {
+        if (navigationRecoveryPending && document.visibilityState === 'visible' && !document.body.classList.contains('ts-scroll-lock') && !isTextInputFocused()) {
           navigationRecoveryPending = false;
           setNavigationLayerVersion(version => version + 1);
         }
@@ -174,6 +174,29 @@ export const Header: React.FC<HeaderProps> = ({
       scheduleKeyboardState();
       if (Date.now() < recoveryUntil) settleNavigationLayer();
     };
+    let wasHidden = document.visibilityState === 'hidden';
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        wasHidden = true;
+        window.clearTimeout(recoveryTimer);
+        recoveryUntil = 0;
+      } else if (wasHidden) {
+        wasHidden = false;
+        restoreNavigationLayer();
+      } else scheduleKeyboardState();
+    };
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted || wasHidden) handleResume();
+      else scheduleKeyboardState();
+    };
+    const handleResume = () => {
+      if (document.visibilityState !== 'visible') return;
+      wasHidden = false;
+      restoreNavigationLayer();
+    };
+    const handleWindowFocus = (event: FocusEvent) => {
+      if (event.target === window) handleResume();
+    };
     const handleFocusOut = (event: FocusEvent) => {
       if (isTextInputFocused(event.target)) restoreNavigationLayer();
       else scheduleKeyboardState();
@@ -198,8 +221,9 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener('scroll', scheduleKeyboardState, { passive: true });
     window.addEventListener('resize', scheduleKeyboardState);
     window.addEventListener('orientationchange', scheduleKeyboardState);
-    window.addEventListener('pageshow', scheduleKeyboardState);
-    document.addEventListener('visibilitychange', scheduleKeyboardState);
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focusin', scheduleKeyboardState);
     window.addEventListener('focusout', handleFocusOut);
 
@@ -215,8 +239,9 @@ export const Header: React.FC<HeaderProps> = ({
       window.removeEventListener('scroll', scheduleKeyboardState);
       window.removeEventListener('resize', scheduleKeyboardState);
       window.removeEventListener('orientationchange', scheduleKeyboardState);
-      window.removeEventListener('pageshow', scheduleKeyboardState);
-      document.removeEventListener('visibilitychange', scheduleKeyboardState);
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focusin', scheduleKeyboardState);
       window.removeEventListener('focusout', handleFocusOut);
     };

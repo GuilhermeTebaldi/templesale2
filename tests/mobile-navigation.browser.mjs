@@ -391,3 +391,58 @@ for (const guest of [false,true]) test(`${guest?'guest':'member'} installed app:
     assert.equal(await page.evaluate(()=>window.settledDock===document.querySelector('#mobile-navigation-viewport')),true,'Ordinary later scrolling must not keep remounting the dock');
   }
 });
+
+for (const standalone of [false, true]) test(`${standalone ? 'installed app' : 'browser'}: resuming from background renews the dock and waits for late viewport updates`, async t => {
+  const page = await fixture(t, { standalone });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await page.evaluate(() => {
+      window.scrollTo(0, 900);
+      window.dockBeforeResume = document.querySelector('#mobile-navigation-viewport');
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await viewport(page, { height: 420, innerHeight: 420, offsetTop: 80 });
+    assert.equal(await page.evaluate(() => window.dockBeforeResume === document.querySelector('#mobile-navigation-viewport')), true, 'Do not recover while backgrounded');
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForFunction(() => window.dockBeforeResume !== document.querySelector('#mobile-navigation-viewport'), null, {timeout:3000});
+    await page.waitForTimeout(450);
+    await page.evaluate(() => { window.dockBeforeLateResume = document.querySelector('#mobile-navigation-viewport'); });
+    await viewport(page, { height: 724, innerHeight: 724, offsetTop: 80 });
+    await page.waitForFunction(() => window.dockBeforeLateResume !== document.querySelector('#mobile-navigation-viewport'), null, {timeout:3000});
+    await bottomIs(page, 844);
+    assert.equal(await page.locator('#mobile-navigation-viewport').evaluate(frame => frame.style.height), '');
+    assert.equal(await page.evaluate(() => window.scrollY), 900);
+    await page.waitForTimeout(1600);
+  }
+});
+
+test('BFCache and window-focus resumes recover centrally without discarding a focused draft', async t => {
+  const page = await fixture(t, { standalone: true });
+  const input = page.locator('#keyboard-input'); await input.fill('Bozza conservata'); await input.focus();
+  await viewport(page, { height: 420, innerHeight: 420 });
+  await page.evaluate(() => {
+    window.focusedDock = document.querySelector('#mobile-navigation-viewport');
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    window.dispatchEvent(new Event('focus'));
+  });
+  await page.waitForTimeout(450);
+  assert.equal(await input.inputValue(), 'Bozza conservata');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'keyboard-input');
+  assert.equal(await page.evaluate(() => window.focusedDock === document.querySelector('#mobile-navigation-viewport')), true);
+  await input.blur();
+  await viewport(page, { height: 844, innerHeight: 844 });
+  await page.waitForFunction(() => window.focusedDock !== document.querySelector('#mobile-navigation-viewport'));
+  await bottomIs(page, 844);
+  await page.waitForTimeout(1700);
+  for (const event of ['pageshow','focus']) {
+    await page.evaluate(event => {
+      window.resumeDock = document.querySelector('#mobile-navigation-viewport');
+      window.dispatchEvent(event === 'pageshow' ? new PageTransitionEvent('pageshow', {persisted:true}) : new Event('focus'));
+    }, event);
+    await page.waitForFunction(() => window.resumeDock !== document.querySelector('#mobile-navigation-viewport'), null, {timeout:3000});
+    await bottomIs(page, 844);
+  }
+});
