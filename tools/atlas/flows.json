@@ -1,0 +1,79 @@
+[
+  {
+    "id": "mobile-navigation",
+    "title": "Barra inferior: mapa, teclado e retorno ao aplicativo",
+    "description": "Roteiro de investigação editorial. Relaciona estado, geometria, bloqueio de rolagem, encerramento da sobreposição e recuperação. Não é um registro de execução.",
+    "steps": [
+      { "file": "src/App.tsx", "anchor": "const [isMapOpen, setIsMapOpen]", "label": "Estado de abertura do mapa" },
+      { "file": "src/components/Header.tsx", "anchor": "import MobileNavigation", "label": "Cabeçalho integra o componente único da barra" },
+      { "file": "src/index.css", "anchor": ".ts-app-shell {", "label": "Estrutura visual: cabeçalho, região rolável e barra em linhas separadas" },
+      { "file": "src/lib/app-scroll.ts", "anchor": "export function appScrollRegion", "label": "Proprietário comum da rolagem móvel e desktop" },
+      { "file": "src/App.tsx", "anchor": "const unlockScroll = () =>", "label": "Desbloqueio e restauração da posição após sobreposições" },
+      { "file": "src/App.tsx", "anchor": "<AnimatePresence onExitComplete={notifyOverlayViewportRestored}>", "label": "Animação de saída notifica a restauração da tela" },
+      { "file": "src/lib/overlay-viewport.ts", "anchor": "window.dispatchEvent", "label": "Emissão do evento central de restauração" },
+      { "file": "src/components/MobileNavigation.tsx", "anchor": "const events =", "label": "Eventos de teclado, foco, orientação e retorno da página" },
+      { "file": "src/components/MobileNavigation.tsx", "anchor": "const watchdog =", "label": "Verificação existente a cada segundo, condicionada à visibilidade" }
+    ],
+    "tests": ["tests/mobile-navigation.browser.mjs", "tests/desktop-layout.browser.mjs"]
+  },
+  {
+    "id": "google-login",
+    "title": "Login Google e sessão existente",
+    "description": "Entradas para investigar redirecionamento, provedor e transporte de sessão, preservando a autenticação existente.",
+    "steps": [
+      { "file": "src/components/Auth.tsx", "anchor": "await loginWithRedirect({", "label": "Chamada de login pelo SDK existente" },
+      { "file": "src/main.tsx", "anchor": "const handleAuth0RedirectCallback", "label": "Retorno do provedor e restauração do endereço" },
+      { "file": "src/main.tsx", "anchor": "<Auth0Provider", "label": "Configuração do provedor React" },
+      { "file": "src/lib/api.ts", "anchor": "function readAuthToken()", "label": "Leitura da sessão usada pelo cliente da API" }
+    ],
+    "tests": ["tests/auth0-google.browser.mjs", "tests/admin-session.test.mjs"]
+  },
+  {
+    "id": "location-map",
+    "title": "Localização e descoberta no mapa",
+    "description": "Localização durante o uso, interface do mapa e consultas de proximidade. Permissões do navegador não equivalem às preferências salvas pelo site.",
+    "steps": [
+      { "file": "src/lib/discovery-location.ts", "anchor": "function readSavedPosition()", "label": "Recuperação da posição salva" },
+      { "file": "src/lib/discovery-location.ts", "anchor": "navigator.geolocation.watchPosition", "label": "Acompanhamento da posição durante o uso" },
+      { "file": "src/components/ProductMap.tsx", "anchor": "interface ProductMapProps", "label": "Contrato de entrada e ações do mapa" },
+      { "file": "server/discovery.ts", "anchor": "export function buildDiscoveryQuery", "label": "Consulta geográfica no servidor" }
+    ],
+    "tests": ["tests/discovery-location.browser.mjs", "tests/discovery.test.mjs", "tests/map-marker-layout.test.mjs"]
+  },
+  {
+    "id": "photo-draft",
+    "title": "Foto, edição, rascunho e publicação",
+    "description": "Seleção nativa, editor existente e persistência do rascunho. O roteiro não realiza uploads nem publica fotos.",
+    "steps": [
+      { "file": "src/components/photo-publisher/components/CameraCapture.tsx", "anchor": "usesSystemPhotoSourceMenu", "label": "Escolha da origem da foto no dispositivo" },
+      { "file": "src/components/NewPublication.tsx", "anchor": "export default function NewPublication", "label": "Editor, legenda e ciclo da publicação" },
+      { "file": "src/lib/publication-draft.ts", "anchor": "savePublicationDraft", "label": "Persistência e recuperação do rascunho" },
+      { "file": "server/publication-direct-upload.ts", "anchor": "createPublicationDirectUpload", "label": "Serviço de autorização e acompanhamento do envio" }
+    ],
+    "tests": ["tests/native-camera.browser.mjs", "tests/mobile-navigation.browser.mjs", "tests/write-operation.test.ts"]
+  },
+  {
+    "id": "trash-restore",
+    "title": "Excluídos, restauração e propriedade",
+    "description": "Operações privadas por proprietário e atualização da apresentação das publicações. Não executa exclusões reais.",
+    "steps": [
+      { "file": "src/components/DeletedPublications.tsx", "anchor": "export default function DeletedPublications", "label": "Interface privada dos excluídos" },
+      { "file": "server/publication-trash.ts", "anchor": "export function createPublicationTrashService", "label": "Serviço de ocultação e propriedade" },
+      { "file": "server/publication-trash.ts", "anchor": "async restore(", "label": "Restauração da publicação" },
+      { "file": "server/publication-trash.ts", "anchor": "async purge(", "label": "Remoção permanente validada pelo proprietário" }
+    ],
+    "tests": ["tests/publication-trash.test.mjs", "tests/deleted-publications.browser.mjs", "tests/profile-publication-count.browser.mjs"]
+  },
+  {
+    "id": "image-viewing",
+    "title": "Perfil, visualização e reutilização de imagens",
+    "description": "Arquivos relevantes para investigar carregamento e reaproveitamento de imagens. A existência de antecipação não comprova o desempenho num aparelho específico.",
+    "steps": [
+      { "file": "src/components/CompanyProfile.tsx", "anchor": "CompanyProfile", "label": "Grade do perfil empresarial" },
+      { "file": "src/components/PublicationPhotoViewer.tsx", "anchor": "PublicationPhotoViewer", "label": "Visualizador de fotos" },
+      { "file": "src/lib/image-memory.ts", "anchor": "export function preloadAdjacentImages", "label": "Antecipação limitada das imagens vizinhas" },
+      { "file": "src/lib/product-images.ts", "anchor": "getCompatibleImageUrl", "label": "Seleção da variante compatível da imagem" }
+    ],
+    "tests": ["tests/image-loading.browser.mjs", "tests/profile-publications.browser.mjs"]
+  }
+]

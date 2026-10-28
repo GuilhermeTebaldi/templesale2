@@ -1,0 +1,59 @@
+name: Code Atlas
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: code-atlas-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  atlas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install analysis dependencies without application lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Test the atlas generator
+        run: node --test tests/atlas.test.mjs
+      - name: Generate committed snapshot and comparison
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          atlas_ref="${PR_HEAD:-$GITHUB_SHA}"
+          atlas_base="${PR_BASE:-${PUSH_BASE:-}}"
+          args=(--ref "$atlas_ref" --repository "$REPOSITORY" --out "$RUNNER_TEMP/templesale-atlas" --strict)
+          if [[ "$atlas_base" =~ ^[0-9a-f]{40}$ ]] && [[ ! "$atlas_base" =~ ^0+$ ]]; then
+            git cat-file -e "$atlas_base^{commit}"
+            args+=(--base "$atlas_base")
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]] && git rev-parse --verify "$atlas_ref^" >/dev/null 2>&1; then
+            args+=(--base "$atlas_ref^")
+          fi
+          node tools/atlas/generate.mjs "${args[@]}"
+          cat "$RUNNER_TEMP/templesale-atlas/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save standalone atlas (HTML, JSON and summary)
+        uses: actions/upload-artifact@v4
+        with:
+          name: templesale-atlas-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/templesale-atlas/
+          if-no-files-found: error
+          retention-days: 90
