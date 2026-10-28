@@ -28,6 +28,8 @@ Estas são preferências explícitas de Guilherme para este projeto. Leia-as ant
 
 ## Lições concretas deste projeto
 
+- Atlas de manutenção: consulte `tools/atlas/README.md` e gere `node tools/atlas/generate.mjs --ref HEAD --base HEAD^ --strict` antes de investigar dependências e fluxos críticos. O atlas lê commits, não alterações locais ainda não commitadas. Use importadores, chamadas resolvidas, candidatos CSS e testes relacionados para orientar a investigação; isso não substitui reprodução ou testes reais. Atualize as âncoras editoriais de `tools/atlas/flows.json` quando um fluxo mudar, sem modificar o aplicativo só para satisfazer a documentação.
+
 - Foto no celular: no iPhone/iPad, abra diretamente o seletor nativo sem `capture`, que já oferece câmera e biblioteca. No Android, preserve atalhos separados de câmera e galeria onde o seletor não oferece ambos. As fotos seguem para o editor existente. Não substitua esse fluxo por uma câmera de vídeo com `getUserMedia` sem necessidade demonstrada.
 - Localização: use um único `watchPosition` para obter a primeira posição e as atualizações. Não duplique com `getCurrentPosition` nem reinicie pedidos em cada troca de tela ou retorno ao app.
 - Reaproveite a autorização válida do navegador. Preferências salvas pelo site não são permissões do sistema; não apague a escolha do usuário a cada publicação e não finja uma autorização permanente.
