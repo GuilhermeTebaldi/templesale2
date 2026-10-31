@@ -3755,7 +3755,20 @@ async function selectEstablishmentsRows(input: {
       users: publicAccountRows('users', accountArchives?.ready),
       archived: Boolean(accountArchives?.ready),
     });
-    if (pgPool) return (await searchCompanies(pgPool, built)).map(normalizeEstablishmentRow);
+    if (pgPool) {
+      const rows = await searchCompanies(pgPool, built);
+      if (rows.length) return rows.map(normalizeEstablishmentRow);
+      // Approximation only after a real empty result, against stored names,
+      // categories, cities and keywords; never mix guesses into exact results.
+      const corrected = buildCompanySearch({ ...input, search, limit, allowTypos: true }, true, {
+        publications: publicAccountRows('establishment_publications', accountArchives?.ready, publicationTrash?.ready),
+        products: publicAccountRows('products', accountArchives?.ready),
+        users: publicAccountRows('users', accountArchives?.ready),
+        archived: Boolean(accountArchives?.ready),
+      });
+      if (corrected.sql === built.sql) return [];
+      return (await searchCompanies(pgPool, corrected)).map(normalizeEstablishmentRow);
+    }
     const bound = sqliteBindings(built.sql, built.values);
     return (requireSqliteDb().prepare(bound.sql).all(...bound.values) as Record<string, unknown>[]).map(normalizeEstablishmentRow);
   }
