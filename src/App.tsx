@@ -377,6 +377,8 @@ export default function App() {
   const [likedProducts, setLikedProducts] = React.useState<Product[]>([]);
   const [establishments, setEstablishments] = React.useState<EstablishmentDto[]>([]);
   const [establishmentListRevision, setEstablishmentListRevision] = React.useState(0);
+  const [establishmentsSearchQuery, setEstablishmentsSearchQuery] = React.useState<string | null>(null);
+  const [establishmentsSearchError, setEstablishmentsSearchError] = React.useState('');
   const refreshEstablishments = React.useCallback(() => setEstablishmentListRevision(value => value + 1), []);
   const [myEstablishment, setMyEstablishment] = React.useState<EstablishmentDto | null>(null);
   const [homePublication, setHomePublication] = React.useState<{ establishmentId: number; publicationId: number | null } | null>(null);
@@ -758,20 +760,29 @@ export default function App() {
   React.useEffect(() => {
     if (socialActiveTab !== 'search' && socialActiveTab !== 'feed' && !isMapOpen) return;
     const controller = new AbortController();
+    const query = debouncedSearchQuery.trim();
     void (async () => {
       setIsLoadingEstablishments(true);
+      setEstablishmentsSearchError('');
       try {
         const list = await api.getEstablishments({
-          search: debouncedSearchQuery,
+          search: query,
           category: activeCategory,
           ...(discoveryOrigin?.lat !== undefined && discoveryOrigin.lng !== undefined ? { lat: discoveryOrigin.lat, lng: discoveryOrigin.lng } : {}),
           ...(discoveryOrigin?.city ? { city: discoveryOrigin.city } : {}),
           limit: 80,
           previews: socialActiveTab === 'search',
         }, controller.signal);
-        if (!controller.signal.aborted) setEstablishments(list);
+        if (!controller.signal.aborted) {
+          setEstablishments(list);
+          setEstablishmentsSearchQuery(query);
+        }
       } catch (error) {
-        if (!controller.signal.aborted) console.error("Error fetching establishments:", error);
+        if (!controller.signal.aborted) {
+          setEstablishmentsSearchQuery(query);
+          setEstablishmentsSearchError('Ricerca non disponibile. Riprova.');
+          console.error("Error fetching establishments:", error);
+        }
       } finally {
         if (!controller.signal.aborted) setIsLoadingEstablishments(false);
       }
@@ -3742,11 +3753,12 @@ export default function App() {
               if (query === debouncedSearchQuery) refreshEstablishments();
               else setDebouncedSearchQuery(query);
             }}
-            isSearching={isLoadingEstablishments || searchQuery.trim() !== debouncedSearchQuery}
-            companies={establishments.flatMap(establishment => {
+            isSearching={isLoadingEstablishments || searchQuery.trim() !== debouncedSearchQuery || establishmentsSearchQuery !== searchQuery.trim()}
+            searchError={establishmentsSearchError}
+            companies={establishmentsSearchQuery === searchQuery.trim() && !isLoadingEstablishments && !establishmentsSearchError ? establishments.flatMap(establishment => {
               const company = socialCompanies.find(item => item.id === socialCompanyIdFromEstablishmentId(establishment.id));
               return company ? [company] : [];
-            })}
+            }) : []}
             serverResults
             posts={socialPosts}
             onSelectCompany={selectSocialCompany}

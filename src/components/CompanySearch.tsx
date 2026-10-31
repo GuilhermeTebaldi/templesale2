@@ -13,6 +13,7 @@ interface CompanySearchProps {
   onSearchChange: (query: string) => void;
   onSearchSubmit?: () => void;
   isSearching?: boolean;
+  searchError?: string;
   companies: Company[];
   posts: Post[];
   onSelectCompany: (companyId: string) => void;
@@ -21,8 +22,6 @@ interface CompanySearchProps {
   serverResults?: boolean;
   origin?: { lat: number; lng: number };
 }
-
-const QUICK_TAGS = ['bar', 'pizza', 'barbiere', 'Ardea', 'birra', 'motori', 'caffè', 'moda'];
 
 function normalizeSearchTerm(value: string): string {
   return String(value ?? "")
@@ -37,6 +36,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
   onSearchChange,
   onSearchSubmit,
   isSearching = false,
+  searchError = '',
   companies,
   posts,
   onSelectCompany,
@@ -48,6 +48,18 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const [showSearchFeedback, setShowSearchFeedback] = useState(false);
   const [submission, setSubmission] = useState(0);
+  const [quickTags, setQuickTags] = useState<string[]>([]);
+  useEffect(() => {
+    if (searchQuery.trim() || isSearching || searchError) return;
+    const seen = new Set<string>();
+    const tags = [...companies.map(company => company.category), ...companies.map(company => company.city), ...companies.flatMap(company => company.keywords)]
+      .map(value => String(value || '').trim()).filter(value => {
+        const key = normalizeSearchTerm(value);
+        if (!key || seen.has(key)) return false;
+        seen.add(key); return true;
+      }).slice(0, 8);
+    setQuickTags(current => JSON.stringify(current) === JSON.stringify(tags) ? current : tags);
+  }, [companies, searchQuery, isSearching, searchError]);
   useEffect(() => {
     if (isSearching) { setShowSearchFeedback(true); return; }
     const timer = setTimeout(() => setShowSearchFeedback(false), 450);
@@ -230,7 +242,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
       </form>
 
       <div role="status" aria-live="polite" className="min-h-4 text-xs text-neutral-500 flex items-center gap-1.5">
-        {showSearchFeedback && (isSearching ? <><LoaderCircle className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" /><span>Ricerca in corso…</span></> : <><CheckCircle2 className="w-3.5 h-3.5" /><span>Ricerca inviata</span></>)}
+        {searchError && !isSearching ? <span>{searchError}</span> : showSearchFeedback && (isSearching ? <><LoaderCircle className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" /><span>Ricerca in corso…</span></> : <><CheckCircle2 className="w-3.5 h-3.5" /><span>Ricerca inviata</span></>)}
       </div>
 
       {/* ÁREA DE RÁPIDOS: Tags e filtros rápidos */}
@@ -239,7 +251,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
           <Sparkles className="w-3.5 h-3.5 text-amber-400 mr-1 shrink-0" />
           Ricerca rapida:
         </span>
-        {QUICK_TAGS.map((tag) => {
+        {quickTags.map((tag) => {
           const isSelected = searchQuery.toLowerCase() === tag.toLowerCase();
           return (
             <button
@@ -270,7 +282,7 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
           <div className="flex items-center space-x-1.5 truncate">
             <span>Risultati per</span>
             <strong className="text-neutral-100 font-medium truncate">"{searchQuery}"</strong>
-            <span className="text-neutral-500 font-mono text-[11px]">({searchResults.length})</span>
+            {!isSearching && !searchError && <span className="text-neutral-500 font-mono text-[11px]">({searchResults.length})</span>}
           </div>
           <button
             type="button"
@@ -285,17 +297,13 @@ export const CompanySearch: React.FC<CompanySearchProps> = ({
       )}
 
       {/* Companies Results List */}
-      {searchResults.length === 0 ? (
+      {isSearching || searchError ? null : searchResults.length === 0 ? (
         <div className="text-center py-16 bg-neutral-900/40 rounded-2xl border border-neutral-800/60 p-8 space-y-3">
           <p className="text-sm text-neutral-300 font-medium">
             Nessuna attività trovata per "{searchQuery}".
           </p>
           <p className="text-xs text-neutral-400 max-w-md mx-auto">
-            Prova a cercare termini come <span className="text-neutral-200 font-semibold">bar</span>,{' '}
-            <span className="text-neutral-200 font-semibold">pizza</span>,{' '}
-            <span className="text-neutral-200 font-semibold">barbiere</span>,{' '}
-            <span className="text-neutral-200 font-semibold">Ardea</span> oppure{' '}
-            <span className="text-neutral-200 font-semibold">motor</span>.
+            Prova un altro termine o una città.
           </p>
           <button
             type="button"
